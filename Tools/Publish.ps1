@@ -29,10 +29,10 @@ $script:AndroidApiLevels = @{
 
 function Write-Usage {
     Write-Host 'Usage:'
-    Write-Host '  .\publish.ps1 -W           Publish trimmed, self-contained Windows x64'
-    Write-Host '  .\publish.ps1 -A           Publish Android APKs supporting Android 10 and later'
-    Write-Host '  .\publish.ps1 -A 16        Publish an ARM64 APK requiring Android 16 or later'
-    Write-Host '  .\publish.ps1 -F [10-16]   Publish Windows x64 and Android'
+    Write-Host '  .\publish.cmd -W           Publish trimmed, self-contained Windows x64'
+    Write-Host '  .\publish.cmd -A           Publish Android APKs supporting Android 10 and later'
+    Write-Host '  .\publish.cmd -A 16        Publish an ARM64 APK requiring Android 16 or later'
+    Write-Host '  .\publish.cmd -F [10-16]   Publish Windows x64 and Android'
     Write-Host ''
     Write-Host 'The Android number selects the minimum installable Android version.'
     Write-Host 'All Android builds compile and target Android 16 (API 36).'
@@ -234,193 +234,12 @@ function Test-AndroidPackage {
     }
 }
 
-function Test-WindowsPublish {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$OutputPath
-    )
-
-    $requiredFiles = @(
-        'PasswordManagerLocal.exe',
-        'PasswordManagerLocal.dll',
-        'PasswordManagerLocal.deps.json',
-        'PasswordManagerLocal.runtimeconfig.json',
-        'PasswordManagerLocal.Common.Frontend.dll',
-        'PasswordManagerLocal.Common.Contracts.dll',
-        'PasswordManagerLocal.Common.Preferences.dll',
-        'PasswordManagerLocal.Windows.Ipc.dll',
-        'PasswordManagerLocal.Windows.EndpointRpc.Contracts.dll',
-        'PasswordManagerLocal.Windows.EndpointRpc.Client.dll',
-        'coreclr.dll',
-        'hostfxr.dll',
-        'hostpolicy.dll',
-        'Avalonia.Win32.dll',
-        'Avalonia.Skia.dll',
-        'libSkiaSharp.dll'
-    )
-
-    foreach ($requiredFile in $requiredFiles) {
-        if (-not (Test-Path (Join-Path $OutputPath $requiredFile))) {
-            throw "Windows publish validation failed. Required file is missing: $requiredFile"
-        }
-    }
-
-    $agentRuntimePath = Join-Path $OutputPath 'AgentRuntime'
-    $requiredAgentFiles = @(
-        'PasswordManagerLocal.Windows.Agent.exe',
-        'PasswordManagerLocal.Windows.Agent.dll',
-        'PasswordManagerLocal.Windows.Agent.deps.json',
-        'PasswordManagerLocal.Windows.Agent.runtimeconfig.json',
-        'PasswordManagerLocal.Common.Backend.dll',
-        'PasswordManagerLocal.Common.Backend.Hosting.dll',
-        'PasswordManagerLocal.Common.Preferences.dll',
-        'PasswordManagerLocal.Common.Contracts.dll',
-        'PasswordManagerLocal.Windows.Ipc.dll',
-        'PasswordManagerLocal.Windows.Backend.dll',
-        'PasswordManagerLocal.Windows.EndpointRpc.Contracts.dll',
-        'PasswordManagerLocal.Windows.EndpointRpc.Server.dll'
-    )
-    foreach ($requiredAgentFile in $requiredAgentFiles) {
-        if (-not (Test-Path (Join-Path $agentRuntimePath $requiredAgentFile))) {
-            throw "Windows publish validation failed. AgentRuntime file is missing: $requiredAgentFile"
-        }
-    }
-
-    foreach ($backendOnlyRootFile in @(
-        'PasswordManagerLocal.Common.Backend.dll',
-        'PasswordManagerLocal.Common.Backend.Hosting.dll',
-        'PasswordManagerLocal.Windows.Backend.dll',
-        'PasswordManagerLocal.Windows.EndpointRpc.Server.dll',
-        'Microsoft.EntityFrameworkCore.dll',
-        'Microsoft.EntityFrameworkCore.Relational.dll',
-        'Microsoft.EntityFrameworkCore.Sqlite.dll',
-        'Microsoft.Data.Sqlite.dll',
-        'SQLitePCLRaw.core.dll'
-    )) {
-        if (Test-Path (Join-Path $OutputPath $backendOnlyRootFile)) {
-            throw "Windows publish validation failed. Backend-only file is present in the frontend root: $backendOnlyRootFile"
-        }
-    }
-
-    $unexpectedFiles = @(
-        'Avalonia.Desktop.dll',
-        'Avalonia.X11.dll',
-        'Avalonia.FreeDesktop.dll',
-        'Avalonia.Native.dll',
-        'Tmds.DBus.Protocol.dll',
-        'Avalonia.DesignerSupport.dll',
-        'Avalonia.Remote.Protocol.dll',
-        'createdump.exe',
-        'mscordaccore.dll',
-        'mscordbi.dll',
-        'Microsoft.DiaSymReader.Native.amd64.dll'
-    )
-
-    foreach ($unexpectedFile in $unexpectedFiles) {
-        if (Test-Path (Join-Path $OutputPath $unexpectedFile)) {
-            throw "Windows publish validation failed. Excluded release-only asset was published: $unexpectedFile"
-        }
-    }
-
-    $versionedDacFiles = Get-ChildItem -Path $OutputPath -File -Filter 'mscordaccore_*.dll'
-    if ($versionedDacFiles) {
-        $dacNames = ($versionedDacFiles.Name | Sort-Object -Unique) -join ', '
-        throw "Windows publish validation failed. Crash-dump DAC assets were published: $dacNames"
-    }
-
-    $depsPath = Join-Path $OutputPath 'PasswordManagerLocal.deps.json'
-    $depsText = Get-Content -LiteralPath $depsPath -Raw
-    foreach ($excludedManifestEntry in @(
-        'Avalonia.DesignerSupport.dll',
-        'Avalonia.Remote.Protocol',
-        'createdump.exe',
-        'mscordaccore.dll',
-        'mscordbi.dll',
-        'Microsoft.DiaSymReader.Native.amd64.dll'
-    )) {
-        if ($depsText.Contains($excludedManifestEntry)) {
-            throw "Windows publish validation failed. The dependency manifest still contains excluded asset: $excludedManifestEntry"
-        }
-    }
-
-    if ($depsText -match 'mscordaccore_[^"\/]+\.dll') {
-        throw 'Windows publish validation failed. The dependency manifest still contains a version-qualified crash-dump DAC asset.'
-    }
-
-    foreach ($backendOnlyDependency in @(
-        'PasswordManagerLocal.Common.Backend',
-        'PasswordManagerLocal.Common.Backend.Hosting',
-        'PasswordManagerLocal.Windows.Backend',
-        'PasswordManagerLocal.Windows.EndpointRpc.Server',
-        'Microsoft.EntityFrameworkCore',
-        'Microsoft.Data.Sqlite',
-        'SQLitePCLRaw'
-    )) {
-        if ($depsText.Contains($backendOnlyDependency)) {
-            throw "Windows publish validation failed. Frontend dependency manifest contains backend-only dependency: $backendOnlyDependency"
-        }
-    }
-
-    $agentDepsPath = Join-Path $agentRuntimePath 'PasswordManagerLocal.Windows.Agent.deps.json'
-    $agentDepsText = Get-Content -LiteralPath $agentDepsPath -Raw
-    foreach ($requiredAgentDependency in @(
-        'PasswordManagerLocal.Common.Backend',
-        'PasswordManagerLocal.Windows.EndpointRpc.Server'
-    )) {
-        if (-not $agentDepsText.Contains($requiredAgentDependency)) {
-            throw "Windows publish validation failed. Agent dependency manifest is missing: $requiredAgentDependency"
-        }
-    }
-
-    $publishedSymbols = Get-ChildItem -Path $OutputPath -Recurse -File -Filter '*.pdb'
-    if ($publishedSymbols) {
-        $symbolNames = ($publishedSymbols.Name | Sort-Object -Unique) -join ', '
-        throw "Windows publish validation failed. Release symbols were published: $symbolNames"
-    }
-
-    $files = Get-ChildItem -Path $OutputPath -Recurse -File
-    $totalBytes = ($files | Measure-Object -Property Length -Sum).Sum
-    $totalMiB = [math]::Round($totalBytes / 1MB, 2)
-
-    Write-Host "Verified self-contained runtime: coreclr.dll is present"
-    Write-Host "Verified Avalonia.Desktop/X11/FreeDesktop/Native and D-Bus are absent"
-    Write-Host "Verified Avalonia designer and remote-protocol runtime assets are absent"
-    Write-Host "Verified crash-dump and managed-debugger payloads are absent"
-    Write-Host "Verified the dependency manifest contains none of the excluded assets"
-    if (Test-Path (Join-Path $OutputPath 'Avalonia.Metal.dll')) {
-        Write-Host "Avalonia.Metal.dll is present as Avalonia's shared rendering abstraction (allowed)"
-    }
-    Write-Host "Verified backend-only assemblies are confined to AgentRuntime"
-    Write-Host "Verified release output contains no PDB files"
-    Write-Host "Published files: $($files.Count), total size: $totalMiB MiB"
-}
-
 function Publish-WindowsApp {
-    $project = Join-Path $script:Root 'Windows\Frontend\PasswordManagerLocal.Windows.Frontend.csproj'
-    $output = Join-Path $script:Root 'artifacts\publish\PasswordManagerLocal.Windows.Frontend\win-x64'
+    $script = Join-Path $script:Root 'Tools\Windows\PublishWindowsProduct.ps1'
 
-    if (Test-Path $output) {
-        Remove-Item -Path $output -Recurse -Force
+    Invoke-CommandChecked 'Publishing minimal shared Windows x64 product' {
+        & $script -Configuration Release -RuntimeIdentifier win-x64
     }
-
-    Invoke-CommandChecked 'Publishing trimmed self-contained Windows x64 app' {
-        dotnet publish $project `
-            -c Release `
-            -f net10.0-windows `
-            -r win-x64 `
-            --self-contained true `
-            -p:PublishProfile=FolderProfile
-    }
-
-    Write-Host ''
-    Write-Host 'Validating Windows publish'
-    Write-Host '--------------------------'
-    Test-WindowsPublish -OutputPath $output
-    & (Join-Path $script:Root 'Tools\Windows\VerifyWindowsPublishedLayout.ps1') `
-        -PublishDirectory $output
-
-    Write-Host ''
-    Write-Host "Windows publish output: $output"
 }
 
 function Publish-AndroidArchitecture {
@@ -541,7 +360,7 @@ function Publish-AndroidApp {
     }
 }
 
-$script:Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Set-Location $script:Root
 
 $selectedCount = 0

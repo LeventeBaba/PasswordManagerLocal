@@ -163,7 +163,7 @@ public sealed class EndpointRpcSeparationArchitectureTests
     }
 
     [TestMethod]
-    public void FirewallManagerUsesSharedPortAndTargetsAgentExecutable()
+    public void FirewallManagerUsesSharedPortAndTargetsSiblingAgentExecutable()
     {
         var source = File.ReadAllText(Project(
             GetRepositoryRoot(),
@@ -172,8 +172,8 @@ public sealed class EndpointRpcSeparationArchitectureTests
             "WindowsFirewallPermissionManager.cs"));
 
         StringAssert.Contains(source, "SyncProtocolDefaults.TcpPort");
-        StringAssert.Contains(source, "WindowsExecutableNames.AgentDeploymentDirectoryName");
         StringAssert.Contains(source, "WindowsExecutableNames.AgentExecutableFileName");
+        Assert.IsFalse(source.Contains("AgentDeploymentDirectoryName", StringComparison.Ordinal));
         Assert.IsFalse(source.Contains("Environment.ProcessPath", StringComparison.Ordinal));
         Assert.IsFalse(source.Contains("BackendDebugLog", StringComparison.Ordinal));
         Assert.IsFalse(source.Contains("SyncConstants", StringComparison.Ordinal));
@@ -182,34 +182,25 @@ public sealed class EndpointRpcSeparationArchitectureTests
             GetRepositoryRoot(),
             "Tools",
             "ConfigureWindowsFirewall.ps1"));
-        StringAssert.Contains(
-            script,
-            @"AgentRuntime\PasswordManagerLocal.Windows.Agent.exe");
-        Assert.IsFalse(script.Contains(
-            "Join-Path $PSScriptRoot 'PasswordManagerLocal.exe'",
-            StringComparison.Ordinal));
+        StringAssert.Contains(script, "Join-Path $PSScriptRoot 'PasswordManagerLocal.Windows.Agent.exe'");
+        Assert.IsFalse(script.Contains("AgentRuntime", StringComparison.Ordinal));
     }
 
     [TestMethod]
-    public void PublishValidationConfinesBackendAssembliesToAgentRuntime()
+    public void PublishValidationEnforcesSharedSiblingProductBoundaries()
     {
         var root = GetRepositoryRoot();
-        var sources = new[]
-        {
-            File.ReadAllText(Path.Combine(root, "publish.ps1")),
-            File.ReadAllText(Path.Combine(root, "Tools", "Windows", "VerifyWindowsPublishedLayout.ps1"))
-        };
+        var publishScript = File.ReadAllText(Path.Combine(root, "Tools", "Windows", "PublishWindowsProduct.ps1"));
+        var verifier = File.ReadAllText(Path.Combine(root, "Tools", "Windows", "VerifyWindowsPublishedLayout.ps1"));
 
-        Assert.IsTrue(sources.All(source => source.Contains("AgentRuntime", StringComparison.Ordinal)));
-        Assert.IsTrue(sources.All(source => source.Contains(
-            "PasswordManagerLocal.Common.Backend.dll",
-            StringComparison.Ordinal)));
-        Assert.IsTrue(sources.All(source => source.Contains(
-            "PasswordManagerLocal.Windows.EndpointRpc.Server.dll",
-            StringComparison.Ordinal)));
-        Assert.IsTrue(sources.All(source => source.Contains(
-            "PasswordManagerLocal.deps.json",
-            StringComparison.Ordinal)));
+        StringAssert.Contains(publishScript, @"staging\frontend");
+        StringAssert.Contains(publishScript, @"staging\agent");
+        StringAssert.Contains(publishScript, @"product\PasswordManagerLocal");
+        StringAssert.Contains(verifier, "PasswordManagerLocal.Common.Backend.dll");
+        StringAssert.Contains(verifier, "PasswordManagerLocal.Windows.EndpointRpc.Server.dll");
+        StringAssert.Contains(verifier, "PasswordManagerLocal.deps.json");
+        StringAssert.Contains(verifier, "PasswordManagerLocal.Windows.Agent.deps.json");
+        StringAssert.Contains(verifier, "prohibited legacy AgentRuntime directory");
     }
 
     private static string[] ProjectReferenceNames(string projectPath) =>

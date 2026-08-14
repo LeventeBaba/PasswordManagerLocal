@@ -3,235 +3,112 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$PublishDirectory,
 
+    [ValidateSet('win-x64')]
     [string]$RuntimeIdentifier = 'win-x64',
 
-    [string]$StartupCommand,
-
-    [string]$RepositoryRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
+    [string]$RepositoryRoot
 )
 
 $ErrorActionPreference = 'Stop'
+$publish = [System.IO.Path]::GetFullPath($PublishDirectory)
+if (-not (Test-Path -LiteralPath $publish -PathType Container)) { throw "Publish directory is missing: $publish" }
 
-function Fail-Layout {
-    param([string]$Message)
-    throw "Windows publish-layout verification failed: $Message"
-}
-
-function Assert-RequiredFiles {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Directory,
-
-        [Parameter(Mandatory = $true)]
-        [string[]]$Names,
-
-        [Parameter(Mandatory = $true)]
-        [string]$Scope
-    )
-
-    $missing = @(
-        foreach ($name in $Names) {
-            if (-not (Test-Path -LiteralPath (Join-Path $Directory $name) -PathType Leaf)) {
-                $name
-            }
+function Assert-Files([string[]]$Names) {
+    foreach ($name in $Names) {
+        if (-not (Test-Path -LiteralPath (Join-Path $publish $name) -PathType Leaf)) {
+            throw "Required final product file is missing: $name"
         }
-    )
-
-    if ($missing.Count -ne 0) {
-        Fail-Layout "$Scope is missing required artifacts:$([Environment]::NewLine)$($missing -join [Environment]::NewLine)"
     }
 }
 
-function Get-NormalizedFullPath {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Path
-    )
-
-    $cleanPath = $Path.Trim().Trim([char]34)
-    if ([string]::IsNullOrWhiteSpace($cleanPath)) {
-        Fail-Layout 'The publish directory argument was empty.'
-    }
-
-    $fullPath = [System.IO.Path]::GetFullPath($cleanPath)
-    $root = [System.IO.Path]::GetPathRoot($fullPath)
-    $directorySeparators = [char[]]@(
-        [System.IO.Path]::DirectorySeparatorChar,
-        [System.IO.Path]::AltDirectorySeparatorChar
-    )
-
-    while ($fullPath.Length -gt $root.Length -and
-        $directorySeparators -contains $fullPath[$fullPath.Length - 1]) {
-        $fullPath = $fullPath.Substring(0, $fullPath.Length - 1)
-    }
-
-    return $fullPath
-}
-
-$publish = Get-NormalizedFullPath -Path $PublishDirectory
-if (-not (Test-Path -LiteralPath $publish -PathType Container)) {
-    Fail-Layout "Publish directory does not exist: $publish"
-}
-
-$agentRuntime = Join-Path $publish 'AgentRuntime'
-if (-not (Test-Path -LiteralPath $agentRuntime -PathType Container)) {
-    Fail-Layout "The AgentRuntime directory is missing: $agentRuntime"
-}
-
-Assert-RequiredFiles -Directory $publish -Scope 'The frontend publish root' -Names @(
+Assert-Files @(
     'PasswordManagerLocal.exe',
     'PasswordManagerLocal.dll',
     'PasswordManagerLocal.deps.json',
     'PasswordManagerLocal.runtimeconfig.json',
-    'PasswordManagerLocal.Common.Frontend.dll',
-    'PasswordManagerLocal.Common.Contracts.dll',
-    'PasswordManagerLocal.Common.Preferences.dll',
-    'PasswordManagerLocal.Windows.Ipc.dll',
-    'PasswordManagerLocal.Windows.EndpointRpc.Contracts.dll',
-    'PasswordManagerLocal.Windows.EndpointRpc.Client.dll',
-    'ConfigureWindowsFirewall.ps1',
-    'ConfigureWindowsFirewall.bat'
-)
-
-Assert-RequiredFiles -Directory $agentRuntime -Scope 'The AgentRuntime publish' -Names @(
     'PasswordManagerLocal.Windows.Agent.exe',
     'PasswordManagerLocal.Windows.Agent.dll',
     'PasswordManagerLocal.Windows.Agent.deps.json',
     'PasswordManagerLocal.Windows.Agent.runtimeconfig.json',
+    'PasswordManagerLocal.Common.Frontend.dll',
     'PasswordManagerLocal.Common.Backend.dll',
     'PasswordManagerLocal.Common.Backend.Hosting.dll',
-    'PasswordManagerLocal.Windows.Backend.dll',
     'PasswordManagerLocal.Common.Contracts.dll',
     'PasswordManagerLocal.Common.Preferences.dll',
-    'PasswordManagerLocal.Windows.Ipc.dll',
-    'PasswordManagerLocal.Windows.EndpointRpc.Contracts.dll',
-    'PasswordManagerLocal.Windows.EndpointRpc.Server.dll',
-    'Microsoft.EntityFrameworkCore.dll',
-    'Microsoft.EntityFrameworkCore.Relational.dll',
-    'Microsoft.EntityFrameworkCore.Sqlite.dll',
-    'Microsoft.Data.Sqlite.dll',
-    'SQLitePCLRaw.core.dll'
-)
-
-$forbiddenFrontendFiles = @(
-    'PasswordManagerLocal.Windows.Frontend.exe',
-    'PasswordManagerLocal.Windows.exe',
-    'PasswordManagerLocal.Windows.Agent.exe',
-    'PasswordManagerLocal.Windows.Agent.dll',
-    'PasswordManagerLocal.Common.Backend.dll',
-    'PasswordManagerLocal.Common.Backend.Hosting.dll',
     'PasswordManagerLocal.Windows.Backend.dll',
+    'PasswordManagerLocal.Windows.EndpointRpc.Contracts.dll',
+    'PasswordManagerLocal.Windows.EndpointRpc.Client.dll',
     'PasswordManagerLocal.Windows.EndpointRpc.Server.dll',
-    'Microsoft.EntityFrameworkCore.dll',
-    'Microsoft.EntityFrameworkCore.Relational.dll',
+    'PasswordManagerLocal.Windows.Ipc.dll',
+    'coreclr.dll',
+    'hostfxr.dll',
+    'hostpolicy.dll',
+    'Avalonia.Win32.dll',
+    'Avalonia.Skia.dll',
     'Microsoft.EntityFrameworkCore.Sqlite.dll',
     'Microsoft.Data.Sqlite.dll',
-    'SQLitePCLRaw.core.dll'
+    'SQLitePCLRaw.core.dll',
+    'SQLitePCLRaw.batteries_v2.dll',
+    'SQLitePCLRaw.provider.e_sqlcipher.dll',
+    'e_sqlcipher.dll',
+    'NSec.Cryptography.dll',
+    'libsodium.dll',
+    'Google.Protobuf.dll',
+    'Assets\app_icon.ico'
 )
-foreach ($name in $forbiddenFrontendFiles) {
-    if (Test-Path -LiteralPath (Join-Path $publish $name) -PathType Leaf) {
-        Fail-Layout "Backend/Agent-only artifact is present in the frontend publish root: $name"
+
+if (Test-Path -LiteralPath (Join-Path $publish 'AgentRuntime')) {
+    throw 'The prohibited legacy AgentRuntime directory is present.'
+}
+
+foreach ($executable in @('PasswordManagerLocal.exe', 'PasswordManagerLocal.Windows.Agent.exe')) {
+    $matches = @(Get-ChildItem -LiteralPath $publish -Recurse -File -Filter $executable)
+    if ($matches.Count -ne 1 -or -not [string]::Equals($matches[0].DirectoryName, $publish, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "$executable must exist exactly once in the product root."
     }
 }
 
-$frontendExecutableMatches = @(Get-ChildItem -LiteralPath $publish -Recurse -File -Filter 'PasswordManagerLocal.exe')
-if ($frontendExecutableMatches.Count -ne 1 -or $frontendExecutableMatches[0].DirectoryName -ne $publish) {
-    Fail-Layout "Expected exactly one root-level PasswordManagerLocal.exe but found: $($frontendExecutableMatches.FullName -join ', ')"
+$frontendDeps = Get-Content -LiteralPath (Join-Path $publish 'PasswordManagerLocal.deps.json') -Raw
+$agentDeps = Get-Content -LiteralPath (Join-Path $publish 'PasswordManagerLocal.Windows.Agent.deps.json') -Raw
+foreach ($name in @('PasswordManagerLocal.Common.Backend', 'PasswordManagerLocal.Windows.Backend', 'PasswordManagerLocal.Windows.EndpointRpc.Server', 'Microsoft.EntityFrameworkCore', 'Microsoft.Data.Sqlite', 'SQLitePCLRaw')) {
+    if ($frontendDeps.Contains($name)) { throw "Frontend manifest contains backend-only dependency: $name" }
 }
-
-$agentExecutableMatches = @(Get-ChildItem -LiteralPath $publish -Recurse -File -Filter 'PasswordManagerLocal.Windows.Agent.exe')
-if ($agentExecutableMatches.Count -ne 1 -or $agentExecutableMatches[0].DirectoryName -ne $agentRuntime) {
-    Fail-Layout "Expected exactly one AgentRuntime-level PasswordManagerLocal.Windows.Agent.exe but found: $($agentExecutableMatches.FullName -join ', ')"
+foreach ($name in @('PasswordManagerLocal.Common.Frontend', 'Avalonia', 'ReactiveUI', 'System.Windows.Forms', 'PresentationFramework', 'WindowsBase')) {
+    if ($agentDeps.Contains($name)) { throw "Agent manifest contains frontend/desktop dependency: $name" }
 }
-
-$trayAsset = Join-Path $agentRuntime 'Assets\app_icon.ico'
-if (-not (Test-Path -LiteralPath $trayAsset -PathType Leaf)) {
-    Fail-Layout 'The AgentRuntime tray icon Assets\app_icon.ico is missing.'
+foreach ($name in @('PasswordManagerLocal.Common.Backend', 'PasswordManagerLocal.Windows.EndpointRpc.Server', 'Microsoft.EntityFrameworkCore.Sqlite')) {
+    if (-not $agentDeps.Contains($name)) { throw "Agent manifest is missing required dependency: $name" }
 }
+if ($frontendDeps.Contains('AgentRuntime') -or $agentDeps.Contains('AgentRuntime')) { throw 'A dependency manifest still references AgentRuntime.' }
 
-$nativeCandidates = @(
-    (Join-Path $agentRuntime 'e_sqlcipher.dll'),
-    (Join-Path $agentRuntime 'sqlite3.dll'),
-    (Join-Path $agentRuntime "runtimes\$RuntimeIdentifier\native\e_sqlcipher.dll"),
-    (Join-Path $agentRuntime "runtimes\$RuntimeIdentifier\native\sqlite3.dll")
+$forbiddenNames = @(
+    'Avalonia.DesignerSupport.dll', 'Avalonia.Remote.Protocol.dll', 'createdump.exe',
+    'mscordaccore.dll', 'mscordbi.dll', 'Microsoft.DiaSymReader.Native.amd64.dll'
 )
-$existingNativeLibraries = @($nativeCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
-if ($existingNativeLibraries.Count -eq 0) {
-    Fail-Layout "No AgentRuntime SQLite/SQLCipher native library was found for $RuntimeIdentifier. Checked: $($nativeCandidates -join ', ')"
-}
-
-$frontendDepsPath = Join-Path $publish 'PasswordManagerLocal.deps.json'
-$frontendDepsText = Get-Content -LiteralPath $frontendDepsPath -Raw
-foreach ($backendOnlyDependency in @(
-    'PasswordManagerLocal.Common.Backend',
-    'PasswordManagerLocal.Common.Backend.Hosting',
-    'PasswordManagerLocal.Windows.Backend',
-    'PasswordManagerLocal.Windows.EndpointRpc.Server',
-    'Microsoft.EntityFrameworkCore',
-    'Microsoft.Data.Sqlite',
-    'SQLitePCLRaw'
-)) {
-    if ($frontendDepsText.Contains($backendOnlyDependency)) {
-        Fail-Layout "The frontend dependency manifest contains an Agent/backend-only dependency: $backendOnlyDependency"
+foreach ($file in Get-ChildItem -LiteralPath $publish -Recurse -File) {
+    if ($file.Extension -ieq '.pdb' -or $file.Name -match '\.Tests?(\.|$)' -or $forbiddenNames -contains $file.Name -or $file.Name -like 'mscordaccore_*.dll') {
+        throw "Development/debug/test artifact is present: $($file.FullName)"
+    }
+    if ($file.FullName.IndexOf('\staging\', [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+        $file.FullName.IndexOf('\reports\', [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        throw "Staging/report artifact is inside the product: $($file.FullName)"
     }
 }
 
-$agentDepsPath = Join-Path $agentRuntime 'PasswordManagerLocal.Windows.Agent.deps.json'
-$agentDepsText = Get-Content -LiteralPath $agentDepsPath -Raw
-foreach ($requiredAgentDependency in @(
-    'PasswordManagerLocal.Common.Backend',
-    'PasswordManagerLocal.Windows.EndpointRpc.Server'
-)) {
-    if (-not $agentDepsText.Contains($requiredAgentDependency)) {
-        Fail-Layout "The Agent dependency manifest is missing: $requiredAgentDependency"
+$runtimeConfigurations = @(
+    [System.IO.Path]::Combine($publish, 'PasswordManagerLocal.runtimeconfig.json')
+    [System.IO.Path]::Combine($publish, 'PasswordManagerLocal.Windows.Agent.runtimeconfig.json')
+)
+foreach ($runtimeConfiguration in $runtimeConfigurations) {
+    $configurationText = Get-Content -LiteralPath $runtimeConfiguration -Raw
+    if (-not $configurationText.Contains('includedFrameworks') -or -not $configurationText.Contains('MetadataUpdater.IsSupported')) {
+        throw "Runtime configuration does not show an explicit trimmed self-contained publish: $runtimeConfiguration"
     }
 }
 
-$forbiddenFiles = @(
-    Get-ChildItem -LiteralPath $publish -Recurse -File |
-        Where-Object {
-            $_.Name -match '(?i)(\.Test(s)?\.dll$|TestHost.*\.(exe|dll)$|Microsoft\.TestPlatform|testhost\.)'
-        }
-)
-if ($forbiddenFiles.Count -ne 0) {
-    Fail-Layout "Test-only files are present in production output:$([Environment]::NewLine)$($forbiddenFiles.FullName -join [Environment]::NewLine)"
-}
-
-$nestedBuildDirectories = @(
-    Get-ChildItem -LiteralPath $publish -Recurse -Directory |
-        Where-Object { $_.Name -in @('bin', 'obj') }
-)
-if ($nestedBuildDirectories.Count -ne 0) {
-    Fail-Layout "Accidental bin/obj nesting is present:$([Environment]::NewLine)$($nestedBuildDirectories.FullName -join [Environment]::NewLine)"
-}
-
-$agentPath = [System.IO.Path]::GetFullPath((Join-Path $agentRuntime 'PasswordManagerLocal.Windows.Agent.exe'))
-$expectedStartupCommand = '"{0}" --background' -f $agentPath
-if ([string]::IsNullOrWhiteSpace($StartupCommand)) {
-    $StartupCommand = $expectedStartupCommand
-}
-if ($StartupCommand -cne $expectedStartupCommand) {
-    Fail-Layout "Startup command mismatch. Expected '$expectedStartupCommand' but received '$StartupCommand'."
-}
-if ([regex]::Matches($StartupCommand, '(?i)(?<!\S)--background(?!\S)').Count -ne 1) {
-    Fail-Layout 'The startup command must contain --background exactly once.'
-}
-if ($StartupCommand -match '(?i)PasswordManagerLocal\.Windows\.exe') {
-    Fail-Layout 'The startup command points to the UI executable instead of the agent.'
-}
-
-$frontendProject = Join-Path $RepositoryRoot 'Common\Frontend\PasswordManagerLocal.Common.Frontend.csproj'
-$localizationDirectory = Join-Path $RepositoryRoot 'Common\Frontend\Assets\Localization'
-if (-not (Test-Path -LiteralPath $frontendProject -PathType Leaf) -or
-    -not (Test-Path -LiteralPath (Join-Path $localizationDirectory 'en_us.json') -PathType Leaf) -or
-    -not (Test-Path -LiteralPath (Join-Path $localizationDirectory 'hu.json') -PathType Leaf)) {
-    Fail-Layout 'The embedded frontend localization source assets are incomplete.'
-}
-$frontendProjectText = Get-Content -LiteralPath $frontendProject -Raw
-if (-not $frontendProjectText.Contains('<AvaloniaResource Include="Assets\**"')) {
-    Fail-Layout 'Frontend assets are not configured as embedded Avalonia resources.'
-}
-
-Write-Host "Windows published layout is valid: $publish"
-Write-Host 'Verified that backend-only assemblies are confined to AgentRuntime.'
-Write-Host "Validated startup command: $expectedStartupCommand"
+$files = @(Get-ChildItem -LiteralPath $publish -Recurse -File)
+$totalBytes = ($files | Measure-Object -Property Length -Sum).Sum
+Write-Host "Verified sibling two-executable publication for $RuntimeIdentifier."
+Write-Host 'Verified frontend/backend dependency boundaries and absence of the legacy nested runtime.'
+Write-Host 'Verified trimmed self-contained runtime configuration and release artifact policy.'
+Write-Host "Final files: $($files.Count); final bytes: $totalBytes"

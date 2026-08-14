@@ -410,34 +410,33 @@ public sealed class Phase6DependencyBoundaryTests
     }
 
     [TestMethod]
-    public void WindowsUiBuildPublishesAgentIntoDedicatedDeploymentDirectory()
+    public void WindowsReleasePackagingPublishesAndMergesIndependentTrimmedOutputs()
     {
-        var project = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(),
-            "Windows",
-            "Frontend",
-            "PasswordManagerLocal.Windows.Frontend.csproj"));
+        var root = GetRepositoryRoot();
+        var frontendProject = File.ReadAllText(Path.Combine(
+            root, "Windows", "Frontend", "PasswordManagerLocal.Windows.Frontend.csproj"));
+        var agentProject = File.ReadAllText(Path.Combine(
+            root, "Windows", "Agent", "PasswordManagerLocal.Windows.Agent.csproj"));
+        var packagingScript = File.ReadAllText(Path.Combine(
+            root, "Tools", "Windows", "PublishWindowsProduct.ps1"));
 
-        StringAssert.Contains(project, "<WindowsAgentDeploymentDirectoryName>AgentRuntime\\</WindowsAgentDeploymentDirectoryName>");
-        StringAssert.Contains(
-            project,
-            "ReferenceOutputAssembly=\"false\" Private=\"false\"");
-        StringAssert.Contains(project, "@(_WindowsAgentRootBuildArtifact)");
-        StringAssert.Contains(project, "$(TargetDir)PasswordManagerLocal.Windows.Agent.exe");
-        StringAssert.Contains(project, "$(TargetDir)PasswordManagerLocal.Windows.Agent.deps.json");
-        StringAssert.Contains(project, "$(TargetDir)PasswordManagerLocal.Windows.Agent.runtimeconfig.json");
-        StringAssert.Contains(project, "Targets=\"Publish\"");
-        StringAssert.Contains(project, "SelfContained=false");
-        StringAssert.Contains(project, "PublishSingleFile=false");
-        StringAssert.Contains(project, "PublishTrimmed=false");
-        StringAssert.Contains(project, "$(TargetDir)$(WindowsAgentDeploymentDirectoryName)");
-        StringAssert.Contains(project, "$(MSBuildProjectDirectory)\\Agent\\");
-        StringAssert.Contains(project, "must never resolve to the UI source Agent directory");
-        StringAssert.Contains(project, "$(WindowsAgentBuildDeploymentDirectory)PasswordManagerLocal.Windows.Agent.exe");
-        StringAssert.Contains(project, "The complete Windows agent deployment was not produced");
-        Assert.IsFalse(project.Contains("WindowsAgentBuildFile", StringComparison.Ordinal));
-        Assert.IsFalse(project.Contains("WindowsAgentOutputDirectory", StringComparison.Ordinal));
-        Assert.IsFalse(project.Contains("<WindowsAgentBuildDeploymentDirectory>$(OutDir)", StringComparison.Ordinal));
+        StringAssert.Contains(frontendProject, "ReferenceOutputAssembly=\"false\" Private=\"false\"");
+        Assert.IsFalse(frontendProject.Contains("PublishWindowsAgent", StringComparison.Ordinal));
+        Assert.IsFalse(frontendProject.Contains("AgentDeploymentDirectoryName", StringComparison.Ordinal));
+        foreach (var project in new[] { frontendProject, agentProject })
+        {
+            StringAssert.Contains(project, "<PublishTrimmed>true</PublishTrimmed>");
+            StringAssert.Contains(project, "<TrimMode>partial</TrimMode>");
+            StringAssert.Contains(project, "<SelfContained>true</SelfContained>");
+            StringAssert.Contains(project, "<PublishSingleFile>false</PublishSingleFile>");
+            StringAssert.Contains(project, "<PublishReadyToRun>false</PublishReadyToRun>");
+        }
+        StringAssert.Contains(packagingScript, @"staging\frontend");
+        StringAssert.Contains(packagingScript, @"staging\agent");
+        StringAssert.Contains(packagingScript, "--frontend");
+        StringAssert.Contains(packagingScript, "--agent");
+        StringAssert.Contains(packagingScript, "--output");
+        StringAssert.Contains(packagingScript, "--report");
     }
 
     [TestMethod]

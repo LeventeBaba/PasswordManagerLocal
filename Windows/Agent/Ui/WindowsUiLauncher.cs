@@ -16,16 +16,8 @@ public sealed class WindowsUiLauncher : IWindowsUiLauncher
         IProcessLauncher? processLauncher = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(executableDirectory);
-        var fullDirectory = Path.GetFullPath(executableDirectory);
-        var trimmedDirectory = Path.TrimEndingDirectorySeparator(fullDirectory);
-        var uiDirectory = string.Equals(
-            Path.GetFileName(trimmedDirectory),
-            WindowsExecutableNames.AgentDeploymentDirectoryName,
-            StringComparison.OrdinalIgnoreCase)
-            ? Directory.GetParent(trimmedDirectory)?.FullName ?? fullDirectory
-            : fullDirectory;
         _uiExecutablePath = Path.Combine(
-            uiDirectory,
+            Path.GetFullPath(executableDirectory),
             WindowsExecutableNames.UiExecutableFileName);
         _localizer = localizer ?? throw new ArgumentNullException(nameof(localizer));
         _processLauncher = processLauncher ?? new WindowsProcessLauncher();

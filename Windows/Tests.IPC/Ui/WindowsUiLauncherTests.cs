@@ -64,39 +64,6 @@ public sealed class WindowsUiLauncherTests
 
 
     [TestMethod]
-    public async Task DeployedAgentLaunchesUiFromParentDirectory()
-    {
-        var directory = Path.Combine(Path.GetTempPath(), $"Password Manager {Guid.NewGuid():N}");
-        var agentDirectory = Path.Combine(
-            directory,
-            WindowsExecutableNames.AgentDeploymentDirectoryName);
-        Directory.CreateDirectory(agentDirectory);
-        var executable = Path.Combine(directory, WindowsExecutableNames.UiExecutableFileName);
-        File.WriteAllBytes(executable, Array.Empty<byte>());
-        ProcessStartInfo? captured = null;
-        var processLauncher = new DelegateProcessLauncher(startInfo =>
-        {
-            captured = startInfo;
-            return true;
-        });
-        try
-        {
-            var launcher = new WindowsUiLauncher(agentDirectory, AgentLocalizationTestFactory.CreateEnglish(), processLauncher);
-
-            var result = await launcher.LaunchAsync();
-
-            Assert.AreEqual(UiLaunchResultKind.LaunchRequested, result.Kind);
-            Assert.IsNotNull(captured);
-            Assert.AreEqual(executable, captured.FileName);
-            Assert.AreEqual(directory, captured.WorkingDirectory);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [TestMethod]
     public async Task ProcessStartFailureReturnsSafeFailure()
     {
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));

@@ -9,17 +9,11 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Ui;
 public sealed class WindowsAgentLauncherTests
 {
     [TestMethod]
-    public async Task UiLaunchUsesExplicitUiRequestedArgument()
+    public async Task UiLaunchUsesSiblingAgentAndExplicitUiRequestedArgument()
     {
-        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(Path.GetTempPath(), $"Password Manager ő {Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
-        var agentDirectory = Path.Combine(
-            directory,
-            WindowsExecutableNames.AgentDeploymentDirectoryName);
-        Directory.CreateDirectory(agentDirectory);
-        var agentPath = Path.Combine(
-            agentDirectory,
-            WindowsExecutableNames.AgentExecutableFileName);
+        var agentPath = Path.Combine(directory, WindowsExecutableNames.AgentExecutableFileName);
         await File.WriteAllBytesAsync(agentPath, Array.Empty<byte>());
         try
         {
@@ -27,11 +21,10 @@ public sealed class WindowsAgentLauncherTests
             var launcher = new WindowsAgentLauncher(directory, processLauncher);
 
             Assert.IsTrue(await launcher.LaunchAsync());
-
             Assert.AreEqual(1, processLauncher.StartCount);
             Assert.IsNotNull(processLauncher.LastStartInfo);
             Assert.AreEqual(agentPath, processLauncher.LastStartInfo.FileName);
-            Assert.AreEqual(agentDirectory, processLauncher.LastStartInfo.WorkingDirectory);
+            Assert.AreEqual(directory, processLauncher.LastStartInfo.WorkingDirectory);
             Assert.IsFalse(processLauncher.LastStartInfo.UseShellExecute);
             CollectionAssert.AreEqual(
                 new[] { WindowsAgentLaunchArguments.UiRequested },
@@ -44,12 +37,13 @@ public sealed class WindowsAgentLauncherTests
     }
 
     [TestMethod]
-    public async Task RootLevelAgentExecutableIsNotUsedAsFallback()
+    public async Task LegacyNestedAgentExecutableIsNotUsed()
     {
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
+        var legacyDirectory = Path.Combine(directory, "AgentRuntime");
+        Directory.CreateDirectory(legacyDirectory);
         await File.WriteAllBytesAsync(
-            Path.Combine(directory, WindowsExecutableNames.AgentExecutableFileName),
+            Path.Combine(legacyDirectory, WindowsExecutableNames.AgentExecutableFileName),
             Array.Empty<byte>());
         try
         {

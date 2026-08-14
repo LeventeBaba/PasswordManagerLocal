@@ -74,7 +74,7 @@ function Remove-PmlConflictingAppBlockRules {
 }
 
 if ([string]::IsNullOrWhiteSpace($AppExe)) {
-    $AppExe = Join-Path $PSScriptRoot 'AgentRuntime\PasswordManagerLocal.Windows.Agent.exe'
+    $AppExe = Join-Path $PSScriptRoot 'PasswordManagerLocal.Windows.Agent.exe'
 }
 
 Write-Host 'Configuring Windows Firewall for PasswordManagerLocal local sync.'

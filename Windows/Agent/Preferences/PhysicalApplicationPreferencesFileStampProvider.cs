@@ -18,7 +18,7 @@ public sealed class PhysicalApplicationPreferencesFileStampProvider : IApplicati
     {
         var info = new FileInfo(_path);
         return info.Exists
-            ? new ApplicationPreferencesFileStamp(true, info.Length, info.LastWriteTimeUtc)
-            : new ApplicationPreferencesFileStamp(false, 0, DateTime.MinValue);
+            ? new(true, info.Length, info.LastWriteTimeUtc)
+            : new(false, 0, DateTime.MinValue);
     }
 }

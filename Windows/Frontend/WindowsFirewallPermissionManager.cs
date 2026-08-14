@@ -493,7 +493,6 @@ exit 0
     private static string GetApplicationPath() =>
         Path.Combine(
             AppContext.BaseDirectory,
-            WindowsExecutableNames.AgentDeploymentDirectoryName,
             WindowsExecutableNames.AgentExecutableFileName);
 
     private static string CreateCheckScript() =>

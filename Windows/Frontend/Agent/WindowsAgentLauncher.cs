@@ -15,7 +15,6 @@ public sealed class WindowsAgentLauncher : IWindowsAgentLauncher
         ArgumentException.ThrowIfNullOrWhiteSpace(executableDirectory);
         _agentExecutablePath = Path.Combine(
             Path.GetFullPath(executableDirectory),
-            WindowsExecutableNames.AgentDeploymentDirectoryName,
             WindowsExecutableNames.AgentExecutableFileName);
         _processLauncher = processLauncher ?? new WindowsAgentProcessLauncher();
     }

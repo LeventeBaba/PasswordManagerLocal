@@ -157,16 +157,16 @@ public sealed class Phase9ArchitectureGuardTests
 
 
     [TestMethod]
-    public void WindowsPublishEntryPointUsesTheActualUiProjectAndLayoutVerifier()
+    public void WindowsPublishEntryPointDelegatesToTheAuthoritativeProductPackager()
     {
         var root = GetRepositoryRoot();
-        var source = File.ReadAllText(Path.Combine(root, "Tools", "PublishWindowsX64.ps1"));
+        var wrapper = File.ReadAllText(Path.Combine(root, "Tools", "PublishWindowsX64.ps1"));
+        var packager = File.ReadAllText(Path.Combine(root, "Tools", "Windows", "PublishWindowsProduct.ps1"));
 
-        StringAssert.Contains(
-            source,
-            @"Windows\Frontend\PasswordManagerLocal.Windows.Frontend.csproj");
-        StringAssert.Contains(source, @"Tools\Windows\VerifyWindowsPublishedLayout.ps1");
-        Assert.IsFalse(source.Contains("$publishScript", StringComparison.Ordinal));
+        StringAssert.Contains(wrapper, @"Windows\PublishWindowsProduct.ps1");
+        StringAssert.Contains(packager, @"Windows\Frontend\PasswordManagerLocal.Windows.Frontend.csproj");
+        StringAssert.Contains(packager, @"Windows\Agent\PasswordManagerLocal.Windows.Agent.csproj");
+        StringAssert.Contains(packager, @"Tools\Windows\VerifyWindowsPublishedLayout.ps1");
     }
 
     [TestMethod]
@@ -186,6 +186,36 @@ public sealed class Phase9ArchitectureGuardTests
 
         Assert.IsFalse(string.IsNullOrWhiteSpace(repositoryRoot.Value));
         StringAssert.Contains(optimizer.Attribute("Command")!.Value, "$(RepositoryRoot)");
+        StringAssert.Contains(optimizer.Attribute("Command")!.Value, "$(WindowsPublishOptimizationPath)");
+        Assert.IsFalse(optimizer.Attribute("Command")!.Value.Contains(
+            "-OutputPath \"$(PublishDir)\"",
+            StringComparison.Ordinal));
+        StringAssert.Contains(
+            project.Descendants("WindowsPublishOptimizationPath").Single().Value,
+            "TrimEndingDirectorySeparator");
+    }
+
+    [TestMethod]
+    public void WindowsAgentPublishOptimizerAlsoNormalizesItsOutputPath()
+    {
+        var project = XDocument.Load(Path.Combine(
+            GetRepositoryRoot(),
+            "Windows",
+            "Agent",
+            "PasswordManagerLocal.Windows.Agent.csproj"));
+        var optimizer = project.Descendants("Exec").Single(element =>
+            (element.Attribute("Command")?.Value ?? string.Empty).Contains(
+                "OptimizeWindowsPublish.ps1",
+                StringComparison.Ordinal));
+
+        StringAssert.Contains(optimizer.Attribute("Command")!.Value, "$(WindowsPublishOptimizationPath)");
+        StringAssert.Contains(optimizer.Attribute("Command")!.Value, "-RemoveUnusedXmlSerializerAssembly");
+        Assert.IsFalse(optimizer.Attribute("Command")!.Value.Contains(
+            "-OutputPath \"$(PublishDir)\"",
+            StringComparison.Ordinal));
+        StringAssert.Contains(
+            project.Descendants("WindowsPublishOptimizationPath").Single().Value,
+            "TrimEndingDirectorySeparator");
     }
 
     [TestMethod]
@@ -228,7 +258,7 @@ public sealed class Phase9ArchitectureGuardTests
         var root = GetRepositoryRoot();
         var sources = new[]
         {
-            File.ReadAllText(Path.Combine(root, "publish.ps1")),
+            File.ReadAllText(Path.Combine(root, "Tools", "Publish.ps1")),
             File.ReadAllText(Path.Combine(root, "Tools", "OptimizeWindowsPublish.ps1")),
             File.ReadAllText(Path.Combine(root, "Tools", "Windows", "VerifyWindowsPublishedLayout.ps1"))
         };
@@ -257,28 +287,34 @@ public sealed class Phase9ArchitectureGuardTests
     }
 
     [TestMethod]
-    public void WindowsPublishToolingAvoidsRuntimeSpecificTrailingSeparatorApi()
+    public void WindowsPublishVerifierRemainsCompatibleWithWindowsPowerShell()
     {
         var root = GetRepositoryRoot();
         var verifier = File.ReadAllText(Path.Combine(
-            root,
-            "Tools",
-            "Windows",
-            "VerifyWindowsPublishedLayout.ps1"));
-        var frontendProject = File.ReadAllText(Path.Combine(
-            root,
-            "Windows",
-            "Frontend",
-            "PasswordManagerLocal.Windows.Frontend.csproj"));
+            root, "Tools", "Windows", "VerifyWindowsPublishedLayout.ps1"));
 
-        Assert.IsFalse(verifier.Contains(
-            "TrimEndingDirectorySeparator",
-            StringComparison.Ordinal));
-        Assert.IsFalse(frontendProject.Contains(
-            "TrimEndingDirectorySeparator",
-            StringComparison.Ordinal));
-        StringAssert.Contains(verifier, "Get-NormalizedFullPath");
-        StringAssert.Contains(verifier, "GetPathRoot");
+        StringAssert.Contains(verifier, ".IndexOf('\\staging\\', [StringComparison]::OrdinalIgnoreCase) -ge 0");
+        StringAssert.Contains(verifier, ".IndexOf('\\reports\\', [StringComparison]::OrdinalIgnoreCase) -ge 0");
+        Assert.IsFalse(verifier.Contains(".Contains('\\staging\\', [StringComparison]", StringComparison.Ordinal));
+        Assert.IsFalse(verifier.Contains(".Contains('\\reports\\', [StringComparison]", StringComparison.Ordinal));
+        StringAssert.Contains(verifier, "[System.IO.Path]::Combine($publish, 'PasswordManagerLocal.runtimeconfig.json')");
+        StringAssert.Contains(verifier, "[System.IO.Path]::Combine($publish, 'PasswordManagerLocal.Windows.Agent.runtimeconfig.json')");
+        Assert.IsFalse(verifier.Contains("Join-Path $publish 'PasswordManagerLocal.runtimeconfig.json',", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void WindowsPublishToolingNormalizesAbsolutePathsWithoutCurrentDirectoryAssumptions()
+    {
+        var root = GetRepositoryRoot();
+        var verifier = File.ReadAllText(Path.Combine(
+            root, "Tools", "Windows", "VerifyWindowsPublishedLayout.ps1"));
+        var packager = File.ReadAllText(Path.Combine(
+            root, "Tools", "Windows", "PublishWindowsProduct.ps1"));
+
+        StringAssert.Contains(verifier, "[System.IO.Path]::GetFullPath($PublishDirectory)");
+        StringAssert.Contains(packager, "[System.IO.Path]::GetFullPath($OutputRoot)");
+        Assert.IsFalse(packager.Contains("Set-Location", StringComparison.Ordinal));
+        Assert.IsFalse(packager.Contains("Get-Location", StringComparison.Ordinal));
     }
 
     [TestMethod]
