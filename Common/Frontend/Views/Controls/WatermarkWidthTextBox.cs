@@ -30,7 +30,7 @@ public sealed class WatermarkWidthTextBox : TextBox
     {
         base.OnPropertyChanged(change);
 
-        if (change.Property == WatermarkProperty
+        if (change.Property == PlaceholderTextProperty
             || change.Property == FontFamilyProperty
             || change.Property == FontSizeProperty
             || change.Property == FontStyleProperty
@@ -44,13 +44,13 @@ public sealed class WatermarkWidthTextBox : TextBox
 
     private double MeasureWatermarkDesiredWidth()
     {
-        if (string.IsNullOrWhiteSpace(Watermark))
+        if (string.IsNullOrWhiteSpace(PlaceholderText))
         {
             return 0;
         }
 
         var formattedText = new FormattedText(
-            Watermark,
+            PlaceholderText,
             CultureInfo.CurrentUICulture,
             FlowDirection,
             new Typeface(FontFamily, FontStyle, FontWeight, FontStretch),

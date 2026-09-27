@@ -7,6 +7,7 @@ public sealed class OperationMessageState : ReactiveObject, IDisposable
 {
     public static readonly TimeSpan DefaultSuccessDuration = TimeSpan.FromSeconds(10);
 
+    private bool _disposed;
     private string? _message;
     private OperationMessageKind _kind;
     private IDisposable? _autoDismissTimer;
@@ -40,10 +41,16 @@ public sealed class OperationMessageState : ReactiveObject, IDisposable
         Update(null, OperationMessageKind.None);
     }
 
-    public void Dispose() => Clear();
+    public void Dispose()
+    {
+        _disposed = true;
+        Clear();
+    }
 
     private void Show(string message, OperationMessageKind kind, TimeSpan? duration)
     {
+        if (_disposed)
+            return;
         CancelAutoDismiss();
 
         if (string.IsNullOrWhiteSpace(message))

@@ -1,7 +1,7 @@
 using PasswordManagerLocal.Common.Frontend.Localization;
 using PasswordManagerLocal.Common.Frontend.Services;
 using ReactiveUI;
-using System.Reactive;
+using ReactiveUI.Primitives;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels;
 
@@ -28,9 +28,9 @@ public sealed class SettingsViewModel : ViewModelBase
             ?? throw new ArgumentNullException(nameof(deviceAppPreferences));
         ArgumentNullException.ThrowIfNull(navigateBack);
 
-        NavigateBackCommand = ReactiveCommand.Create(navigateBack);
-        ToggleAppearanceSectionCommand = ReactiveCommand.Create(ToggleAppearanceSection);
-        ToggleBackgroundSectionCommand = ReactiveCommand.Create(ToggleBackgroundSection);
+        NavigateBackCommand = Own(ReactiveCommand.Create(navigateBack));
+        ToggleAppearanceSectionCommand = Own(ReactiveCommand.Create(ToggleAppearanceSection));
+        ToggleBackgroundSectionCommand = Own(ReactiveCommand.Create(ToggleBackgroundSection));
         LanguageOptions =
         [
             new SettingsLanguageOptionViewModel(AppLanguage.English, GetTranslation("Language_English")),
@@ -45,9 +45,9 @@ public sealed class SettingsViewModel : ViewModelBase
         ApplyBackgroundState(_deviceAppPreferences.BackgroundSyncState);
     }
 
-    public ReactiveCommand<Unit, Unit> NavigateBackCommand { get; }
-    public ReactiveCommand<Unit, Unit> ToggleAppearanceSectionCommand { get; }
-    public ReactiveCommand<Unit, Unit> ToggleBackgroundSectionCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> NavigateBackCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ToggleAppearanceSectionCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ToggleBackgroundSectionCommand { get; }
 
     public bool IsAppearanceSectionExpanded
     {
@@ -324,4 +324,10 @@ public sealed class SettingsViewModel : ViewModelBase
         object? sender,
         DeviceAppPreferencesChangedEventArgs args) =>
         ApplyBackgroundState(args.State);
+    protected override void DisposeManaged()
+    {
+        _deviceAppPreferences.PreferencesChanged -= HandleDeviceAppPreferencesChanged;
+        base.DisposeManaged();
+    }
+
 }

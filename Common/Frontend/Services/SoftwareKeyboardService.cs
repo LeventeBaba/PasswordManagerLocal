@@ -1,13 +1,13 @@
 namespace PasswordManagerLocal.Common.Frontend.Services;
 
-public static class SoftwareKeyboardService
+public sealed class SoftwareKeyboardService
 {
-    private static Action? _hidePlatformKeyboard;
+    private Action? _hidePlatformKeyboard;
 
-    public static void SetPlatformHideAction(Action? hidePlatformKeyboard) =>
+    public void SetPlatformHideAction(Action? hidePlatformKeyboard) =>
         _hidePlatformKeyboard = hidePlatformKeyboard;
 
-    public static void Hide()
+    public void Hide()
     {
         try
         {

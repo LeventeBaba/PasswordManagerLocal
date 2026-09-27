@@ -1,29 +1,29 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 
 namespace PasswordManagerLocal.Common.Frontend.Services;
 
-public static class QrImagePickerService
+public sealed class QrImagePickerService
 {
-    private static WeakReference<TopLevel>? _activeTopLevel;
+    private WeakReference<TopLevel>? _activeTopLevel;
+    private readonly CancellationToken _lifetime;
 
-    public static void SetActiveTopLevel(TopLevel? topLevel)
+    public QrImagePickerService(CancellationToken lifetime = default) => _lifetime = lifetime;
+
+    public void SetActiveTopLevel(TopLevel? topLevel)
     {
-        if (topLevel is null)
-        {
-            return;
-        }
-
-        _activeTopLevel = new WeakReference<TopLevel>(topLevel);
+        _activeTopLevel = topLevel is null ? null : new WeakReference<TopLevel>(topLevel);
     }
 
 
 
-    public static async Task<byte[]?> PickImageBytesAsync(string title, CancellationToken cancellationToken = default)
+    public async Task<byte[]?> PickImageBytesAsync(string title, CancellationToken cancellationToken = default)
     {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime);
+        cancellationToken = linked.Token;
+        cancellationToken.ThrowIfCancellationRequested();
         if (Dispatcher.UIThread.CheckAccess())
         {
             return await PickImageBytesOnUiThreadAsync(title, cancellationToken);
@@ -48,8 +48,9 @@ public static class QrImagePickerService
 
 
 
-    private static async Task<byte[]?> PickImageBytesOnUiThreadAsync(string title, CancellationToken cancellationToken)
+    private async Task<byte[]?> PickImageBytesOnUiThreadAsync(string title, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var topLevel = GetTopLevel();
         var storageProvider = topLevel?.StorageProvider;
 
@@ -65,36 +66,34 @@ public static class QrImagePickerService
             FileTypeFilter = [FilePickerFileTypes.ImageAll]
         });
 
-        var file = files.FirstOrDefault();
-        if (file is null)
+        try
         {
-            return null;
-        }
+            cancellationToken.ThrowIfCancellationRequested();
+            var file = files.FirstOrDefault();
+            if (file is null)
+            {
+                return null;
+            }
 
-        await using var input = await file.OpenReadAsync();
-        using var output = new MemoryStream();
-        await input.CopyToAsync(output, cancellationToken);
-        return output.ToArray();
+            await using var input = await file.OpenReadAsync();
+            using var output = new MemoryStream();
+            await input.CopyToAsync(output, cancellationToken);
+            return output.ToArray();
+        }
+        finally
+        {
+            foreach (var file in files)
+                file.Dispose();
+        }
     }
 
 
 
-    private static TopLevel? GetTopLevel()
+    private TopLevel? GetTopLevel()
     {
         if (_activeTopLevel?.TryGetTarget(out var activeTopLevel) == true)
         {
             return activeTopLevel;
-        }
-
-        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-        {
-            return desktop.MainWindow;
-        }
-
-        if (Application.Current?.ApplicationLifetime is ISingleViewApplicationLifetime singleView
-            && singleView.MainView is { } mainView)
-        {
-            return TopLevel.GetTopLevel(mainView);
         }
 
         return null;

@@ -19,7 +19,7 @@
             <Button Classes="ghost iconButton"
                     IsVisible="{Binding IsBackButtonVisible}"
                     Command="{Binding NavigateBackCommand}"
-                    
+
                     ToolTip.Tip="{Binding BackLabel}" >
               <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
             </Button>
@@ -38,14 +38,14 @@
             <StackPanel Spacing="6">
               <TextBlock Text="{Binding UsernameLabel}" />
               <TextBox Text="{Binding Username}"
-                       Watermark="{Binding UsernamePlaceholder}"
+                       PlaceholderText="{Binding UsernamePlaceholder}"
                        TextInputOptions.AutoCapitalization="False"
                        TextInputOptions.ShowSuggestions="False" />
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="6">
               <TextBlock Text="{Binding EmailLabel}" />
               <TextBox Text="{Binding Email}"
-                       Watermark="{Binding EmailPlaceholder}"
+                       PlaceholderText="{Binding EmailPlaceholder}"
                        TextInputOptions.ContentType="Email"
                        TextInputOptions.AutoCapitalization="False"
                        TextInputOptions.ShowSuggestions="False" />
@@ -56,14 +56,14 @@
             <StackPanel Spacing="6">
               <TextBlock Text="{Binding FirstNameLabel}" />
               <TextBox Text="{Binding FirstName}"
-                       Watermark="{Binding FirstNamePlaceholder}"
+                       PlaceholderText="{Binding FirstNamePlaceholder}"
                        TextInputOptions.ContentType="Name"
                        TextInputOptions.AutoCapitalization="True" />
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="6">
               <TextBlock Text="{Binding LastNameLabel}" />
               <TextBox Text="{Binding LastName}"
-                       Watermark="{Binding LastNamePlaceholder}"
+                       PlaceholderText="{Binding LastNamePlaceholder}"
                        TextInputOptions.ContentType="Name"
                        TextInputOptions.AutoCapitalization="True" />
             </StackPanel>
@@ -82,7 +82,7 @@
               <TextBox Grid.Column="0"
                        Text="{Binding Password}"
                        PasswordChar="{Binding PasswordMaskCharacter}"
-                       Watermark="{Binding PasswordPlaceholder}"
+                       PlaceholderText="{Binding PasswordPlaceholder}"
                        TextInputOptions.ContentType="Password"
                        TextInputOptions.IsSensitive="True"
                        TextInputOptions.AutoCapitalization="False"
@@ -105,7 +105,7 @@
               <TextBox Grid.Column="0"
                        Text="{Binding ConfirmPassword}"
                        PasswordChar="{Binding ConfirmPasswordMaskCharacter}"
-                       Watermark="{Binding ConfirmPasswordPlaceholder}"
+                       PlaceholderText="{Binding ConfirmPasswordPlaceholder}"
                        TextInputOptions.ContentType="Password"
                        TextInputOptions.IsSensitive="True"
                        TextInputOptions.AutoCapitalization="False"

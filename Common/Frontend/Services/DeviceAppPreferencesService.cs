@@ -3,10 +3,12 @@ namespace PasswordManagerLocal.Common.Frontend.Services;
 public sealed class DeviceAppPreferencesService
 {
     private readonly IBackgroundSyncSettingsClient _backgroundSyncClient;
+    private readonly CancellationToken _lifetime;
     private BackgroundSyncClientState _backgroundSyncState;
 
-    public DeviceAppPreferencesService(IBackgroundSyncSettingsClient backgroundSyncClient)
+    public DeviceAppPreferencesService(IBackgroundSyncSettingsClient backgroundSyncClient, CancellationToken lifetime = default)
     {
+        _lifetime = lifetime;
         _backgroundSyncClient = backgroundSyncClient
             ?? throw new ArgumentNullException(nameof(backgroundSyncClient));
         _backgroundSyncState = CreateUnavailableState();
@@ -19,6 +21,9 @@ public sealed class DeviceAppPreferencesService
     public async Task<BackgroundSyncClientState> RefreshBackgroundSyncAsync(
         CancellationToken cancellationToken = default)
     {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime);
+        cancellationToken = linked.Token;
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             Apply(await _backgroundSyncClient.GetStateAsync(cancellationToken), false);
@@ -39,6 +44,9 @@ public sealed class DeviceAppPreferencesService
         bool isEnabled,
         CancellationToken cancellationToken = default)
     {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime);
+        cancellationToken = linked.Token;
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             var result = await _backgroundSyncClient.SetEnabledAsync(isEnabled, cancellationToken);
@@ -67,6 +75,8 @@ public sealed class DeviceAppPreferencesService
 
     private void Apply(BackgroundSyncClientState state, bool wasOutcomeUncertain)
     {
+        if (_lifetime.IsCancellationRequested)
+            return;
         _backgroundSyncState = state ?? throw new ArgumentNullException(nameof(state));
         PreferencesChanged?.Invoke(
             this,

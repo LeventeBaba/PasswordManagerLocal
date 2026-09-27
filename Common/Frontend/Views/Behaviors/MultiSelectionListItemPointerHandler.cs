@@ -203,7 +203,7 @@ internal sealed class MultiSelectionListItemPointerHandler<TItem>
             RoutingStrategies.Tunnel,
             handledEventsToo: true);
         topLevel.AddHandler(
-            Gestures.ScrollGestureEvent,
+            InputElement.ScrollGestureEvent,
             HandleTopLevelScrollGesture,
             RoutingStrategies.Bubble,
             handledEventsToo: true);
@@ -217,7 +217,7 @@ internal sealed class MultiSelectionListItemPointerHandler<TItem>
         }
 
         _inputTopLevel.RemoveHandler(InputElement.PointerMovedEvent, HandleTopLevelPointerMoved);
-        _inputTopLevel.RemoveHandler(Gestures.ScrollGestureEvent, HandleTopLevelScrollGesture);
+        _inputTopLevel.RemoveHandler(InputElement.ScrollGestureEvent, HandleTopLevelScrollGesture);
         _inputTopLevel = null;
     }
 

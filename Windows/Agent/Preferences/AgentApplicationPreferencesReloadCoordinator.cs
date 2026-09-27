@@ -15,6 +15,7 @@ public sealed class AgentApplicationPreferencesReloadCoordinator : IAgentApplica
     private ApplicationPreferencesFileStamp _loadedStamp;
     private long _requestedGeneration;
     private Task<bool>? _workerTask;
+    private Task? _stampCheckTask;
     private bool _shellTextDirty;
     private int _disposed;
 
@@ -58,6 +59,12 @@ public sealed class AgentApplicationPreferencesReloadCoordinator : IAgentApplica
 
     private async Task CompleteDisposalAsync()
     {
+        Task? stampCheck;
+        lock (_gate)
+            stampCheck = _stampCheckTask;
+        if (stampCheck is not null)
+            await stampCheck.ConfigureAwait(false);
+
         Task<bool>? worker;
         lock (_gate)
             worker = _workerTask;
@@ -72,16 +79,25 @@ public sealed class AgentApplicationPreferencesReloadCoordinator : IAgentApplica
 
     private void HandleContextMenuOpening(object? sender, EventArgs args)
     {
-        if (Volatile.Read(ref _disposed) != 0)
-            return;
+        lock (_gate)
+        {
+            if (Volatile.Read(ref _disposed) != 0 || _stampCheckTask is { IsCompleted: false })
+                return;
+            _stampCheckTask = Task.Run(CheckPreferenceStampAsync);
+        }
+    }
 
+    private async Task CheckPreferenceStampAsync()
+    {
         try
         {
+            if (Volatile.Read(ref _disposed) != 0)
+                return;
             ApplicationPreferencesFileStamp loadedStamp;
             lock (_gate)
                 loadedStamp = _loadedStamp;
             if (_stampProvider.GetStamp() != loadedStamp)
-                _ = ObserveReloadAsync();
+                await ObserveReloadAsync().ConfigureAwait(false);
         }
         catch (Exception exception)
         {

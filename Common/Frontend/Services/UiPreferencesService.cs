@@ -14,13 +14,18 @@ public sealed class UiPreferencesService
 
     public UiPreferencesService(
         IApplicationPreferencesStore store,
-        IApplicationPreferencesChangeNotifier? changeNotifier = null)
+        IApplicationPreferencesChangeNotifier? changeNotifier = null,
+        FrontendPlatformServices? platformServices = null,
+        ApplicationPreferences? initialPreferences = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _changeNotifier = changeNotifier;
-        _current = _store.ReadAsync().GetAwaiter().GetResult();
+        PlatformServices = platformServices ?? new FrontendPlatformServices();
+        _current = initialPreferences ?? _store.ReadAsync().GetAwaiter().GetResult();
         ApplyTheme(_current.Theme);
     }
+
+    public FrontendPlatformServices PlatformServices { get; }
 
     public event EventHandler<UiPreferencesChangedEventArgs>? PreferencesChanged;
 

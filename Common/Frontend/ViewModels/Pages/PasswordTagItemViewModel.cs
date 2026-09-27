@@ -1,11 +1,11 @@
 using Avalonia.Media;
 using PasswordManagerLocal.Common.Contracts.Responses;
 using ReactiveUI;
-using System.Reactive;
+using ReactiveUI.Primitives;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
 
-public sealed class PasswordTagItemViewModel : ReactiveObject
+public sealed class PasswordTagItemViewModel : DisposableReactiveObject
 {
     private string _removeLabel;
 
@@ -21,8 +21,8 @@ public sealed class PasswordTagItemViewModel : ReactiveObject
         ColorBrush = PasswordColorUtility.ParseBrush(tag.Color);
         _removeLabel = removeLabel;
 
-        SelectCommand = ReactiveCommand.Create(() => select(this));
-        RemoveCommand = ReactiveCommand.Create(() => remove(this));
+        SelectCommand = Own(ReactiveCommand.Create(() => select(this)));
+        RemoveCommand = Own(ReactiveCommand.Create(() => remove(this)));
     }
 
     public Guid Id { get; }
@@ -39,9 +39,9 @@ public sealed class PasswordTagItemViewModel : ReactiveObject
         private set => this.RaiseAndSetIfChanged(ref _removeLabel, value);
     }
 
-    public ReactiveCommand<Unit, Unit> SelectCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> SelectCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> RemoveCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> RemoveCommand { get; }
 
     public void ApplyRemoveLabel(string removeLabel) => RemoveLabel = removeLabel;
 

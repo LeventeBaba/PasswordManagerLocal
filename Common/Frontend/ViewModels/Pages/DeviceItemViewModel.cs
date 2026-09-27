@@ -5,11 +5,11 @@ using PasswordManagerLocal.Common.Contracts.Security;
 using PasswordManagerLocal.Common.Contracts.Responses;
 using PasswordManagerLocal.Common.Frontend.Services;
 using ReactiveUI;
-using System.Reactive;
+using ReactiveUI.Primitives;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
 
-public sealed class DeviceItemViewModel : ReactiveObject
+public sealed class DeviceItemViewModel : DisposableReactiveObject
 {
     private static readonly IBrush OnlineStatusBrush = new SolidColorBrush(Color.Parse("#FF2E7D32"));
     private static readonly IBrush BlockedStatusBrush = new SolidColorBrush(Color.Parse("#FFD13438"));
@@ -78,11 +78,11 @@ public sealed class DeviceItemViewModel : ReactiveObject
         _toggleSyncAsync = toggleSyncAsync;
         _unblockAsync = unblockAsync;
         _beginDisconnect = beginDisconnect;
-        ViewCommand = ReactiveCommand.CreateFromTask(() => _viewAsync(this));
-        SaveNameCommand = ReactiveCommand.CreateFromTask(() => _saveNameAsync(this));
-        ToggleSyncCommand = ReactiveCommand.CreateFromTask(() => _toggleSyncAsync(this));
-        UnblockCommand = ReactiveCommand.CreateFromTask(() => _unblockAsync(this));
-        BeginDisconnectCommand = ReactiveCommand.Create(() => _beginDisconnect(this));
+        ViewCommand = Own(ReactiveCommand.CreateFromTask(() => _viewAsync(this)));
+        SaveNameCommand = Own(ReactiveCommand.CreateFromTask(() => _saveNameAsync(this)));
+        ToggleSyncCommand = Own(ReactiveCommand.CreateFromTask(() => _toggleSyncAsync(this)));
+        UnblockCommand = Own(ReactiveCommand.CreateFromTask(() => _unblockAsync(this)));
+        BeginDisconnectCommand = Own(ReactiveCommand.Create(() => _beginDisconnect(this)));
     }
 
     public Guid DeviceId { get; }
@@ -234,15 +234,15 @@ public sealed class DeviceItemViewModel : ReactiveObject
 
     public string BlockedAtText => FrontendDateTimeUtil.ToLocalFromBackendUtc(BlockedAt)?.ToString("g") ?? string.Empty;
 
-    public ReactiveCommand<Unit, Unit> ViewCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ViewCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> SaveNameCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> SaveNameCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ToggleSyncCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ToggleSyncCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> UnblockCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> UnblockCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> BeginDisconnectCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> BeginDisconnectCommand { get; }
 
     public void ApplySyncState(bool isSyncOn) =>
         IsSyncOn = isSyncOn;

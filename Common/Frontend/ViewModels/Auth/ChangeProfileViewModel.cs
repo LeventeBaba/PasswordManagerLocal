@@ -5,7 +5,7 @@ using PasswordManagerLocal.Common.Contracts.Responses;
 using ReactiveUI;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Reactive;
+using ReactiveUI.Primitives;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels.Auth;
 
@@ -35,9 +35,9 @@ public sealed class ChangeProfileViewModel : ViewModelBase
         _navigateToLoginAnotherProfile = navigateToLoginAnotherProfile;
         _selectProfileAsync = selectProfileAsync;
 
-        BackCommand = ReactiveCommand.CreateFromTask(_navigateBackAsync);
-        RefreshCommand = ReactiveCommand.CreateFromTask(LoadAsync);
-        LoginAnotherProfileCommand = ReactiveCommand.Create(_navigateToLoginAnotherProfile);
+        BackCommand = Own(ReactiveCommand.CreateFromTask(_navigateBackAsync));
+        RefreshCommand = Own(ReactiveCommand.CreateFromTask(LoadAsync));
+        LoginAnotherProfileCommand = Own(ReactiveCommand.Create(_navigateToLoginAnotherProfile));
     }
 
     public ObservableCollection<ProfileSessionItemViewModel> Profiles { get; } = new();
@@ -69,11 +69,11 @@ public sealed class ChangeProfileViewModel : ViewModelBase
 
     public bool IsProfilesEmpty => Profiles.Count == 0;
 
-    public ReactiveCommand<Unit, Unit> BackCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> BackCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> RefreshCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> LoginAnotherProfileCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> LoginAnotherProfileCommand { get; }
 
     public string Title => IsStartupSelection
         ? GetTranslation("Profiles_Startup_Title")
@@ -153,6 +153,8 @@ public sealed class ChangeProfileViewModel : ViewModelBase
     {
         ClearStatusMessage();
         IsBusy = true;
+        foreach (var item in Profiles)
+            item.Dispose();
         Profiles.Clear();
         RaiseProfilesChanged();
     }
@@ -284,4 +286,12 @@ public sealed class ChangeProfileViewModel : ViewModelBase
 
         return profile.Email;
     }
+    protected override void DisposeManaged()
+    {
+        foreach (var profile in Profiles)
+            profile.Dispose();
+        Profiles.Clear();
+        base.DisposeManaged();
+    }
+
 }

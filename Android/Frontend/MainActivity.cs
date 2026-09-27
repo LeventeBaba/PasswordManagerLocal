@@ -1,15 +1,9 @@
-using PasswordManagerLocal.Common.Contracts.Runtime;
-using PasswordManagerLocal.Common.Contracts.BackgroundSync;
-using PasswordManagerLocal.Common.Contracts.Endpoints;
 using System.Diagnostics;
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
 using Android.Views.InputMethods;
-using Avalonia;
 using Avalonia.Android;
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.ReactiveUI;
 using PasswordManagerLocal.Common.Frontend;
 using PasswordManagerLocal.Common.Frontend.Services;
 using PasswordManagerLocal.Common.Frontend.ViewModels;
@@ -34,140 +28,115 @@ public class MainActivity : AvaloniaMainActivity
     private bool _isHandlingBackRequest;
     private long _lastAcceptedBackRequestTimestamp;
     private AlertDialog? _backConfirmationDialog;
-    private AndroidActivityServiceAttachmentHandle? _serviceAttachment;
-    private IFrontendBackendClient<IEndpoints>? _backendClient;
-
-
-    protected override AppBuilder CreateAppBuilder()
-    {
-        var application = Application as PasswordManagerLocalApplication
-            ?? throw new InvalidOperationException("The process-level application composition root is unavailable.");
-        _serviceAttachment ??= new AndroidActivityServiceAttachmentHandle(
-            application.RuntimeServiceConnector,
-            this);
-        _backendClient = _serviceAttachment.BackendClient;
-        var frontendContext = new FrontendApplicationContext(
-            _backendClient,
-            _serviceAttachment.BackgroundSyncSettingsClient,
-            application.ApplicationDataDirectory);
-
-        return AppBuilder.Configure(() => new App(frontendContext))
-            .UseAndroid();
-    }
-
-
-    protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
-    {
-        global::PasswordManagerLocal.Common.Frontend.Services.ClipboardService.SetPlatformClipboardWriter(new AndroidClipboardWriter(this));
-        SoftwareKeyboardService.SetPlatformHideAction(HideSoftwareKeyboard);
-        EnrollmentQrCodeCameraScannerService.SetPlatformScanner(new AndroidQrCodeCameraScanner(this));
-
-        return base.CustomizeAppBuilder(builder)
-            .WithInterFont()
-            .UseReactiveUI();
-    }
-
+    private FrontendUiSession? _uiSession;
+    private bool _destroyed;
 
     protected override void OnCreate(global::Android.OS.Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
-        BackRequested += HandleBackRequested;
+        var application = Application as PasswordManagerLocalApplication
+            ?? throw new InvalidOperationException("The Android process application is unavailable.");
+        // Avalonia calls MainViewFactory inside base.OnCreate. Adopt only this Activity's
+        // fresh Content; never retrieve another Activity's view from ApplicationLifetime.
+        var view = Content as MainView
+            ?? throw new InvalidOperationException("The Android main-view factory did not create a MainView.");
+        var platforms = new FrontendPlatformServices();
+        platforms.Clipboard.SetPlatformClipboardWriter(new AndroidClipboardWriter(this));
+        platforms.Keyboard.SetPlatformHideAction(HideSoftwareKeyboard);
+        platforms.CameraScanner.SetPlatformScanner(new AndroidQrCodeCameraScanner(this));
+        var attachment = new AndroidActivityServiceAttachmentHandle(application.RuntimeServiceConnector, this);
+        try
+        {
+            var context = new FrontendApplicationContext(
+                attachment.BackendClient,
+                attachment.BackgroundSyncSettingsClient,
+                application.ApplicationDataDirectory,
+                platformServices: platforms);
+            _uiSession = new FrontendUiSession(view, context, ownsBackendClient: true);
+            BackRequested += HandleBackRequested;
+            _ = InitializeSessionAsync(_uiSession);
+        }
+        catch
+        {
+            platforms.Dispose();
+            _ = DisposeFailedAttachmentAsync(attachment);
+            throw;
+        }
     }
-
 
     protected override void OnResume()
     {
         base.OnResume();
-
-        if (_backendClient is not null)
-            _ = ResumeBackendAsync(_backendClient);
+        if (_uiSession is { } session)
+            _ = ResumeSessionAsync(session);
     }
 
-
-    private static async Task ResumeBackendAsync(IBackendRuntimeClient backendClient)
+    private static async Task InitializeSessionAsync(FrontendUiSession session)
     {
-        if (backendClient.Snapshot.State == BackendRuntimeState.WaitingForDeviceUnlock)
+        try { await session.InitializeAsync(); }
+        catch (OperationCanceledException) when (session.IsDisposed) { }
+        catch (Exception exception)
         {
-            try
-            {
-                await backendClient.ConnectAsync();
-            }
-            catch
-            {
-            }
-        }
-
-        if (Avalonia.Application.Current?.ApplicationLifetime is ISingleViewApplicationLifetime singleView &&
-            singleView.MainView?.DataContext is MainViewModel viewModel &&
-            !viewModel.IsAuthenticated)
-        {
-            try
-            {
-                await viewModel.InitializeAsync();
-            }
-            catch
-            {
-            }
+            Trace.TraceError($"Android frontend initialization failed: {exception.GetType().Name}");
         }
     }
 
+    private static async Task ResumeSessionAsync(FrontendUiSession session)
+    {
+        try { await session.ResumeAsync(); }
+        catch (OperationCanceledException) when (session.IsDisposed) { }
+        catch (Exception exception)
+        {
+            Trace.TraceError($"Android frontend resume failed: {exception.GetType().Name}");
+        }
+    }
 
     protected override void OnPause()
     {
-        SensitiveDataVisibilityService.RequestHideVisibleSecrets();
+        _uiSession?.PlatformServices.SensitiveData.RequestHideVisibleSecrets();
         base.OnPause();
     }
 
 
     protected override void OnStop()
     {
-        SensitiveDataVisibilityService.RequestHideVisibleSecrets();
+        _uiSession?.PlatformServices.SensitiveData.RequestHideVisibleSecrets();
         base.OnStop();
     }
 
 
     protected override void OnDestroy()
     {
+        _destroyed = true;
         BackRequested -= HandleBackRequested;
         _backConfirmationDialog?.Dismiss();
         _backConfirmationDialog?.Dispose();
         _backConfirmationDialog = null;
         CompleteEnrollmentQrScan(null);
-        EnrollmentQrCodeCameraScannerService.SetPlatformScanner(null);
-        SoftwareKeyboardService.SetPlatformHideAction(null);
-
-        var backendClient = Interlocked.Exchange(ref _backendClient, null);
-        var serviceAttachment = Interlocked.Exchange(ref _serviceAttachment, null);
-
+        var session = Interlocked.Exchange(ref _uiSession, null);
         try
         {
-            base.OnDestroy();
+            if (session is not null)
+                _ = DisposeSessionAsync(session);
+            Content = null;
         }
-        finally
-        {
-            _ = Task.Run(() => DisposeActivityRuntimeAsync(backendClient, serviceAttachment));
-        }
+        finally { base.OnDestroy(); }
     }
 
-
-    private static async Task DisposeActivityRuntimeAsync(
-        IFrontendBackendClient<IEndpoints>? backendClient,
-        AndroidActivityServiceAttachmentHandle? serviceAttachment)
+    private static async Task DisposeSessionAsync(FrontendUiSession session)
     {
-        try
+        try { await session.DisposeAsync(); }
+        catch (Exception exception)
         {
-            if (backendClient is not null)
-                await backendClient.DisposeAsync();
-            else if (serviceAttachment is not null)
-                await serviceAttachment.DisposeAsync();
-        }
-        catch
-        {
-            // Activity destruction must remain non-blocking. The service host owns
-            // authoritative runtime cleanup and preserves any active background lease.
+            Trace.TraceError($"Android frontend cleanup failed: {exception.GetType().Name}");
         }
     }
 
+    private static async Task DisposeFailedAttachmentAsync(AndroidActivityServiceAttachmentHandle attachment)
+    {
+        try { await attachment.BackendClient.DisposeAsync(); }
+        catch { }
+    }
 
     private async void HandleBackRequested(object? sender, AndroidBackRequestedEventArgs e)
     {
@@ -198,19 +167,19 @@ public class MainActivity : AvaloniaMainActivity
             return;
         }
 
-        if (_isHandlingBackRequest
-            || Avalonia.Application.Current?.ApplicationLifetime is not ISingleViewApplicationLifetime singleView
-            || singleView.MainView is not MainView mainView)
+        if (_destroyed || _isHandlingBackRequest || _uiSession is not { IsDisposed: false } session)
         {
             return;
         }
 
+        var mainView = session.View;
         _isHandlingBackRequest = true;
 
         try
         {
             var wasHandled = await mainView.HandleBackRequestAsync();
-            if (!wasHandled && mainView.DataContext is MainViewModel viewModel)
+            if (!_destroyed && ReferenceEquals(_uiSession, session) && !wasHandled &&
+                mainView.DataContext is MainViewModel viewModel)
                 ShowRootBackConfirmation(viewModel);
         }
         finally
@@ -222,29 +191,36 @@ public class MainActivity : AvaloniaMainActivity
 
     private void ShowRootBackConfirmation(MainViewModel viewModel)
     {
-        if (_backConfirmationDialog?.IsShowing == true)
+        if (_destroyed || _uiSession?.ViewModel != viewModel || _backConfirmationDialog?.IsShowing == true)
             return;
 
         _backConfirmationDialog?.Dispose();
         _backConfirmationDialog = null;
 
         var shouldLogout = viewModel.IsAuthenticated;
-        var builder = new AlertDialog.Builder(this)
+        using var builder = new AlertDialog.Builder(this)
             .SetTitle(shouldLogout ? viewModel.LogoutConfirmationTitle : viewModel.ExitConfirmationTitle)
             .SetMessage(shouldLogout ? viewModel.LogoutConfirmationMessage : viewModel.ExitConfirmationMessage)
-            .SetNegativeButton(viewModel.NoLabel, (_, _) => _backConfirmationDialog = null)
+            .SetNegativeButton(viewModel.NoLabel, (_, _) => { })
             .SetPositiveButton(viewModel.YesLabel, async (_, _) =>
             {
-                _backConfirmationDialog = null;
-
+                if (_destroyed || _uiSession?.ViewModel != viewModel)
+                    return;
                 if (shouldLogout)
                     await viewModel.RequestLogoutAsync();
                 else
                     FinishAffinity();
             });
 
-        _backConfirmationDialog = builder.Create();
-        _backConfirmationDialog.Show();
+        var confirmation = builder.Create();
+        confirmation.DismissEvent += (_, _) =>
+        {
+            if (ReferenceEquals(_backConfirmationDialog, confirmation))
+                _backConfirmationDialog = null;
+            confirmation.Dispose();
+        };
+        _backConfirmationDialog = confirmation;
+        confirmation.Show();
     }
 
 
@@ -278,15 +254,21 @@ public class MainActivity : AvaloniaMainActivity
         string? description = null,
         CancellationToken cancellationToken = default)
     {
-        if (_enrollmentQrScanCompletion is not null)
+        if (_destroyed || cancellationToken.IsCancellationRequested || _enrollmentQrScanCompletion is not null)
             return Task.FromResult<string?>(null);
 
         try
         {
-            _enrollmentQrScanCompletion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-
+            var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _enrollmentQrScanCompletion = completion;
             if (cancellationToken.CanBeCanceled)
-                _enrollmentQrScanCancellationRegistration = cancellationToken.Register(() => CompleteEnrollmentQrScan(null));
+                _enrollmentQrScanCancellationRegistration = cancellationToken.Register(
+                    () => RunOnUiThread(() =>
+                    {
+                        if (ReferenceEquals(_enrollmentQrScanCompletion, completion))
+                            CompleteEnrollmentQrScan(null);
+                    }));
+            cancellationToken.ThrowIfCancellationRequested();
 
             var intent = new Intent(this, typeof(EnrollmentQrScannerActivity));
             if (!string.IsNullOrWhiteSpace(title))
@@ -296,7 +278,7 @@ public class MainActivity : AvaloniaMainActivity
                 intent.PutExtra(EnrollmentQrScannerActivity.DescriptionExtra, description);
 
             StartActivityForResult(intent, EnrollmentQrScannerRequestCode);
-            return _enrollmentQrScanCompletion.Task;
+            return completion.Task;
         }
         catch
         {

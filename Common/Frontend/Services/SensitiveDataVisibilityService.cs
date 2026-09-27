@@ -1,10 +1,12 @@
 namespace PasswordManagerLocal.Common.Frontend.Services;
 
-public static class SensitiveDataVisibilityService
+public sealed class SensitiveDataVisibilityService
 {
-    public static event EventHandler? HideVisibleSecretsRequested;
+    public event EventHandler? HideVisibleSecretsRequested;
 
-    public static void RequestHideVisibleSecrets()
+    internal void ClearSubscribers() => HideVisibleSecretsRequested = null;
+
+    public void RequestHideVisibleSecrets()
     {
         HideVisibleSecretsRequested?.Invoke(null, EventArgs.Empty);
     }

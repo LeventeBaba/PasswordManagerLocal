@@ -1,19 +1,19 @@
 namespace PasswordManagerLocal.Common.Frontend.Services;
 
-public static class EnrollmentQrCodeCameraScannerService
+public sealed class EnrollmentQrCodeCameraScannerService
 {
-    private static IEnrollmentQrCodeCameraScanner? _platformScanner;
+    private IEnrollmentQrCodeCameraScanner? _platformScanner;
 
-    public static bool IsAvailable => _platformScanner?.IsAvailable == true;
+    public bool IsAvailable => _platformScanner?.IsAvailable == true;
 
 
 
-    public static void SetPlatformScanner(IEnrollmentQrCodeCameraScanner? platformScanner) =>
+    public void SetPlatformScanner(IEnrollmentQrCodeCameraScanner? platformScanner) =>
         _platformScanner = platformScanner;
 
 
 
-    public static Task<string?> ScanEnrollmentCodeAsync(
+    public Task<string?> ScanEnrollmentCodeAsync(
         string? title = null,
         string? description = null,
         CancellationToken cancellationToken = default) =>

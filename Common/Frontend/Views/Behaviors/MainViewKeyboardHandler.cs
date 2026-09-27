@@ -60,21 +60,21 @@ internal sealed class MainViewKeyboardHandler
             return;
 
         if (e.Key == Key.C)
-            await TextBoxClipboardHandler.CopySelectedTextAsync(textBox, e);
+            await TextBoxClipboardHandler.CopySelectedTextAsync(textBox, e, _view.PlatformServices?.Clipboard);
         else if (e.Key == Key.X)
-            await TextBoxClipboardHandler.CutSelectedTextAsync(textBox, e);
+            await TextBoxClipboardHandler.CutSelectedTextAsync(textBox, e, _view.PlatformServices?.Clipboard);
     }
 
     public async Task HandleCopyingToClipboardAsync(RoutedEventArgs e)
     {
         if (!e.Handled && e.Source is TextBox textBox)
-            await TextBoxClipboardHandler.CopySelectedTextAsync(textBox, e);
+            await TextBoxClipboardHandler.CopySelectedTextAsync(textBox, e, _view.PlatformServices?.Clipboard);
     }
 
     public async Task HandleCuttingToClipboardAsync(RoutedEventArgs e)
     {
         if (!e.Handled && e.Source is TextBox textBox)
-            await TextBoxClipboardHandler.CutSelectedTextAsync(textBox, e);
+            await TextBoxClipboardHandler.CutSelectedTextAsync(textBox, e, _view.PlatformServices?.Clipboard);
     }
 
     private async Task<bool> TryHandleRefreshShortcutAsync(KeyEventArgs e)

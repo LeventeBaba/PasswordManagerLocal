@@ -9,204 +9,178 @@ namespace PasswordManagerLocal.Common.Frontend.Services;
 public sealed class DeferredEndpoints : IEndpoints
 {
     private readonly IFrontendBackendClient<IEndpoints> _backendClient;
+    private readonly CancellationToken _lifetime;
 
-    public DeferredEndpoints(IFrontendBackendClient<IEndpoints> backendClient)
+    public DeferredEndpoints(IFrontendBackendClient<IEndpoints> backendClient, CancellationToken lifetime = default)
     {
+        _lifetime = lifetime;
         _backendClient = backendClient ?? throw new ArgumentNullException(nameof(backendClient));
     }
     public async Task<Guid> RegisterAsync(RegistrationRequest request, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        return await endpoints.RegisterAsync(FrontendDateTimeUtil.NormalizeRequestToUtc(request), ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.RegisterAsync(FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
     }
 
 
     public async Task<Guid> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        return await endpoints.LoginAsync(FrontendDateTimeUtil.NormalizeRequestToUtc(request), ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.LoginAsync(FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
     }
 
 
     public async Task<Guid> RenewAuthSessionAsync(Guid token, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        return await endpoints.RenewAuthSessionAsync(token, ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.RenewAuthSessionAsync(token, operationToken), ct);
     }
 
 
     public async Task LogoutAsync(Guid token, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.LogoutAsync(token, ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.LogoutAsync(token, operationToken), ct);
     }
 
 
     public async Task<AuthSessionStatusResponse> GetAuthSessionStatusAsync(Guid token, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        return await endpoints.GetAuthSessionStatusAsync(token, ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.GetAuthSessionStatusAsync(token, operationToken), ct);
     }
 
 
     public async Task ChangeMasterPasswordAsync(MasterPasswordChangeRequest request, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.ChangeMasterPasswordAsync(FrontendDateTimeUtil.NormalizeRequestToUtc(request), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.ChangeMasterPasswordAsync(FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
     }
 
 
     public async Task<UserProfileInfoResponse> GetUserProfileInfoAsync(Guid token, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        return await endpoints.GetUserProfileInfoAsync(token, ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.GetUserProfileInfoAsync(token, operationToken), ct);
     }
 
 
     public async Task DeleteUserAccountAsync(Guid token, byte[] password, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.DeleteUserAccountAsync(token, password, ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.DeleteUserAccountAsync(token, password, operationToken), ct);
     }
 
 
     public async Task ChangeUsernameAsync(Guid token, string newUsername, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.ChangeUsernameAsync(token, newUsername, ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.ChangeUsernameAsync(token, newUsername, operationToken), ct);
     }
 
 
     public async Task UpdateUserProfileInfoAsync(UpdateUserProfileRequest request, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.UpdateUserProfileInfoAsync(FrontendDateTimeUtil.NormalizeRequestToUtc(request), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.UpdateUserProfileInfoAsync(FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
     }
 
 
     public async Task<LocalDeviceInfoResponse> GetLocalDeviceInfoAsync(CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        return await endpoints.GetLocalDeviceInfoAsync(ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.GetLocalDeviceInfoAsync(operationToken), ct);
     }
 
 
     public async Task<bool> GetLocalUserSyncOnAsync(Guid token, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        return await endpoints.GetLocalUserSyncOnAsync(token, ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.GetLocalUserSyncOnAsync(token, operationToken), ct);
     }
 
 
     public async Task SetLocalUserSyncOnAsync(Guid token, bool isSyncOn, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.SetLocalUserSyncOnAsync(token, isSyncOn, ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.SetLocalUserSyncOnAsync(token, isSyncOn, operationToken), ct);
     }
 
 
     public async Task SetLocalDeviceNameAsync(Guid token, string name, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.SetLocalDeviceNameAsync(token, name, ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.SetLocalDeviceNameAsync(token, name, operationToken), ct);
     }
 
 
     public async Task<IReadOnlyList<UserDeviceInfoResponse>> GetUserDevicesAsync(Guid token, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        return await endpoints.GetUserDevicesAsync(token, ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.GetUserDevicesAsync(token, operationToken), ct);
     }
 
 
     public async Task SetUserDeviceNameAsync(Guid token, Guid deviceId, string name, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.SetUserDeviceNameAsync(token, deviceId, name, ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.SetUserDeviceNameAsync(token, deviceId, name, operationToken), ct);
     }
 
 
     public async Task SetUserDeviceSyncOnAsync(Guid token, Guid deviceId, bool isSyncOn, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.SetUserDeviceSyncOnAsync(token, deviceId, isSyncOn, ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.SetUserDeviceSyncOnAsync(token, deviceId, isSyncOn, operationToken), ct);
     }
 
 
     public async Task UnblockUserDeviceAsync(Guid token, Guid deviceId, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.UnblockUserDeviceAsync(token, deviceId, ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.UnblockUserDeviceAsync(token, deviceId, operationToken), ct);
     }
 
 
     public async Task<DeviceRemovalResultResponse> DisconnectUserDeviceAsync(Guid token, Guid deviceId, byte[] masterPassword, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        return await endpoints.DisconnectUserDeviceAsync(token, deviceId, masterPassword, ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.DisconnectUserDeviceAsync(token, deviceId, masterPassword, operationToken), ct);
     }
 
 
     public async Task<DeviceEnrollmentCodeResponse> StartDeviceEnrollmentAsync(CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        return await endpoints.StartDeviceEnrollmentAsync(ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.StartDeviceEnrollmentAsync(operationToken), ct);
     }
 
 
     public async Task<DeviceEnrollmentStatusResponse> GetDeviceEnrollmentStatusAsync(CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        return await endpoints.GetDeviceEnrollmentStatusAsync(ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.GetDeviceEnrollmentStatusAsync(operationToken), ct);
     }
 
 
     public async Task CancelDeviceEnrollmentAsync(CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.CancelDeviceEnrollmentAsync(ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.CancelDeviceEnrollmentAsync(operationToken), ct);
     }
 
 
     public async Task AddDeviceByCodeAsync(Guid token, string code, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.AddDeviceByCodeAsync(token, code, ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.AddDeviceByCodeAsync(token, code, operationToken), ct);
     }
 
 
     public async Task<IReadOnlyList<Guid>> RestoreRememberedSessionsAsync(CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        return await endpoints.RestoreRememberedSessionsAsync(ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.RestoreRememberedSessionsAsync(operationToken), ct);
     }
 
 
     public async Task<Guid> InitializeRememberMeSessionAsync(Guid userId, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        return await endpoints.InitializeRememberMeSessionAsync(userId, ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.InitializeRememberMeSessionAsync(userId, operationToken), ct);
     }
 
 
     public async Task SetRememberMeAsync(Guid token, bool rememberMe, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.SetRememberMeAsync(token, rememberMe, ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.SetRememberMeAsync(token, rememberMe, operationToken), ct);
     }
 
 
     public async Task<SavedPasswordsResponse> GetSavedPasswordsAsync(Guid token, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        return await endpoints.GetSavedPasswordsAsync(token, ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.GetSavedPasswordsAsync(token, operationToken), ct);
     }
 
 
     public async Task AddNewPasswordAsync(Guid token, NewPasswordRequest request, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.AddNewPasswordAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(request), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.AddNewPasswordAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
     }
 
 
@@ -215,28 +189,24 @@ public sealed class DeferredEndpoints : IEndpoints
         IReadOnlyList<Guid> passwordIds,
         CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.RemovePasswordsAsync(token, passwordIds, ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.RemovePasswordsAsync(token, passwordIds, operationToken), ct);
     }
 
 
     public async Task<byte[]> GetUnsecurePasswordAsync(Guid token, Guid passwordId, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        return await endpoints.GetUnsecurePasswordAsync(token, passwordId, ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.GetUnsecurePasswordAsync(token, passwordId, operationToken), ct);
     }
 
 
     public async Task UpdatePasswordAsync(Guid token, UpdatePasswordRequest request, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.UpdatePasswordAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(request), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.UpdatePasswordAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
     }
 
     public async Task ExportPasswordsToUserAsync(Guid sourceToken, ExportPasswordsToUserRequest request, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.ExportPasswordsToUserAsync(sourceToken, FrontendDateTimeUtil.NormalizeRequestToUtc(request), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.ExportPasswordsToUserAsync(sourceToken, FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
     }
 
 
@@ -245,8 +215,7 @@ public sealed class DeferredEndpoints : IEndpoints
         IReadOnlyList<NewCustomUserColorRequest> requests,
         CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.AddCustomUserColorsAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(requests), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.AddCustomUserColorsAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(requests), operationToken), ct);
     }
 
 
@@ -255,8 +224,7 @@ public sealed class DeferredEndpoints : IEndpoints
         IReadOnlyList<Guid> customUserColorIds,
         CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.DeleteCustomUserColorsAsync(token, customUserColorIds, ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.DeleteCustomUserColorsAsync(token, customUserColorIds, operationToken), ct);
     }
 
 
@@ -265,29 +233,25 @@ public sealed class DeferredEndpoints : IEndpoints
         ExportCustomUserColorsToUserRequest request,
         CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.ExportCustomUserColorsToUserAsync(sourceToken, FrontendDateTimeUtil.NormalizeRequestToUtc(request), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.ExportCustomUserColorsToUserAsync(sourceToken, FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
     }
 
 
     public async Task UpdateCustomUserColorAsync(Guid token, UpdateCustomUserColorRequest request, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.UpdateCustomUserColorAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(request), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.UpdateCustomUserColorAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
     }
 
 
     public async Task AddPasswordTagAsync(Guid token, NewPasswordTagRequest request, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.AddPasswordTagAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(request), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.AddPasswordTagAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
     }
 
 
     public async Task DeletePasswordTagAsync(Guid token, Guid passwordTagId, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.DeletePasswordTagAsync(token, passwordTagId, ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.DeletePasswordTagAsync(token, passwordTagId, operationToken), ct);
     }
 
 
@@ -296,18 +260,42 @@ public sealed class DeferredEndpoints : IEndpoints
         ExportPasswordTagsToUserRequest request,
         CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.ExportPasswordTagsToUserAsync(sourceToken, FrontendDateTimeUtil.NormalizeRequestToUtc(request), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.ExportPasswordTagsToUserAsync(sourceToken, FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
     }
 
 
     public async Task UpdatePasswordTagAsync(Guid token, UpdatePasswordTagRequest request, CancellationToken ct = default)
     {
-        var endpoints = await GetEndpointsAsync(ct);
-        await endpoints.UpdatePasswordTagAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(request), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.UpdatePasswordTagAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
     }
 
 
-    private Task<IEndpoints> GetEndpointsAsync(CancellationToken ct) =>
-        _backendClient.GetEndpointsAsync(ct);
+    private async Task<T> InvokeAsync<T>(
+        Func<IEndpoints, CancellationToken, Task<T>> action, CancellationToken cancellationToken)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime);
+        var token = linked.Token;
+        token.ThrowIfCancellationRequested();
+        var endpoints = await _backendClient.GetEndpointsAsync(token);
+        token.ThrowIfCancellationRequested();
+        var result = await action(endpoints, token);
+        if (token.IsCancellationRequested)
+        {
+            if (result is byte[] secret)
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(secret);
+            token.ThrowIfCancellationRequested();
+        }
+        return result;
+    }
+
+    private async Task InvokeAsync(
+        Func<IEndpoints, CancellationToken, Task> action, CancellationToken cancellationToken)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime);
+        var token = linked.Token;
+        token.ThrowIfCancellationRequested();
+        var endpoints = await _backendClient.GetEndpointsAsync(token);
+        token.ThrowIfCancellationRequested();
+        await action(endpoints, token);
+    }
 }

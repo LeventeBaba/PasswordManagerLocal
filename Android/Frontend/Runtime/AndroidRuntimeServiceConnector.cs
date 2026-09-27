@@ -1,4 +1,5 @@
 using Android.Content;
+using PasswordManagerLocal.Android.Runtime;
 
 namespace PasswordManagerLocal.Android.Frontend;
 
@@ -24,20 +25,35 @@ public sealed class AndroidRuntimeServiceConnector
 
         try
         {
+            AndroidServiceFrontendBackendClient? backendClient = null;
+            var handedOff = false;
             try
             {
                 var service = await connection.WaitForServiceAsync(timeoutSource.Token);
-                var backendClient = await service.AttachInteractiveClientAsync(timeoutSource.Token);
-                return new AndroidActivityServiceAttachment(
+                backendClient = await service.AttachInteractiveClientAsync(timeoutSource.Token);
+                var attachment = new AndroidActivityServiceAttachment(
                     bindingContext,
                     connection,
                     service,
                     backendClient);
+                handedOff = true;
+                return attachment;
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 throw new TimeoutException(
                     "The Android runtime service did not finish activity attachment in time.");
+            }
+            finally
+            {
+                // If binding or Activity teardown interrupts after the service has
+                // opened the interactive lease, release that lease before unbinding.
+                // The returned attachment owns this client on the success path.
+                if (backendClient is not null && !handedOff)
+                {
+                    try { await backendClient.DisposeAsync(); }
+                    catch { }
+                }
             }
         }
         catch

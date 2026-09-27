@@ -12,7 +12,7 @@
           <Button
               Classes="ghost iconButton"
               Command="{Binding CancelDisconnectDeviceCommand}"
-              
+
               ToolTip.Tip="{Binding BackToDevicesLabel}" >
               <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
             </Button>
@@ -31,7 +31,7 @@
           <TextBox
               Text="{Binding DisconnectDevicePassword}"
               PasswordChar="●"
-              Watermark="{Binding DisconnectDialogPasswordPlaceholder}"
+              PlaceholderText="{Binding DisconnectDialogPasswordPlaceholder}"
               TextInputOptions.ContentType="Password"
               TextInputOptions.IsSensitive="True"
               TextInputOptions.AutoCapitalization="False"

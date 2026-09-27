@@ -18,7 +18,7 @@ using ReactiveUI;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
-using System.Reactive;
+using ReactiveUI.Primitives;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels;
 
@@ -75,13 +75,16 @@ public sealed class MainViewModel : ViewModelBase
         IBackendRuntimeClient backendClient,
         IBackgroundSyncSettingsClient backgroundSyncSettingsClient,
         IApplicationPreferencesStore applicationPreferencesStore,
-        IApplicationPreferencesChangeNotifier? applicationPreferencesChangeNotifier = null)
+        IApplicationPreferencesChangeNotifier? applicationPreferencesChangeNotifier = null,
+        IAuthSessionRegistry? authSessionRegistry = null,
+        FrontendPlatformServices? platformServices = null,
+        ApplicationPreferences? initialPreferences = null)
         : this(
             endpoints,
             backendClient,
-            App.AuthSessionRegistry,
-            new UiPreferencesService(applicationPreferencesStore, applicationPreferencesChangeNotifier),
-            new DeviceAppPreferencesService(backgroundSyncSettingsClient))
+            authSessionRegistry ?? new AuthSessionRegistry(),
+            new UiPreferencesService(applicationPreferencesStore, applicationPreferencesChangeNotifier, platformServices, initialPreferences),
+            new DeviceAppPreferencesService(backgroundSyncSettingsClient, platformServices?.LifetimeToken ?? default))
     {
     }
 
@@ -109,26 +112,55 @@ public sealed class MainViewModel : ViewModelBase
             _deviceAppPreferences,
             NavigateBackFromSettings);
 
-        ShowSettingsCommand = ReactiveCommand.Create(NavigateToSettings);
-        ShowPasswordsCommand = ReactiveCommand.Create(NavigateToPasswords);
-        ShowProfileCommand = ReactiveCommand.Create(NavigateToProfile);
-        ShowDevicesCommand = ReactiveCommand.Create(NavigateToDevices);
-        SelectMobilePasswordsCommand = ReactiveCommand.Create(() => NavigateToMainPageFromMobileDropdown(0));
-        SelectMobileDevicesCommand = ReactiveCommand.Create(() => NavigateToMainPageFromMobileDropdown(1));
-        SelectMobileProfileCommand = ReactiveCommand.Create(() => NavigateToMainPageFromMobileDropdown(2));
-        ShowLoginCommand = ReactiveCommand.Create(NavigateToLogin);
-        ShowRegistrationCommand = ReactiveCommand.Create(NavigateToRegistration);
-        ShowChangeProfileCommand = ReactiveCommand.CreateFromTask(ShowChangeProfileAsync);
-        LogoutCommand = ReactiveCommand.CreateFromTask(LogoutAsync);
-        RefreshCommand = ReactiveCommand.CreateFromTask(RefreshAuthenticatedStateAsync);
-        RefreshVisiblePageCommand = ReactiveCommand.CreateFromTask(RefreshAllLoadedDataAsync);
-        ConfirmSessionRenewalCommand = ReactiveCommand.CreateFromTask(ConfirmSessionRenewalAsync);
-        DeclineSessionRenewalCommand = ReactiveCommand.Create(DeclineSessionRenewal);
-        DatabaseRecoveryPrimaryCommand = ReactiveCommand.CreateFromTask(HandleDatabaseRecoveryPrimaryActionAsync);
-        DatabaseRecoverySecondaryCommand = ReactiveCommand.Create(HandleDatabaseRecoverySecondaryAction);
+        ShowSettingsCommand = Own(ReactiveCommand.Create(NavigateToSettings));
+        ShowPasswordsCommand = Own(ReactiveCommand.Create(NavigateToPasswords));
+        ShowProfileCommand = Own(ReactiveCommand.Create(NavigateToProfile));
+        ShowDevicesCommand = Own(ReactiveCommand.Create(NavigateToDevices));
+        SelectMobilePasswordsCommand = Own(ReactiveCommand.Create(() => NavigateToMainPageFromMobileDropdown(0)));
+        SelectMobileDevicesCommand = Own(ReactiveCommand.Create(() => NavigateToMainPageFromMobileDropdown(1)));
+        SelectMobileProfileCommand = Own(ReactiveCommand.Create(() => NavigateToMainPageFromMobileDropdown(2)));
+        ShowLoginCommand = Own(ReactiveCommand.Create(NavigateToLogin));
+        ShowRegistrationCommand = Own(ReactiveCommand.Create(NavigateToRegistration));
+        ShowChangeProfileCommand = Own(ReactiveCommand.CreateFromTask(ShowChangeProfileAsync));
+        LogoutCommand = Own(ReactiveCommand.CreateFromTask(LogoutAsync));
+        RefreshCommand = Own(ReactiveCommand.CreateFromTask(RefreshAuthenticatedStateAsync));
+        RefreshVisiblePageCommand = Own(ReactiveCommand.CreateFromTask(RefreshAllLoadedDataAsync));
+        ConfirmSessionRenewalCommand = Own(ReactiveCommand.CreateFromTask(ConfirmSessionRenewalAsync));
+        DeclineSessionRenewalCommand = Own(ReactiveCommand.Create(DeclineSessionRenewal));
+        DatabaseRecoveryPrimaryCommand = Own(ReactiveCommand.CreateFromTask(HandleDatabaseRecoveryPrimaryActionAsync));
+        DatabaseRecoverySecondaryCommand = Own(ReactiveCommand.Create(HandleDatabaseRecoverySecondaryAction));
         _backendClient.StateChanged += HandleBackendRuntimeStateChanged;
         ApplyBackendRuntimeSnapshot(_backendClient.Snapshot);
-        SensitiveDataVisibilityService.HideVisibleSecretsRequested += HandleHideVisibleSecretsRequested;
+        PlatformServices.SensitiveData.HideVisibleSecretsRequested += HandleHideVisibleSecretsRequested;
+    }
+
+    protected override void DisposeManaged()
+    {
+        _backendClient.StateChanged -= HandleBackendRuntimeStateChanged;
+        PlatformServices.SensitiveData.HideVisibleSecretsRequested -= HandleHideVisibleSecretsRequested;
+        StopSessionMonitor();
+        StopObservingPageStatus();
+        _settingsReturnPageViewModel = null;
+        LoginViewModel.Dispose();
+        SettingsViewModel.Dispose();
+        _registrationViewModel?.Dispose();
+        _passwordsViewModel?.Dispose();
+        _profileViewModel?.Dispose();
+        _changeProfileViewModel?.Dispose();
+        _registrationViewModel = null;
+        _passwordsViewModel = null;
+        _profileViewModel = null;
+        _changeProfileViewModel = null;
+        _autoRenewingSessionTokens.Clear();
+        _sessionRenewalDialogToken = Guid.Empty;
+        _sessionRenewalPromptShownForToken = Guid.Empty;
+        _sessionRenewalDialogProfileName = string.Empty;
+        CurrentUserDisplayName = string.Empty;
+        CurrentUserSubtitle = string.Empty;
+        IsAuthenticated = false;
+        _currentPageViewModel = LoginViewModel;
+        _currentAnimatedPageViewModel = new MainPageContentViewModel(LoginViewModel);
+        base.DisposeManaged();
     }
 
     public LoginViewModel LoginViewModel { get; }
@@ -177,7 +209,7 @@ public sealed class MainViewModel : ViewModelBase
         get => _currentPageViewModel;
         private set
         {
-            if (ReferenceEquals(_currentPageViewModel, value))
+            if (IsDisposed || ReferenceEquals(_currentPageViewModel, value))
             {
                 return;
             }
@@ -341,42 +373,42 @@ public sealed class MainViewModel : ViewModelBase
 
     public bool CanChangeRememberMe => IsAuthenticated && !IsSettingRememberMe;
 
-    public ReactiveCommand<Unit, Unit> ShowSettingsCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ShowSettingsCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ShowPasswordsCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ShowPasswordsCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ShowProfileCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ShowProfileCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ShowDevicesCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ShowDevicesCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> SelectMobilePasswordsCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> SelectMobilePasswordsCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> SelectMobileDevicesCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> SelectMobileDevicesCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> SelectMobileProfileCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> SelectMobileProfileCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ShowLoginCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ShowLoginCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ShowRegistrationCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ShowRegistrationCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ShowChangeProfileCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ShowChangeProfileCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> LogoutCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> LogoutCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> RefreshCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> RefreshVisiblePageCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> RefreshVisiblePageCommand { get; }
 
     public async Task RequestRefreshVisiblePageAsync() =>
         await RefreshAllLoadedDataAsync();
 
-    public ReactiveCommand<Unit, Unit> ConfirmSessionRenewalCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ConfirmSessionRenewalCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> DeclineSessionRenewalCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> DeclineSessionRenewalCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> DatabaseRecoveryPrimaryCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> DatabaseRecoveryPrimaryCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> DatabaseRecoverySecondaryCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> DatabaseRecoverySecondaryCommand { get; }
 
     public bool IsDatabaseRecoveryDialogOpen => _databaseRecoveryStage != DatabaseRecoveryStage.None;
 
@@ -513,6 +545,8 @@ public sealed class MainViewModel : ViewModelBase
 
     public Task InitializeAsync()
     {
+        if (IsDisposed || LifetimeToken.IsCancellationRequested)
+            return Task.CompletedTask;
         Task operation;
         TaskCompletionSource? starter = null;
 
@@ -569,7 +603,9 @@ public sealed class MainViewModel : ViewModelBase
 
         try
         {
-            await _backendClient.ConnectAsync();
+            await _backendClient.ConnectAsync(LifetimeToken);
+            await _backendClient.WaitUntilReadyAsync(LifetimeToken);
+            LifetimeToken.ThrowIfCancellationRequested();
             var snapshot = _backendClient.Snapshot;
             ApplyBackendAvailability(snapshot.IsReady);
             if (!snapshot.IsReady)
@@ -805,7 +841,8 @@ public sealed class MainViewModel : ViewModelBase
 
         try
         {
-            await _backendClient.ResetDatabaseAndRestartAsync();
+            await _backendClient.ResetDatabaseAndRestartAsync(LifetimeToken);
+            LifetimeToken.ThrowIfCancellationRequested();
             _databaseVersionException = null;
             _databaseRecoveryStage = DatabaseRecoveryStage.None;
             ClearStatusMessage();
@@ -1036,6 +1073,8 @@ public sealed class MainViewModel : ViewModelBase
 
     private void ApplyBackendRuntimeSnapshot(BackendRuntimeSnapshot snapshot)
     {
+        if (IsDisposed)
+            return;
         ApplyBackendAvailability(snapshot.IsReady);
 
         if (IsAuthenticated)
@@ -1469,6 +1508,8 @@ public sealed class MainViewModel : ViewModelBase
 
     private async Task OnAuthenticationSucceededAsync(Guid token)
     {
+        if (IsDisposed)
+            return;
         var profile = await _endpoints.GetUserProfileInfoAsync(token);
         var wasAddingProfile = _isAddingProfile;
         var wasStartupProfileSelection = _isStartupProfileSelection;
@@ -1702,7 +1743,7 @@ public sealed class MainViewModel : ViewModelBase
 
     private void EnsureSessionMonitor()
     {
-        if (_sessionMonitorTimer is not null)
+        if (IsDisposed || LifetimeToken.IsCancellationRequested || _sessionMonitorTimer is not null)
             return;
 
         var timer = new DispatcherTimer
@@ -1710,7 +1751,7 @@ public sealed class MainViewModel : ViewModelBase
             Interval = TimeSpan.FromSeconds(3)
         };
 
-        timer.Tick += async (_, _) => await CheckAllSessionsAsync();
+        timer.Tick += HandleSessionMonitorTick;
         _sessionMonitorTimer = timer;
         timer.Start();
     }
@@ -1722,13 +1763,22 @@ public sealed class MainViewModel : ViewModelBase
             return;
 
         _sessionMonitorTimer.Stop();
+        _sessionMonitorTimer.Tick -= HandleSessionMonitorTick;
         _sessionMonitorTimer = null;
         _isCheckingSession = false;
     }
 
 
+    private async void HandleSessionMonitorTick(object? sender, EventArgs args)
+    {
+        if (!IsDisposed)
+            await CheckAllSessionsAsync();
+    }
+
     private async Task CheckAllSessionsAsync()
     {
+        if (IsDisposed)
+            return;
         if (_isCheckingSession)
             return;
 
@@ -1971,6 +2021,8 @@ public sealed class MainViewModel : ViewModelBase
 
     private async Task LoadNextAvailableSessionOrLoginAsync(string? message = null, OperationMessageKind messageKind = OperationMessageKind.Success)
     {
+        if (IsDisposed)
+            return;
         var nextToken = _authSessionRegistry.CurrentUserToken;
         if (nextToken == Guid.Empty)
         {

@@ -3,89 +3,82 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
-using PasswordManagerLocal.Common.Contracts.Endpoints;
-using PasswordManagerLocal.Common.Frontend.Abstractions.Services;
 using PasswordManagerLocal.Common.Frontend.Services;
-using PasswordManagerLocal.Common.Frontend.ViewModels;
 using PasswordManagerLocal.Common.Frontend.Views;
 
 namespace PasswordManagerLocal.Common.Frontend;
 
 public partial class App : Application
 {
-    private readonly FrontendApplicationContext? _context;
+    private readonly FrontendApplicationContext? _desktopContext;
 
-    // Required by Avalonia's XAML resource loader and design-time tooling.
-    // Production hosts construct App through the explicit context factory below.
-    public App()
-    {
-    }
+    // Android's process Application and the XAML designer use this constructor.
+    // Activity-bound state is composed only after MainViewFactory creates its view.
+    public App() { }
 
     public App(FrontendApplicationContext context)
     {
-        _context = context ?? throw new ArgumentNullException(nameof(context));
+        _desktopContext = context ?? throw new ArgumentNullException(nameof(context));
         if (OperatingSystem.IsWindows())
             WindowsFirewallConfigurationStore.Initialize(context.ApplicationDataDirectory);
     }
 
-    private FrontendApplicationContext Context => _context ?? throw new InvalidOperationException(
-        "The frontend application context was not supplied by the platform host.");
-
-    public static IAuthSessionRegistry AuthSessionRegistry { get; } = new AuthSessionRegistry();
-
-    public override void Initialize()
-    {
-        AvaloniaXamlLoader.Load(this);
-    }
+    public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
     public override void OnFrameworkInitializationCompleted()
     {
-        var context = Context;
-        var endpoints = new DeferredEndpoints(context.BackendClient);
-        var mainViewModel = new MainViewModel(
-            endpoints,
-            context.BackendClient,
-            context.BackgroundSyncSettingsClient,
-            context.ApplicationPreferencesStore,
-            context.ApplicationPreferencesChangeNotifier);
-
-        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        if (ApplicationLifetime is IActivityApplicationLifetime activity)
         {
+            // This closure holds no Activity, backend client, VM, registry or old view.
+            activity.MainViewFactory = static () => new MainView();
+        }
+        else if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            var context = _desktopContext ?? throw new InvalidOperationException(
+                "The desktop frontend context was not supplied by its host.");
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            var mainWindow = new MainWindow
-            {
-                DataContext = mainViewModel
-            };
-
+            var mainWindow = new MainWindow();
             if (OperatingSystem.IsWindows())
                 mainWindow.WindowState = WindowState.Maximized;
-
+            var view = (MainView)mainWindow.Content!;
+            var session = new FrontendUiSession(view, context, ownsBackendClient: false);
             mainWindow.Closed += (_, _) =>
-            {
-                context.DesktopExitRequested?.Invoke();
-                TryShutdownDesktop(desktop);
-            };
+                _ = CompleteDesktopCloseAsync(mainWindow, session, context, desktop);
             desktop.MainWindow = mainWindow;
-
             Dispatcher.UIThread.Post(async () =>
             {
-                await mainViewModel.InitializeAsync();
-                await TryShowFirewallPermissionPromptAsync(mainWindow, mainViewModel, endpoints);
+                try
+                {
+                    await session.InitializeAsync();
+                    if (session.IsDisposed)
+                        return;
+                    mainWindow.DataContext = session.ViewModel;
+                    await TryShowFirewallPermissionPromptAsync(mainWindow, session, context);
+                }
+                catch (OperationCanceledException) when (session.IsDisposed) { }
+                catch (Exception exception)
+                {
+                    System.Diagnostics.Trace.TraceError(
+                        $"Frontend initialization failed: {exception.GetType().Name}");
+                }
             }, DispatcherPriority.Background);
         }
-        else if (ApplicationLifetime is ISingleViewApplicationLifetime singleViewPlatform)
-        {
-            singleViewPlatform.MainView = new MainView
-            {
-                DataContext = mainViewModel
-            };
-
-            Dispatcher.UIThread.Post(
-                async () => await mainViewModel.InitializeAsync(),
-                DispatcherPriority.Background);
-        }
-
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static async Task CompleteDesktopCloseAsync(
+        MainWindow mainWindow,
+        FrontendUiSession session,
+        FrontendApplicationContext context,
+        IClassicDesktopStyleApplicationLifetime desktop)
+    {
+        try { await session.DisposeAsync(); }
+        finally
+        {
+            mainWindow.DataContext = null;
+            context.DesktopExitRequested?.Invoke();
+            TryShutdownDesktop(desktop);
+        }
     }
 
     private static void TryShutdownDesktop(
@@ -100,26 +93,20 @@ public partial class App : Application
         }
     }
 
-    private async Task TryShowFirewallPermissionPromptAsync(
-        MainWindow mainWindow,
-        MainViewModel mainViewModel,
-        IEndpoints endpoints)
+    private static async Task TryShowFirewallPermissionPromptAsync(
+        MainWindow window, FrontendUiSession session, FrontendApplicationContext context)
     {
         if (!OperatingSystem.IsWindows())
             return;
-
         try
         {
-            await Context.BackendClient.WaitUntilReadyAsync();
-
-            var localDevice = await endpoints.GetLocalDeviceInfoAsync();
-            if (!localDevice.IsSyncOn)
-                return;
-
-            await FirewallPermissionStartupPrompt.TryShowAsync(mainWindow, mainViewModel.CurrentLanguage);
+            var token = session.PlatformServices.LifetimeToken;
+            await context.BackendClient.WaitUntilReadyAsync(token);
+            var endpoints = new DeferredEndpoints(context.BackendClient, token);
+            var localDevice = await endpoints.GetLocalDeviceInfoAsync(token);
+            if (!session.IsDisposed && localDevice.IsSyncOn && session.ViewModel is { } model)
+                await FirewallPermissionStartupPrompt.TryShowAsync(window, model.CurrentLanguage);
         }
-        catch
-        {
-        }
+        catch { }
     }
 }

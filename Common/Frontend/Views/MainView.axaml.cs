@@ -11,12 +11,14 @@ using System.ComponentModel;
 
 namespace PasswordManagerLocal.Common.Frontend.Views;
 
-public partial class MainView : UserControl
+public partial class MainView : UserControl, IDisposable
 {
     private readonly MainViewKeyboardHandler _keyboardHandler;
     private readonly MainViewSwipeNavigationHandler _swipeNavigationHandler;
     private readonly MainViewTapOutsideKeyboardDismissHandler _tapOutsideKeyboardDismissHandler;
     private readonly MainViewLongPressToolTipHandler _longPressToolTipHandler;
+    private bool _disposed;
+    internal FrontendPlatformServices? PlatformServices => (DataContext as MainViewModel)?.PlatformServices;
     private TopLevel? _inputTopLevel;
     private MainViewModel? _observedViewModel;
 
@@ -67,9 +69,10 @@ public partial class MainView : UserControl
 
     private void SetActiveTopLevelForUiServices(TopLevel? topLevel)
     {
-        ClipboardService.SetActiveTopLevel(topLevel);
-        QrImagePickerService.SetActiveTopLevel(topLevel);
-        FirewallPermissionStartupPrompt.SetActiveTopLevel(topLevel);
+        PlatformServices?.Clipboard.SetActiveTopLevel(topLevel);
+        PlatformServices?.ImagePicker.SetActiveTopLevel(topLevel);
+        if (OperatingSystem.IsWindows())
+            FirewallPermissionStartupPrompt.SetActiveTopLevel(topLevel);
     }
 
     private void AttachTopLevelInputHandlers(TopLevel? topLevel)
@@ -90,18 +93,19 @@ public partial class MainView : UserControl
 
     private void HandleDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
     {
+        SetActiveTopLevelForUiServices(null);
         DetachTopLevelInputHandlers();
-        FirewallPermissionStartupPrompt.SetActiveTopLevel(null);
         DetachObservedViewModel();
     }
 
     private void HandleDataContextChanged(object? sender, EventArgs e)
     {
         DetachObservedViewModel();
-        if (DataContext is not MainViewModel viewModel)
+        if (_disposed || DataContext is not MainViewModel viewModel)
             return;
 
         _observedViewModel = viewModel;
+        SetActiveTopLevelForUiServices(TopLevel.GetTopLevel(this));
         _observedViewModel.PropertyChanged += HandleViewModelPropertyChanged;
     }
 
@@ -232,4 +236,23 @@ public partial class MainView : UserControl
         _longPressToolTipHandler.HandlePointerCaptureLost(e);
         _swipeNavigationHandler.HandlePointerCaptureLost(e);
     }
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        _disposed = true;
+        TryDismissOpenFlyout();
+        HideAccountMenuFlyout();
+        SetActiveTopLevelForUiServices(null);
+        DetachTopLevelInputHandlers();
+        DetachObservedViewModel();
+        AttachedToVisualTree -= HandleAttachedToVisualTree;
+        DetachedFromVisualTree -= HandleDetachedFromVisualTree;
+        DataContextChanged -= HandleDataContextChanged;
+        RemoveHandler(KeyDownEvent, HandleKeyDown);
+        RemoveHandler(TextBox.CopyingToClipboardEvent, HandleCopyingToClipboard);
+        RemoveHandler(TextBox.CuttingToClipboardEvent, HandleCuttingToClipboard);
+        DataContext = null;
+    }
+
 }

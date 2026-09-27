@@ -21,6 +21,7 @@ internal sealed class WindowsNativeTrayIconAdapter : ITrayIconAdapter
     private bool _visibleRequested;
     private bool _isAdded;
     private bool _version4Enabled;
+    private bool _contextMenuOpen;
     private int _disposed;
 
     internal WindowsNativeTrayIconAdapter(
@@ -162,34 +163,18 @@ internal sealed class WindowsNativeTrayIconAdapter : ITrayIconAdapter
             return 0;
         }
 
-        if (message == WindowsNativeMethods.WmCommand)
-        {
-            var command = unchecked((uint)wParam) & 0xFFFF;
-            if (command == OpenCommandId)
-            {
-                Publish(OpenCommandSelected);
-                return 0;
-            }
-            if (command == ExitCommandId)
-            {
-                Publish(ExitCommandSelected);
-                return 0;
-            }
-            return null;
-        }
-
         if (message != WindowsNativeApplicationLoop.TrayCallbackMessage)
             return null;
 
-        var notification = unchecked((uint)lParam.ToInt64()) & 0xFFFF;
-        if (notification is WindowsNativeMethods.WmLButtonUp or WindowsNativeMethods.NinSelect or WindowsNativeMethods.NinKeySelect)
+        var callback = TrayCallback.Decode(_version4Enabled, IconId, wParam, lParam);
+        if (callback.Kind == TrayCallbackKind.Open)
         {
             PublishMouseClick(TrayIconMouseButton.Left);
             return 0;
         }
-        if (notification is WindowsNativeMethods.WmRButtonUp or WindowsNativeMethods.WmContextMenu)
+        if (callback.Kind == TrayCallbackKind.ContextMenu)
         {
-            ShowContextMenu(wParam);
+            ShowContextMenu(callback);
             return 0;
         }
 
@@ -236,58 +221,78 @@ internal sealed class WindowsNativeTrayIconAdapter : ITrayIconAdapter
             Trace.TraceWarning("The native tray icon could not be removed cleanly.");
     }
 
-    private void ShowContextMenu(nuint callbackPosition)
+    private void ShowContextMenu(TrayCallback callback)
     {
-        if (!_isAdded)
+        if (!_isAdded || _contextMenuOpen)
             return;
 
-        Publish(ContextMenuOpening);
-        var text = _text;
-        var menu = WindowsNativeMethods.CreatePopupMenu();
-        if (menu == 0)
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-
+        _contextMenuOpen = true;
+        nint menu = 0;
+        uint command = 0;
         try
         {
+            // The preference coordinator only queues work here; no disk IO on this thread.
+            Publish(ContextMenuOpening);
+            var text = _text;
+            menu = WindowsNativeMethods.CreatePopupMenu();
+            if (menu == 0)
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+
             AppendMenu(menu, WindowsNativeMethods.MfString, OpenCommandId, text.OpenLabel);
             AppendMenu(menu, WindowsNativeMethods.MfSeparator, 0, null);
             AppendMenu(menu, WindowsNativeMethods.MfString, ExitCommandId, text.ExitLabel);
-            var point = ResolveMenuPosition(callbackPosition);
+            var point = ResolveMenuPosition(callback);
 
-            WindowsNativeMethods.SetForegroundWindow(_messageWindow.WindowHandle);
-            WindowsNativeMethods.TrackPopupMenuEx(
+            if (!WindowsNativeMethods.SetForegroundWindow(_messageWindow.WindowHandle))
+                Trace.TraceWarning("The Agent tray menu owner could not become the foreground window.");
+            Marshal.SetLastPInvokeError(0);
+            command = WindowsNativeMethods.TrackPopupMenuEx(
                 menu,
-                WindowsNativeMethods.TpmRightButton,
+                WindowsNativeMethods.TpmRightButton |
+                WindowsNativeMethods.TpmReturnCmd |
+                WindowsNativeMethods.TpmNonotify,
                 point.X,
                 point.Y,
                 _messageWindow.WindowHandle,
                 0);
-            WindowsNativeMethods.PostMessage(
-                _messageWindow.WindowHandle,
-                WindowsNativeMethods.WmNull,
-                0,
-                0);
+            var error = Marshal.GetLastWin32Error();
+            if (command == 0 && error != 0)
+                Trace.TraceError($"The Agent tray popup failed (Win32 error {error}).");
+            // Zero without an error is normal cancellation, not an Open/Exit command.
+        }
+        catch (Win32Exception exception)
+        {
+            Trace.TraceError($"The Agent tray menu could not be displayed (Win32 error {exception.NativeErrorCode}).");
         }
         finally
         {
-            if (!WindowsNativeMethods.DestroyMenu(menu))
+            if (!WindowsNativeMethods.PostMessage(_messageWindow.WindowHandle, WindowsNativeMethods.WmNull, 0, 0))
+                Trace.TraceWarning("The Agent tray owner could not receive WM_NULL after popup tracking.");
+            if (_isAdded && Volatile.Read(ref _disposed) == 0)
+            {
+                var data = CreateNotifyIconData(0);
+                if (!WindowsNativeMethods.ShellNotifyIcon(WindowsNativeMethods.NimSetFocus, ref data))
+                    Trace.TraceWarning("Notification-area focus could not be restored after the Agent popup.");
+            }
+            if (menu != 0 && !WindowsNativeMethods.DestroyMenu(menu))
                 Trace.TraceWarning("A native tray context-menu handle could not be destroyed.");
+            _contextMenuOpen = false;
         }
+
+        // Tracking pumps a nested message loop. Recheck lifetime, then dispatch exactly
+        // once, on the shell thread, after releasing the menu and restoring shell focus.
+        if (Volatile.Read(ref _disposed) != 0 || !_isAdded)
+            return;
+        if (command == OpenCommandId)
+            Publish(OpenCommandSelected);
+        else if (command == ExitCommandId)
+            Publish(ExitCommandSelected);
     }
 
-    private WindowsNativeMethods.Point ResolveMenuPosition(nuint callbackPosition)
+    private static WindowsNativeMethods.Point ResolveMenuPosition(TrayCallback callback)
     {
-        if (_version4Enabled)
-        {
-            var packed = unchecked((uint)callbackPosition);
-            var point = new WindowsNativeMethods.Point
-            {
-                X = unchecked((short)(packed & 0xFFFF)),
-                Y = unchecked((short)((packed >> 16) & 0xFFFF))
-            };
-            if (point.X != -1 || point.Y != -1)
-                return point;
-        }
+        if (callback.X is { } x && callback.Y is { } y)
+            return new WindowsNativeMethods.Point { X = x, Y = y };
 
         if (!WindowsNativeMethods.GetCursorPosition(out var cursor))
             throw new Win32Exception(Marshal.GetLastWin32Error());

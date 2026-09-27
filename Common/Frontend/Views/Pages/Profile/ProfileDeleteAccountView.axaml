@@ -12,7 +12,7 @@
           <Button
               Classes="ghost iconButton"
               Command="{Binding BackToProfileCommand}"
-              
+
               ToolTip.Tip="{Binding BackToProfileLabel}" >
               <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
             </Button>
@@ -36,7 +36,7 @@
           <TextBox
               Text="{Binding DeleteAccountPassword}"
               PasswordChar="●"
-              Watermark="{Binding DeleteAccountPasswordPlaceholder}"
+              PlaceholderText="{Binding DeleteAccountPasswordPlaceholder}"
               TextInputOptions.ContentType="Password"
               TextInputOptions.IsSensitive="True"
               TextInputOptions.AutoCapitalization="False"

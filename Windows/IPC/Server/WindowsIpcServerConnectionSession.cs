@@ -174,7 +174,7 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
                         await StartRequestAsync(context, frame, connectionToken);
                         break;
                     case IpcMessageKind.RequestCancellation:
-                        ProcessRequestCancellation(frame);
+                        await ProcessRequestCancellationAsync(frame);
                         break;
                     case IpcMessageKind.HandshakeRequest:
                         await SendDuplicateHandshakeRejectionAsync(
@@ -648,7 +648,7 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
         }
     }
 
-    private void ProcessRequestCancellation(IpcFrame frame)
+    private async Task ProcessRequestCancellationAsync(IpcFrame frame)
     {
         if (frame.Payload.Length != 0)
         {
@@ -665,6 +665,21 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
             }
             catch (ObjectDisposedException)
             {
+            }
+
+            // Keep the active-request permit held until the cancelled handler has
+            // unwound. Its finally block removes the request and releases the
+            // permit; admitting the next frame earlier creates a limit race.
+            if (execution.Task is { } task)
+            {
+                try
+                {
+                    await task;
+                }
+                catch (OperationCanceledException) when (
+                    execution.CancellationSource.IsCancellationRequested)
+                {
+                }
             }
         }
     }

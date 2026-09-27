@@ -1,11 +1,15 @@
 using Android.App;
 using Android.Runtime;
+using Avalonia;
+using Avalonia.Android;
+using ReactiveUI.Avalonia;
+using PasswordManagerLocal.Common.Frontend;
 using PasswordManagerLocal.Common.Backend.Constants;
 
 namespace PasswordManagerLocal.Android.Frontend;
 
 [Application]
-public sealed class PasswordManagerLocalApplication : Application
+public sealed class PasswordManagerLocalApplication : AvaloniaAndroidApplication<App>
 {
     public PasswordManagerLocalApplication(IntPtr handle, JniHandleOwnership ownership)
         : base(handle, ownership)
@@ -17,7 +21,6 @@ public sealed class PasswordManagerLocalApplication : Application
 
     public override void OnCreate()
     {
-        base.OnCreate();
         var filesDirectory = FilesDir?.AbsolutePath;
         if (string.IsNullOrWhiteSpace(filesDirectory))
             throw new InvalidOperationException("The Android application-data directory is unavailable.");
@@ -26,5 +29,12 @@ public sealed class PasswordManagerLocalApplication : Application
             filesDirectory,
             ApplicationFileNames.AppFolderName);
         RuntimeServiceConnector = new AndroidRuntimeServiceConnector();
+        base.OnCreate();
     }
+    protected override AppBuilder CustomizeAppBuilder(AppBuilder builder) =>
+        base.CustomizeAppBuilder(builder)
+            .WithInterFont()
+            .UseHarfBuzz()
+            .UseReactiveUI(_ => { });
+
 }

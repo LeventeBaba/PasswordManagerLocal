@@ -13,7 +13,7 @@ public partial class PasswordTagSelectorView : UserControl
         InitializeComponent();
     }
 
-    private void OnTagSearchGotFocus(object? sender, GotFocusEventArgs e)
+    private void OnTagSearchGotFocus(object? sender, FocusChangedEventArgs e)
     {
         if (DataContext is PasswordsViewModel viewModel)
         {

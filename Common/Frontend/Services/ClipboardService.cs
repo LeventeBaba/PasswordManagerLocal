@@ -1,45 +1,49 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Threading;
 
 namespace PasswordManagerLocal.Common.Frontend.Services;
 
-public static class ClipboardService
+public sealed class ClipboardService
 {
-    private static readonly SemaphoreSlim ClipboardSemaphore = new(1, 1);
-    private static WeakReference<TopLevel>? _activeTopLevel;
-    private static IClipboardWriter? _platformClipboardWriter;
+    private readonly CancellationToken _lifetime;
 
-    public static void SetActiveTopLevel(TopLevel? topLevel)
+    public ClipboardService(CancellationToken lifetime = default) => _lifetime = lifetime;
+
+    private readonly SemaphoreSlim ClipboardSemaphore = new(1, 1);
+    private WeakReference<TopLevel>? _activeTopLevel;
+    private IClipboardWriter? _platformClipboardWriter;
+
+    public void SetActiveTopLevel(TopLevel? topLevel)
     {
-        if (topLevel is null)
-        {
-            return;
-        }
-
-        _activeTopLevel = new WeakReference<TopLevel>(topLevel);
+        _activeTopLevel = topLevel is null ? null : new WeakReference<TopLevel>(topLevel);
     }
 
 
 
-    public static void SetPlatformClipboardWriter(IClipboardWriter? platformClipboardWriter)
+    public void SetPlatformClipboardWriter(IClipboardWriter? platformClipboardWriter)
     {
         _platformClipboardWriter = platformClipboardWriter;
     }
 
 
 
-    public static async Task<bool> TrySetTextAsync(string? text)
+    public async Task<bool> TrySetTextAsync(string? text)
+    {
+        try { return await SetTextCoreAsync(text); }
+        catch (OperationCanceledException) { return false; }
+    }
+
+    private async Task<bool> SetTextCoreAsync(string? text)
     {
         if (string.IsNullOrEmpty(text))
         {
             return false;
         }
 
-        await ClipboardSemaphore.WaitAsync();
+        await ClipboardSemaphore.WaitAsync(_lifetime);
 
         try
         {
@@ -55,7 +59,7 @@ public static class ClipboardService
                     return true;
                 }
 
-                await Task.Delay(75);
+                await Task.Delay(75, _lifetime);
             }
         }
         finally
@@ -75,16 +79,16 @@ public static class ClipboardService
 
 
 
-    private static async Task<bool> TrySetTextWithPlatformClipboardAsync(string text)
+    private async Task<bool> TrySetTextWithPlatformClipboardAsync(string text)
     {
-        if (_platformClipboardWriter is null)
+        if (_lifetime.IsCancellationRequested || _platformClipboardWriter is not { } writer)
         {
             return false;
         }
 
         try
         {
-            return await _platformClipboardWriter.TrySetTextAsync(text);
+            return await writer.TrySetTextAsync(text).WaitAsync(_lifetime);
         }
         catch
         {
@@ -94,7 +98,7 @@ public static class ClipboardService
 
 
 
-    private static async Task<bool> TrySetTextWithAvaloniaClipboardAsync(string text)
+    private async Task<bool> TrySetTextWithAvaloniaClipboardAsync(string text)
     {
         try
         {
@@ -114,8 +118,9 @@ public static class ClipboardService
 
 
 
-    private static async Task<bool> TrySetTextWithAvaloniaClipboardOnUiThreadAsync(string text)
+    private async Task<bool> TrySetTextWithAvaloniaClipboardOnUiThreadAsync(string text)
     {
+        _lifetime.ThrowIfCancellationRequested();
         var clipboard = GetClipboard();
 
         if (clipboard is null)
@@ -133,7 +138,7 @@ public static class ClipboardService
 
 
 
-    private static async Task<bool> TrySetTextWithAvaloniaSetTextAsync(IClipboard clipboard, string text)
+    private async Task<bool> TrySetTextWithAvaloniaSetTextAsync(IClipboard clipboard, string text)
     {
         try
         {
@@ -149,7 +154,7 @@ public static class ClipboardService
 
 
 
-    private static async Task<bool> TrySetTextWithAvaloniaDataTransferAsync(IClipboard clipboard, string text)
+    private async Task<bool> TrySetTextWithAvaloniaDataTransferAsync(IClipboard clipboard, string text)
     {
         try
         {
@@ -167,7 +172,7 @@ public static class ClipboardService
 
 
 
-    private static async Task TryFlushAsync(IClipboard clipboard)
+    private async Task TryFlushAsync(IClipboard clipboard)
     {
         try
         {
@@ -180,25 +185,12 @@ public static class ClipboardService
 
 
 
-    private static IClipboard? GetClipboard()
+    private IClipboard? GetClipboard()
     {
         if (_activeTopLevel?.TryGetTarget(out var activeTopLevel) == true
             && activeTopLevel.Clipboard is { } activeTopLevelClipboard)
         {
             return activeTopLevelClipboard;
-        }
-
-        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
-            && desktop.MainWindow?.Clipboard is { } desktopClipboard)
-        {
-            return desktopClipboard;
-        }
-
-        if (Application.Current?.ApplicationLifetime is ISingleViewApplicationLifetime singleView
-            && singleView.MainView is { } mainView
-            && TopLevel.GetTopLevel(mainView) is { Clipboard: { } singleViewClipboard })
-        {
-            return singleViewClipboard;
         }
 
         return null;

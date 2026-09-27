@@ -5,7 +5,7 @@ using PasswordManagerLocal.Common.Contracts.Responses;
 using ReactiveUI;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Reactive;
+using ReactiveUI.Primitives;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
 
@@ -36,23 +36,23 @@ public sealed partial class PasswordsViewModel
 
     public ObservableCollection<PasswordColorOptionViewModel> PasswordTagColorOptions { get; } = [];
 
-    public ReactiveCommand<Unit, Unit> OpenPasswordTagListCommand { get; private set; } = null!;
+    public ReactiveCommand<RxVoid, RxVoid> OpenPasswordTagListCommand { get; private set; } = null!;
 
-    public ReactiveCommand<Unit, Unit> BackFromPasswordTagListCommand { get; private set; } = null!;
+    public ReactiveCommand<RxVoid, RxVoid> BackFromPasswordTagListCommand { get; private set; } = null!;
 
-    public ReactiveCommand<Unit, Unit> OpenPasswordTagEditorCommand { get; private set; } = null!;
+    public ReactiveCommand<RxVoid, RxVoid> OpenPasswordTagEditorCommand { get; private set; } = null!;
 
-    public ReactiveCommand<Unit, Unit> BackFromPasswordTagEditorCommand { get; private set; } = null!;
+    public ReactiveCommand<RxVoid, RxVoid> BackFromPasswordTagEditorCommand { get; private set; } = null!;
 
-    public ReactiveCommand<Unit, Unit> SavePasswordTagCommand { get; private set; } = null!;
+    public ReactiveCommand<RxVoid, RxVoid> SavePasswordTagCommand { get; private set; } = null!;
 
-    public ReactiveCommand<Unit, Unit> SearchPasswordTagsCommand { get; private set; } = null!;
+    public ReactiveCommand<RxVoid, RxVoid> SearchPasswordTagsCommand { get; private set; } = null!;
 
-    public ReactiveCommand<string, Unit> SelectPasswordTagSortOptionCommand { get; private set; } = null!;
+    public ReactiveCommand<string, RxVoid> SelectPasswordTagSortOptionCommand { get; private set; } = null!;
 
-    public ReactiveCommand<Unit, Unit> ConfirmDeletePasswordTagCommand { get; private set; } = null!;
+    public ReactiveCommand<RxVoid, RxVoid> ConfirmDeletePasswordTagCommand { get; private set; } = null!;
 
-    public ReactiveCommand<Unit, Unit> CancelDeletePasswordTagCommand { get; private set; } = null!;
+    public ReactiveCommand<RxVoid, RxVoid> CancelDeletePasswordTagCommand { get; private set; } = null!;
 
     public bool IsPasswordTagListPaneVisible => CurrentPane == PasswordTagListPane;
 
@@ -246,15 +246,15 @@ public sealed partial class PasswordsViewModel
 
     private void InitializePasswordTagManagement()
     {
-        OpenPasswordTagListCommand = ReactiveCommand.Create(OpenPasswordTagList);
-        BackFromPasswordTagListCommand = ReactiveCommand.Create(BackFromPasswordTagList);
-        OpenPasswordTagEditorCommand = ReactiveCommand.Create(OpenPasswordTagEditor);
-        BackFromPasswordTagEditorCommand = ReactiveCommand.Create(BackFromPasswordTagEditor);
-        SavePasswordTagCommand = ReactiveCommand.CreateFromTask(SavePasswordTagAsync);
-        SearchPasswordTagsCommand = ReactiveCommand.Create(ApplyPasswordTagFiltersAndSorting);
-        SelectPasswordTagSortOptionCommand = ReactiveCommand.Create<string>(SelectPasswordTagSortOption);
-        ConfirmDeletePasswordTagCommand = ReactiveCommand.CreateFromTask(ConfirmDeletePasswordTagAsync);
-        CancelDeletePasswordTagCommand = ReactiveCommand.Create(CancelDeletePasswordTag);
+        OpenPasswordTagListCommand = Own(ReactiveCommand.Create(OpenPasswordTagList));
+        BackFromPasswordTagListCommand = Own(ReactiveCommand.Create(BackFromPasswordTagList));
+        OpenPasswordTagEditorCommand = Own(ReactiveCommand.Create(OpenPasswordTagEditor));
+        BackFromPasswordTagEditorCommand = Own(ReactiveCommand.Create(BackFromPasswordTagEditor));
+        SavePasswordTagCommand = Own(ReactiveCommand.CreateFromTask(SavePasswordTagAsync));
+        SearchPasswordTagsCommand = Own(ReactiveCommand.Create(ApplyPasswordTagFiltersAndSorting));
+        SelectPasswordTagSortOptionCommand = Own(ReactiveCommand.Create<string>(SelectPasswordTagSortOption));
+        ConfirmDeletePasswordTagCommand = Own(ReactiveCommand.CreateFromTask(ConfirmDeletePasswordTagAsync));
+        CancelDeletePasswordTagCommand = Own(ReactiveCommand.Create(CancelDeletePasswordTag));
 
         RebuildPasswordTagColorOptions();
         ApplyPasswordTagEditorColor(PasswordColorUtility.DefaultColor);
@@ -409,6 +409,7 @@ public sealed partial class PasswordsViewModel
         foreach (var tag in _allManagedPasswordTags)
         {
             tag.PropertyChanged -= HandleManagedPasswordTagItemPropertyChanged;
+            tag.Dispose();
         }
 
         _allManagedPasswordTags.Clear();

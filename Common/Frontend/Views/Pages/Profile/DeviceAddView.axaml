@@ -12,7 +12,7 @@
           <Button
               Classes="ghost iconButton"
               Command="{Binding CancelAddDeviceCommand}"
-              
+
               ToolTip.Tip="{Binding BackToDevicesLabel}" >
               <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
             </Button>
@@ -47,7 +47,7 @@
           <TextBlock Text="{Binding AddDeviceCodeLabel}" Classes="subtleText" />
           <TextBox
               Text="{Binding DeviceEnrollmentCodeInput}"
-              Watermark="{Binding AddDeviceCodePlaceholder}"
+              PlaceholderText="{Binding AddDeviceCodePlaceholder}"
               Classes="readableCode"
               TextInputOptions.IsSensitive="True"
               TextInputOptions.AutoCapitalization="False"

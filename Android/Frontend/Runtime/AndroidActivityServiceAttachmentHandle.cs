@@ -9,7 +9,10 @@ namespace PasswordManagerLocal.Android.Frontend;
 public sealed class AndroidActivityServiceAttachmentHandle : IAsyncDisposable
 {
     private readonly CancellationTokenSource _lifetimeSource = new();
-    private readonly Task<AndroidActivityServiceAttachment> _attachmentTask;
+    private readonly object _gate = new();
+    private readonly AndroidRuntimeServiceConnector _connector;
+    private readonly Context _context;
+    private Task<AndroidActivityServiceAttachment>? _attachmentTask;
     private int _disposed;
 
     public AndroidActivityServiceAttachmentHandle(
@@ -18,9 +21,9 @@ public sealed class AndroidActivityServiceAttachmentHandle : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(connector);
         ArgumentNullException.ThrowIfNull(context);
-        _attachmentTask = connector.AttachInteractiveClientAsync(
-            context,
-            _lifetimeSource.Token);
+        _connector = connector;
+        _context = context.ApplicationContext ?? throw new InvalidOperationException(
+            "The Android application context is unavailable.");
         BackendClient = new AndroidDeferredServiceFrontendBackendClient(this);
         BackgroundSyncSettingsClient = new AndroidDeferredBackgroundSyncSettingsClient(this);
     }
@@ -31,16 +34,26 @@ public sealed class AndroidActivityServiceAttachmentHandle : IAsyncDisposable
     internal Task<AndroidActivityServiceAttachment> GetAttachmentAsync(
         CancellationToken cancellationToken)
     {
-        ThrowIfDisposed();
-        return _attachmentTask.WaitAsync(cancellationToken);
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            // Lazy binding keeps Activity creation free of backend startup work. An
+            // explicit resume/reconnect may retry an earlier locked-device/bind failure.
+            if (_attachmentTask is null || _attachmentTask.IsFaulted || _attachmentTask.IsCanceled)
+                _attachmentTask = _connector.AttachInteractiveClientAsync(_context, _lifetimeSource.Token);
+            return _attachmentTask.WaitAsync(cancellationToken);
+        }
     }
 
     internal bool TryGetCompletedAttachment(out AndroidActivityServiceAttachment? attachment)
     {
-        if (Volatile.Read(ref _disposed) == 0 && _attachmentTask.IsCompletedSuccessfully)
+        lock (_gate)
         {
-            attachment = _attachmentTask.Result;
-            return true;
+            if (Volatile.Read(ref _disposed) == 0 && _attachmentTask is { IsCompletedSuccessfully: true })
+            {
+                attachment = _attachmentTask.Result;
+                return true;
+            }
         }
 
         attachment = null;
@@ -55,8 +68,14 @@ public sealed class AndroidActivityServiceAttachmentHandle : IAsyncDisposable
         _lifetimeSource.Cancel();
         try
         {
-            var attachment = await _attachmentTask;
-            await attachment.DisposeAsync();
+            Task<AndroidActivityServiceAttachment>? pending;
+            lock (_gate)
+                pending = _attachmentTask;
+            if (pending is not null)
+            {
+                var attachment = await pending;
+                await attachment.DisposeAsync();
+            }
         }
         catch (OperationCanceledException)
         {

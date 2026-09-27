@@ -15,7 +15,7 @@ public sealed class AndroidDeferredServiceFrontendBackendClient : IFrontendBacke
         BackendRuntimeFailureKind.None,
         null,
         DateTimeOffset.MinValue);
-    private bool _disposed;
+    private volatile bool _disposed;
 
     public AndroidDeferredServiceFrontendBackendClient(
         AndroidActivityServiceAttachmentHandle attachmentHandle)
@@ -57,14 +57,17 @@ public sealed class AndroidDeferredServiceFrontendBackendClient : IFrontendBacke
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed)
-            return;
-
-        _disposed = true;
-        var inner = Volatile.Read(ref _inner);
+        IFrontendBackendClient<IEndpoints>? inner;
+        lock (_snapshotGate)
+        {
+            if (_disposed)
+                return;
+            _disposed = true;
+            inner = Interlocked.Exchange(ref _inner, null);
+            StateChanged = null;
+        }
         if (inner is not null)
             inner.StateChanged -= HandleInnerStateChanged;
-        StateChanged = null;
         await _attachmentHandle.DisposeAsync();
         GC.SuppressFinalize(this);
     }
@@ -86,11 +89,13 @@ public sealed class AndroidDeferredServiceFrontendBackendClient : IFrontendBacke
                 return inner;
 
             var attachment = await _attachmentHandle.GetAttachmentAsync(cancellationToken);
-            ThrowIfDisposed();
-
-            inner = attachment.BackendClient;
-            inner.StateChanged += HandleInnerStateChanged;
-            Volatile.Write(ref _inner, inner);
+            lock (_snapshotGate)
+            {
+                ThrowIfDisposed();
+                inner = attachment.BackendClient;
+                inner.StateChanged += HandleInnerStateChanged;
+                Volatile.Write(ref _inner, inner);
+            }
 
             ApplyInnerSnapshot(inner.Snapshot);
             return inner;

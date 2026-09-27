@@ -10,7 +10,7 @@ using PasswordManagerLocal.Common.Contracts.Responses;
 using ReactiveUI;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Reactive;
+using ReactiveUI.Primitives;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -263,41 +263,41 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         PresetColors = new ObservableCollection<PasswordColorOptionViewModel>();
         SortOptions = new ObservableCollection<PasswordSortOptionViewModel>();
 
-        RefreshCommand = ReactiveCommand.CreateFromTask(async () => { await RefreshAsync(true); });
-        ExecutePrimaryActionCommand = ReactiveCommand.CreateFromTask(ExecutePrimaryActionAsync);
-        SearchCommand = ReactiveCommand.Create(ApplyCurrentSearch);
-        SelectSortOptionCommand = ReactiveCommand.Create<string>(SelectSortOptionByKey);
-        BeginCreatePasswordCommand = ReactiveCommand.Create(BeginCreatePassword);
-        EditSelectedPasswordCommand = ReactiveCommand.CreateFromTask(EditSelectedPasswordAsync);
-        BeginDeleteSelectedPasswordCommand = ReactiveCommand.Create(BeginDeleteSelectedPassword);
-        ConfirmDeletePasswordCommand = ReactiveCommand.CreateFromTask(ConfirmDeletePasswordAsync);
-        CancelDeletePasswordCommand = ReactiveCommand.Create(CancelDeletePassword);
-        RevealPasswordCommand = ReactiveCommand.CreateFromTask(RevealPasswordAsync);
-        HidePasswordCommand = ReactiveCommand.Create(HidePassword);
-        CopyRevealedPasswordCommand = ReactiveCommand.CreateFromTask(CopyRevealedPasswordAsync);
-        RevealEditorPasswordCommand = ReactiveCommand.CreateFromTask(RevealEditorPasswordAsync);
-        SavePasswordCommand = ReactiveCommand.CreateFromTask(SavePasswordAsync);
-        CancelPasswordEditorCommand = ReactiveCommand.Create(CancelPasswordEditor);
-        ToggleEditorPasswordVisibilityCommand = ReactiveCommand.Create(ToggleEditorPasswordVisibility);
-        GenerateEditorPasswordCommand = ReactiveCommand.Create(GenerateEditorPassword);
-        OpenCustomColorPickerCommand = ReactiveCommand.Create(OpenCustomColorPicker);
-        BackFromColorPickerCommand = ReactiveCommand.Create(BackFromColorPicker);
-        SaveCustomColorCommand = ReactiveCommand.CreateFromTask(SaveCustomColorAsync);
-        BackFromCustomColorListCommand = ReactiveCommand.Create(BackFromCustomColorList);
-        SearchCustomColorsCommand = ReactiveCommand.Create(ApplyCustomColorFiltersAndSorting);
-        SelectCustomColorSortOptionCommand = ReactiveCommand.Create<string>(SelectCustomColorSortOption);
-        ConfirmDeleteCustomColorCommand = ReactiveCommand.CreateFromTask(ConfirmDeleteCustomColorAsync);
-        CancelDeleteCustomColorCommand = ReactiveCommand.Create(CancelDeleteCustomColor);
-        ApplyManualColorCodeCommand = ReactiveCommand.Create(ApplyManualColorCode);
-        BackToListCommand = ReactiveCommand.Create(BackToList);
-        ClearSelectionCommand = ReactiveCommand.Create(BackToList);
-        CancelMultiSelectionCommand = ReactiveCommand.Create(CancelMultiSelection);
-        SelectAllMultiSelectionCommand = ReactiveCommand.Create(SelectAllMultiSelection);
-        ExportMultiSelectionCommand = ReactiveCommand.Create(BeginExportMultiSelection);
-        BeginDeleteMultiSelectionCommand = ReactiveCommand.Create(BeginDeleteMultiSelection);
-        BackFromExportTargetCommand = ReactiveCommand.Create(BackFromExportTarget);
-        ConfirmExportCommand = ReactiveCommand.CreateFromTask(ConfirmExportAsync);
-        CancelExportConfirmationCommand = ReactiveCommand.Create(CancelExportConfirmation);
+        RefreshCommand = Own(ReactiveCommand.CreateFromTask(async () => { await RefreshAsync(true); }));
+        ExecutePrimaryActionCommand = Own(ReactiveCommand.CreateFromTask(ExecutePrimaryActionAsync));
+        SearchCommand = Own(ReactiveCommand.Create(ApplyCurrentSearch));
+        SelectSortOptionCommand = Own(ReactiveCommand.Create<string>(SelectSortOptionByKey));
+        BeginCreatePasswordCommand = Own(ReactiveCommand.Create(BeginCreatePassword));
+        EditSelectedPasswordCommand = Own(ReactiveCommand.CreateFromTask(EditSelectedPasswordAsync));
+        BeginDeleteSelectedPasswordCommand = Own(ReactiveCommand.Create(BeginDeleteSelectedPassword));
+        ConfirmDeletePasswordCommand = Own(ReactiveCommand.CreateFromTask(ConfirmDeletePasswordAsync));
+        CancelDeletePasswordCommand = Own(ReactiveCommand.Create(CancelDeletePassword));
+        RevealPasswordCommand = Own(ReactiveCommand.CreateFromTask(RevealPasswordAsync));
+        HidePasswordCommand = Own(ReactiveCommand.Create(HidePassword));
+        CopyRevealedPasswordCommand = Own(ReactiveCommand.CreateFromTask(CopyRevealedPasswordAsync));
+        RevealEditorPasswordCommand = Own(ReactiveCommand.CreateFromTask(RevealEditorPasswordAsync));
+        SavePasswordCommand = Own(ReactiveCommand.CreateFromTask(SavePasswordAsync));
+        CancelPasswordEditorCommand = Own(ReactiveCommand.Create(CancelPasswordEditor));
+        ToggleEditorPasswordVisibilityCommand = Own(ReactiveCommand.Create(ToggleEditorPasswordVisibility));
+        GenerateEditorPasswordCommand = Own(ReactiveCommand.Create(GenerateEditorPassword));
+        OpenCustomColorPickerCommand = Own(ReactiveCommand.Create(OpenCustomColorPicker));
+        BackFromColorPickerCommand = Own(ReactiveCommand.Create(BackFromColorPicker));
+        SaveCustomColorCommand = Own(ReactiveCommand.CreateFromTask(SaveCustomColorAsync));
+        BackFromCustomColorListCommand = Own(ReactiveCommand.Create(BackFromCustomColorList));
+        SearchCustomColorsCommand = Own(ReactiveCommand.Create(ApplyCustomColorFiltersAndSorting));
+        SelectCustomColorSortOptionCommand = Own(ReactiveCommand.Create<string>(SelectCustomColorSortOption));
+        ConfirmDeleteCustomColorCommand = Own(ReactiveCommand.CreateFromTask(ConfirmDeleteCustomColorAsync));
+        CancelDeleteCustomColorCommand = Own(ReactiveCommand.Create(CancelDeleteCustomColor));
+        ApplyManualColorCodeCommand = Own(ReactiveCommand.Create(ApplyManualColorCode));
+        BackToListCommand = Own(ReactiveCommand.Create(BackToList));
+        ClearSelectionCommand = Own(ReactiveCommand.Create(BackToList));
+        CancelMultiSelectionCommand = Own(ReactiveCommand.Create(CancelMultiSelection));
+        SelectAllMultiSelectionCommand = Own(ReactiveCommand.Create(SelectAllMultiSelection));
+        ExportMultiSelectionCommand = Own(ReactiveCommand.Create(BeginExportMultiSelection));
+        BeginDeleteMultiSelectionCommand = Own(ReactiveCommand.Create(BeginDeleteMultiSelection));
+        BackFromExportTargetCommand = Own(ReactiveCommand.Create(BackFromExportTarget));
+        ConfirmExportCommand = Own(ReactiveCommand.CreateFromTask(ConfirmExportAsync));
+        CancelExportConfirmationCommand = Own(ReactiveCommand.Create(CancelExportConfirmation));
         InitializePasswordTagManagement();
 
         RebuildPresetColors();
@@ -1001,75 +1001,75 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         }
     }
 
-    public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> RefreshCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ExecutePrimaryActionCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ExecutePrimaryActionCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> SearchCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> SearchCommand { get; }
 
-    public ReactiveCommand<string, Unit> SelectSortOptionCommand { get; }
+    public ReactiveCommand<string, RxVoid> SelectSortOptionCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> BeginCreatePasswordCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> BeginCreatePasswordCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> EditSelectedPasswordCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> EditSelectedPasswordCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> BeginDeleteSelectedPasswordCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> BeginDeleteSelectedPasswordCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ConfirmDeletePasswordCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ConfirmDeletePasswordCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> CancelDeletePasswordCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> CancelDeletePasswordCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> RevealPasswordCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> RevealPasswordCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> HidePasswordCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> HidePasswordCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> CopyRevealedPasswordCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> CopyRevealedPasswordCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> RevealEditorPasswordCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> RevealEditorPasswordCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> SavePasswordCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> SavePasswordCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> CancelPasswordEditorCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> CancelPasswordEditorCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ToggleEditorPasswordVisibilityCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ToggleEditorPasswordVisibilityCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> GenerateEditorPasswordCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> GenerateEditorPasswordCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> OpenCustomColorPickerCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> OpenCustomColorPickerCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> BackFromColorPickerCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> BackFromColorPickerCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> SaveCustomColorCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> SaveCustomColorCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> BackFromCustomColorListCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> BackFromCustomColorListCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> SearchCustomColorsCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> SearchCustomColorsCommand { get; }
 
-    public ReactiveCommand<string, Unit> SelectCustomColorSortOptionCommand { get; }
+    public ReactiveCommand<string, RxVoid> SelectCustomColorSortOptionCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ConfirmDeleteCustomColorCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ConfirmDeleteCustomColorCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> CancelDeleteCustomColorCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> CancelDeleteCustomColorCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ApplyManualColorCodeCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ApplyManualColorCodeCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> BackToListCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> BackToListCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ClearSelectionCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ClearSelectionCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> CancelMultiSelectionCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> CancelMultiSelectionCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> SelectAllMultiSelectionCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> SelectAllMultiSelectionCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ExportMultiSelectionCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ExportMultiSelectionCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> BeginDeleteMultiSelectionCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> BeginDeleteMultiSelectionCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> BackFromExportTargetCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> BackFromExportTargetCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ConfirmExportCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ConfirmExportCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> CancelExportConfirmationCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> CancelExportConfirmationCommand { get; }
 
     public string Title => GetTranslation("Passwords_Title");
 
@@ -1649,6 +1649,8 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     private void BuildExportTargetProfiles()
     {
+        foreach (var profile in ExportTargetProfiles)
+            profile.Dispose();
         ExportTargetProfiles.Clear();
 
         foreach (var session in GetOtherActiveExportTargetSessions()
@@ -1916,6 +1918,8 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         _pendingExportItemIds = [];
         _selectedExportTargetToken = Guid.Empty;
         _selectedExportTargetDisplayName = string.Empty;
+        foreach (var profile in ExportTargetProfiles)
+            profile.Dispose();
         ExportTargetProfiles.Clear();
         this.RaisePropertyChanged(nameof(HasExportTargetProfiles));
         this.RaisePropertyChanged(nameof(IsExportTargetProfilesEmpty));
@@ -2387,6 +2391,8 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         IReadOnlyList<PasswordTagInfoResponse> tags,
         IReadOnlyCollection<Guid> selectedTagIds)
     {
+        foreach (var tag in _allPasswordTags)
+            tag.Dispose();
         _allPasswordTags.Clear();
 
         foreach (var tag in tags.OrderBy(tag => tag.Name, StringComparer.CurrentCultureIgnoreCase))
@@ -2404,6 +2410,8 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     private void ClearPasswordTagItems()
     {
+        foreach (var tag in _allPasswordTags)
+            tag.Dispose();
         _allPasswordTags.Clear();
         RefreshSelectedPasswordTags();
         ClearEditorTagSelection();
@@ -2903,6 +2911,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         foreach (var password in _allPasswords)
         {
             password.PropertyChanged -= HandlePasswordItemPropertyChanged;
+            password.Dispose();
         }
 
         _allPasswords.Clear();
@@ -2978,6 +2987,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         foreach (var customColor in _allCustomColors)
         {
             customColor.PropertyChanged -= HandleCustomColorItemPropertyChanged;
+            customColor.Dispose();
         }
 
         _allCustomColors.Clear();
@@ -3554,6 +3564,12 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         Passwords,
         CustomColors,
         PasswordTags
+    }
+
+    protected override void DisposeManaged()
+    {
+        Reset();
+        base.DisposeManaged();
     }
 
 }

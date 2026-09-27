@@ -12,7 +12,7 @@
           <Button
               Classes="ghost iconButton"
               Command="{Binding BackToProfileCommand}"
-              
+
               ToolTip.Tip="{Binding BackToProfileLabel}" >
               <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
             </Button>
@@ -25,7 +25,7 @@
         <StackPanel Spacing="6">
           <TextBlock Text="{Binding UsernameLabel}" Classes="subtleText" />
           <TextBox Text="{Binding EditUsername}"
-                   Watermark="{Binding EditUsernamePlaceholder}"
+                   PlaceholderText="{Binding EditUsernamePlaceholder}"
                    TextInputOptions.AutoCapitalization="False"
                    TextInputOptions.ShowSuggestions="False"
                    TextInputOptions.ReturnKeyType="Done">

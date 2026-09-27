@@ -26,8 +26,8 @@ internal sealed class MainViewTapOutsideKeyboardDismissHandler
         if (!IsTextInputFocused(focusManager?.GetFocusedElement()))
             return;
 
-        focusManager!.ClearFocus();
-        SoftwareKeyboardService.Hide();
+        focusManager!.Focus(null);
+        _view.PlatformServices?.Keyboard.Hide();
     }
 
     private static bool IsTextInputFocused(IInputElement? focusedElement)

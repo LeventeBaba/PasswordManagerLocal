@@ -9,7 +9,7 @@ using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Contracts.Responses;
 using ReactiveUI;
 using System.Collections.ObjectModel;
-using System.Reactive;
+using ReactiveUI.Primitives;
 using System.Security.Cryptography;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
@@ -216,28 +216,28 @@ public sealed class ProfileViewModel : ViewModelBase
         Devices = [];
         DeviceSortOptions = [];
 
-        SaveProfileCommand = ReactiveCommand.CreateFromTask(SaveProfileAsync);
-        ChangeUsernameCommand = ReactiveCommand.CreateFromTask(ChangeUsernameAsync);
-        ChangeMasterPasswordCommand = ReactiveCommand.CreateFromTask(ChangeMasterPasswordAsync);
-        DeleteAccountCommand = ReactiveCommand.CreateFromTask(DeleteAccountAsync);
-        RefreshDevicesCommand = ReactiveCommand.CreateFromTask(RefreshDevicesAsync);
-        SearchDevicesCommand = ReactiveCommand.Create(ApplyCurrentDeviceSearch);
-        SelectDeviceSortOptionCommand = ReactiveCommand.Create<string>(SelectDeviceSortOptionByKey);
-        BackToDevicesCommand = ReactiveCommand.Create(BackToDevices);
-        ConfirmDisconnectDeviceCommand = ReactiveCommand.CreateFromTask(ConfirmDisconnectDeviceAsync);
-        CancelDisconnectDeviceCommand = ReactiveCommand.Create(CancelDisconnectDevice);
-        ConfirmLocalSyncToggleCommand = ReactiveCommand.CreateFromTask(ConfirmLocalSyncToggleAsync);
-        CancelLocalSyncToggleCommand = ReactiveCommand.Create(CancelLocalSyncToggle);
-        BeginAddDeviceCommand = ReactiveCommand.CreateFromTask(BeginAddDeviceAsync);
-        ConfirmAddDeviceCommand = ReactiveCommand.CreateFromTask(ConfirmAddDeviceAsync);
-        ScanDeviceEnrollmentQrCodeCommand = ReactiveCommand.CreateFromTask(ScanDeviceEnrollmentQrCodeAsync);
-        PickDeviceEnrollmentQrImageCommand = ReactiveCommand.CreateFromTask(PickDeviceEnrollmentQrImageAsync);
-        CancelAddDeviceCommand = ReactiveCommand.Create(CancelAddDevice);
-        BackToProfileCommand = ReactiveCommand.Create(BackToProfile);
-        BeginEditPersonalInfoCommand = ReactiveCommand.Create(BeginEditPersonalInfo);
-        BeginChangeUsernameCommand = ReactiveCommand.Create(BeginChangeUsername);
-        BeginChangeMasterPasswordCommand = ReactiveCommand.Create(BeginChangeMasterPassword);
-        BeginDeleteAccountCommand = ReactiveCommand.Create(BeginDeleteAccount);
+        SaveProfileCommand = Own(ReactiveCommand.CreateFromTask(SaveProfileAsync));
+        ChangeUsernameCommand = Own(ReactiveCommand.CreateFromTask(ChangeUsernameAsync));
+        ChangeMasterPasswordCommand = Own(ReactiveCommand.CreateFromTask(ChangeMasterPasswordAsync));
+        DeleteAccountCommand = Own(ReactiveCommand.CreateFromTask(DeleteAccountAsync));
+        RefreshDevicesCommand = Own(ReactiveCommand.CreateFromTask(RefreshDevicesAsync));
+        SearchDevicesCommand = Own(ReactiveCommand.Create(ApplyCurrentDeviceSearch));
+        SelectDeviceSortOptionCommand = Own(ReactiveCommand.Create<string>(SelectDeviceSortOptionByKey));
+        BackToDevicesCommand = Own(ReactiveCommand.Create(BackToDevices));
+        ConfirmDisconnectDeviceCommand = Own(ReactiveCommand.CreateFromTask(ConfirmDisconnectDeviceAsync));
+        CancelDisconnectDeviceCommand = Own(ReactiveCommand.Create(CancelDisconnectDevice));
+        ConfirmLocalSyncToggleCommand = Own(ReactiveCommand.CreateFromTask(ConfirmLocalSyncToggleAsync));
+        CancelLocalSyncToggleCommand = Own(ReactiveCommand.Create(CancelLocalSyncToggle));
+        BeginAddDeviceCommand = Own(ReactiveCommand.CreateFromTask(BeginAddDeviceAsync));
+        ConfirmAddDeviceCommand = Own(ReactiveCommand.CreateFromTask(ConfirmAddDeviceAsync));
+        ScanDeviceEnrollmentQrCodeCommand = Own(ReactiveCommand.CreateFromTask(ScanDeviceEnrollmentQrCodeAsync));
+        PickDeviceEnrollmentQrImageCommand = Own(ReactiveCommand.CreateFromTask(PickDeviceEnrollmentQrImageAsync));
+        CancelAddDeviceCommand = Own(ReactiveCommand.Create(CancelAddDevice));
+        BackToProfileCommand = Own(ReactiveCommand.Create(BackToProfile));
+        BeginEditPersonalInfoCommand = Own(ReactiveCommand.Create(BeginEditPersonalInfo));
+        BeginChangeUsernameCommand = Own(ReactiveCommand.Create(BeginChangeUsername));
+        BeginChangeMasterPasswordCommand = Own(ReactiveCommand.Create(BeginChangeMasterPassword));
+        BeginDeleteAccountCommand = Own(ReactiveCommand.Create(BeginDeleteAccount));
         RebuildDeviceSortOptions();
         SelectDefaultDeviceSortOption();
     }
@@ -483,7 +483,7 @@ public sealed class ProfileViewModel : ViewModelBase
         }
     }
 
-    
+
     public string CurrentMainPage
     {
         get => _currentMainPage;
@@ -696,49 +696,49 @@ public sealed class ProfileViewModel : ViewModelBase
         _ => UnknownDeviceTypeLabel
     };
 
-    public ReactiveCommand<Unit, Unit> SaveProfileCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> SaveProfileCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ChangeUsernameCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ChangeUsernameCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ChangeMasterPasswordCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ChangeMasterPasswordCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> DeleteAccountCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> DeleteAccountCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> RefreshDevicesCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> RefreshDevicesCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> SearchDevicesCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> SearchDevicesCommand { get; }
 
-    public ReactiveCommand<string, Unit> SelectDeviceSortOptionCommand { get; }
+    public ReactiveCommand<string, RxVoid> SelectDeviceSortOptionCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> BackToDevicesCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> BackToDevicesCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ConfirmDisconnectDeviceCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ConfirmDisconnectDeviceCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> CancelDisconnectDeviceCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> CancelDisconnectDeviceCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ConfirmLocalSyncToggleCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ConfirmLocalSyncToggleCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> CancelLocalSyncToggleCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> CancelLocalSyncToggleCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> BeginAddDeviceCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> BeginAddDeviceCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ConfirmAddDeviceCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ConfirmAddDeviceCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ScanDeviceEnrollmentQrCodeCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ScanDeviceEnrollmentQrCodeCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> PickDeviceEnrollmentQrImageCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> PickDeviceEnrollmentQrImageCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> CancelAddDeviceCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> CancelAddDeviceCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> BackToProfileCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> BackToProfileCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> BeginEditPersonalInfoCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> BeginEditPersonalInfoCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> BeginChangeUsernameCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> BeginChangeUsernameCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> BeginChangeMasterPasswordCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> BeginChangeMasterPasswordCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> BeginDeleteAccountCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> BeginDeleteAccountCommand { get; }
 
     public string Title => GetTranslation("Profile_Title");
 
@@ -912,7 +912,7 @@ public sealed class ProfileViewModel : ViewModelBase
 
     public string ScanDeviceEnrollmentQrCodeDescription => GetTranslation("Profile_Device_Add_QrScanner_Description");
 
-    public bool IsDeviceEnrollmentCameraScanAvailable => EnrollmentQrCodeCameraScannerService.IsAvailable;
+    public bool IsDeviceEnrollmentCameraScanAvailable => PlatformServices.CameraScanner.IsAvailable;
 
     public string ConfirmAddDeviceLabel => GetTranslation("Profile_Device_Add_Confirm");
 
@@ -995,7 +995,7 @@ public sealed class ProfileViewModel : ViewModelBase
         ApplyDeviceFiltersAndSorting(SelectedDevice?.DeviceId, preserveSelection: true);
     }
 
-    
+
     private void RebuildLocalizedDeviceSortOptions()
     {
         var selectedDeviceSortKey = SelectedDeviceSortOption?.Key;
@@ -1188,6 +1188,8 @@ public sealed class ProfileViewModel : ViewModelBase
         DeleteAccountPassword = string.Empty;
         DisconnectDevicePassword = string.Empty;
         ClearStatusMessage();
+        foreach (var device in _allDevices)
+            device.Dispose();
         _allDevices.Clear();
         Devices.Clear();
         SelectedDevice = null;
@@ -1417,7 +1419,9 @@ public sealed class ProfileViewModel : ViewModelBase
         try
         {
             var devices = await _endpoints.GetUserDevicesAsync(_token);
-            _allDevices.Clear();
+            foreach (var device in _allDevices)
+            device.Dispose();
+        _allDevices.Clear();
 
             foreach (var device in devices)
                 _allDevices.Add(CreateDeviceItem(device));
@@ -1737,7 +1741,7 @@ public sealed class ProfileViewModel : ViewModelBase
 
         ClearStatusMessage();
 
-        if (!EnrollmentQrCodeCameraScannerService.IsAvailable)
+        if (!PlatformServices.CameraScanner.IsAvailable)
         {
             ShowErrorMessage(GetTranslation("Profile_Device_Add_QrCameraUnavailable"));
             return;
@@ -1745,9 +1749,9 @@ public sealed class ProfileViewModel : ViewModelBase
 
         try
         {
-            var code = await EnrollmentQrCodeCameraScannerService.ScanEnrollmentCodeAsync(
+            var code = await PlatformServices.CameraScanner.ScanEnrollmentCodeAsync(
                 ScanDeviceEnrollmentQrCodeTitle,
-                ScanDeviceEnrollmentQrCodeDescription);
+                ScanDeviceEnrollmentQrCodeDescription, LifetimeToken);
 
             if (string.IsNullOrWhiteSpace(code))
                 return;
@@ -1770,7 +1774,7 @@ public sealed class ProfileViewModel : ViewModelBase
         try
         {
             ClearStatusMessage();
-            var imageBytes = await QrImagePickerService.PickImageBytesAsync(PickDeviceEnrollmentQrImageTitle);
+            var imageBytes = await PlatformServices.ImagePicker.PickImageBytesAsync(PickDeviceEnrollmentQrImageTitle, LifetimeToken);
             if (imageBytes is null || imageBytes.Length == 0)
                 return;
 
@@ -2030,4 +2034,10 @@ public sealed class ProfileViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(IsDeviceListEmpty));
         this.RaisePropertyChanged(nameof(IsDeviceSearchResultEmpty));
     }
+    protected override void DisposeManaged()
+    {
+        Reset();
+        base.DisposeManaged();
+    }
+
 }

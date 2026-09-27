@@ -60,7 +60,7 @@
           <controls:WatermarkWidthTextBox
               Grid.Column="1"
               Text="{Binding DeviceSearchQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-              Watermark="{Binding DeviceSearchPlaceholder}"
+              PlaceholderText="{Binding DeviceSearchPlaceholder}"
               MinWidth="0"
               TextInputOptions.ContentType="Search"
               TextInputOptions.AutoCapitalization="False"

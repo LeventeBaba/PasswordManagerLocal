@@ -181,7 +181,8 @@ public sealed class Phase11AndroidArchitectureGuardTests
 
         var activity = File.ReadAllText(lifecycleSources[0]);
         var service = File.ReadAllText(lifecycleSources[1]);
-        StringAssert.Contains(activity, "Task.Run(() => DisposeActivityRuntimeAsync");
+        StringAssert.Contains(activity, "DisposeSessionAsync");
+        StringAssert.Contains(activity, "_ = DisposeSessionAsync(session);");
         StringAssert.Contains(service, "Task.Run(() => DisposeRuntimeHostAfterServiceDestructionAsync");
         StringAssert.Contains(service, "DisposeRuntimeResourcesAsync");
     }

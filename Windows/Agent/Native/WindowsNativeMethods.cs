@@ -23,10 +23,13 @@ internal static class WindowsNativeMethods
     internal const uint MfString = 0x0000;
     internal const uint MfSeparator = 0x0800;
     internal const uint TpmRightButton = 0x0002;
+    internal const uint TpmNonotify = 0x0080;
+    internal const uint TpmReturnCmd = 0x0100;
 
     internal const uint NimAdd = 0x00000000;
     internal const uint NimModify = 0x00000001;
     internal const uint NimDelete = 0x00000002;
+    internal const uint NimSetFocus = 0x00000003;
     internal const uint NimSetVersion = 0x00000004;
     internal const uint NifMessage = 0x00000001;
     internal const uint NifIcon = 0x00000002;

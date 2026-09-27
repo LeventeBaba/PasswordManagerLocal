@@ -5,16 +5,30 @@ using System.Linq;
 
 namespace PasswordManagerLocal.Common.Frontend.Services;
 
-public sealed class AuthSessionRegistry : IAuthSessionRegistry
+public sealed class AuthSessionRegistry : IAuthSessionRegistry, IDisposable
 {
     private readonly List<AuthSessionProfile> _sessions = new();
     private Guid _selection = Guid.Empty;
+    private bool _disposed;
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _sessions.Clear();
+        _selection = Guid.Empty;
+    }
 
     public Guid CurrentUserToken
     {
         get => _selection;
         set
         {
+            if (_disposed)
+            {
+                _selection = Guid.Empty;
+                return;
+            }
+
             if (value == Guid.Empty)
             {
                 _selection = Guid.Empty;
@@ -29,7 +43,7 @@ public sealed class AuthSessionRegistry : IAuthSessionRegistry
 
     public bool TryAdd(Guid token, bool select = true)
     {
-        if (token == Guid.Empty)
+        if (_disposed || token == Guid.Empty)
             return false;
 
         if (_sessions.All(session => session.Token != token))
@@ -43,7 +57,7 @@ public sealed class AuthSessionRegistry : IAuthSessionRegistry
 
     public bool TrySetProfile(Guid token, Guid userId, string displayName, string subtitle, string username, string email, bool isRememberMeEnabled)
     {
-        if (token == Guid.Empty)
+        if (_disposed || token == Guid.Empty)
             return false;
 
         var index = _sessions.FindIndex(session => session.Token == token);
@@ -66,6 +80,9 @@ public sealed class AuthSessionRegistry : IAuthSessionRegistry
 
     public bool TrySetRememberMe(Guid token, bool isRememberMeEnabled)
     {
+        if (_disposed || token == Guid.Empty)
+            return false;
+
         var index = _sessions.FindIndex(session => session.Token == token);
         if (index < 0)
             return false;
@@ -87,7 +104,7 @@ public sealed class AuthSessionRegistry : IAuthSessionRegistry
 
     public bool TryReplaceToken(Guid oldToken, Guid newToken)
     {
-        if (oldToken == Guid.Empty || newToken == Guid.Empty)
+        if (_disposed || oldToken == Guid.Empty || newToken == Guid.Empty)
             return false;
 
         var index = _sessions.FindIndex(session => session.Token == oldToken);
@@ -114,6 +131,9 @@ public sealed class AuthSessionRegistry : IAuthSessionRegistry
 
     public bool TryRemove(Guid token)
     {
+        if (_disposed || token == Guid.Empty)
+            return false;
+
         var index = _sessions.FindIndex(session => session.Token == token);
         if (index < 0)
             return false;
@@ -129,7 +149,7 @@ public sealed class AuthSessionRegistry : IAuthSessionRegistry
 
     public bool ContainsUserId(Guid userId, Guid excludedToken = default)
     {
-        if (userId == Guid.Empty)
+        if (_disposed || userId == Guid.Empty)
             return false;
 
         return _sessions.Any(session =>
@@ -138,11 +158,11 @@ public sealed class AuthSessionRegistry : IAuthSessionRegistry
     }
 
     public AuthSessionProfile? GetSession(Guid token) =>
-        _sessions.FirstOrDefault(session => session.Token == token);
+        _disposed ? null : _sessions.FirstOrDefault(session => session.Token == token);
 
     public IReadOnlyList<Guid> ListTokens() =>
-        _sessions.Select(session => session.Token).ToList();
+        _disposed ? Array.Empty<Guid>() : _sessions.Select(session => session.Token).ToList();
 
     public IReadOnlyList<AuthSessionProfile> ListSessions() =>
-        _sessions.ToList();
+        _disposed ? Array.Empty<AuthSessionProfile>() : _sessions.ToList();
 }

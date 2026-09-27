@@ -2,7 +2,7 @@ using Avalonia.Media;
 using PasswordManagerLocal.Common.Contracts.Responses;
 using PasswordManagerLocal.Common.Frontend.Services;
 using ReactiveUI;
-using System.Reactive;
+using ReactiveUI.Primitives;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
 
@@ -35,9 +35,9 @@ public sealed class PasswordItemViewModel : MultiSelectableListItemViewModel
         _editLabel = editLabel;
         _deleteLabel = deleteLabel;
 
-        ViewCommand = ReactiveCommand.CreateFromTask(() => viewAsync(this));
-        EditCommand = ReactiveCommand.CreateFromTask(() => editAsync(this));
-        DeleteCommand = ReactiveCommand.CreateFromTask(() => deleteAsync(this));
+        ViewCommand = Own(ReactiveCommand.CreateFromTask(() => viewAsync(this)));
+        EditCommand = Own(ReactiveCommand.CreateFromTask(() => editAsync(this)));
+        DeleteCommand = Own(ReactiveCommand.CreateFromTask(() => deleteAsync(this)));
     }
 
     public Guid Id { get; }
@@ -80,11 +80,11 @@ public sealed class PasswordItemViewModel : MultiSelectableListItemViewModel
         private set => this.RaiseAndSetIfChanged(ref _deleteLabel, value);
     }
 
-    public ReactiveCommand<Unit, Unit> ViewCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ViewCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> EditCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> EditCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> DeleteCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> DeleteCommand { get; }
 
     public string DescriptionPreview => string.IsNullOrWhiteSpace(Description) ? "—" : Description;
 

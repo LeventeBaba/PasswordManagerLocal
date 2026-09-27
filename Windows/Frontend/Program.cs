@@ -1,6 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.ReactiveUI;
+using ReactiveUI.Avalonia;
 using PasswordManagerLocal.Common.Frontend;
 using PasswordManagerLocal.Common.Frontend.Services;
 using PasswordManagerLocal.Common.Contracts.Runtime;
@@ -99,7 +99,8 @@ internal sealed class Program
                 // The frontend owns the existing compatibility-reset dialog and will issue the agent reset over control IPC.
             }
 
-            ClipboardService.SetPlatformClipboardWriter(new WindowsClipboardWriter());
+            var platformServices = new FrontendPlatformServices();
+            platformServices.Clipboard.SetPlatformClipboardWriter(new WindowsClipboardWriter());
             FirewallPermissionService.SetPlatformFirewallPermissionManager(
                 new WindowsFirewallPermissionManager());
             var frontendContext = new FrontendApplicationContext(
@@ -107,7 +108,8 @@ internal sealed class Program
                 new WindowsAgentBackgroundSyncSettingsClient(agentConnection),
                 applicationDataDirectory,
                 () => exitController.RequestExit(),
-                applicationPreferencesChangeNotifier: new WindowsAgentApplicationPreferencesNotifier(agentConnection));
+                applicationPreferencesChangeNotifier: new WindowsAgentApplicationPreferencesNotifier(agentConnection),
+                platformServices: platformServices);
             exitCode = BuildAvaloniaApp(frontendContext)
                 .StartWithClassicDesktopLifetime(
                     args,
@@ -140,8 +142,9 @@ internal sealed class Program
         var builder = AppBuilder.Configure(() => new App(frontendContext))
             .UseWin32()
             .UseSkia()
+            .UseHarfBuzz()
             .WithInterFont()
-            .UseReactiveUI();
+            .UseReactiveUI(_ => { });
 
 #if DEBUG
         builder = builder.LogToTrace();

@@ -9,7 +9,7 @@ using PasswordManagerLocal.Common.Contracts.Enrollment;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels;
 
-public abstract class ViewModelBase : ReactiveObject
+public abstract class ViewModelBase : DisposableReactiveObject
 {
     protected ViewModelBase(UiPreferencesService uiPreferences)
     {
@@ -19,6 +19,8 @@ public abstract class ViewModelBase : ReactiveObject
     }
 
     protected UiPreferencesService UiPreferences { get; }
+    public FrontendPlatformServices PlatformServices => UiPreferences.PlatformServices;
+    protected CancellationToken LifetimeToken => PlatformServices.LifetimeToken;
 
     protected OperationMessageState OperationMessage { get; } = new();
 
@@ -109,8 +111,8 @@ public abstract class ViewModelBase : ReactiveObject
             _ => GetTranslation("Error_DeviceEnrollment_Generic")
         };
 
-    protected static Task<bool> TryCopyTextToClipboardAsync(string? text) =>
-        ClipboardService.TrySetTextAsync(text);
+    protected Task<bool> TryCopyTextToClipboardAsync(string? text) =>
+        PlatformServices.Clipboard.TrySetTextAsync(text);
 
     protected void RaisePropertiesChanged(IEnumerable<string> propertyNames)
     {
@@ -128,6 +130,14 @@ public abstract class ViewModelBase : ReactiveObject
 
     protected virtual void OnStatusMessageChanged()
     {
+    }
+
+    protected override void DisposeManaged()
+    {
+        UiPreferences.PreferencesChanged -= HandlePreferencesChanged;
+        OperationMessage.PropertyChanged -= HandleOperationMessageChanged;
+        OperationMessage.Dispose();
+        base.DisposeManaged();
     }
 
     private void HandleOperationMessageChanged(object? sender, PropertyChangedEventArgs e)

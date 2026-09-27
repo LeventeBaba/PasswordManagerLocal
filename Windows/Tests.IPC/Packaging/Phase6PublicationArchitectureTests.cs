@@ -95,6 +95,8 @@ public sealed class Phase6PublicationArchitectureTests
         StringAssert.Contains(optimizer, "System.Xml.XmlSerializer.dll");
         StringAssert.Contains(optimizer, "runtimeTargets");
         StringAssert.Contains(optimizer, "System.Xml.XmlSerializer/*");
+        StringAssert.Contains(optimizer, "EndsWith('.pdb'");
+        StringAssert.Contains(optimizer, "resources");
         StringAssert.Contains(validator, "System.Xml.XmlSerializer.dll");
     }
 

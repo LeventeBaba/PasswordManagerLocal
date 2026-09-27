@@ -36,7 +36,7 @@
             <StackPanel Spacing="6">
               <TextBlock Text="{Binding UsernameLabel}" />
               <TextBox Text="{Binding Username}"
-                       Watermark="{Binding UsernamePlaceholder}"
+                       PlaceholderText="{Binding UsernamePlaceholder}"
                        TextInputOptions.ContentType="Email"
                        TextInputOptions.AutoCapitalization="False"
                        TextInputOptions.ShowSuggestions="False" />
@@ -48,7 +48,7 @@
                 <TextBox Grid.Column="0"
                          Text="{Binding Password}"
                          PasswordChar="{Binding PasswordMaskCharacter}"
-                         Watermark="{Binding PasswordPlaceholder}"
+                         PlaceholderText="{Binding PasswordPlaceholder}"
                          TextInputOptions.ContentType="Password"
                          TextInputOptions.IsSensitive="True"
                          TextInputOptions.AutoCapitalization="False"

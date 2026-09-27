@@ -1,6 +1,6 @@
 using PasswordManagerLocal.Common.Frontend.Services;
 using ReactiveUI;
-using System.Reactive;
+using ReactiveUI.Primitives;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels.Auth;
 
@@ -21,7 +21,7 @@ public sealed class ProfileSessionItemViewModel : ViewModelBase
         DisplayName = displayName;
         Subtitle = subtitle;
         _isCurrent = isCurrent;
-        SelectCommand = ReactiveCommand.CreateFromTask(() => selectAsync(Token));
+        SelectCommand = Own(ReactiveCommand.CreateFromTask(() => selectAsync(Token)));
     }
 
     public Guid Token { get; }
@@ -41,7 +41,7 @@ public sealed class ProfileSessionItemViewModel : ViewModelBase
         }
     }
 
-    public ReactiveCommand<Unit, Unit> SelectCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> SelectCommand { get; }
 
     public string ActionLabel => IsCurrent
         ? GetTranslation("Profiles_Current")

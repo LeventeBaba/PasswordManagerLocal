@@ -6,7 +6,7 @@ using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Contracts.Responses;
 using ReactiveUI;
-using System.Reactive;
+using ReactiveUI.Primitives;
 
 using PasswordManagerLocal.Common.Contracts.Enrollment;
 
@@ -47,16 +47,16 @@ public sealed class LoginViewModel : ViewModelBase
         _navigateToRegistration = navigateToRegistration;
         _onAuthenticationSucceededAsync = onAuthenticationSucceededAsync;
 
-        LoginCommand = ReactiveCommand.CreateFromTask(LoginAsync);
-        ExecutePrimaryActionCommand = ReactiveCommand.CreateFromTask(ExecutePrimaryActionAsync);
-        NavigateToRegistrationCommand = ReactiveCommand.Create(_navigateToRegistration);
-        NavigateBackCommand = ReactiveCommand.CreateFromTask(NavigateBackAsync);
-        TogglePasswordVisibilityCommand = ReactiveCommand.Create(TogglePasswordVisibility);
-        ShowDeviceTransferIntroCommand = ReactiveCommand.Create(ShowDeviceTransferIntro);
-        StartDeviceTransferCommand = ReactiveCommand.CreateFromTask(StartDeviceTransferAsync);
-        CancelDeviceTransferCommand = ReactiveCommand.CreateFromTask(CancelDeviceTransferAsync);
-        FinishDeviceTransferCommand = ReactiveCommand.Create(FinishDeviceTransfer);
-        CopyDeviceTransferCodeCommand = ReactiveCommand.CreateFromTask(CopyDeviceTransferCodeAsync);
+        LoginCommand = Own(ReactiveCommand.CreateFromTask(LoginAsync));
+        ExecutePrimaryActionCommand = Own(ReactiveCommand.CreateFromTask(ExecutePrimaryActionAsync));
+        NavigateToRegistrationCommand = Own(ReactiveCommand.Create(_navigateToRegistration));
+        NavigateBackCommand = Own(ReactiveCommand.CreateFromTask(NavigateBackAsync));
+        TogglePasswordVisibilityCommand = Own(ReactiveCommand.Create(TogglePasswordVisibility));
+        ShowDeviceTransferIntroCommand = Own(ReactiveCommand.Create(ShowDeviceTransferIntro));
+        StartDeviceTransferCommand = Own(ReactiveCommand.CreateFromTask(StartDeviceTransferAsync));
+        CancelDeviceTransferCommand = Own(ReactiveCommand.CreateFromTask(CancelDeviceTransferAsync));
+        FinishDeviceTransferCommand = Own(ReactiveCommand.Create(FinishDeviceTransfer));
+        CopyDeviceTransferCodeCommand = Own(ReactiveCommand.CreateFromTask(CopyDeviceTransferCodeAsync));
     }
 
     public string Username
@@ -233,25 +233,25 @@ public sealed class LoginViewModel : ViewModelBase
 
     public char PasswordMaskCharacter => IsPasswordVisible ? '\0' : '●';
 
-    public ReactiveCommand<Unit, Unit> LoginCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> LoginCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ExecutePrimaryActionCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ExecutePrimaryActionCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> NavigateToRegistrationCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> NavigateToRegistrationCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> NavigateBackCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> NavigateBackCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> TogglePasswordVisibilityCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> TogglePasswordVisibilityCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ShowDeviceTransferIntroCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ShowDeviceTransferIntroCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> StartDeviceTransferCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> StartDeviceTransferCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> CancelDeviceTransferCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> CancelDeviceTransferCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> FinishDeviceTransferCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> FinishDeviceTransferCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> CopyDeviceTransferCodeCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> CopyDeviceTransferCodeCommand { get; }
 
     public string Title => IsDeviceTransferFlowVisible
         ? GetTranslation("Login_DeviceTransfer_Title")
@@ -557,6 +557,8 @@ public sealed class LoginViewModel : ViewModelBase
 
     private void ShowDeviceTransferCodeCopiedFeedback()
     {
+        if (IsDisposed)
+            return;
         _deviceTransferCopyFeedbackTimer?.Dispose();
         IsDeviceTransferCodeCopied = true;
         _deviceTransferCopyFeedbackTimer = DispatcherTimer.RunOnce(() =>
@@ -576,6 +578,7 @@ public sealed class LoginViewModel : ViewModelBase
     private async Task CancelDeviceTransferAsync()
     {
         _deviceTransferPolling?.Cancel();
+        _deviceTransferPolling?.Dispose();
         _deviceTransferPolling = null;
 
         try
@@ -594,8 +597,11 @@ public sealed class LoginViewModel : ViewModelBase
 
     private void StartStatusPolling()
     {
+        if (IsDisposed)
+            return;
         _deviceTransferPolling?.Cancel();
-        _deviceTransferPolling = new CancellationTokenSource();
+        _deviceTransferPolling?.Dispose();
+        _deviceTransferPolling = CancellationTokenSource.CreateLinkedTokenSource(LifetimeToken);
         var ct = _deviceTransferPolling.Token;
 
         _ = Task.Run(async () =>
@@ -627,6 +633,8 @@ public sealed class LoginViewModel : ViewModelBase
 
     private void ApplyDeviceTransferStatus(DeviceEnrollmentStatusResponse status)
     {
+        if (IsDisposed)
+            return;
         if (status.State == DeviceEnrollmentState.Waiting)
             return;
 
@@ -658,6 +666,7 @@ public sealed class LoginViewModel : ViewModelBase
     {
         ResetDeviceTransferCodeCopiedFeedback();
         _deviceTransferPolling?.Cancel();
+        _deviceTransferPolling?.Dispose();
         _deviceTransferPolling = null;
         IsDeviceTransferIntroVisible = false;
         IsDeviceTransferCodeVisible = false;
@@ -686,4 +695,12 @@ public sealed class LoginViewModel : ViewModelBase
             : code.Replace("0", "0\u0338", StringComparison.Ordinal);
 
     private void TogglePasswordVisibility() => IsPasswordVisible = !IsPasswordVisible;
+    protected override void DisposeManaged()
+    {
+        Reset();
+        DeviceTransferCode = string.Empty;
+        DeviceTransferStatus.Dispose();
+        base.DisposeManaged();
+    }
+
 }

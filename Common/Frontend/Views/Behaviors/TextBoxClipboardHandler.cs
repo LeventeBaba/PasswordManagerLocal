@@ -13,18 +13,22 @@ internal static class TextBoxClipboardHandler
     public static bool IsTextInputSource(object? source) =>
         source is Control sourceControl && FindSourceTextBox(sourceControl) is not null;
 
-    public static async Task CopySelectedTextAsync(TextBox textBox, RoutedEventArgs e)
+    public static async Task CopySelectedTextAsync(TextBox textBox, RoutedEventArgs e, ClipboardService? clipboard)
     {
+        if (clipboard is null)
+            return;
         var selectedText = ClipboardService.GetSelectedText(textBox);
         if (string.IsNullOrEmpty(selectedText))
             return;
 
         e.Handled = true;
-        await ClipboardService.TrySetTextAsync(selectedText);
+        await clipboard.TrySetTextAsync(selectedText);
     }
 
-    public static async Task CutSelectedTextAsync(TextBox textBox, RoutedEventArgs e)
+    public static async Task CutSelectedTextAsync(TextBox textBox, RoutedEventArgs e, ClipboardService? clipboard)
     {
+        if (clipboard is null)
+            return;
         e.Handled = true;
         if (textBox.IsReadOnly)
             return;
@@ -36,7 +40,7 @@ internal static class TextBoxClipboardHandler
             return;
 
         var selectedText = text[selectionStart..selectionEnd];
-        if (!await ClipboardService.TrySetTextAsync(selectedText))
+        if (!await clipboard.TrySetTextAsync(selectedText))
             return;
 
         textBox.Text = text.Remove(selectionStart, selectionEnd - selectionStart);

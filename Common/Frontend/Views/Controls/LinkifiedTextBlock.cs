@@ -47,7 +47,7 @@ public sealed class LinkifiedTextBlock : TextBlock
 
     private void RebuildInlines()
     {
-        Inlines.Clear();
+        (Inlines ??= new InlineCollection()).Clear();
         _links.Clear();
 
         var text = SourceText ?? string.Empty;
@@ -58,9 +58,9 @@ public sealed class LinkifiedTextBlock : TextBlock
         }
         catch (RegexMatchTimeoutException)
         {
-            Inlines.Clear();
+            (Inlines ??= new InlineCollection()).Clear();
             _links.Clear();
-            Inlines.Add(new Run(text));
+            (Inlines ??= new InlineCollection()).Add(new Run(text));
         }
     }
 
@@ -78,7 +78,7 @@ public sealed class LinkifiedTextBlock : TextBlock
 
             if (match.Index > currentIndex)
             {
-                Inlines.Add(new Run(text[currentIndex..match.Index]));
+                (Inlines ??= new InlineCollection()).Add(new Run(text[currentIndex..match.Index]));
             }
 
             var displayedUrl = match.Value[..urlLength];
@@ -88,7 +88,7 @@ public sealed class LinkifiedTextBlock : TextBlock
             }
             else
             {
-                Inlines.Add(new Run(displayedUrl));
+                (Inlines ??= new InlineCollection()).Add(new Run(displayedUrl));
             }
 
             currentIndex = match.Index + urlLength;
@@ -96,13 +96,13 @@ public sealed class LinkifiedTextBlock : TextBlock
 
         if (currentIndex < text.Length)
         {
-            Inlines.Add(new Run(text[currentIndex..]));
+            (Inlines ??= new InlineCollection()).Add(new Run(text[currentIndex..]));
         }
     }
 
     private void AddLinkInline(string displayedUrl, int startIndex, Uri uri)
     {
-        Inlines.Add(new Run(displayedUrl)
+        (Inlines ??= new InlineCollection()).Add(new Run(displayedUrl)
         {
             Foreground = LinkForeground,
             TextDecorations = Avalonia.Media.TextDecorations.Underline

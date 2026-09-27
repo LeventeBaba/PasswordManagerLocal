@@ -4,7 +4,7 @@ using PasswordManagerLocal.Common.Frontend.Services;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using ReactiveUI;
-using System.Reactive;
+using ReactiveUI.Primitives;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels.Auth;
 
@@ -40,11 +40,11 @@ public sealed class RegistrationViewModel : ViewModelBase
         _navigateToLogin = navigateToLogin;
         _onAuthenticationSucceededAsync = onAuthenticationSucceededAsync;
 
-        RegisterCommand = ReactiveCommand.CreateFromTask(RegisterAsync);
-        NavigateToLoginCommand = ReactiveCommand.Create(_navigateToLogin);
-        NavigateBackCommand = ReactiveCommand.CreateFromTask(NavigateBackAsync);
-        TogglePasswordVisibilityCommand = ReactiveCommand.Create(TogglePasswordVisibility);
-        ToggleConfirmPasswordVisibilityCommand = ReactiveCommand.Create(ToggleConfirmPasswordVisibility);
+        RegisterCommand = Own(ReactiveCommand.CreateFromTask(RegisterAsync));
+        NavigateToLoginCommand = Own(ReactiveCommand.Create(_navigateToLogin));
+        NavigateBackCommand = Own(ReactiveCommand.CreateFromTask(NavigateBackAsync));
+        TogglePasswordVisibilityCommand = Own(ReactiveCommand.Create(TogglePasswordVisibility));
+        ToggleConfirmPasswordVisibilityCommand = Own(ReactiveCommand.Create(ToggleConfirmPasswordVisibility));
     }
 
     public string Username
@@ -178,15 +178,15 @@ public sealed class RegistrationViewModel : ViewModelBase
         !string.IsNullOrWhiteSpace(Password) &&
         !string.IsNullOrWhiteSpace(ConfirmPassword);
 
-    public ReactiveCommand<Unit, Unit> RegisterCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> RegisterCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> NavigateToLoginCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> NavigateToLoginCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> NavigateBackCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> NavigateBackCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> TogglePasswordVisibilityCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> TogglePasswordVisibilityCommand { get; }
 
-    public ReactiveCommand<Unit, Unit> ToggleConfirmPasswordVisibilityCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ToggleConfirmPasswordVisibilityCommand { get; }
 
     public string Title => GetTranslation("Register_Title");
 
@@ -409,4 +409,10 @@ public sealed class RegistrationViewModel : ViewModelBase
     private void TogglePasswordVisibility() => IsPasswordVisible = !IsPasswordVisible;
 
     private void ToggleConfirmPasswordVisibility() => IsConfirmPasswordVisible = !IsConfirmPasswordVisible;
+    protected override void DisposeManaged()
+    {
+        Reset();
+        base.DisposeManaged();
+    }
+
 }

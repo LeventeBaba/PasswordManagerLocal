@@ -1,9 +1,9 @@
 using ReactiveUI;
-using System.Reactive;
+using ReactiveUI.Primitives;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
 
-public sealed class ExportTargetProfileItemViewModel
+public sealed class ExportTargetProfileItemViewModel : DisposableReactiveObject
 {
     public ExportTargetProfileItemViewModel(
         Guid token,
@@ -14,7 +14,7 @@ public sealed class ExportTargetProfileItemViewModel
         Token = token;
         DisplayName = displayName;
         Subtitle = subtitle;
-        SelectCommand = ReactiveCommand.Create(() => select(Token));
+        SelectCommand = Own(ReactiveCommand.Create(() => select(Token)));
     }
 
     public Guid Token { get; }
@@ -25,5 +25,5 @@ public sealed class ExportTargetProfileItemViewModel
 
     public bool HasSubtitle => !string.IsNullOrWhiteSpace(Subtitle);
 
-    public ReactiveCommand<Unit, Unit> SelectCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> SelectCommand { get; }
 }

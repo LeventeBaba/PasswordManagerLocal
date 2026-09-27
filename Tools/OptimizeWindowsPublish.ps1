@@ -59,6 +59,13 @@ function Remove-PublishedFiles {
 
     Get-ChildItem -LiteralPath $PublishDirectory -File -Filter 'mscordaccore_*.dll' -ErrorAction SilentlyContinue |
         Remove-Item -Force
+
+    # Native runtime packages can copy their PDB files even when the publish
+    # is configured with DebugType=None and all managed symbol-copy properties
+    # disabled. The product policy rejects development symbols, so remove them
+    # from each isolated stage before ownership and collision validation.
+    Get-ChildItem -LiteralPath $PublishDirectory -File -Filter '*.pdb' -Recurse -ErrorAction SilentlyContinue |
+        Remove-Item -Force
 }
 
 function Update-DependencyManifest {
@@ -121,6 +128,24 @@ function Update-DependencyManifest {
         }
     }
 
+    # Native runtime packages can leave PDB entries in the dependency manifest
+    # even after their files have been removed from the publish directory. The
+    # final product validator checks every manifest asset, so remove the symbol
+    # entries from the same isolated-stage manifest as the files above.
+    foreach ($runtimeLibrary in @($runtimeTarget.PSObject.Properties)) {
+        foreach ($assetCollectionName in @('runtime', 'native', 'resources', 'runtimeTargets')) {
+            $assetCollection = Get-JsonPropertyValue -Object $runtimeLibrary.Value -Predicate {
+                param($name)
+                $name -eq $assetCollectionName
+            }
+            Remove-JsonPropertiesMatching -Object $assetCollection -Predicate {
+                param($name)
+                $normalizedName = $name.Replace('\', '/')
+                $normalizedName.EndsWith('.pdb', [System.StringComparison]::OrdinalIgnoreCase)
+            }
+        }
+    }
+
     $runtimePack = Get-JsonPropertyValue -Object $runtimeTarget -Predicate {
         param($name)
         $name -like 'runtimepack.Microsoft.NETCore.App.Runtime.win-x64/*'
@@ -161,3 +186,4 @@ if ($RemoveUnusedXmlSerializerAssembly) {
     Write-Host 'Removed unused System.Xml.XmlSerializer facade from the Agent publish and dependency manifest.'
 }
 Write-Host 'Removed unused CoreCLR crash-dump and managed-debugger assets from the publish.'
+Write-Host 'Removed native and managed symbol files from the publish and dependency manifest.'

@@ -2,7 +2,7 @@ using ReactiveUI;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
 
-public abstract class MultiSelectableListItemViewModel : ReactiveObject
+public abstract class MultiSelectableListItemViewModel : DisposableReactiveObject
 {
     private bool _isSelectionModeActive;
     private bool _isSelected;

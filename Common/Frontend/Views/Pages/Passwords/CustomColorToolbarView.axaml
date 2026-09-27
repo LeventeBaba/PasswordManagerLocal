@@ -58,7 +58,7 @@
           <controls:WatermarkWidthTextBox
               Grid.Column="1"
               Text="{Binding CustomColorSearchQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-              Watermark="{Binding CustomColorsSearchPlaceholder}"
+              PlaceholderText="{Binding CustomColorsSearchPlaceholder}"
               MinWidth="0"
               TextInputOptions.ContentType="Search"
               TextInputOptions.AutoCapitalization="False"
