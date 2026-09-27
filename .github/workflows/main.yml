@@ -12,6 +12,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -25,7 +28,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
@@ -41,10 +44,10 @@ jobs:
           dotnet --info
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.NUGET_PACKAGES }}
-          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/*.csproj', '**/*.sln', '**/Directory.Packages.props', 'global.json') }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/*.csproj', '**/*.sln', '**/Directory.Packages.props', '**/Directory.Build.props', 'global.json') }}
           restore-keys: |
             nuget-${{ runner.os }}-
 
@@ -58,7 +61,7 @@ jobs:
             libglib2.0-0
           sudo apt-get clean
 
-      - name: Restore (only required projects, locked if lock exists)
+      - name: Restore required projects
         shell: bash
         run: |
           set -euo pipefail
@@ -69,54 +72,92 @@ jobs:
             local proj_dir
             proj_dir="$(dirname "$proj")"
 
-            local lock1="$proj_dir/packages.lock.json"
-            local lock2="$proj_dir/Packages.lock.json"
+            local lock_file=""
+            if [ -f "$proj_dir/packages.lock.json" ]; then
+              lock_file="$proj_dir/packages.lock.json"
+            elif [ -f "$proj_dir/Packages.lock.json" ]; then
+              lock_file="$proj_dir/Packages.lock.json"
+            fi
 
-            if [ -f "$lock1" ] || [ -f "$lock2" ]; then
-              echo "Restoring (locked): $proj"
-              dotnet restore "$proj" --locked-mode
+            if [ -n "$lock_file" ]; then
+              # Project references were renamed/reorganized, so committed lock files may
+              # still describe the old graph. Re-evaluate them instead of failing NU1004.
+              echo "Restoring and re-evaluating lock file: $proj"
+              dotnet restore "$proj" --force-evaluate
             else
               echo "Restoring: $proj"
               dotnet restore "$proj"
             fi
           }
 
-          restore_one ./PasswordManagerLocal.Backend/PasswordManagerLocal.Backend.csproj
-          restore_one ./PasswordManagerLocal/PasswordManagerLocal.Frontend/PasswordManagerLocal.Frontend.csproj
-          restore_one ./PasswordManagerLocal.Test/PasswordManagerLocal.Test.csproj
+          restore_one ./Common/Backend/PasswordManagerLocal.Common.Backend.csproj
+          restore_one ./Common/Frontend/PasswordManagerLocal.Common.Frontend.csproj
+          restore_one ./Common/Tests/PasswordManagerLocal.Common.Tests.csproj
 
-      - name: Build (only required projects)
+      - name: Build required projects
         shell: bash
         run: |
           set -euo pipefail
-          dotnet build ./PasswordManagerLocal.Backend/PasswordManagerLocal.Backend.csproj -c Release --no-restore
-          dotnet build ./PasswordManagerLocal/PasswordManagerLocal.Frontend/PasswordManagerLocal.Frontend.csproj -c Release --no-restore
-          dotnet build ./PasswordManagerLocal.Test/PasswordManagerLocal.Test.csproj -c Release --no-restore
+          dotnet build ./Common/Backend/PasswordManagerLocal.Common.Backend.csproj -c Release --no-restore
+          dotnet build ./Common/Frontend/PasswordManagerLocal.Common.Frontend.csproj -c Release --no-restore
+          dotnet build ./Common/Tests/PasswordManagerLocal.Common.Tests.csproj -c Release --no-restore
 
       - name: Test (log + TRX)
         id: test
         continue-on-error: true
-        shell: pwsh
+        shell: bash
         run: |
-          $resultsDir = Join-Path $env:GITHUB_WORKSPACE "TestResults"
-          New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
+          set -uo pipefail
 
-          $logPath = Join-Path $resultsDir "dotnet-test.log"
-          dotnet test ./PasswordManagerLocal.Test/PasswordManagerLocal.Test.csproj `
-            -c Release `
-            --no-build `
-            --logger "trx;LogFileName=tests.trx" `
-            --results-directory "$resultsDir" 2>&1 | Tee-Object -FilePath $logPath
+          results_dir="$GITHUB_WORKSPACE/TestResults"
+          log_path="$results_dir/dotnet-test.log"
+          mkdir -p "$results_dir"
 
-          $exit = $LASTEXITCODE
-          "exitcode=$exit" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          set +e
+          dotnet test ./Common/Tests/PasswordManagerLocal.Common.Tests.csproj \
+            -c Release \
+            --no-build \
+            --logger "trx;LogFileName=tests.trx" \
+            --results-directory "$results_dir" \
+            2>&1 | tee "$log_path"
+          test_exit=${PIPESTATUS[0]}
+          set -e
 
-          Write-Host "==== TRX files under TestResults ===="
-          Get-ChildItem -Path $resultsDir -Recurse -Filter *.trx -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+          # This project uses the classic VSTest/MSBuild test target, not Microsoft
+          # Testing Platform. Count tests from TRX so a zero-test run cannot pass CI.
+          python3 - "$results_dir" "$GITHUB_OUTPUT" "$test_exit" <<'PY'
+          from pathlib import Path
+          import sys
+          import xml.etree.ElementTree as ET
+
+          results_dir = Path(sys.argv[1])
+          output_path = Path(sys.argv[2])
+          exit_code = int(sys.argv[3])
+          total = 0
+
+          for trx_file in results_dir.rglob("*.trx"):
+              try:
+                  root = ET.parse(trx_file).getroot()
+                  counters = root.find(".//{*}Counters")
+                  if counters is not None:
+                      total += int(counters.attrib.get("total", "0"))
+              except (ET.ParseError, OSError, ValueError):
+                  pass
+
+          with output_path.open("a", encoding="utf-8") as output:
+              output.write(f"exitcode={exit_code}\n")
+              output.write(f"testcount={total}\n")
+          PY
+
+          echo "==== TRX files under TestResults ===="
+          find "$results_dir" -type f -name '*.trx' -print || true
+
+          # The dedicated final step converts the captured result into the job result.
+          exit 0
 
       - name: Upload TestResults
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: testresults-ubuntu
           path: TestResults/**
@@ -125,48 +166,80 @@ jobs:
 
       - name: Summarize test results
         if: always()
-        shell: pwsh
-        run: |
-          $resultsDir = Join-Path $env:GITHUB_WORKSPACE "TestResults"
-          $trxFiles = Get-ChildItem -Path $resultsDir -Recurse -Filter *.trx -ErrorAction SilentlyContinue
-
-          if (-not $trxFiles) {
-            "No TRX files found. See TestResults/dotnet-test.log artifact." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-            $log = Join-Path $resultsDir "dotnet-test.log"
-            if (Test-Path $log) {
-              "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-              "Last 160 lines of dotnet-test.log:" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-              Get-Content $log -Tail 160 | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-            }
-            exit 0
-          }
-
-          $total = 0
-          $passed = 0
-          $failed = 0
-          $skipped = 0
-
-          foreach ($file in $trxFiles) {
-            [xml]$xml = Get-Content -Path $file.FullName
-            $summary = $xml.TestRun.ResultSummary
-            if ($summary -and $summary.Counters) {
-              $c = $summary.Counters
-              $total   += [int]($c.total       ?? 0)
-              $passed  += [int]($c.passed      ?? 0)
-              $failed  += [int]($c.failed      ?? 0)
-              $skipped += [int]($c.notExecuted ?? 0)
-            }
-          }
-
-          @"
-          # Test Summary (Ubuntu)
-          Total: $total
-          Passed: $passed
-          Failed: $failed
-          Skipped: $skipped
-          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-
-      - name: Fail job if tests failed
-        if: steps.test.outputs.exitcode != '0'
+        # This is diagnostic output and must not override the actual build/test result.
+        continue-on-error: true
         shell: bash
-        run: exit 1
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import xml.etree.ElementTree as ET
+
+          workspace = Path(os.environ["GITHUB_WORKSPACE"])
+          results_dir = workspace / "TestResults"
+          summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          trx_files = sorted(results_dir.rglob("*.trx")) if results_dir.exists() else []
+
+          lines = ["# Test Summary (Ubuntu)", ""]
+
+          if not trx_files:
+              lines.append(
+                  "No TRX file was produced. Check the uploaded TestResults/dotnet-test.log artifact."
+              )
+
+              log_path = results_dir / "dotnet-test.log"
+              if log_path.is_file():
+                  log_lines = log_path.read_text(
+                      encoding="utf-8", errors="replace"
+                  ).splitlines()
+                  lines.extend(["", "## Last 160 log lines", "```text"])
+                  lines.extend(log_lines[-160:])
+                  lines.append("```")
+          else:
+              totals = {"total": 0, "passed": 0, "failed": 0, "notExecuted": 0}
+              parse_warnings = []
+
+              for trx_file in trx_files:
+                  try:
+                      root = ET.parse(trx_file).getroot()
+                      counters = root.find(".//{*}Counters")
+                      if counters is None:
+                          parse_warnings.append(
+                              f"No Counters element found in {trx_file.name}."
+                          )
+                          continue
+
+                      for key in totals:
+                          totals[key] += int(counters.attrib.get(key, "0"))
+                  except (ET.ParseError, OSError, ValueError) as error:
+                      parse_warnings.append(f"Could not parse {trx_file.name}: {error}")
+
+              lines.extend(
+                  [
+                      "| Result | Count |",
+                      "|---|---:|",
+                      f"| Total | {totals['total']} |",
+                      f"| Passed | {totals['passed']} |",
+                      f"| Failed | {totals['failed']} |",
+                      f"| Skipped | {totals['notExecuted']} |",
+                  ]
+              )
+
+              if parse_warnings:
+                  lines.extend(["", "## Summary warnings"])
+                  lines.extend(f"- {warning}" for warning in parse_warnings)
+
+          summary_path.parent.mkdir(parents=True, exist_ok=True)
+          with summary_path.open("a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines) + "\n")
+          PY
+
+      - name: Fail job if tests failed or none were discovered
+        if: steps.test.outputs.exitcode != '0' || steps.test.outputs.testcount == '0'
+        shell: bash
+        run: |
+          echo "dotnet test exit code: ${{ steps.test.outputs.exitcode }}"
+          echo "Discovered test count: ${{ steps.test.outputs.testcount }}"
+          exit 1

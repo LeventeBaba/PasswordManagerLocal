@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
+    x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Passwords.ExportTargetSelectionView"
+    x:DataType="vm:PasswordsViewModel">
+  <Grid HorizontalAlignment="Center" MaxWidth="640" MinWidth="280">
+    <StackPanel Spacing="16">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+        <Button
+            Classes="ghost iconButton"
+            Command="{Binding BackFromExportTargetCommand}"
+            ToolTip.Tip="{Binding ExportTargetBackLabel}"
+            AutomationProperties.Name="{Binding ExportTargetBackLabel}">
+          <PathIcon Classes="actionButtonIcon" Data="{StaticResource BackIconGeometry}" />
+        </Button>
+        <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+          <TextBlock Text="{Binding ExportTargetTitle}" Classes="pageTitle" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding ExportTargetSubtitle}" Classes="subtleText" TextWrapping="Wrap" />
+        </StackPanel>
+      </Grid>
+
+      <TextBlock Text="{Binding ExportTargetAccountsLabel}" Classes="sectionTitle" TextWrapping="Wrap" />
+
+      <ItemsControl ItemsSource="{Binding ExportTargetProfiles}" IsVisible="{Binding HasExportTargetProfiles}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:ExportTargetProfileItemViewModel">
+            <Button
+                Classes="ghost"
+                Command="{Binding SelectCommand}"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                Padding="0"
+                Margin="0,0,0,8">
+              <Border
+                  Padding="14"
+                  CornerRadius="16"
+                  BorderThickness="1"
+                  BorderBrush="#33808080"
+                  Background="#08808080">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding DisplayName}" Classes="sectionTitle" TextWrapping="Wrap" />
+                    <TextBlock
+                        Text="{Binding Subtitle}"
+                        Classes="subtleText"
+                        TextWrapping="Wrap"
+                        IsVisible="{Binding HasSubtitle}" />
+                  </StackPanel>
+                  <PathIcon
+                      Grid.Column="1"
+                      Classes="smallUiIcon"
+                      Data="{StaticResource ChevronRightIconGeometry}"
+                      VerticalAlignment="Center" />
+                </Grid>
+              </Border>
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <Border Classes="toolbarGroup" IsVisible="{Binding IsExportTargetProfilesEmpty}">
+        <StackPanel Spacing="8">
+          <TextBlock Text="{Binding ExportTargetEmptyTitle}" Classes="sectionTitle" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding ExportTargetEmptyDescription}" Classes="subtleText" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </Grid>
+</UserControl>

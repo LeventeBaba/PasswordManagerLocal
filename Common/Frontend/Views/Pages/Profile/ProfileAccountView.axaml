@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
+    xmlns:profile="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Pages.Profile"
+    x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Profile.ProfileAccountView"
+    x:DataType="vm:ProfileViewModel"
+    IsVisible="{Binding IsProfileMainPage}">
+
+  <UserControl.DataTemplates>
+    <DataTemplate x:DataType="vm:ProfileTabsPaneTransitionViewModel">
+      <profile:ProfileTabsView DataContext="{Binding Owner}" />
+    </DataTemplate>
+    <DataTemplate x:DataType="vm:ProfilePersonalInfoPaneTransitionViewModel">
+      <profile:ProfilePersonalInfoView DataContext="{Binding Owner}" />
+    </DataTemplate>
+    <DataTemplate x:DataType="vm:ProfileUsernamePaneTransitionViewModel">
+      <profile:ProfileUsernameView DataContext="{Binding Owner}" />
+    </DataTemplate>
+    <DataTemplate x:DataType="vm:ProfileMasterPasswordPaneTransitionViewModel">
+      <profile:ProfileMasterPasswordView DataContext="{Binding Owner}" />
+    </DataTemplate>
+    <DataTemplate x:DataType="vm:ProfileDeleteAccountPaneTransitionViewModel">
+      <profile:ProfileDeleteAccountView DataContext="{Binding Owner}" />
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
+  <Grid IsVisible="{Binding IsProfileMainPage}">
+    <TransitioningContentControl
+        ClipToBounds="True"
+        Content="{Binding CurrentAnimatedProfilePaneViewModel}"
+        IsTransitionReversed="{Binding IsProfilePaneTransitionReversed}"
+        IsVisible="{Binding IsAndroidPaneTransitionEnabled}">
+      <TransitioningContentControl.PageTransition>
+        <CompositePageTransition>
+          <PageSlide Duration="0:0:0.34"
+                     Orientation="Horizontal"
+                     SlideInEasing="CircularEaseOut"
+                     SlideOutEasing="SineEaseIn" />
+          <CrossFade Duration="0:0:0.22" />
+        </CompositePageTransition>
+      </TransitioningContentControl.PageTransition>
+    </TransitioningContentControl>
+
+    <StackPanel IsVisible="{Binding IsStaticPaneContentVisible}"
+                Spacing="12"
+                HorizontalAlignment="Stretch">
+      <profile:ProfileTabsView IsVisible="{Binding IsProfileTabsPaneVisible}" />
+      <profile:ProfilePersonalInfoView IsVisible="{Binding IsProfilePersonalInfoPaneVisible}" />
+      <profile:ProfileUsernameView IsVisible="{Binding IsProfileUsernamePaneVisible}" />
+      <profile:ProfileMasterPasswordView IsVisible="{Binding IsProfilePasswordPaneVisible}" />
+      <profile:ProfileDeleteAccountView IsVisible="{Binding IsProfileDeleteAccountPaneVisible}" />
+    </StackPanel>
+  </Grid>
+</UserControl>

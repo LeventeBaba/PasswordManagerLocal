@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
+    x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Profile.DeviceDetailsView"
+    x:DataType="vm:ProfileViewModel">
+  <StackPanel Spacing="12">
+    <Border Classes="card" IsVisible="{Binding HasSelectedDevice}">
+      <StackPanel Spacing="14">
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <Button
+              Classes="ghost iconButton"
+              Command="{Binding BackToDevicesCommand}"
+              ToolTip.Tip="{Binding BackToDevicesLabel}">
+            <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+          </Button>
+          <TextBlock
+              Text="{Binding SelectedDevice.Name}"
+              Classes="sectionTitle"
+              VerticalAlignment="Center"
+              TextWrapping="Wrap" />
+        </StackPanel>
+        <WrapPanel>
+          <Border Padding="8,3" CornerRadius="10" Background="#22808080" Margin="0,0,6,6">
+            <TextBlock Text="{Binding SelectedDevice.DeviceTypeText}" FontSize="12" FontWeight="SemiBold" />
+          </Border>
+          <Border
+              Padding="10,4"
+              CornerRadius="10"
+              Background="#332D6AE3"
+              BorderBrush="#FF2D6AE3"
+              BorderThickness="1"
+              IsVisible="{Binding SelectedDevice.IsCurrentDevice}"
+              Margin="0,0,6,6">
+            <TextBlock
+                Text="{Binding CurrentDeviceLabel}"
+                FontSize="12"
+                FontWeight="Bold"
+                Foreground="#FF68A9FF" />
+          </Border>
+          <Border
+              Padding="8,3"
+              CornerRadius="10"
+              Background="#22D13438"
+              IsVisible="{Binding SelectedDevice.IsBlocked}"
+              Margin="0,0,6,6">
+            <TextBlock Text="{Binding BlockedLabel}" FontSize="12" FontWeight="SemiBold" Foreground="#FFD13438" />
+          </Border>
+          <Border Padding="8,3" CornerRadius="10" Background="#22808080" Margin="0,0,6,6">
+            <TextBlock Text="{Binding SelectedDevice.SyncStateText}" FontSize="12" />
+          </Border>
+          <Border
+              Padding="8,3"
+              CornerRadius="10"
+              Background="#22808080"
+              IsVisible="{Binding SelectedDevice.IsRemoteDevice}"
+              Margin="0,0,6,6">
+            <TextBlock Text="{Binding SelectedDevice.TrustStateText}" FontSize="12" />
+          </Border>
+          <Border
+              Padding="8,3"
+              CornerRadius="10"
+              Background="#222E7D32"
+              IsVisible="{Binding SelectedDevice.ShowOnlineStatus}"
+              Margin="0,0,6,6">
+            <TextBlock
+                Text="{Binding SelectedDevice.OnlineStateText}"
+                FontSize="12"
+                FontWeight="SemiBold"
+                Foreground="#FF2E7D32" />
+          </Border>
+          <Border
+              Padding="8,3"
+              CornerRadius="10"
+              Background="#22F59E0B"
+              IsVisible="{Binding SelectedDevice.ShowOfflineStatus}"
+              Margin="0,0,6,6">
+            <TextBlock
+                Text="{Binding SelectedDevice.OnlineStateText}"
+                FontSize="12"
+                FontWeight="SemiBold"
+                Foreground="#FFF59E0B" />
+          </Border>
+        </WrapPanel>
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <StackPanel Spacing="5">
+            <TextBlock Text="{Binding DeviceNameLabel}" Classes="subtleText" />
+            <TextBox Text="{Binding SelectedDevice.EditableName}"
+                     TextInputOptions.ReturnKeyType="Done">
+              <TextBox.KeyBindings>
+                <KeyBinding Gesture="Enter" Command="{Binding SelectedDevice.SaveNameCommand}" />
+              </TextBox.KeyBindings>
+            </TextBox>
+          </StackPanel>
+          <Button
+              Grid.Column="1"
+              Classes="primary"
+              VerticalAlignment="Bottom"
+              Command="{Binding SelectedDevice.SaveNameCommand}"
+              Content="{Binding SaveDeviceNameLabel}">
+            <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+          </Button>
+        </Grid>
+        <StackPanel Spacing="4">
+          <TextBlock Text="{Binding DeviceTypeLabel}" Classes="subtleText" />
+          <TextBlock Text="{Binding SelectedDevice.DeviceTypeText}" TextWrapping="Wrap" />
+        </StackPanel>
+        <StackPanel Spacing="4" IsVisible="{Binding SelectedDevice.HasLinkedAt}">
+          <TextBlock Text="{Binding SelectedDevice.DeviceLinkedAtLabel}" Classes="subtleText" />
+          <TextBlock Text="{Binding SelectedDevice.LinkedAtText}" TextWrapping="Wrap" />
+        </StackPanel>
+        <StackPanel Spacing="10">
+          <StackPanel Spacing="4" IsVisible="{Binding SelectedDevice.ShowLastLoginDate}">
+            <TextBlock Text="{Binding SelectedDevice.DeviceLastLoginDateLabel}" Classes="subtleText" />
+            <TextBlock Text="{Binding SelectedDevice.LastLoginDateText}" TextWrapping="Wrap" />
+          </StackPanel>
+          <StackPanel Spacing="4" IsVisible="{Binding SelectedDevice.ShowPreviousLoginDate}">
+            <TextBlock Text="{Binding SelectedDevice.DevicePreviousLoginDateLabel}" Classes="subtleText" />
+            <TextBlock Text="{Binding SelectedDevice.PreviousLoginDateText}" TextWrapping="Wrap" />
+          </StackPanel>
+          <StackPanel Spacing="4" IsVisible="{Binding SelectedDevice.ShowRemoteLastSync}">
+            <TextBlock Text="{Binding DeviceLastSyncLabel}" Classes="subtleText" />
+            <TextBlock Text="{Binding SelectedDevice.LastSyncText}" TextWrapping="Wrap" />
+          </StackPanel>
+        </StackPanel>
+        <StackPanel Spacing="4">
+          <TextBlock Text="{Binding SyncEnabledLabel}" Classes="subtleText" />
+          <ToggleSwitch
+              IsChecked="{Binding SelectedDevice.IsSyncOn, Mode=OneWay}"
+              Command="{Binding SelectedDevice.ToggleSyncCommand}"
+              OnContent="{Binding SelectedDevice.SyncToggleOnLabel}"
+              OffContent="{Binding SelectedDevice.SyncToggleOffLabel}" />
+        </StackPanel>
+        <Border Classes="dangerZone" IsVisible="{Binding SelectedDevice.IsBlocked}">
+          <StackPanel Spacing="8">
+            <TextBlock Text="{Binding BlockedLabel}" FontWeight="SemiBold" />
+            <StackPanel Spacing="4" IsVisible="{Binding SelectedDevice.HasBlockedReason}">
+              <TextBlock Text="{Binding DeviceBlockedReasonLabel}" Classes="subtleText" />
+              <TextBlock Text="{Binding SelectedDevice.BlockedReason}" TextWrapping="Wrap" />
+            </StackPanel>
+            <StackPanel Spacing="4" IsVisible="{Binding SelectedDevice.HasBlockedAt}">
+              <TextBlock Text="{Binding DeviceBlockedAtLabel}" Classes="subtleText" />
+              <TextBlock Text="{Binding SelectedDevice.BlockedAtText}" TextWrapping="Wrap" />
+            </StackPanel>
+            <Button
+                Classes="ghost"
+                Command="{Binding SelectedDevice.UnblockCommand}"
+                Content="{Binding UnblockDeviceLabel}"
+                IsVisible="{Binding SelectedDevice.CanUnblock}">
+              <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+            </Button>
+          </StackPanel>
+        </Border>
+        <StackPanel Spacing="4" IsVisible="{Binding SelectedDevice.HasInvalidSyncAttempts}">
+          <TextBlock Text="{Binding DeviceInvalidAttemptsLabel}" Classes="subtleText" />
+          <TextBlock Text="{Binding SelectedDevice.InvalidSyncAttemptCount}" />
+        </StackPanel>
+        <WrapPanel Orientation="Horizontal">
+          <Button
+              Classes="danger"
+              Command="{Binding SelectedDevice.BeginDisconnectCommand}"
+              Content="{Binding DisconnectDeviceLabel}"
+              IsVisible="{Binding SelectedDevice.CanDisconnect}"
+              Margin="0,0,8,8">
+            <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+          </Button>
+        </WrapPanel>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

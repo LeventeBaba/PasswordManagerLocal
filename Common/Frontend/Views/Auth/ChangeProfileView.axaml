@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PasswordManagerLocal.Common.Frontend.Views.Auth.ChangeProfileView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Auth"
+    x:DataType="vm:ChangeProfileViewModel">
+
+  <ScrollViewer x:Name="PageScrollViewer">
+    <Grid Margin="16,8,16,16">
+      <Border Classes="card" HorizontalAlignment="Center" MaxWidth="640" MinWidth="280">
+        <StackPanel Spacing="16">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+            <Button Classes="ghost iconButton"
+                    IsVisible="{Binding IsBackButtonVisible}"
+                    Command="{Binding BackCommand}"
+                    
+                    ToolTip.Tip="{Binding BackLabel}" >
+              <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+            </Button>
+            <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+              <TextBlock Text="{Binding Title}" Classes="pageTitle" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding Subtitle}" Classes="subtleText" TextWrapping="Wrap" />
+            </StackPanel>
+          </Grid>
+
+          <StackPanel Spacing="6" IsVisible="{Binding IsBusy}">
+            <ProgressBar IsIndeterminate="True" />
+            <TextBlock Text="{Binding BusyText}" Classes="subtleText" TextWrapping="Wrap" />
+          </StackPanel>
+
+          <TextBlock Text="{Binding StatusMessage}" Classes="errorText" IsVisible="{Binding HasStatusMessage}" TextWrapping="Wrap" />
+
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+            <TextBlock Text="{Binding LoggedInProfilesLabel}" Classes="sectionTitle" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <Button Grid.Column="1"
+                    Classes="ghost"
+                    Command="{Binding RefreshCommand}"
+                    Content="{Binding RefreshLabel}" >
+              <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+            </Button>
+          </Grid>
+
+          <ItemsControl ItemsSource="{Binding Profiles}" IsVisible="{Binding HasProfiles}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ProfileSessionItemViewModel">
+                <Button Classes="ghost"
+                        Command="{Binding SelectCommand}"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Stretch"
+                        Padding="0"
+                        Margin="0,0,0,8">
+                  <Border Padding="14" CornerRadius="16" BorderThickness="1" BorderBrush="#33808080" Background="#08808080">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                      <StackPanel Spacing="4">
+                        <TextBlock Text="{Binding DisplayName}" Classes="sectionTitle" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding Subtitle}" Classes="subtleText" TextWrapping="Wrap" />
+                      </StackPanel>
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding ActionLabel}"
+                                 Classes="subtleText"
+                                 VerticalAlignment="Center" />
+                    </Grid>
+                  </Border>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <Border Classes="toolbarGroup" IsVisible="{Binding IsProfilesEmpty}">
+            <StackPanel Spacing="8">
+              <TextBlock Text="{Binding EmptyProfilesTitle}" Classes="sectionTitle" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding EmptyProfilesDescription}" Classes="subtleText" TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
+
+          <Border Classes="divider" />
+
+          <Button Classes="primary"
+                  Command="{Binding LoginAnotherProfileCommand}"
+                  Content="{Binding LoginAnotherProfileLabel}" >
+              <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+            </Button>
+        </StackPanel>
+      </Border>
+    </Grid>
+  </ScrollViewer>
+</UserControl>

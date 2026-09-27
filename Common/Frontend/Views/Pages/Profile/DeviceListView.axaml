@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
+    x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Profile.DeviceListView"
+    x:DataType="vm:ProfileViewModel">
+  <StackPanel Spacing="12">
+    <Border Classes="card" IsVisible="{Binding IsDeviceListEmpty}">
+      <StackPanel Spacing="14" HorizontalAlignment="Center" MaxWidth="520">
+        <PathIcon Classes="largeEmptyStateIcon" Data="{StaticResource AddIconGeometry}" HorizontalAlignment="Center" />
+        <TextBlock
+            Text="{Binding DevicesEmptyTitle}"
+            Classes="sectionTitle"
+            TextAlignment="Center"
+            TextWrapping="Wrap" />
+        <TextBlock
+            Text="{Binding DevicesEmptyDescription}"
+            Classes="subtleText"
+            TextAlignment="Center"
+            TextWrapping="Wrap" />
+        <Button
+            Classes="primary"
+            HorizontalAlignment="Center"
+            Command="{Binding BeginAddDeviceCommand}"
+            Content="{Binding AddDeviceLabel}" />
+      </StackPanel>
+    </Border>
+    <Border Classes="card" IsVisible="{Binding IsDeviceSearchResultEmpty}">
+      <StackPanel Spacing="8">
+        <TextBlock Text="{Binding DeviceSearchEmptyTitle}" Classes="sectionTitle" />
+        <TextBlock Text="{Binding DeviceSearchEmptyDescription}" Classes="subtleText" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
+    <ItemsControl ItemsSource="{Binding Devices}" HorizontalAlignment="Stretch" IsVisible="{Binding HasDevices}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:DeviceItemViewModel">
+          <Border
+              Classes="interactiveListItem"
+              PointerEntered="InteractiveListItem_PointerEntered"
+              PointerExited="InteractiveListItem_PointerExited"
+              PointerPressed="InteractiveListItem_PointerPressed"
+              PointerReleased="InteractiveListItem_PointerReleased"
+              Margin="0,0,0,8"
+              Padding="14"
+              CornerRadius="16"
+              HorizontalAlignment="Stretch">
+            <Grid ColumnDefinitions="8,*,Auto" ColumnSpacing="12" HorizontalAlignment="Stretch" PointerEntered="InteractiveListItem_PointerEntered">
+              <Border
+                  Grid.Column="0"
+                  Background="{Binding StatusIndicatorBrush}"
+                  CornerRadius="6"
+                  MinHeight="52" />
+              <Button
+                  Grid.Column="1"
+                  Classes="listItemContentButton"
+                  PointerEntered="InteractiveListItem_PointerEntered"
+                  Command="{Binding ViewCommand}">
+                <StackPanel Spacing="6" VerticalAlignment="Center">
+                  <WrapPanel VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" VerticalAlignment="Center" />
+                    <Border
+                        Padding="10,4"
+                        CornerRadius="10"
+                        Background="#332D6AE3"
+                        BorderBrush="#FF2D6AE3"
+                        BorderThickness="1"
+                        IsVisible="{Binding IsCurrentDevice}"
+                        Margin="10,0,0,0"
+                        VerticalAlignment="Center">
+                      <TextBlock
+                          Text="{Binding CurrentDeviceLabel}"
+                          FontSize="12"
+                          FontWeight="Bold"
+                          Foreground="#FF68A9FF" />
+                    </Border>
+                    <TextBlock Text="  •  " Classes="subtleText" IsVisible="{Binding ShowNotTrustedStatus}" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding NotTrustedLabel}" Classes="subtleText" IsVisible="{Binding ShowNotTrustedStatus}" VerticalAlignment="Center" />
+                  </WrapPanel>
+                  <WrapPanel>
+                    <Border Padding="8,3" CornerRadius="10" Background="#22808080" Margin="0,0,6,6">
+                      <TextBlock Text="{Binding DeviceTypeText}" FontSize="12" FontWeight="SemiBold" />
+                    </Border>
+                    <Border
+                        Padding="8,3"
+                        CornerRadius="10"
+                        Background="#22D13438"
+                        IsVisible="{Binding IsBlocked}"
+                        Margin="0,0,6,6">
+                      <TextBlock
+                          Text="{Binding BlockedLabel}"
+                          FontSize="12"
+                          FontWeight="SemiBold"
+                          Foreground="#FFD13438" />
+                    </Border>
+                    <Border Padding="8,3" CornerRadius="10" Background="#22808080" Margin="0,0,6,6">
+                      <TextBlock Text="{Binding SyncStateText}" FontSize="12" />
+                    </Border>
+                    <Border
+                        Padding="8,3"
+                        CornerRadius="10"
+                        Background="#222E7D32"
+                        IsVisible="{Binding ShowOnlineStatus}"
+                        Margin="0,0,6,6">
+                      <TextBlock
+                          Text="{Binding OnlineStateText}"
+                          FontSize="12"
+                          FontWeight="SemiBold"
+                          Foreground="#FF2E7D32" />
+                    </Border>
+                    <Border
+                        Padding="8,3"
+                        CornerRadius="10"
+                        Background="#22F59E0B"
+                        IsVisible="{Binding ShowOfflineStatus}"
+                        Margin="0,0,6,6">
+                      <TextBlock
+                          Text="{Binding OnlineStateText}"
+                          FontSize="12"
+                          FontWeight="SemiBold"
+                          Foreground="#FFF59E0B" />
+                    </Border>
+                  </WrapPanel>
+                </StackPanel>
+              </Button>
+              <ToggleSwitch
+                  Grid.Column="2"
+                  PointerEntered="InteractiveListItem_PointerEntered"
+                  IsChecked="{Binding IsSyncOn, Mode=OneWay}"
+                  Command="{Binding ToggleSyncCommand}"
+                  OnContent="{Binding SyncToggleOnLabel}"
+                  OffContent="{Binding SyncToggleOffLabel}"
+                  VerticalAlignment="Center" />
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>

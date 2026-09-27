@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
+    x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Passwords.ExportConfirmationDialogView"
+    x:DataType="vm:PasswordsViewModel"
+    IsVisible="{Binding IsExportConfirmationOpen}">
+  <Border Background="#99000000" IsVisible="{Binding IsExportConfirmationOpen}">
+    <Border Classes="card" MaxWidth="500" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20">
+      <StackPanel Spacing="14">
+        <TextBlock Text="{Binding ExportConfirmationTitle}" Classes="sectionTitle" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding ExportConfirmationMessage}" TextWrapping="Wrap" />
+
+        <Border Classes="toolbarGroup">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
+            <StackPanel Spacing="4">
+              <TextBlock Text="{Binding ExportDeleteOriginalLabel}" Classes="sectionTitle" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding ExportDeleteOriginalDescription}" Classes="subtleText" TextWrapping="Wrap" />
+            </StackPanel>
+            <ToggleSwitch
+                Grid.Column="1"
+                IsChecked="{Binding DeleteOriginalOnExport, Mode=TwoWay}"
+                MinWidth="0"
+                OnContent="{Binding SwitchOnLabel}"
+                OffContent="{Binding SwitchOffLabel}"
+                AutomationProperties.Name="{Binding ExportDeleteOriginalLabel}"
+                VerticalAlignment="Center" />
+          </Grid>
+        </Border>
+
+        <WrapPanel Orientation="Horizontal" HorizontalAlignment="Right">
+          <Button
+              Classes="ghost"
+              Command="{Binding CancelExportConfirmationCommand}"
+              Content="{Binding CancelButtonLabel}"
+              Margin="0,0,8,8" />
+          <Button
+              Classes="primary"
+              Command="{Binding ConfirmExportCommand}"
+              Content="{Binding ConfirmExportLabel}"
+              Margin="0,0,0,8" />
+        </WrapPanel>
+      </StackPanel>
+    </Border>
+  </Border>
+</UserControl>

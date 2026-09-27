@@ -1,0 +1,70 @@
+<Project>
+  <!--
+    Two independently trimmed entry points can legitimately produce different
+    member-trimmed copies of the same managed assembly. The packaging script
+    first publishes both entry points normally and inventories every same-path
+    collision.
+
+    First harmonization tier:
+      ILLink action: copyused AssemblyName
+
+    Only the exact initial collision set receives copyused. This keeps unused
+    assemblies removable and normally copies a used assembly without member
+    trimming.
+
+    ILLink may internally change CopyUsed to Save when sweeping references or
+    type forwarders requires metadata rewrites. Because the frontend and Agent
+    have different trim graphs, those rewritten assemblies can still differ.
+
+    Second harmonization tier, only for that residual set:
+      ILLink action: copy AssemblyName
+
+    Copy analyzes dependencies but copies the original assembly bytes unchanged.
+    The copy actions are appended after copyused actions, so they intentionally
+    override copyused for only the residual assemblies. Neither tier mutates SDK
+    item collections or overwrites files after publication.
+  -->
+
+  <Target Name="ConfigureShareableWindowsRuntimeLinkerActions"
+          AfterTargets="PrepareForILLink"
+          BeforeTargets="_RunILLink"
+          Condition="'$(Configuration)' == 'Release' and '$(RuntimeIdentifier)' == 'win-x64' and '$(PublishTrimmed)' == 'true' and ('$(SharedCopyUsedAssemblyListFile)' != '' or '$(SharedCopyAssemblyListFile)' != '')">
+    <Error Condition="'$(SharedCopyUsedAssemblyListFile)' != '' and !Exists('$(SharedCopyUsedAssemblyListFile)')"
+           Text="SharedCopyUsedAssemblyListFile does not exist: $(SharedCopyUsedAssemblyListFile)" />
+    <Error Condition="'$(SharedCopyAssemblyListFile)' != '' and !Exists('$(SharedCopyAssemblyListFile)')"
+           Text="SharedCopyAssemblyListFile does not exist: $(SharedCopyAssemblyListFile)" />
+
+    <ReadLinesFromFile File="$(SharedCopyUsedAssemblyListFile)"
+                       Condition="'$(SharedCopyUsedAssemblyListFile)' != ''">
+      <Output TaskParameter="Lines" ItemName="_SharedCopyUsedAssembly" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(SharedCopyAssemblyListFile)"
+                       Condition="'$(SharedCopyAssemblyListFile)' != ''">
+      <Output TaskParameter="Lines" ItemName="_SharedCopyAssembly" />
+    </ReadLinesFromFile>
+
+    <ItemGroup>
+      <_SharedCopyUsedAssembly Remove="@(_SharedCopyUsedAssembly)"
+                               Condition="'%(Identity)' == ''" />
+      <_SharedCopyAssembly Remove="@(_SharedCopyAssembly)"
+                           Condition="'%(Identity)' == ''" />
+    </ItemGroup>
+
+    <Error Condition="'$(SharedCopyUsedAssemblyListFile)' != '' and '@(_SharedCopyUsedAssembly)' == ''"
+           Text="SharedCopyUsedAssemblyListFile was provided, but no assembly names were read." />
+    <Error Condition="'$(SharedCopyAssemblyListFile)' != '' and '@(_SharedCopyAssembly)' == ''"
+           Text="SharedCopyAssemblyListFile was provided, but no assembly names were read." />
+
+    <PropertyGroup>
+      <_ExtraTrimmerArgs>$(_ExtraTrimmerArgs) @(_SharedCopyUsedAssembly->'--action copyused %(Identity)', ' ') @(_SharedCopyAssembly->'--action copy %(Identity)', ' ')</_ExtraTrimmerArgs>
+      <ShareableWindowsRuntimeTrimmingConfigured>true</ShareableWindowsRuntimeTrimmingConfigured>
+    </PropertyGroup>
+
+    <Message Importance="High"
+             Condition="'@(_SharedCopyUsedAssembly)' != ''"
+             Text="Shared Windows ILLink copyused actions: @(_SharedCopyUsedAssembly, ', ')" />
+    <Message Importance="High"
+             Condition="'@(_SharedCopyAssembly)' != ''"
+             Text="Shared Windows ILLink copy actions: @(_SharedCopyAssembly, ', ')" />
+  </Target>
+</Project>

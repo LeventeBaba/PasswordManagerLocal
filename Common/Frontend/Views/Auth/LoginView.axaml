@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PasswordManagerLocal.Common.Frontend.Views.Auth.LoginView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Auth"
+    x:DataType="vm:LoginViewModel">
+
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Enter" Command="{Binding ExecutePrimaryActionCommand}" />
+  </UserControl.KeyBindings>
+
+  <ScrollViewer x:Name="PageScrollViewer">
+    <Grid Margin="16,8,16,16">
+      <Border Classes="card" HorizontalAlignment="Center" MaxWidth="520" MinWidth="280">
+        <StackPanel Spacing="16">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+            <Button Classes="ghost iconButton"
+                    IsVisible="{Binding IsHeaderBackButtonVisible}"
+                    Command="{Binding NavigateBackCommand}"
+                    ToolTip.Tip="{Binding BackLabel}" >
+              <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+            </Button>
+            <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+              <TextBlock Text="{Binding Title}" Classes="pageTitle" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding Subtitle}" Classes="subtleText" TextWrapping="Wrap" />
+            </StackPanel>
+          </Grid>
+
+          <StackPanel Spacing="6" IsVisible="{Binding IsBusy}">
+            <ProgressBar IsIndeterminate="True" />
+            <TextBlock Text="{Binding BusyText}" Classes="subtleText" TextWrapping="Wrap" />
+          </StackPanel>
+
+          <StackPanel Spacing="16" IsVisible="{Binding IsLoginFormVisible}">
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Binding UsernameLabel}" />
+              <TextBox Text="{Binding Username}"
+                       PlaceholderText="{Binding UsernamePlaceholder}"
+                       TextInputOptions.ContentType="Email"
+                       TextInputOptions.AutoCapitalization="False"
+                       TextInputOptions.ShowSuggestions="False" />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Binding PasswordLabel}" />
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <TextBox Grid.Column="0"
+                         Text="{Binding Password}"
+                         PasswordChar="{Binding PasswordMaskCharacter}"
+                         PlaceholderText="{Binding PasswordPlaceholder}"
+                         TextInputOptions.ContentType="Password"
+                         TextInputOptions.IsSensitive="True"
+                         TextInputOptions.AutoCapitalization="False"
+                         TextInputOptions.ShowSuggestions="False"
+                         TextInputOptions.ReturnKeyType="Go" />
+                <Button Grid.Column="1"
+                        Classes="ghost"
+                        Command="{Binding TogglePasswordVisibilityCommand}"
+                        Content="{Binding PasswordVisibilityToggleText}" >
+              <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+            </Button>
+              </Grid>
+            </StackPanel>
+
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+              <TextBlock
+                  Text="{Binding RememberMeLabel}"
+                  VerticalAlignment="Center"
+                  TextWrapping="Wrap" />
+              <ToggleSwitch
+                  Grid.Column="1"
+                  IsChecked="{Binding RememberMe, Mode=TwoWay}"
+                  MinWidth="0"
+                  OnContent="{Binding RememberMeOnLabel}"
+                  OffContent="{Binding RememberMeOffLabel}"
+                  AutomationProperties.Name="{Binding RememberMeLabel}"
+                  VerticalAlignment="Center" />
+            </Grid>
+
+            <TextBlock Text="{Binding StatusMessage}" Classes="errorText" IsVisible="{Binding HasStatusMessage}" TextWrapping="Wrap" />
+
+            <Button Classes="primary"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Center"
+                    IsEnabled="{Binding CanLogin}"
+                    Command="{Binding LoginCommand}"
+                    Content="{Binding LoginButtonLabel}" >
+              <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+            </Button>
+
+            <Border Classes="toolbarGroup" Padding="14">
+              <StackPanel Spacing="0">
+                <Button
+                    Classes="ghost"
+                    Command="{Binding ShowDeviceTransferIntroCommand}"
+                    Padding="0"
+                    Margin="0,0,0,12"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    ToolTip.Tip="{Binding DeviceTransferButtonLabel}">
+                  <Grid
+                      ColumnDefinitions="*,Auto"
+                      ColumnSpacing="12"
+                      HorizontalAlignment="Stretch"
+                      IsHitTestVisible="False">
+                    <StackPanel Spacing="4" HorizontalAlignment="Stretch">
+                      <TextBlock
+                          Text="{Binding DeviceTransferButtonLabel}"
+                          FontWeight="SemiBold"
+                          FontSize="16"
+                          TextWrapping="Wrap" />
+                      <TextBlock
+                          Text="{Binding DeviceTransferButtonDescription}"
+                          Classes="subtleText"
+                          TextWrapping="Wrap" />
+                    </StackPanel>
+                    <PathIcon
+                        Grid.Column="1"
+                        Classes="mediumUiIcon"
+                        Data="{StaticResource ChevronRightIconGeometry}"
+                        Width="44"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center" />
+                  </Grid>
+                </Button>
+
+                <Border Classes="divider" Margin="0,0,0,12" />
+
+                <Button
+                    Classes="ghost"
+                    Command="{Binding NavigateToRegistrationCommand}"
+                    Padding="0"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    ToolTip.Tip="{Binding NavigateToRegisterLabel}">
+                  <Grid
+                      ColumnDefinitions="*,Auto"
+                      ColumnSpacing="12"
+                      HorizontalAlignment="Stretch"
+                      IsHitTestVisible="False">
+                    <StackPanel Spacing="4" HorizontalAlignment="Stretch">
+                      <TextBlock
+                          Text="{Binding NavigateToRegisterLabel}"
+                          FontWeight="SemiBold"
+                          FontSize="16"
+                          TextWrapping="Wrap" />
+                      <TextBlock
+                          Text="{Binding NoAccountText}"
+                          Classes="subtleText"
+                          TextWrapping="Wrap" />
+                    </StackPanel>
+                    <PathIcon
+                        Grid.Column="1"
+                        Classes="mediumUiIcon"
+                        Data="{StaticResource ChevronRightIconGeometry}"
+                        Width="44"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center" />
+                  </Grid>
+                </Button>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <StackPanel Spacing="14" IsVisible="{Binding IsDeviceTransferIntroVisible}">
+            <TextBlock Text="{Binding DeviceTransferDescription}" Classes="subtleText" TextWrapping="Wrap" />
+            <Button Classes="primary"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Center"
+                    IsEnabled="{Binding CanStartDeviceTransfer}"
+                    Command="{Binding StartDeviceTransferCommand}"
+                    Content="{Binding DeviceTransferStartLabel}" />
+          </StackPanel>
+
+          <StackPanel Spacing="14" IsVisible="{Binding IsDeviceTransferCodeVisible}">
+            <TextBlock Text="{Binding DeviceTransferCodeDescription}" Classes="subtleText" TextWrapping="Wrap" />
+            <StackPanel Spacing="6" HorizontalAlignment="Center" IsVisible="{Binding HasDeviceTransferQrCode}">
+              <Border Padding="12"
+                      CornerRadius="12"
+                      Background="White"
+                      BorderThickness="1"
+                      BorderBrush="#33808080">
+                <Image Source="{Binding DeviceTransferQrCode}"
+                       Width="240"
+                       Height="240"
+                       Stretch="Uniform" />
+              </Border>
+            </StackPanel>
+            <Border Padding="12,10"
+                    CornerRadius="12"
+                    BorderThickness="1"
+                    BorderBrush="#33808080">
+              <TextBlock Text="{Binding ReadableDeviceTransferCode}"
+                         Classes="readableCode"
+                         FontSize="22"
+                         TextWrapping="Wrap" />
+            </Border>
+            <TextBlock Text="{Binding DeviceTransferCodeReadabilityHint}" Classes="subtleText" TextWrapping="Wrap" />
+            <Button Classes="primary"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Center"
+                    Command="{Binding CopyDeviceTransferCodeCommand}"
+                    ToolTip.Tip="{Binding DeviceTransferCopyCodeLabel}">
+              <StackPanel Orientation="Horizontal"
+                          Spacing="8"
+                          HorizontalAlignment="Center"
+                          IsHitTestVisible="False">
+                <PathIcon Classes="smallUiIcon"
+                          Data="{StaticResource CopyIconGeometry}"
+                          IsVisible="{Binding IsDeviceTransferCodeNotCopied}" />
+                <PathIcon Classes="smallUiIcon"
+                          Data="{StaticResource CheckIconGeometry}"
+                          IsVisible="{Binding IsDeviceTransferCodeCopied}" />
+                <TextBlock Text="{Binding DeviceTransferCopyCodeLabel}"
+                           VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Grid>
+              <TextBlock Text="{Binding DeviceTransferStatus.Message}"
+                         Classes="subtleText"
+                         IsVisible="{Binding DeviceTransferStatus.HasNonErrorMessage}"
+                         TextWrapping="Wrap" />
+              <TextBlock Text="{Binding DeviceTransferStatus.Message}"
+                         Classes="errorText"
+                         IsVisible="{Binding DeviceTransferStatus.IsError}"
+                         TextWrapping="Wrap" />
+            </Grid>
+          </StackPanel>
+
+          <StackPanel Spacing="14" IsVisible="{Binding IsDeviceTransferFinished}">
+            <TextBlock Text="{Binding DeviceTransferFinishTitle}" Classes="sectionTitle" TextWrapping="Wrap" />
+            <Grid>
+              <TextBlock Text="{Binding DeviceTransferStatus.Message}"
+                         Classes="subtleText"
+                         IsVisible="{Binding DeviceTransferStatus.HasNonErrorMessage}"
+                         TextWrapping="Wrap" />
+              <TextBlock Text="{Binding DeviceTransferStatus.Message}"
+                         Classes="errorText"
+                         IsVisible="{Binding DeviceTransferStatus.IsError}"
+                         TextWrapping="Wrap" />
+            </Grid>
+            <Button Classes="primary"
+                    Command="{Binding FinishDeviceTransferCommand}"
+                    Content="{Binding DeviceTransferFinishLabel}" >
+              <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+            </Button>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Grid>
+  </ScrollViewer>
+</UserControl>

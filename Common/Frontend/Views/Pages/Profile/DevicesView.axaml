@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
+    xmlns:profile="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Pages.Profile"
+    x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Profile.DevicesView"
+    x:DataType="vm:ProfileViewModel"
+    IsVisible="{Binding IsDevicesMainPage}">
+
+  <UserControl.DataTemplates>
+    <DataTemplate x:DataType="vm:DeviceListPaneTransitionViewModel">
+      <profile:DeviceListView DataContext="{Binding Owner}" />
+    </DataTemplate>
+    <DataTemplate x:DataType="vm:DeviceAddPaneTransitionViewModel">
+      <profile:DeviceAddView DataContext="{Binding Owner}" />
+    </DataTemplate>
+    <DataTemplate x:DataType="vm:DeviceDetailsPaneTransitionViewModel">
+      <profile:DeviceDetailsView DataContext="{Binding Owner}" />
+    </DataTemplate>
+    <DataTemplate x:DataType="vm:DeviceDisconnectPaneTransitionViewModel">
+      <profile:DeviceDisconnectView DataContext="{Binding Owner}" />
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
+  <Grid RowDefinitions="Auto,*" IsVisible="{Binding IsDevicesMainPage}">
+    <profile:DeviceToolbarView Grid.Row="0" />
+
+    <ScrollViewer x:Name="DeviceListScrollViewer"
+                  Grid.Row="1"
+                  Classes="comfortableListScroller"
+                  Classes.androidComfortableListScroller="{Binding IsAndroidPaneTransitionEnabled}">
+      <Grid>
+        <TransitioningContentControl
+            ClipToBounds="True"
+            Content="{Binding CurrentAnimatedDevicePaneViewModel}"
+            IsTransitionReversed="{Binding IsDevicePaneTransitionReversed}"
+            IsVisible="{Binding IsAndroidPaneTransitionEnabled}">
+          <TransitioningContentControl.PageTransition>
+            <CompositePageTransition>
+              <PageSlide Duration="0:0:0.34"
+                         Orientation="Horizontal"
+                         SlideInEasing="CircularEaseOut"
+                         SlideOutEasing="SineEaseIn" />
+              <CrossFade Duration="0:0:0.22" />
+            </CompositePageTransition>
+          </TransitioningContentControl.PageTransition>
+        </TransitioningContentControl>
+
+        <StackPanel Spacing="12"
+                    IsVisible="{Binding IsStaticPaneContentVisible}">
+          <profile:DeviceListView IsVisible="{Binding IsDeviceListPaneVisible}" />
+          <profile:DeviceAddView IsVisible="{Binding IsDeviceAddPaneVisible}" />
+          <profile:DeviceDetailsView IsVisible="{Binding IsDeviceDetailsPaneVisible}" />
+          <profile:DeviceDisconnectView IsVisible="{Binding IsDeviceDisconnectPaneVisible}" />
+        </StackPanel>
+      </Grid>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

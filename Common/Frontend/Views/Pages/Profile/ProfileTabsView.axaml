@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
+    x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Profile.ProfileTabsView"
+    x:DataType="vm:ProfileViewModel">
+  <TabControl
+      SelectedIndex="{Binding SelectedProfileTabIndex, Mode=TwoWay}"
+      HorizontalAlignment="Stretch">
+    <TabControl.ItemsPanel>
+      <ItemsPanelTemplate>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" />
+      </ItemsPanelTemplate>
+    </TabControl.ItemsPanel>
+    <TabItem Classes="compactProfileTab" MinWidth="0" Padding="6,6">
+      <TabItem.Header>
+        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" MaxWidth="{Binding ProfileTabHeaderMaxWidth}">
+          <TextBlock
+              Text="{Binding OverviewTabLabel}"
+              FontSize="{Binding ProfileTabHeaderFontSize}"
+              TextWrapping="NoWrap" />
+        </Viewbox>
+      </TabItem.Header>
+      <StackPanel Spacing="12" Margin="0,8,0,0" HorizontalAlignment="Stretch">
+        <Border Classes="card">
+          <StackPanel Spacing="14">
+            <TextBlock Text="{Binding AccountOverviewLabel}" Classes="sectionTitle" />
+            <WrapPanel Orientation="Horizontal">
+              <Border Classes="toolbarGroup" Margin="0,0,8,8" MinWidth="220">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding UsernameLabel}" Classes="subtleText" />
+                  <TextBlock Text="{Binding Username}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                </StackPanel>
+              </Border>
+              <Border Classes="toolbarGroup" Margin="0,0,8,8" MinWidth="220">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding EmailLabel}" Classes="subtleText" />
+                  <TextBlock Text="{Binding Email}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                </StackPanel>
+              </Border>
+              <Border Classes="toolbarGroup" Margin="0,0,8,8" MinWidth="220">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding FirstNameLabel}" Classes="subtleText" />
+                  <TextBlock Text="{Binding FirstName}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                </StackPanel>
+              </Border>
+              <Border Classes="toolbarGroup" Margin="0,0,8,8" MinWidth="220">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding LastNameLabel}" Classes="subtleText" />
+                  <TextBlock Text="{Binding LastName}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                </StackPanel>
+              </Border>
+              <Border Classes="toolbarGroup" Margin="0,0,8,8" MinWidth="220">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding RegistrationDateLabel}" Classes="subtleText" />
+                  <TextBlock Text="{Binding RegistrationDateText}" TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+              <Border
+                  Classes="toolbarGroup"
+                  Margin="0,0,8,8"
+                  MinWidth="220"
+                  IsVisible="{Binding ShowRegistrationDateInOriginalTimeZone}">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding RegistrationDateInOriginalTimeZoneLabel}" Classes="subtleText" />
+                  <TextBlock Text="{Binding RegistrationDateInOriginalTimeZoneText}" TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+              <Border
+                  Classes="toolbarGroup"
+                  Margin="0,0,8,8"
+                  MinWidth="220"
+                  IsVisible="{Binding ShowRegistrationDateInOriginalTimeZone}">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding RegistrationTimeZoneLabel}" Classes="subtleText" />
+                  <TextBlock Text="{Binding RegistrationTimeZoneText}" TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+              <Border Classes="toolbarGroup" Margin="0,0,8,8" MinWidth="220">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding RegistrationDeviceTypeLabel}" Classes="subtleText" />
+                  <TextBlock Text="{Binding RegistrationDeviceTypeText}" TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </TabItem>
+    <TabItem Classes="compactProfileTab" MinWidth="0" Padding="6,6">
+      <TabItem.Header>
+        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" MaxWidth="{Binding ProfileTabHeaderMaxWidth}">
+          <TextBlock
+              Text="{Binding AccountTabLabel}"
+              FontSize="{Binding ProfileTabHeaderFontSize}"
+              TextWrapping="NoWrap" />
+        </Viewbox>
+      </TabItem.Header>
+      <StackPanel Spacing="12" Margin="0,8,0,0" HorizontalAlignment="Stretch">
+        <Border Classes="card">
+          <StackPanel Spacing="0">
+            <Button
+                Classes="ghost"
+                Command="{Binding BeginEditPersonalInfoCommand}"
+                Padding="0"
+                Margin="0,0,0,12"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                Background="Transparent"
+                BorderThickness="0"
+                ToolTip.Tip="{Binding EditPersonalInfoLabel}">
+              <Grid
+                  ColumnDefinitions="*,Auto"
+                  ColumnSpacing="12"
+                  HorizontalAlignment="Stretch"
+                  IsHitTestVisible="False">
+                <StackPanel Spacing="4" HorizontalAlignment="Stretch">
+                  <TextBlock
+                      Text="{Binding EditPersonalInfoLabel}"
+                      FontWeight="SemiBold"
+                      FontSize="16"
+                      TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding EditPersonalInfoDescription}" Classes="subtleText" TextWrapping="Wrap" />
+                </StackPanel>
+                <PathIcon
+                    Grid.Column="1"
+                    Classes="mediumUiIcon"
+                    Data="{StaticResource ChevronRightIconGeometry}"
+                    Width="44"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+            <Border Classes="divider" Margin="0,0,0,12" />
+            <Button
+                Classes="ghost"
+                Command="{Binding BeginChangeUsernameCommand}"
+                Padding="0"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                Background="Transparent"
+                BorderThickness="0"
+                ToolTip.Tip="{Binding ChangeUsernameLabel}">
+              <Grid
+                  ColumnDefinitions="*,Auto"
+                  ColumnSpacing="12"
+                  HorizontalAlignment="Stretch"
+                  IsHitTestVisible="False">
+                <StackPanel Spacing="4" HorizontalAlignment="Stretch">
+                  <TextBlock
+                      Text="{Binding ChangeUsernameLabel}"
+                      FontWeight="SemiBold"
+                      FontSize="16"
+                      TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding ChangeUsernameDescription}" Classes="subtleText" TextWrapping="Wrap" />
+                </StackPanel>
+                <PathIcon
+                    Grid.Column="1"
+                    Classes="mediumUiIcon"
+                    Data="{StaticResource ChevronRightIconGeometry}"
+                    Width="44"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </TabItem>
+    <TabItem Classes="compactProfileTab" MinWidth="0" Padding="6,6">
+      <TabItem.Header>
+        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" MaxWidth="{Binding ProfileTabHeaderMaxWidth}">
+          <TextBlock
+              Text="{Binding SecurityTabLabel}"
+              FontSize="{Binding ProfileTabHeaderFontSize}"
+              TextWrapping="NoWrap" />
+        </Viewbox>
+      </TabItem.Header>
+      <StackPanel Spacing="12" Margin="0,8,0,0" HorizontalAlignment="Stretch">
+        <Border Classes="card">
+          <StackPanel Spacing="0">
+            <Button
+                Classes="ghost"
+                Command="{Binding BeginChangeMasterPasswordCommand}"
+                Padding="0"
+                Margin="0,0,0,12"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                Background="Transparent"
+                BorderThickness="0"
+                ToolTip.Tip="{Binding ChangeMasterPasswordLabel}">
+              <Grid
+                  ColumnDefinitions="*,Auto"
+                  ColumnSpacing="12"
+                  HorizontalAlignment="Stretch"
+                  IsHitTestVisible="False">
+                <StackPanel Spacing="4" HorizontalAlignment="Stretch">
+                  <TextBlock
+                      Text="{Binding ChangeMasterPasswordLabel}"
+                      FontWeight="SemiBold"
+                      FontSize="16"
+                      TextWrapping="Wrap" />
+                  <TextBlock
+                      Text="{Binding ChangeMasterPasswordDescription}"
+                      Classes="subtleText"
+                      TextWrapping="Wrap" />
+                </StackPanel>
+                <PathIcon
+                    Grid.Column="1"
+                    Classes="mediumUiIcon"
+                    Data="{StaticResource ChevronRightIconGeometry}"
+                    Width="44"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+            <Border Classes="divider" Margin="0,0,0,12" />
+            <Button
+                Classes="ghost"
+                Command="{Binding BeginDeleteAccountCommand}"
+                Padding="0"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                Background="Transparent"
+                BorderThickness="0"
+                ToolTip.Tip="{Binding DeleteAccountLabel}">
+              <Grid
+                  ColumnDefinitions="*,Auto"
+                  ColumnSpacing="12"
+                  HorizontalAlignment="Stretch"
+                  IsHitTestVisible="False">
+                <StackPanel Spacing="4" HorizontalAlignment="Stretch">
+                  <TextBlock
+                      Text="{Binding DeleteAccountLabel}"
+                      FontWeight="SemiBold"
+                      FontSize="16"
+                      TextWrapping="Wrap"
+                      Foreground="#FFD13438" />
+                  <TextBlock Text="{Binding DeleteAccountDescription}" Classes="subtleText" TextWrapping="Wrap" />
+                </StackPanel>
+                <PathIcon
+                    Grid.Column="1"
+                    Classes="mediumUiIcon"
+                    Data="{StaticResource ChevronRightIconGeometry}"
+                    Width="44"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Foreground="#FFD13438" />
+              </Grid>
+            </Button>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </TabItem>
+  </TabControl>
+</UserControl>

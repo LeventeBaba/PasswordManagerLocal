@@ -1,0 +1,234 @@
+syntax = "proto3";
+
+package sync;
+option csharp_namespace = "PasswordManagerLocal.Common.Backend.Sync";
+
+message HelloRequest  { string user_id = 1; string device_id = 2; bytes dataset_hash = 3; bytes sign_pub = 4; int32 database_version = 5; int32 protocol_version = 6; }
+message HelloReply    { bool ok = 1; int32 protocol_version = 2; string device_id = 3; bytes sign_pub = 4; bool sync_available = 5; }
+
+message NeedSyncRequest { int64 since_ts = 1; }
+message NeedSyncReply   { bool needed = 1; int64 latest_ts = 2; }
+
+message DeltaChunk {
+  string entity = 1;
+  bytes payload = 2;
+  int64 ts = 3;
+  bytes sig = 4;
+  string device_id = 5;
+  bytes sign_pub = 6;
+  string recipient_device_id = 7;
+  int32 encryption_version = 8;
+  bytes ephemeral_public_key = 9;
+  bytes nonce = 10;
+  bytes tag = 11;
+  bytes payload_hash = 12;
+}
+
+enum UserSnapshotReceiptStateProto {
+  USER_SNAPSHOT_RECEIPT_NONE = 0;
+  USER_SNAPSHOT_RECEIPT_STORED_PENDING = 1;
+  USER_SNAPSHOT_RECEIPT_REPLACED_OLDER_PENDING = 2;
+  USER_SNAPSHOT_RECEIPT_ALREADY_STORED = 3;
+  USER_SNAPSHOT_RECEIPT_MERGED_IMMEDIATELY = 4;
+  USER_SNAPSHOT_RECEIPT_OBSOLETE_REVISION = 5;
+  USER_SNAPSHOT_RECEIPT_NEEDS_KEY = 6;
+  USER_SNAPSHOT_RECEIPT_WRONG_KEY_EPOCH = 7;
+  USER_SNAPSHOT_RECEIPT_WRONG_MEMBERSHIP_EPOCH = 8;
+  USER_SNAPSHOT_RECEIPT_QUARANTINED = 9;
+  USER_SNAPSHOT_RECEIPT_REJECTED = 10;
+  USER_SNAPSHOT_RECEIPT_REJECTED_ACCOUNT_DELETED = 11;
+  USER_SNAPSHOT_RECEIPT_STORED_MERGED_RECEIPT = 12;
+}
+
+message UserSnapshotReceipt {
+  string user_id = 1;
+  string origin_device_id = 2;
+  string origin_instance_id = 3;
+  int64 origin_revision = 4;
+  bytes snapshot_hash = 5;
+  UserSnapshotReceiptStateProto state = 6;
+  string detail = 7;
+}
+
+enum UserControlOperationReceiptStateProto {
+  USER_CONTROL_OPERATION_RECEIPT_NONE = 0;
+  USER_CONTROL_OPERATION_RECEIPT_STORED_PENDING = 1;
+  USER_CONTROL_OPERATION_RECEIPT_ALREADY_STORED = 2;
+  USER_CONTROL_OPERATION_RECEIPT_APPLIED = 3;
+  USER_CONTROL_OPERATION_RECEIPT_OBSOLETE = 4;
+  USER_CONTROL_OPERATION_RECEIPT_QUARANTINED = 5;
+  USER_CONTROL_OPERATION_RECEIPT_REJECTED = 6;
+}
+
+message UserControlOperationReceipt {
+  string operation_id = 1;
+  string user_id = 2;
+  string origin_device_id = 3;
+  string origin_instance_id = 4;
+  int64 origin_sequence = 5;
+  bytes operation_hash = 6;
+  UserControlOperationReceiptStateProto state = 7;
+  string detail = 8;
+}
+
+message Ack {
+  int64 last_synced_ts = 1;
+  repeated UserSnapshotReceipt user_snapshot_receipts = 2;
+  repeated UserControlOperationReceipt user_control_operation_receipts = 3;
+}
+
+
+message UserSnapshotRevisionInventory {
+  string origin_device_id = 1;
+  string origin_instance_id = 2;
+  int64 user_key_epoch = 3;
+  int64 highest_stored_revision = 4;
+  bytes highest_stored_snapshot_hash = 5;
+  int64 highest_merged_revision = 6;
+  int64 quarantined_revision = 7;
+  bytes quarantined_snapshot_hash = 8;
+  bytes conflicting_snapshot_hash = 9;
+  int64 known_snapshot_revision = 10;
+  bytes known_snapshot_hash = 11;
+  int64 retained_membership_epoch = 12;
+}
+
+message UserSnapshotUserInventory {
+  string user_id = 1;
+  int64 user_key_epoch = 2;
+  int64 membership_epoch = 3;
+  repeated UserSnapshotRevisionInventory revisions = 4;
+}
+
+message UserSnapshotInventoryExchangeRequest {
+  repeated UserSnapshotUserInventory users = 1;
+}
+
+message UserSnapshotRequest {
+  string user_id = 1;
+  string origin_device_id = 2;
+  string origin_instance_id = 3;
+  int64 origin_revision = 4;
+  int64 user_key_epoch = 5;
+  int64 membership_epoch = 6;
+  bytes expected_snapshot_hash = 7;
+}
+
+message UserSnapshotInventoryExchangeReply {
+  repeated UserSnapshotUserInventory users = 1;
+  repeated UserSnapshotRequest requested_snapshots = 2;
+}
+
+message UserSnapshotRequestBatch {
+  repeated UserSnapshotRequest requests = 1;
+}
+
+message UserControlOperationInventoryEntry {
+  string operation_id = 1;
+  string origin_device_id = 2;
+  string origin_instance_id = 3;
+  int64 origin_sequence = 4;
+  int32 operation_type = 5;
+  int64 previous_key_epoch = 6;
+  int64 resulting_key_epoch = 7;
+  int64 previous_membership_epoch = 8;
+  int64 resulting_membership_epoch = 9;
+  bytes operation_hash = 10;
+  bool quarantined = 11;
+  bytes conflicting_operation_hash = 12;
+}
+
+message UserControlOperationUserInventory {
+  string user_id = 1;
+  repeated UserControlOperationInventoryEntry operations = 2;
+}
+
+message UserControlOperationInventoryExchangeRequest {
+  repeated UserControlOperationUserInventory users = 1;
+}
+
+message UserControlOperationRequest {
+  string operation_id = 1;
+  string user_id = 2;
+  string origin_device_id = 3;
+  string origin_instance_id = 4;
+  int64 origin_sequence = 5;
+  int32 operation_type = 6;
+  int64 previous_key_epoch = 7;
+  int64 resulting_key_epoch = 8;
+  int64 previous_membership_epoch = 9;
+  int64 resulting_membership_epoch = 10;
+  bytes expected_operation_hash = 11;
+}
+
+message UserControlOperationInventoryExchangeReply {
+  repeated UserControlOperationUserInventory users = 1;
+  repeated UserControlOperationRequest requested_operations = 2;
+}
+
+message UserControlOperationRequestBatch {
+  repeated UserControlOperationRequest requests = 1;
+}
+
+message GetDeviceEnrollmentInfoRequest {
+  string session_id = 1;
+  bytes code_proof = 2;
+  int32 source_database_version = 3;
+}
+
+message GetDeviceEnrollmentInfoReply {
+  bool ok = 1;
+  string error = 2;
+  string error_code = 3;
+  string device_id = 4;
+  string tls_cert_fingerprint = 5;
+  bytes sign_pub = 6;
+  bytes agreement_pub = 7;
+  uint32 device_type = 8;
+  string origin_instance_id = 9;
+}
+
+message CompleteDeviceEnrollmentStartRequest {
+  int32 source_database_version = 1;
+}
+
+message CompleteDeviceEnrollmentRequest {
+  string session_id = 1;
+  bytes code_proof = 2;
+  bytes snapshot = 3;
+  string source_device_id = 4;
+  bytes source_sign_pub = 5;
+  string source_tls_cert_fingerprint = 6;
+  int32 source_database_version = 7;
+  string source_origin_instance_id = 8;
+  string target_device_id = 9;
+  string target_origin_instance_id = 10;
+}
+
+message CompleteDeviceEnrollmentChunk {
+  string session_id = 1;
+  bytes code_proof = 2;
+  string source_device_id = 3;
+  bytes source_sign_pub = 4;
+  string source_tls_cert_fingerprint = 5;
+  bytes snapshot_chunk = 6;
+  int32 snapshot_encryption_version = 7;
+  bytes snapshot_encryption_nonce = 8;
+  bytes snapshot_encryption_tag = 9;
+  int32 source_database_version = 10;
+  string source_origin_instance_id = 11;
+  string target_device_id = 12;
+  string target_origin_instance_id = 13;
+}
+
+message CompleteDeviceEnrollmentReply {
+  bool ok = 1;
+  string error = 2;
+  string error_code = 3;
+}
+
+
+message SyncError {
+  string code = 1;
+  string message = 2;
+}

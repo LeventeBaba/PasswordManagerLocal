@@ -1,0 +1,423 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PasswordManagerLocal.Common.Frontend.Views.MainView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:authViews="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Auth"
+    xmlns:authVm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Auth"
+    xmlns:pagesViews="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Pages"
+    xmlns:pagesVm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
+    xmlns:settingsViews="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Settings"
+    xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels"
+    x:DataType="vm:MainViewModel">
+
+  <UserControl.DataTemplates>
+    <DataTemplate x:DataType="authVm:LoginViewModel">
+      <authViews:LoginView />
+    </DataTemplate>
+    <DataTemplate x:DataType="authVm:RegistrationViewModel">
+      <authViews:RegistrationView />
+    </DataTemplate>
+    <DataTemplate x:DataType="authVm:ChangeProfileViewModel">
+      <authViews:ChangeProfileView />
+    </DataTemplate>
+    <DataTemplate x:DataType="pagesVm:PasswordsViewModel">
+      <pagesViews:PasswordListView />
+    </DataTemplate>
+    <DataTemplate x:DataType="pagesVm:ProfileViewModel">
+      <pagesViews:ProfileView />
+    </DataTemplate>
+    <DataTemplate x:DataType="vm:SettingsViewModel">
+      <settingsViews:SettingsView />
+    </DataTemplate>
+    <DataTemplate x:DataType="vm:MainPageContentViewModel">
+      <ContentControl Content="{Binding PageViewModel}" />
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
+  <Grid>
+  <Grid RowDefinitions="Auto,Auto,*"
+        IsEnabled="{Binding IsApplicationInteractionEnabled}">
+    <Grid>
+      <Border Classes="card"
+              Margin="16,16,16,4"
+              IsVisible="{Binding IsDesktopContentVisible}">
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+          <StackPanel Spacing="4">
+            <TextBlock Text="{Binding AppTitle}" Classes="sectionTitle" />
+            <Grid>
+              <TextBlock Text="{Binding HeaderSubtitle}"
+                         IsVisible="{Binding IsHeaderSubtitleUser}"
+                         Classes="subtleText"
+                         TextWrapping="Wrap" />
+              <TextBlock Text="{Binding HeaderSubtitle}"
+                         IsVisible="{Binding IsHeaderSubtitleInformation}"
+                         Classes="statusInfoText"
+                         Foreground="{Binding HeaderInformationSubtitleBrush}"
+                         TextWrapping="Wrap" />
+              <TextBlock Text="{Binding HeaderSubtitle}"
+                         IsVisible="{Binding IsHeaderSubtitleSuccess}"
+                         Classes="statusSuccessText"
+                         Foreground="{Binding HeaderSuccessSubtitleBrush}"
+                         TextWrapping="Wrap" />
+              <TextBlock Text="{Binding HeaderSubtitle}"
+                         IsVisible="{Binding IsHeaderSubtitleError}"
+                         Classes="errorText"
+                         TextWrapping="Wrap" />
+            </Grid>
+          </StackPanel>
+
+          <Button Grid.Column="1"
+                  x:Name="AccountMenuButton"
+                  IsVisible="{Binding IsAuthenticated}"
+                  Classes="ghost"
+                  Padding="14,10"
+                  HorizontalAlignment="Right">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="{Binding CurrentUserDisplayName}" TextTrimming="CharacterEllipsis" MaxWidth="180" />
+              <PathIcon Classes="smallUiIcon" Data="{StaticResource ChevronDownIconGeometry}" VerticalAlignment="Center" />
+            </StackPanel>
+            <Button.Flyout>
+              <Flyout>
+                <Border Classes="card" Padding="10">
+                  <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="Auto,Auto"
+                          ColumnSpacing="8"
+                          HorizontalAlignment="Center">
+                      <TextBlock
+                          Text="{Binding RememberMeDropdownLabel}"
+                          VerticalAlignment="Center"
+                          TextWrapping="NoWrap" />
+                      <ToggleSwitch
+                          Grid.Column="1"
+                          IsChecked="{Binding IsCurrentRememberMeEnabled, Mode=TwoWay}"
+                          IsEnabled="{Binding CanChangeRememberMe}"
+                          MinWidth="0"
+                          OnContent="{Binding RememberMeOnLabel}"
+                          OffContent="{Binding RememberMeOffLabel}"
+                          AutomationProperties.Name="{Binding RememberMeDropdownLabel}" />
+                    </Grid>
+                    <Border Classes="divider" />
+                    <Button Classes="ghost"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Command="{Binding RefreshVisiblePageCommand}"
+                            Click="HandleAccountMenuActionClick"
+                            Content="{Binding RefreshVisiblePageMenuLabel}" />
+                    <Button Classes="ghost"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Command="{Binding ShowChangeProfileCommand}"
+                            Click="HandleAccountMenuActionClick"
+                            Content="{Binding ChangeProfileLabel}" />
+                    <Button Classes="ghost"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Command="{Binding LogoutCommand}"
+                            Click="HandleAccountMenuActionClick"
+                            Content="{Binding LogoutLabel}" />
+                  </StackPanel>
+                </Border>
+              </Flyout>
+            </Button.Flyout>
+          </Button>
+
+          <Button Grid.Column="2"
+                  Classes="ghost settingsNavigation"
+                  Classes.selected="{Binding IsSettingsPageVisible}"
+                  Width="48"
+                  Height="48"
+                  Padding="12"
+                  HorizontalAlignment="Right"
+                  Command="{Binding ShowSettingsCommand}"
+                  ToolTip.Tip="{Binding SettingsLabel}">
+            <PathIcon Classes="mediumUiIcon"
+                      Data="{StaticResource SettingsGearIconGeometry}"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Center" />
+          </Button>
+        </Grid>
+      </Border>
+
+      <Border Classes="card"
+              Margin="8,8,8,2"
+              Padding="8"
+              ClipToBounds="True"
+              IsVisible="{Binding IsMobileNavigationEnabled}">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+          <StackPanel Grid.Column="0"
+                      Spacing="2"
+                      ClipToBounds="True"
+                      VerticalAlignment="Center">
+            <TextBlock Text="{Binding AppTitle}"
+                       Classes="sectionTitle"
+                       TextTrimming="CharacterEllipsis"
+                       TextWrapping="NoWrap" />
+            <Grid ClipToBounds="True">
+              <TextBlock Text="{Binding HeaderSubtitle}"
+                         IsVisible="{Binding IsHeaderSubtitleUser}"
+                         Classes="subtleText"
+                         FontSize="12"
+                         TextTrimming="CharacterEllipsis"
+                         TextWrapping="NoWrap" />
+              <TextBlock Text="{Binding HeaderSubtitle}"
+                         IsVisible="{Binding IsHeaderSubtitleInformation}"
+                         Classes="statusInfoText"
+                         Foreground="{Binding HeaderInformationSubtitleBrush}"
+                         FontSize="12"
+                         TextTrimming="CharacterEllipsis"
+                         TextWrapping="NoWrap" />
+              <TextBlock Text="{Binding HeaderSubtitle}"
+                         IsVisible="{Binding IsHeaderSubtitleSuccess}"
+                         Classes="statusSuccessText"
+                         Foreground="{Binding HeaderSuccessSubtitleBrush}"
+                         FontSize="12"
+                         TextTrimming="CharacterEllipsis"
+                         TextWrapping="NoWrap" />
+              <TextBlock Text="{Binding HeaderSubtitle}"
+                         IsVisible="{Binding IsHeaderSubtitleError}"
+                         Classes="errorText"
+                         FontSize="12"
+                         TextTrimming="CharacterEllipsis"
+                         TextWrapping="NoWrap" />
+            </Grid>
+          </StackPanel>
+
+          <Grid Grid.Column="1"
+                ColumnDefinitions="Auto,Auto"
+                ColumnSpacing="4"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Center">
+            <Button Grid.Column="0"
+                    x:Name="MobileAccountMenuButton"
+                    IsVisible="{Binding IsAuthenticated}"
+                    Classes="ghost"
+                    MaxWidth="156"
+                    MinWidth="0"
+                    MinHeight="40"
+                    Padding="8,8"
+                    HorizontalAlignment="Right">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Text="{Binding CurrentUserDisplayName}"
+                           TextTrimming="CharacterEllipsis"
+                           MaxWidth="104"
+                           VerticalAlignment="Center" />
+                <PathIcon Classes="smallUiIcon" Data="{StaticResource ChevronDownIconGeometry}" VerticalAlignment="Center" />
+              </StackPanel>
+              <Button.Flyout>
+                <Flyout>
+                  <Border Classes="card" Padding="10">
+                    <StackPanel Spacing="8">
+                      <Grid ColumnDefinitions="Auto,Auto"
+                            ColumnSpacing="8"
+                            HorizontalAlignment="Center">
+                        <TextBlock
+                            Text="{Binding RememberMeDropdownLabel}"
+                            VerticalAlignment="Center"
+                            TextWrapping="NoWrap" />
+                        <ToggleSwitch
+                            Grid.Column="1"
+                            IsChecked="{Binding IsCurrentRememberMeEnabled, Mode=TwoWay}"
+                            IsEnabled="{Binding CanChangeRememberMe}"
+                            MinWidth="0"
+                            OnContent="{Binding RememberMeOnLabel}"
+                            OffContent="{Binding RememberMeOffLabel}"
+                            AutomationProperties.Name="{Binding RememberMeDropdownLabel}" />
+                      </Grid>
+                      <Border Classes="divider" />
+                      <Button Classes="ghost"
+                              HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Center"
+                              Command="{Binding RefreshVisiblePageCommand}"
+                              Click="HandleAccountMenuActionClick"
+                              Content="{Binding RefreshVisiblePageMenuLabel}" />
+                      <Button Classes="ghost"
+                              HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Center"
+                              Command="{Binding ShowChangeProfileCommand}"
+                              Click="HandleAccountMenuActionClick"
+                              Content="{Binding ChangeProfileLabel}" />
+                      <Button Classes="ghost"
+                              HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Center"
+                              Command="{Binding LogoutCommand}"
+                              Click="HandleAccountMenuActionClick"
+                              Content="{Binding LogoutLabel}" />
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+
+            <Button Grid.Column="1"
+                    Classes="ghost settingsNavigation"
+                    Classes.selected="{Binding IsSettingsPageVisible}"
+                    Width="44"
+                    Height="44"
+                    MinWidth="44"
+                    MinHeight="44"
+                    Padding="10"
+                    HorizontalAlignment="Right"
+                    Command="{Binding ShowSettingsCommand}"
+                    ToolTip.Tip="{Binding SettingsLabel}">
+              <PathIcon Classes="mediumUiIcon"
+                        Data="{StaticResource SettingsGearIconGeometry}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center" />
+            </Button>
+          </Grid>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <Grid Grid.Row="1" IsVisible="{Binding IsAuthenticated}">
+      <Border Classes="card"
+              Margin="16,0,16,4"
+              Padding="10,6"
+              IsVisible="{Binding IsDesktopNavigationVisible}">
+        <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center">
+          <Button Classes="ghost mainNavigation"
+                  Classes.selected="{Binding IsPasswordsMainPageSelected}"
+                  Command="{Binding ShowPasswordsCommand}"
+                  Content="{Binding PasswordVaultLabel}"
+                  Margin="3"
+                  Padding="12,6"
+                  MinHeight="32" />
+          <Button Classes="ghost mainNavigation"
+                  Classes.selected="{Binding IsDevicesMainPageSelected}"
+                  Command="{Binding ShowDevicesCommand}"
+                  Content="{Binding DevicesLabel}"
+                  Margin="3"
+                  Padding="12,6"
+                  MinHeight="32" />
+          <Button Classes="ghost mainNavigation"
+                  Classes.selected="{Binding IsProfileMainPageSelected}"
+                  Command="{Binding ShowProfileCommand}"
+                  Content="{Binding ProfileLabel}"
+                  Margin="3"
+                  Padding="12,6"
+                  MinHeight="32" />
+        </WrapPanel>
+      </Border>
+
+      <Border Classes="card"
+              Margin="16,0,16,2"
+              Padding="8,2"
+              IsVisible="{Binding IsMobilePageIndicatorVisible}">
+        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+          <Button Classes="mobileMainMenuDropdown"
+                  HorizontalAlignment="Center"
+                  HorizontalContentAlignment="Center"
+                  VerticalContentAlignment="Center"
+                  ToolTip.Tip="{Binding NavigationLabel}">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <TextBlock Text="{Binding MobileCurrentPageLabel}"
+                         Classes="subtleText"
+                         FontSize="12"
+                         FontWeight="SemiBold"
+                         TextTrimming="CharacterEllipsis"
+                         MaxWidth="160"
+                         VerticalAlignment="Center" />
+              <PathIcon Classes="smallUiIcon"
+                        Data="{StaticResource ChevronDownIconGeometry}"
+                        VerticalAlignment="Center" />
+            </StackPanel>
+            <Button.Flyout>
+              <MenuFlyout>
+                <MenuItem Header="{Binding PasswordVaultLabel}" Command="{Binding SelectMobilePasswordsCommand}" />
+                <MenuItem Header="{Binding DevicesLabel}" Command="{Binding SelectMobileDevicesCommand}" />
+                <MenuItem Header="{Binding ProfileLabel}" Command="{Binding SelectMobileProfileCommand}" />
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+          <TextBlock Text="{Binding MobilePageIndicatorText}"
+                     FontSize="18"
+                     VerticalAlignment="Center" />
+        </StackPanel>
+      </Border>
+    </Grid>
+
+    <TransitioningContentControl Grid.Row="2"
+                                  ClipToBounds="True"
+                                  Content="{Binding CurrentAnimatedPageViewModel}"
+                                  IsVisible="{Binding IsMobileNavigationEnabled}"
+                                  IsTransitionReversed="{Binding IsPageTransitionReversed}">
+      <TransitioningContentControl.PageTransition>
+        <CompositePageTransition>
+          <PageSlide Duration="0:0:0.38"
+                     Orientation="Horizontal"
+                     SlideInEasing="CircularEaseOut"
+                     SlideOutEasing="SineEaseIn" />
+          <CrossFade Duration="0:0:0.26" />
+        </CompositePageTransition>
+      </TransitioningContentControl.PageTransition>
+    </TransitioningContentControl>
+
+    <ContentControl Grid.Row="2"
+                    Content="{Binding CurrentPageViewModel}"
+                    IsVisible="{Binding IsDesktopContentVisible}" />
+  </Grid>
+
+    <Border Background="#99000000" IsVisible="{Binding IsSessionRenewalDialogOpen}" Padding="24">
+      <Border Classes="card"
+              Padding="20"
+              MaxWidth="460"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center">
+        <StackPanel Spacing="16">
+          <TextBlock Text="{Binding SessionRenewalWarningTitle}" Classes="sectionTitle" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding SessionRenewalWarningMessage}" TextWrapping="Wrap" />
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+            <Button Classes="ghost"
+                    Command="{Binding DeclineSessionRenewalCommand}"
+                    Content="{Binding NoLabel}" />
+            <Button Grid.Column="1"
+                    Classes="primary"
+                    Command="{Binding ConfirmSessionRenewalCommand}"
+                    Content="{Binding SessionRenewalYesButtonLabel}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+    </Border>
+
+
+    <Border Background="#CC000000"
+            IsVisible="{Binding IsDatabaseRecoveryDialogOpen}"
+            Padding="24">
+      <Border Classes="card"
+              Padding="24"
+              MaxWidth="560"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center">
+        <StackPanel Spacing="16">
+          <TextBlock Text="{Binding DatabaseRecoveryTitle}"
+                     Classes="sectionTitle"
+                     TextWrapping="Wrap" />
+          <TextBlock Text="{Binding DatabaseRecoveryMessage}"
+                     Classes="errorText"
+                     TextWrapping="Wrap" />
+          <ProgressBar IsVisible="{Binding IsDatabaseResetInProgress}"
+                       IsIndeterminate="True"
+                       Height="6" />
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+            <Button Classes="ghost"
+                    IsVisible="{Binding IsDatabaseRecoverySecondaryButtonVisible}"
+                    Command="{Binding DatabaseRecoverySecondaryCommand}">
+              <TextBlock Text="{Binding DatabaseRecoverySecondaryButtonLabel}"
+                         TextWrapping="Wrap"
+                         TextAlignment="Center" />
+            </Button>
+            <Button Grid.Column="1"
+                    Classes="danger"
+                    IsVisible="{Binding IsDatabaseRecoveryPrimaryButtonVisible}"
+                    Command="{Binding DatabaseRecoveryPrimaryCommand}">
+              <TextBlock Text="{Binding DatabaseRecoveryPrimaryButtonLabel}"
+                         TextWrapping="Wrap"
+                         TextAlignment="Center" />
+            </Button>
+          </Grid>
+        </StackPanel>
+      </Border>
+    </Border>
+  </Grid>
+</UserControl>

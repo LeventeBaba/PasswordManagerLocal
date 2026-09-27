@@ -1,19 +1,22 @@
+[CmdletBinding()]
+param(
+    [ValidateSet('Release')]
+    [string]$Configuration = 'Release',
+
+    [string]$OutputPath,
+
+    [Nullable[long]]$BaselineTotalBytes,
+
+    [switch]$RunSmokeTests
+)
+
 $ErrorActionPreference = 'Stop'
-
-$root = Split-Path -Parent $PSScriptRoot
-$project = Join-Path $root 'PasswordManagerLocal\PasswordManagerLocal.Windows\PasswordManagerLocal.Windows.csproj'
-$output = Join-Path $root 'artifacts\publish\PasswordManagerLocal.Windows\win-x64'
-
-if (Test-Path $output) {
-    Remove-Item $output -Recurse -Force
+$script = Join-Path $PSScriptRoot 'Windows\PublishWindowsProduct.ps1'
+$arguments = @{
+    Configuration = $Configuration
+    RuntimeIdentifier = 'win-x64'
+    RunSmokeTests = $RunSmokeTests
 }
-
-dotnet publish $project `
-    -c Release `
-    -r win-x64 `
-    --self-contained false `
-    -p:DebugSymbols=false `
-    -p:DebugType=None `
-    -p:PublishReadyToRun=false `
-    -p:PublishSingleFile=false `
-    -o $output
+if (-not [string]::IsNullOrWhiteSpace($OutputPath)) { $arguments.OutputRoot = $OutputPath }
+if ($null -ne $BaselineTotalBytes) { $arguments.BaselineTotalBytes = $BaselineTotalBytes }
+& $script @arguments

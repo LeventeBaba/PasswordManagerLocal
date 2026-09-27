@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PasswordManagerLocal.Common.Frontend.Views.Settings.SettingsView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels"
+    x:DataType="vm:SettingsViewModel">
+
+  <ScrollViewer x:Name="PageScrollViewer"
+                HorizontalScrollBarVisibility="Disabled"
+                HorizontalContentAlignment="Stretch">
+    <Grid Margin="16,4,16,16"
+          HorizontalAlignment="Stretch">
+      <StackPanel Spacing="14"
+                  HorizontalAlignment="Stretch">
+        <Border Classes="card"
+                HorizontalAlignment="Stretch">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+            <Button Classes="ghost iconButton"
+                    Command="{Binding NavigateBackCommand}"
+                    ToolTip.Tip="{Binding BackLabel}">
+              <PathIcon Classes="smallUiIcon"
+                        Data="{StaticResource BackIconGeometry}" />
+            </Button>
+            <StackPanel Grid.Column="1"
+                        Spacing="6"
+                        VerticalAlignment="Center">
+              <TextBlock Text="{Binding Title}"
+                         Classes="pageTitle"
+                         TextWrapping="Wrap" />
+              <TextBlock Text="{Binding Subtitle}"
+                         Classes="subtleText"
+                         TextWrapping="Wrap" />
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <Border Classes="card"
+                HorizontalAlignment="Stretch">
+          <StackPanel Spacing="0">
+            <Button Classes="ghost"
+                    Command="{Binding ToggleAppearanceSectionCommand}"
+                    Padding="0"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    ToolTip.Tip="{Binding AppearanceTitle}"
+                    AutomationProperties.Name="{Binding AppearanceTitle}">
+              <Grid ColumnDefinitions="*,Auto"
+                    ColumnSpacing="12"
+                    HorizontalAlignment="Stretch"
+                    IsHitTestVisible="False">
+                <StackPanel Spacing="4"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Center">
+                  <TextBlock Text="{Binding AppearanceTitle}"
+                             FontWeight="SemiBold"
+                             FontSize="16"
+                             TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding AppearanceDescription}"
+                             Classes="subtleText"
+                             TextWrapping="Wrap" />
+                </StackPanel>
+                <Grid Grid.Column="1"
+                      Width="44"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Center">
+                  <PathIcon Classes="mediumUiIcon"
+                            Data="{StaticResource ChevronRightIconGeometry}"
+                            IsVisible="{Binding IsAppearanceSectionCollapsed}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center" />
+                  <PathIcon Classes="mediumUiIcon"
+                            Data="{StaticResource ChevronDownIconGeometry}"
+                            IsVisible="{Binding IsAppearanceSectionExpanded}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center" />
+                </Grid>
+              </Grid>
+            </Button>
+
+            <StackPanel IsVisible="{Binding IsAppearanceSectionExpanded}"
+                        Spacing="12"
+                        Margin="0,14,0,0">
+              <Border Classes="divider" />
+
+              <Border Classes="toolbarGroup">
+                <StackPanel Spacing="10">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding LanguageLabel}"
+                               FontWeight="SemiBold"
+                               FontSize="16"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding LanguageDescription}"
+                               Classes="subtleText"
+                               TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ComboBox MinWidth="180"
+                            MaxWidth="260"
+                            HorizontalAlignment="Left"
+                            ItemsSource="{Binding LanguageOptions}"
+                            SelectedItem="{Binding SelectedLanguageOption, Mode=TwoWay}"
+                            AutomationProperties.Name="{Binding LanguageLabel}">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="vm:SettingsLanguageOptionViewModel">
+                        <TextBlock Text="{Binding DisplayName}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </StackPanel>
+              </Border>
+
+              <Border Classes="toolbarGroup">
+                <StackPanel Spacing="10">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding ThemeLabel}"
+                               FontWeight="SemiBold"
+                               FontSize="16"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding ThemeDescription}"
+                               Classes="subtleText"
+                               TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ComboBox MinWidth="180"
+                            MaxWidth="260"
+                            HorizontalAlignment="Left"
+                            ItemsSource="{Binding ThemeOptions}"
+                            SelectedItem="{Binding SelectedThemeOption, Mode=TwoWay}"
+                            AutomationProperties.Name="{Binding ThemeLabel}">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="vm:SettingsThemeOptionViewModel">
+                        <TextBlock Text="{Binding DisplayName}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card"
+                HorizontalAlignment="Stretch">
+          <StackPanel Spacing="0">
+            <Button Classes="ghost"
+                    Command="{Binding ToggleBackgroundSectionCommand}"
+                    Padding="0"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    ToolTip.Tip="{Binding BackgroundOperationTitle}"
+                    AutomationProperties.Name="{Binding BackgroundOperationTitle}">
+              <Grid ColumnDefinitions="*,Auto"
+                    ColumnSpacing="12"
+                    HorizontalAlignment="Stretch"
+                    IsHitTestVisible="False">
+                <StackPanel Spacing="4"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Center">
+                  <TextBlock Text="{Binding BackgroundOperationTitle}"
+                             FontWeight="SemiBold"
+                             FontSize="16"
+                             TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding BackgroundOperationDescription}"
+                             Classes="subtleText"
+                             TextWrapping="Wrap" />
+                </StackPanel>
+                <Grid Grid.Column="1"
+                      Width="44"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Center">
+                  <PathIcon Classes="mediumUiIcon"
+                            Data="{StaticResource ChevronRightIconGeometry}"
+                            IsVisible="{Binding IsBackgroundSectionCollapsed}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center" />
+                  <PathIcon Classes="mediumUiIcon"
+                            Data="{StaticResource ChevronDownIconGeometry}"
+                            IsVisible="{Binding IsBackgroundSectionExpanded}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center" />
+                </Grid>
+              </Grid>
+            </Button>
+
+            <StackPanel IsVisible="{Binding IsBackgroundSectionExpanded}"
+                        Spacing="12"
+                        Margin="0,14,0,0">
+              <Border Classes="divider" />
+
+              <Border Classes="toolbarGroup">
+                <Grid ColumnDefinitions="*,Auto"
+                      RowDefinitions="Auto,Auto,Auto"
+                      ColumnSpacing="16"
+                      RowSpacing="10">
+                  <StackPanel Grid.Row="0"
+                              Grid.Column="0"
+                              Spacing="4"
+                              VerticalAlignment="Center">
+                    <TextBlock Text="{Binding BackgroundSyncLabel}"
+                               FontWeight="SemiBold"
+                               FontSize="16"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding BackgroundSyncDescription}"
+                               Classes="subtleText"
+                               TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Row="0"
+                                Grid.Column="1"
+                                MinWidth="0"
+                                VerticalAlignment="Center"
+                                IsChecked="{Binding IsBackgroundSyncEnabled, Mode=TwoWay}"
+                                IsVisible="{Binding IsBackgroundSyncControlVisible}"
+                                IsEnabled="{Binding IsBackgroundSyncToggleEnabled}"
+                                OnContent="{Binding OnLabel}"
+                                OffContent="{Binding OffLabel}"
+                                AutomationProperties.Name="{Binding BackgroundSyncLabel}" />
+                  <TextBlock Grid.Row="1"
+                             Grid.ColumnSpan="2"
+                             Text="{Binding BackgroundSyncStatus}"
+                             Classes="subtleText"
+                             TextWrapping="Wrap" />
+                  <ProgressBar Grid.Row="2"
+                               Grid.ColumnSpan="2"
+                               IsIndeterminate="True"
+                               IsVisible="{Binding IsBackgroundSyncProgressVisible}" />
+                </Grid>
+              </Border>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </Grid>
+  </ScrollViewer>
+</UserControl>

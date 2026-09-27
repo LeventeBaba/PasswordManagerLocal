@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
+    x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Profile.LocalSyncDialogView"
+    x:DataType="vm:ProfileViewModel"
+    IsVisible="{Binding IsLocalSyncDialogOpen}">
+  <Border Background="#99000000" IsVisible="{Binding IsLocalSyncDialogOpen}" Padding="24">
+    <Border Classes="card" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="560">
+      <StackPanel Spacing="14">
+        <TextBlock Text="{Binding LocalSyncDialogTitle}" Classes="sectionTitle" />
+        <TextBlock Text="{Binding LocalSyncDeviceName}" FontWeight="SemiBold" TextWrapping="Wrap" />
+        <Border Classes="dangerZone">
+          <TextBlock Text="{Binding LocalSyncDialogWarning}" TextWrapping="Wrap" />
+        </Border>
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+          <Button Classes="ghost" Command="{Binding CancelLocalSyncToggleCommand}" Content="{Binding CancelLabel}" />
+          <Button
+              Grid.Column="1"
+              Classes="primary"
+              Command="{Binding ConfirmLocalSyncToggleCommand}"
+              Content="{Binding LocalSyncConfirmLabel}" />
+        </Grid>
+      </StackPanel>
+    </Border>
+  </Border>
+</UserControl>
