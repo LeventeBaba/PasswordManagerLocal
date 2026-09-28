@@ -1,5 +1,8 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Services.Hosted;
+using PasswordManagerLocal.Common.Backend.Sync.Presence;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 using System.Text;
@@ -11,6 +14,7 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 public sealed class RegularSyncEndToEndTests
 {
     private const int TestTimeoutMilliseconds = 90_000;
+    private const int ThreeDeviceTestTimeoutMilliseconds = 180_000;
     private const int MaxOneWaySessionsPerPhase = 12;
     private const int MaxBidirectionalSessionsPerPhase = 12;
     private static readonly TimeSpan PhaseTimeout = TimeSpan.FromSeconds(20);
@@ -355,6 +359,406 @@ public sealed class RegularSyncEndToEndTests
         Assert.IsTrue(pair.Source.Transport.DeltaSendCalls > 0);
     }
 
+    [TestMethod]
+    [Timeout(ThreeDeviceTestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    [TestCategory("EndToEnd")]
+    public async Task EnrollingThirdDevice_ExistingUninvolvedDeviceLearnsItsMembershipAndData()
+    {
+        await using var setup = await CreateThreeDeviceSetupAsync();
+
+        var devicesBeforeSecondEnrollmentSync = await setup.Original.Endpoints
+            .GetUserDevicesAsync(setup.OriginalToken);
+        Assert.AreEqual(2, devicesBeforeSecondEnrollmentSync.Count);
+        Assert.IsFalse(devicesBeforeSecondEnrollmentSync.Any(device =>
+            device.DeviceId == setup.NewDevice.Identity.LocalDeviceId),
+            "The first device must not learn about the third device merely because the second device enrolled it.");
+
+        Assert.AreEqual(
+            DeviceEnrollmentState.Completed,
+            (await setup.NewDevice.Endpoints.GetDeviceEnrollmentStatusAsync()).State);
+        AssertDeviceIds(
+            (await setup.Middle.Endpoints.GetUserDevicesAsync(setup.MiddleToken)).Select(device => device.DeviceId),
+            setup.Original.Identity.LocalDeviceId,
+            setup.Middle.Identity.LocalDeviceId,
+            setup.NewDevice.Identity.LocalDeviceId);
+        AssertDeviceIds(
+            (await setup.NewDevice.Endpoints.GetUserDevicesAsync(setup.NewDeviceToken)).Select(device => device.DeviceId),
+            setup.Original.Identity.LocalDeviceId,
+            setup.Middle.Identity.LocalDeviceId,
+            setup.NewDevice.Identity.LocalDeviceId);
+
+        var newDeviceSecret = Encoding.UTF8.GetBytes("third-device-created-secret");
+        await AddPasswordAsync(
+            setup.NewDevice,
+            setup.NewDeviceToken,
+            "Third device credential",
+            newDeviceSecret);
+
+        var enrolledData = await setup.NewDevice.Endpoints.GetSavedPasswordsAsync(setup.NewDeviceToken);
+        CollectionAssert.AreEqual(
+            new[] { "Original device credential", "Second device credential", "Third device credential" },
+            enrolledData.Passwords.Select(password => password.Name).OrderBy(name => name, StringComparer.Ordinal).ToArray());
+
+        await SynchronizeOneWayUntilAsync(
+            setup.Middle,
+            setup.Original,
+            "the uninvolved original device receives the third device membership",
+            () => HasActiveMembershipForDeviceAsync(
+                setup.Original,
+                setup.NewDevice.Identity.LocalDeviceId));
+
+        // The membership update is now persisted on the original device. Log in again to make the
+        // endpoint assertions use a session opened against the updated local profile.
+        setup.OriginalToken = await RunPhaseAsync(
+            "original device login after receiving the third-device membership",
+            ct => setup.Original.Endpoints.LoginAsync(setup.Original.CreateLoginRequest(setup.Username), ct));
+
+        var originalDevices = await setup.Original.Endpoints.GetUserDevicesAsync(setup.OriginalToken);
+        AssertDeviceIds(
+            originalDevices.Select(device => device.DeviceId),
+            setup.Original.Identity.LocalDeviceId,
+            setup.Middle.Identity.LocalDeviceId,
+            setup.NewDevice.Identity.LocalDeviceId);
+
+        await setup.Original.CacheEndpointForAsync(setup.NewDevice);
+        await SynchronizeOneWayUntilAsync(
+            setup.NewDevice,
+            setup.Original,
+            "the uninvolved original device receives data created on the newly enrolled device",
+            async () => (await setup.Original.Endpoints.GetSavedPasswordsAsync(setup.OriginalToken))
+                .Passwords.Any(password => password.Name == "Third device credential"));
+
+        var receivedData = await setup.Original.Endpoints.GetSavedPasswordsAsync(setup.OriginalToken);
+        Assert.IsTrue(receivedData.Passwords.Any(password => password.Name == "Second device credential"));
+        var receivedPassword = receivedData.Passwords.Single(password => password.Name == "Third device credential");
+        CollectionAssert.AreEqual(
+            new[] { "Original device credential", "Second device credential", "Third device credential" },
+            receivedData.Passwords.Select(password => password.Name).OrderBy(name => name, StringComparer.Ordinal).ToArray());
+        CollectionAssert.AreEqual(
+            newDeviceSecret,
+            await setup.Original.Endpoints.GetUnsecurePasswordAsync(setup.OriginalToken, receivedPassword.Id));
+    }
+
+    [TestMethod]
+    [Timeout(ThreeDeviceTestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    [TestCategory("EndToEnd")]
+    public async Task ThreeEnrolledDevices_SyncInBothDirectionsAndSeeEachOtherOnline()
+    {
+        await using var setup = await CreateThreeDeviceSetupAsync();
+
+        await SynchronizeOneWayUntilAsync(
+            setup.Middle,
+            setup.Original,
+            "all three device memberships are present on the original device",
+            () => HasActiveMembershipForDeviceAsync(
+                setup.Original,
+                setup.NewDevice.Identity.LocalDeviceId));
+
+        setup.OriginalToken = await RunPhaseAsync(
+            "refresh original-device login after membership synchronization",
+            ct => setup.Original.Endpoints.LoginAsync(setup.Original.CreateLoginRequest(setup.Username), ct));
+        setup.MiddleToken = await RunPhaseAsync(
+            "refresh second-device login after enrolling the third device",
+            ct => setup.Middle.Endpoints.LoginAsync(setup.Middle.CreateLoginRequest(setup.Username), ct));
+        setup.NewDeviceToken = await RunPhaseAsync(
+            "refresh third-device login after enrollment",
+            ct => setup.NewDevice.Endpoints.LoginAsync(setup.NewDevice.CreateLoginRequest(setup.Username), ct));
+
+        var originalOnlySecret = Encoding.UTF8.GetBytes("three-way-original-secret");
+        var middleOnlySecret = Encoding.UTF8.GetBytes("three-way-middle-secret");
+        var newDeviceOnlySecret = Encoding.UTF8.GetBytes("three-way-third-secret");
+        await AddPasswordAsync(setup.Original, setup.OriginalToken, "Original-only credential", originalOnlySecret);
+        await AddPasswordAsync(setup.Middle, setup.MiddleToken, "Second-only credential", middleOnlySecret);
+        await AddPasswordAsync(setup.NewDevice, setup.NewDeviceToken, "Third-only credential", newDeviceOnlySecret);
+
+        // Prime every authenticated endpoint so each of the six directed sessions uses the real
+        // production endpoint registry and device-identity cache.
+        await setup.Original.CacheEndpointForAsync(setup.Middle);
+        await setup.Original.CacheEndpointForAsync(setup.NewDevice);
+        await setup.Middle.CacheEndpointForAsync(setup.Original);
+        await setup.Middle.CacheEndpointForAsync(setup.NewDevice);
+        await setup.NewDevice.CacheEndpointForAsync(setup.Original);
+        await setup.NewDevice.CacheEndpointForAsync(setup.Middle);
+
+        var expectedCredentialNames = new[]
+        {
+            "Original device credential",
+            "Second device credential",
+            "Original-only credential",
+            "Second-only credential",
+            "Third-only credential"
+        };
+
+        // Give every directed device pair a distinct source credential to deliver. This proves the
+        // original device, the device used for enrollment, and the newly enrolled device can all
+        // initiate and receive ordinary synchronization sessions with each other.
+        await SynchronizeOneWayUntilAsync(
+            setup.Original,
+            setup.Middle,
+            "original-to-second device sync",
+            () => HasPasswordAsync(setup.Middle, setup.MiddleToken, "Original-only credential"));
+        await SynchronizeOneWayUntilAsync(
+            setup.Middle,
+            setup.NewDevice,
+            "second-to-third device sync",
+            () => HasPasswordAsync(setup.NewDevice, setup.NewDeviceToken, "Second-only credential"));
+        await SynchronizeOneWayUntilAsync(
+            setup.NewDevice,
+            setup.Original,
+            "third-to-original device sync",
+            () => HasPasswordAsync(setup.Original, setup.OriginalToken, "Third-only credential"));
+        await SynchronizeOneWayUntilAsync(
+            setup.Original,
+            setup.NewDevice,
+            "original-to-third device sync",
+            () => HasPasswordAsync(setup.NewDevice, setup.NewDeviceToken, "Original-only credential"));
+        await SynchronizeOneWayUntilAsync(
+            setup.NewDevice,
+            setup.Middle,
+            "third-to-second device sync",
+            () => HasPasswordAsync(setup.Middle, setup.MiddleToken, "Third-only credential"));
+        await SynchronizeOneWayUntilAsync(
+            setup.Middle,
+            setup.Original,
+            "second-to-original device sync",
+            () => HasPasswordAsync(setup.Original, setup.OriginalToken, "Second-only credential"));
+
+        // Run an explicit session for every directed pair even when a change already arrived via
+        // another peer. That verifies the direct authenticated link itself in both directions.
+        foreach (var (source, target) in setup.DirectedPeerPairs)
+        {
+            await StartSyncAsync(
+                source,
+                target,
+                $"explicit three-device mesh session from {source.Identity.LocalDeviceId} to {target.Identity.LocalDeviceId}");
+        }
+
+        foreach (var host in setup.Hosts)
+        {
+            var data = await host.Endpoints.GetSavedPasswordsAsync(setup.TokenFor(host));
+            CollectionAssert.AreEquivalent(
+                expectedCredentialNames,
+                data.Passwords.Select(password => password.Name).ToArray());
+        }
+
+        foreach (var (source, target) in setup.DirectedPeerPairs)
+        {
+            Assert.IsFalse(
+                await source.HasPendingForAsync(target.Identity.LocalDeviceId),
+                $"The sync queue from {source.Identity.LocalDeviceId} to {target.Identity.LocalDeviceId} was not acknowledged.");
+        }
+
+        await AssertPasswordSecretAsync(
+            setup.Original, setup.OriginalToken, "Second-only credential", middleOnlySecret);
+        await AssertPasswordSecretAsync(
+            setup.Original, setup.OriginalToken, "Third-only credential", newDeviceOnlySecret);
+        await AssertPasswordSecretAsync(
+            setup.Middle, setup.MiddleToken, "Original-only credential", originalOnlySecret);
+        await AssertPasswordSecretAsync(
+            setup.Middle, setup.MiddleToken, "Third-only credential", newDeviceOnlySecret);
+        await AssertPasswordSecretAsync(
+            setup.NewDevice, setup.NewDeviceToken, "Original-only credential", originalOnlySecret);
+        await AssertPasswordSecretAsync(
+            setup.NewDevice, setup.NewDeviceToken, "Second-only credential", middleOnlySecret);
+
+        foreach (var host in setup.Hosts)
+        {
+            await host.Services.GetRequiredService<DevicePresencePollingHostedService>().StopAsync();
+            host.Presence.InvalidateAll("arrange three-device authenticated online visibility test");
+        }
+
+        foreach (var (observer, remote) in setup.DirectedPeerPairs)
+        {
+            var remoteDevice = await observer.CacheEndpointForAsync(remote);
+            var probe = await observer.ProbeAsync(remoteDevice, force: true);
+
+            Assert.IsTrue(
+                probe.IsSuccess,
+                $"Authenticated presence probe from {observer.Identity.LocalDeviceId} to " +
+                $"{remote.Identity.LocalDeviceId} failed ({probe.FailureKind}).");
+            Assert.IsTrue(observer.IsOnline(remote));
+            Assert.IsTrue(observer.Presence.TryGetSnapshot(remote.Identity.FingerprintHex, out var snapshot));
+            Assert.AreEqual(DevicePresenceObservationSource.DirectProbe, snapshot!.LastObservationSource);
+        }
+
+        await AssertOnlineDevicesAsync(setup.Original,
+            setup.OriginalToken,
+            setup.Middle.Identity.LocalDeviceId,
+            setup.NewDevice.Identity.LocalDeviceId);
+        await AssertOnlineDevicesAsync(setup.Middle,
+            setup.MiddleToken,
+            setup.Original.Identity.LocalDeviceId,
+            setup.NewDevice.Identity.LocalDeviceId);
+        await AssertOnlineDevicesAsync(setup.NewDevice,
+            setup.NewDeviceToken,
+            setup.Original.Identity.LocalDeviceId,
+            setup.Middle.Identity.LocalDeviceId);
+    }
+
+    private async Task<ThreeDeviceSetup> CreateThreeDeviceSetupAsync()
+    {
+        ProductionSyncTestHost? original = null;
+        ProductionSyncTestHost? middle = null;
+        ProductionSyncTestHost? newDevice = null;
+
+        try
+        {
+            original = await ProductionSyncTestHost.CreateAsync();
+            middle = await ProductionSyncTestHost.CreateAsync();
+            newDevice = await ProductionSyncTestHost.CreateAsync();
+
+            // Keep all transports available, but perform the second enrollment only between the
+            // second and third devices. The original device can communicate with the third device
+            // later only after ordinary synchronization propagates its membership.
+            original.ConnectTo(middle);
+            original.ConnectTo(newDevice);
+            middle.ConnectTo(original);
+            middle.ConnectTo(newDevice);
+            newDevice.ConnectTo(original);
+            newDevice.ConnectTo(middle);
+
+            var username = $"sync3device{Guid.NewGuid().ToString("N")[..12]}";
+            var originalToken = await original.Endpoints.RegisterAsync(original.CreateRegistrationRequest(username));
+            await AddPasswordAsync(
+                original,
+                originalToken,
+                "Original device credential",
+                Encoding.UTF8.GetBytes("original-device-secret"));
+            await original.EnableSyncAsync(originalToken);
+
+            var middleEnrollmentCode = await RunPhaseAsync(
+                "second device enrollment listener startup",
+                ct => middle.Endpoints.StartDeviceEnrollmentAsync(ct));
+            await RunPhaseAsync(
+                "first enrollment from original device to second device",
+                ct => original.Endpoints.AddDeviceByCodeAsync(originalToken, middleEnrollmentCode.Code, ct));
+
+            await original.Endpoints.LogoutAsync(originalToken);
+            originalToken = await RunPhaseAsync(
+                "original device login after first enrollment",
+                ct => original.Endpoints.LoginAsync(original.CreateLoginRequest(username), ct));
+            var middleToken = await RunPhaseAsync(
+                "second device first login after enrollment",
+                ct => middle.Endpoints.LoginAsync(middle.CreateLoginRequest(username), ct));
+            await middle.EnableSyncAsync(middleToken);
+            await AddPasswordAsync(
+                middle,
+                middleToken,
+                "Second device credential",
+                Encoding.UTF8.GetBytes("second-device-secret"));
+
+            var thirdEnrollmentCode = await RunPhaseAsync(
+                "third device enrollment listener startup",
+                ct => newDevice.Endpoints.StartDeviceEnrollmentAsync(ct));
+            await RunPhaseAsync(
+                "second enrollment from second device to third device",
+                ct => middle.Endpoints.AddDeviceByCodeAsync(middleToken, thirdEnrollmentCode.Code, ct));
+
+            await middle.Endpoints.LogoutAsync(middleToken);
+            middleToken = await RunPhaseAsync(
+                "second device login after enrolling the third device",
+                ct => middle.Endpoints.LoginAsync(middle.CreateLoginRequest(username), ct));
+            var newDeviceToken = await RunPhaseAsync(
+                "third device first login after enrollment",
+                ct => newDevice.Endpoints.LoginAsync(newDevice.CreateLoginRequest(username), ct));
+            await newDevice.ActivateImportedSynchronizationAsync();
+
+            var setup = new ThreeDeviceSetup(
+                original,
+                middle,
+                newDevice,
+                username,
+                originalToken,
+                middleToken,
+                newDeviceToken);
+            original = null;
+            middle = null;
+            newDevice = null;
+            return setup;
+        }
+        catch
+        {
+            if (newDevice is not null)
+                await newDevice.DisposeAsync();
+            if (middle is not null)
+                await middle.DisposeAsync();
+            if (original is not null)
+                await original.DisposeAsync();
+            throw;
+        }
+    }
+
+    private static async Task<bool> HasActiveMembershipForDeviceAsync(
+        ProductionSyncTestHost host,
+        Guid deviceId)
+    {
+        using var scope = host.Services.CreateScope();
+        var deviceRepository = scope.ServiceProvider.GetRequiredService<IDeviceRepository>();
+        var userIds = await deviceRepository.ListActiveUserIdsAsync(deviceId);
+        return userIds.Count == 1;
+    }
+
+    private static async Task<bool> HasPasswordAsync(
+        ProductionSyncTestHost host,
+        Guid token,
+        string name) =>
+        (await host.Endpoints.GetSavedPasswordsAsync(token))
+        .Passwords.Any(password => password.Name == name);
+
+    private static async Task AddPasswordAsync(
+        ProductionSyncTestHost host,
+        Guid token,
+        string name,
+        byte[] secret)
+    {
+        await host.Endpoints.AddNewPasswordAsync(token, new NewPasswordRequest
+        {
+            Name = name,
+            Description = $"Created by {name} in the three-device end-to-end scenario.",
+            Color = "#FF123456",
+            Password = secret,
+            TagIds = []
+        });
+    }
+
+    private static async Task AssertPasswordSecretAsync(
+        ProductionSyncTestHost host,
+        Guid token,
+        string name,
+        byte[] expectedSecret)
+    {
+        var data = await host.Endpoints.GetSavedPasswordsAsync(token);
+        var password = data.Passwords.Single(item => item.Name == name);
+        CollectionAssert.AreEqual(
+            expectedSecret,
+            await host.Endpoints.GetUnsecurePasswordAsync(token, password.Id));
+    }
+
+    private static void AssertDeviceIds(
+        IEnumerable<Guid> actualDeviceIds,
+        params Guid[] expectedDeviceIds)
+    {
+        CollectionAssert.AreEquivalent(expectedDeviceIds, actualDeviceIds.ToArray());
+    }
+
+    private static async Task AssertOnlineDevicesAsync(
+        ProductionSyncTestHost observer,
+        Guid observerToken,
+        params Guid[] remoteDeviceIds)
+    {
+        var devices = await observer.Endpoints.GetUserDevicesAsync(observerToken);
+        foreach (var remoteDeviceId in remoteDeviceIds)
+        {
+            Assert.IsTrue(
+                devices.Any(device => device.DeviceId == remoteDeviceId && device.IsOnline),
+                $"Device {observer.Identity.LocalDeviceId} did not report peer {remoteDeviceId} as online.");
+        }
+    }
+
     private async Task<SyncPair> CreateEnrolledPairAsync()
     {
         ProductionSyncTestHost? source = null;
@@ -604,6 +1008,68 @@ public sealed class RegularSyncEndToEndTests
                 await operation(ct);
                 return null;
             });
+    }
+
+    private sealed class ThreeDeviceSetup : IAsyncDisposable
+    {
+        public ThreeDeviceSetup(
+            ProductionSyncTestHost original,
+            ProductionSyncTestHost middle,
+            ProductionSyncTestHost newDevice,
+            string username,
+            Guid originalToken,
+            Guid middleToken,
+            Guid newDeviceToken)
+        {
+            Original = original;
+            Middle = middle;
+            NewDevice = newDevice;
+            Username = username;
+            OriginalToken = originalToken;
+            MiddleToken = middleToken;
+            NewDeviceToken = newDeviceToken;
+        }
+
+        public ProductionSyncTestHost Original { get; }
+        public ProductionSyncTestHost Middle { get; }
+        public ProductionSyncTestHost NewDevice { get; }
+        public string Username { get; }
+        public Guid OriginalToken { get; set; }
+        public Guid MiddleToken { get; set; }
+        public Guid NewDeviceToken { get; set; }
+        public IReadOnlyList<ProductionSyncTestHost> Hosts => [Original, Middle, NewDevice];
+
+        public IReadOnlyList<(ProductionSyncTestHost Source, ProductionSyncTestHost Target)> DirectedPeerPairs =>
+        [
+            (Original, Middle),
+            (Middle, Original),
+            (Original, NewDevice),
+            (NewDevice, Original),
+            (Middle, NewDevice),
+            (NewDevice, Middle)
+        ];
+
+        public Guid TokenFor(ProductionSyncTestHost host)
+        {
+            if (ReferenceEquals(host, Original))
+                return OriginalToken;
+            if (ReferenceEquals(host, Middle))
+                return MiddleToken;
+            if (ReferenceEquals(host, NewDevice))
+                return NewDeviceToken;
+
+            throw new ArgumentException("The host does not belong to this three-device setup.", nameof(host));
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            Original.Transport.Disconnect();
+            Middle.Transport.Disconnect();
+            NewDevice.Transport.Disconnect();
+            await NewDevice.DisposeAsync();
+            await Middle.DisposeAsync();
+            await Original.DisposeAsync();
+        }
     }
 
     private sealed class SyncPair : IAsyncDisposable

@@ -1,4 +1,5 @@
 using Google.Protobuf;
+using System.Collections.Concurrent;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Presence;
 using PasswordManagerLocal.Common.Backend.Constants;
@@ -14,18 +15,17 @@ using System.Security.Cryptography;
 namespace PasswordManagerLocal.Common.Tests.Fakes;
 
 /// <summary>
-/// Routes enrollment and regular synchronization transport calls directly into another backend's
-/// protocol handler. This keeps protocol authentication, encrypted deltas, receipts, anti-entropy,
-/// snapshot validation, and import/merge behavior inside the test boundary while deliberately
-/// excluding operating-system sockets and certificates.
+/// Routes enrollment and regular synchronization transport calls directly into connected backend
+/// protocol handlers by pinned certificate fingerprint. This keeps protocol authentication,
+/// encrypted deltas, receipts, anti-entropy, snapshot validation, and import/merge behavior inside
+/// the test boundary while deliberately excluding operating-system sockets and certificates.
 /// </summary>
 public sealed class InProcessEnrollmentTransportClientService : ISyncTransportClientService
 {
     private SyncPeerProtocolHandler? _localHandler;
     private IDeviceIdentityService? _localIdentity;
     private IDevicePresenceRegistry? _localPresenceRegistry;
-    private SyncPeerProtocolHandler? _remoteHandler;
-    private IDeviceIdentityService? _remoteIdentity;
+    private readonly ConcurrentDictionary<string, RemotePeer> _remotePeers = new(StringComparer.OrdinalIgnoreCase);
 
     public bool ThrowAfterNextSuccessfulEnrollmentCompletion { get; set; }
     public bool TamperNextEnrollmentSnapshot { get; set; }
@@ -53,14 +53,19 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
 
     public void ConnectTo(SyncPeerProtocolHandler remoteHandler, IDeviceIdentityService remoteIdentity)
     {
-        _remoteHandler = remoteHandler ?? throw new ArgumentNullException(nameof(remoteHandler));
-        _remoteIdentity = remoteIdentity ?? throw new ArgumentNullException(nameof(remoteIdentity));
+        ArgumentNullException.ThrowIfNull(remoteHandler);
+        ArgumentNullException.ThrowIfNull(remoteIdentity);
+
+        var fingerprint = FingerprintUtil.Normalize(remoteIdentity.FingerprintHex);
+        if (fingerprint.Length == 0)
+            throw new ArgumentException("The remote backend must have a valid TLS certificate fingerprint.", nameof(remoteIdentity));
+
+        _remotePeers[fingerprint] = new RemotePeer(remoteHandler, remoteIdentity);
     }
 
     public void Disconnect()
     {
-        _remoteHandler = null;
-        _remoteIdentity = null;
+        _remotePeers.Clear();
         ThrowAfterNextSuccessfulEnrollmentCompletion = false;
         TamperNextEnrollmentSnapshot = false;
         FailNextDeltaSend = false;
@@ -365,8 +370,12 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
     {
         if (ReferenceEquals(handler, _localHandler) && _localIdentity is not null)
             return _localIdentity;
-        if (ReferenceEquals(handler, _remoteHandler) && _remoteIdentity is not null)
-            return _remoteIdentity;
+
+        foreach (var remotePeer in _remotePeers.Values)
+        {
+            if (ReferenceEquals(handler, remotePeer.Handler))
+                return remotePeer.Identity;
+        }
 
         throw new InvalidOperationException("The in-process transport cannot resolve the destination identity.");
     }
@@ -394,17 +403,18 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
             return _localHandler;
         }
 
-        if (_remoteHandler is not null &&
-            _remoteIdentity is not null &&
-            FingerprintMatches(
-                expectedFingerprint,
-                _remoteIdentity.FingerprintHex,
-                allowEnrollmentFingerprintPrefix))
+        foreach (var remotePeer in _remotePeers.Values)
         {
-            return _remoteHandler;
+            if (FingerprintMatches(
+                    expectedFingerprint,
+                    remotePeer.Identity.FingerprintHex,
+                    allowEnrollmentFingerprintPrefix))
+            {
+                return remotePeer.Handler;
+            }
         }
 
-        if (_remoteHandler is null || _remoteIdentity is null)
+        if (_remotePeers.IsEmpty)
         {
             throw new InvalidOperationException(
                 "The in-process transport is not connected and the pinned fingerprint does not identify the local backend.");
@@ -413,6 +423,10 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
         throw new AuthenticationException(
             "The pinned TLS fingerprint does not match either in-process backend identity.");
     }
+
+    private sealed record RemotePeer(
+        SyncPeerProtocolHandler Handler,
+        IDeviceIdentityService Identity);
 
     private static bool FingerprintMatches(
         string expectedFingerprint,
