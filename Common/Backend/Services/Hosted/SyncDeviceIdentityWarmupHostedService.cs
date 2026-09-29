@@ -45,8 +45,8 @@ public sealed class SyncDeviceIdentityWarmupHostedService : ISyncControlledHoste
         IReadOnlyList<Device> deletionRelayDevices = [];
         if (operations is not null && membership is not null)
         {
-            var deletedUserIds = await operations.ListAppliedAccountDeletionUserIdsAsync(ct);
-            var historicalDeviceIds = await membership.ListDeviceIdsForUsersAsync(deletedUserIds, ct);
+            var revokedUserIds = await operations.ListAppliedRevocationUserIdsAsync(ct);
+            var historicalDeviceIds = await membership.ListDeviceIdsForUsersAsync(revokedUserIds, ct);
             deletionRelayDevices = await devices.ListByIdsAsync(historicalDeviceIds, ct);
         }
         var relayCandidates = pendingDevices

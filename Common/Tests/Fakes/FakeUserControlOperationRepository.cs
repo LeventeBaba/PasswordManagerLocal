@@ -30,6 +30,19 @@ public sealed class FakeUserControlOperationRepository : IUserControlOperationRe
             .OrderBy(userId => userId)
             .ToList());
 
+    public Task<bool> HasAppliedRevocationAsync(CancellationToken ct = default) =>
+        Task.FromResult(_rows.Any(row => row.Status == UserControlOperationStatus.Applied &&
+            row.OperationType is UserControlOperationType.DeviceRemoval or UserControlOperationType.AccountDeletion));
+
+    public Task<IReadOnlyList<Guid>> ListAppliedRevocationUserIdsAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<Guid>>(_rows
+            .Where(row => row.Status == UserControlOperationStatus.Applied &&
+                row.OperationType is UserControlOperationType.DeviceRemoval or UserControlOperationType.AccountDeletion)
+            .Select(row => row.UserId)
+            .Distinct()
+            .OrderBy(userId => userId)
+            .ToList());
+
     public Task<IReadOnlyList<UserControlOperation>> ListPendingAsync(CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<UserControlOperation>>(_rows.Where(row => row.Status == UserControlOperationStatus.StoredPending).ToList());
 

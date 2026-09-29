@@ -72,7 +72,7 @@ public sealed class SyncRuntimeService : ISyncRuntimeService
                 var controlOperations = scope.ServiceProvider.GetService<IUserControlOperationRepository>();
                 shouldEnable = await localUsers.AnySyncOnAsync(ct) ||
                                (controlOperations is not null &&
-                                await controlOperations.HasAppliedAccountDeletionAsync(ct));
+                                await controlOperations.HasAppliedRevocationAsync(ct));
             }
 
             await _lifecycleLock.WaitAsync(ct);

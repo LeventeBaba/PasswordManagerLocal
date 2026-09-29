@@ -17,6 +17,8 @@ public sealed class PendingSyncActivationService : IPendingSyncActivationService
     private readonly IDeviceSyncTaskService _deviceSyncTasks;
     private readonly IDeviceIdentityService _identity;
     private readonly ILocalDeviceMatcherService _localDevices;
+    private readonly IUserControlOperationRepository? _operations;
+    private readonly IUserMembershipAuthorizationRepository? _membership;
 
     public PendingSyncActivationService(
         IDeviceRepository devices,
@@ -24,7 +26,9 @@ public sealed class PendingSyncActivationService : IPendingSyncActivationService
         IDiscoveredDeviceEndpointRegistry endpointRegistry,
         IDeviceSyncTaskService deviceSyncTasks,
         IDeviceIdentityService identity,
-        ILocalDeviceMatcherService localDevices)
+        ILocalDeviceMatcherService localDevices,
+        IUserControlOperationRepository? operations = null,
+        IUserMembershipAuthorizationRepository? membership = null)
     {
         _devices = devices;
         _syncDeviceIdentities = syncDeviceIdentities;
@@ -32,12 +36,23 @@ public sealed class PendingSyncActivationService : IPendingSyncActivationService
         _deviceSyncTasks = deviceSyncTasks;
         _identity = identity;
         _localDevices = localDevices;
+        _operations = operations;
+        _membership = membership;
     }
 
     public async Task ActivatePendingAsync(CancellationToken ct = default)
     {
         var pendingDevices = await _devices.ListDevicesNeedingSyncAsync(ct);
-        ActivateDevices(pendingDevices);
+        if (_operations is null || _membership is null)
+        {
+            ActivateDevices(pendingDevices);
+            return;
+        }
+
+        var revokedUserIds = await _operations.ListAppliedRevocationUserIdsAsync(ct);
+        var historicalDeviceIds = await _membership.ListDeviceIdsForUsersAsync(revokedUserIds, ct);
+        var relayDevices = await _devices.ListByIdsAsync(historicalDeviceIds, ct);
+        ActivateDevices(pendingDevices.Concat(relayDevices).DistinctBy(device => device.Id).ToList());
     }
 
     public void ActivateDevices(IReadOnlyList<Device> devices)

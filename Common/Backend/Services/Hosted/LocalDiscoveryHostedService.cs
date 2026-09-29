@@ -597,7 +597,11 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
         using var scope = _scopeFactory.CreateScope();
         var localUsers = scope.ServiceProvider.GetRequiredService<ILocalUserDeviceRepository>();
         var enabledUserIds = await localUsers.ListSyncOnUserIdsAsync(ct);
-        if (enabledUserIds.Count == 0)
+        var operations = scope.ServiceProvider.GetService<IUserControlOperationRepository>();
+        var membership = scope.ServiceProvider.GetService<IUserMembershipAuthorizationRepository>();
+        var revokedUserIds = operations is null ? Array.Empty<Guid>() :
+            (await operations.ListAppliedRevocationUserIdsAsync(ct)).ToArray();
+        if (enabledUserIds.Count == 0 && revokedUserIds.Length == 0)
         {
             Volatile.Write(ref _eligibleDiscoveryDevices, new Dictionary<Guid, Device>());
             return;
@@ -623,6 +627,20 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
             }
 
             refreshed[link.DeviceId] = CloneDiscoveryDevice(link.Device!);
+        }
+
+        if (membership is not null && revokedUserIds.Length != 0)
+        {
+            var historicalIds = await membership.ListDeviceIdsForUsersAsync(revokedUserIds, ct);
+            var devices = scope.ServiceProvider.GetRequiredService<IDeviceRepository>();
+            foreach (var device in await devices.ListByIdsAsync(historicalIds, ct))
+            {
+                if (!CanUseForAuthenticatedDiscovery(device))
+                    continue;
+                try { device.VerifyIntegrity(); }
+                catch { continue; }
+                refreshed[device.Id] = CloneDiscoveryDevice(device);
+            }
         }
 
         Volatile.Write(ref _eligibleDiscoveryDevices, refreshed);

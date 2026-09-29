@@ -917,7 +917,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
             link.IsDeleted = true; link.DeletedAt = DateTimeOffset.UtcNow; link.IsSyncOn = false; link.LastModifiedAt = DateTimeOffset.UtcNow;
             _userDevices.Update(link);
         }
-        var removesLocalInstallation = payload.RemovedDeviceId == _identity.LocalDeviceId && payload.Origins.Any(origin => origin.OriginInstanceId == _identity.OriginInstanceId);
+        var removesLocalInstallation = payload.RemovedDeviceId == _identity.LocalDeviceId;
         if (removesLocalInstallation)
         {
             user.SavedKey = null;

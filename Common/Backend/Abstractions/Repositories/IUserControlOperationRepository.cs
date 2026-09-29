@@ -10,6 +10,8 @@ public interface IUserControlOperationRepository
     Task<IReadOnlyList<UserControlOperation>> ListAllRelayableAsync(CancellationToken ct = default);
     Task<bool> HasAppliedAccountDeletionAsync(CancellationToken ct = default);
     Task<IReadOnlyList<Guid>> ListAppliedAccountDeletionUserIdsAsync(CancellationToken ct = default);
+    Task<bool> HasAppliedRevocationAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<Guid>> ListAppliedRevocationUserIdsAsync(CancellationToken ct = default);
     Task<IReadOnlyList<UserControlOperation>> ListPendingAsync(CancellationToken ct = default);
     Task<IReadOnlyList<UserControlOperation>> ListKeyTransitionsFromAsync(Guid userId, long previousKeyEpoch, CancellationToken ct = default);
     Task<IReadOnlyList<UserControlOperation>> ListMembershipTransitionsFromAsync(Guid userId, long previousMembershipEpoch, CancellationToken ct = default);

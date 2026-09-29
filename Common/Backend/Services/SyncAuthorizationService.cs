@@ -81,7 +81,8 @@ public sealed class SyncAuthorizationService : ISyncAuthorizationService
             if (payload.ChangeType == SyncChangeType.Deleted)
                 return false;
 
-            var isDeletionOperation = payload.UserControlOperation?.OperationType == UserControlOperationType.AccountDeletion;
+            var isDeletionOperation = payload.UserControlOperation?.OperationType is
+                UserControlOperationType.AccountDeletion or UserControlOperationType.DeviceRemoval;
             var isDeletedLocally = _deletionBarriers is not null && await _deletionBarriers.ExistsAsync(payload.ModelId, ct);
             if ((isDeletionOperation || isDeletedLocally) && _membershipHistory is not null)
                 return await _membershipHistory.HasHistoricalAuthorizationAsync(payload.ModelId, sourceDeviceId, ct);

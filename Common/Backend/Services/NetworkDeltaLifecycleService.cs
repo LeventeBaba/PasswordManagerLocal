@@ -177,21 +177,21 @@ public sealed class NetworkDeltaLifecycleService : INetworkDeltaLifecycleService
             await _authorization.HasEligibleUserForDeviceAsync(device.Id, ct) &&
             await _syncQueue.HasPendingForDeviceAsync(device.Id, ct);
 
-        if (hasOrdinaryWork || await HasAccountDeletionRelayWorkAsync(device.Id, ct))
+        if (hasOrdinaryWork || await HasRevocationRelayWorkAsync(device.Id, ct))
             _syncDeviceIdentities.TryAdd(device);
     }
 
-    private async Task<bool> HasAccountDeletionRelayWorkAsync(Guid deviceId, CancellationToken ct)
+    private async Task<bool> HasRevocationRelayWorkAsync(Guid deviceId, CancellationToken ct)
     {
         if (_controlOperations is null || _membershipAuthorizations is null)
             return false;
 
-        var deletedUserIds = await _controlOperations.ListAppliedAccountDeletionUserIdsAsync(ct);
-        if (deletedUserIds.Count == 0)
+        var revokedUserIds = await _controlOperations.ListAppliedRevocationUserIdsAsync(ct);
+        if (revokedUserIds.Count == 0)
             return false;
 
         var historicalUserIds = await _membershipAuthorizations.ListUserIdsForDeviceAsync(deviceId, ct);
-        return historicalUserIds.Any(userId => deletedUserIds.Contains(userId));
+        return historicalUserIds.Any(userId => revokedUserIds.Contains(userId));
     }
 
 

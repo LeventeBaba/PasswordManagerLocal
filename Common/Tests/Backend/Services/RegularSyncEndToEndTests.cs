@@ -2,6 +2,8 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
+using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Services.Hosted;
 using PasswordManagerLocal.Common.Backend.Sync.Presence;
@@ -22,6 +24,79 @@ public sealed class RegularSyncEndToEndTests
     private static readonly TimeSpan PhaseTimeout = TimeSpan.FromSeconds(20);
 
     public TestContext TestContext { get; set; } = null!;
+
+    [TestMethod]
+    [Timeout(ThreeDeviceTestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    [TestCategory("EndToEnd")]
+    public async Task RemovedDevice_ReceivesSignedRevocation_LogsOutAndRelaysItToOtherDevices()
+    {
+        await using var setup = await CreateThreeDeviceSetupAsync();
+        await SynchronizeOneWayUntilAsync(
+            setup.Middle, setup.Original,
+            "original receives third membership before removal",
+            () => HasActiveMembershipForDeviceAsync(setup.Original, setup.NewDevice.Identity.LocalDeviceId));
+
+        var removal = await setup.Original.Endpoints.DisconnectUserDeviceAsync(
+            setup.OriginalToken, setup.Middle.Identity.LocalDeviceId,
+            Encoding.UTF8.GetBytes("P@ssw0rd12345678"));
+        Assert.IsTrue(removal.Removed);
+        Assert.IsTrue(removal.OperationId.HasValue);
+        var removalOperationId = removal.OperationId.Value;
+        Assert.AreNotEqual(Guid.Empty, removalOperationId);
+        Assert.IsFalse((await setup.Original.Endpoints.GetUserDevicesAsync(setup.OriginalToken))
+            .Any(device => device.DeviceId == setup.Middle.Identity.LocalDeviceId));
+
+        await SynchronizeOneWayUntilAsync(
+            setup.Original, setup.Middle,
+            "removed installation receives its signed revocation",
+            async () => await HasAppliedRemovalAsync(setup.Middle, removalOperationId) &&
+                !setup.Middle.Services.GetRequiredService<ITokenService>()
+                    .TryGetUid(setup.MiddleToken, out _));
+
+        await Assert.ThrowsExactlyAsync<InvalidTokenException>(async () =>
+            await setup.Middle.Endpoints.GetSavedPasswordsAsync(setup.MiddleToken));
+        await AssertLoginDeniedAsync(setup.Middle, setup.Username);
+
+        await SynchronizeOneWayUntilAsync(
+            setup.Middle, setup.NewDevice,
+            "removed installation relays signed revocation to third device",
+            () => HasAppliedRemovalAsync(setup.NewDevice, removalOperationId));
+
+        Assert.IsFalse((await setup.NewDevice.Endpoints.GetUserDevicesAsync(setup.NewDeviceToken))
+            .Any(device => device.DeviceId == setup.Middle.Identity.LocalDeviceId));
+        Assert.IsTrue((await setup.Original.Endpoints.GetSavedPasswordsAsync(setup.OriginalToken))
+            .Passwords.Any(password => password.Name == "Original device credential"));
+        Assert.IsTrue((await setup.NewDevice.Endpoints.GetSavedPasswordsAsync(setup.NewDeviceToken))
+            .Passwords.Any(password => password.Name == "Original device credential"));
+
+        await using var restarted = await setup.Middle.RestartAsync();
+        await AssertLoginDeniedAsync(restarted, setup.Username);
+    }
+
+    private static async Task AssertLoginDeniedAsync(ProductionSyncTestHost host, string username)
+    {
+        try
+        {
+            await host.Endpoints.LoginAsync(host.CreateLoginRequest(username));
+            Assert.Fail("A removed installation must never issue another account session.");
+        }
+        catch (UnauthorizedAccessException) { }
+        catch (UserNotFoundException) { }
+    }
+
+    private static async Task<bool> HasAppliedRemovalAsync(ProductionSyncTestHost host, Guid operationId)
+    {
+        using var scope = host.Services.CreateScope();
+        var operation = await scope.ServiceProvider.GetRequiredService<IUserControlOperationRepository>()
+            .GetByIdAsync(operationId);
+        return operation is
+        {
+            OperationType: UserControlOperationType.DeviceRemoval,
+            Status: UserControlOperationStatus.Applied
+        };
+    }
 
     [TestMethod]
     [Timeout(TestTimeoutMilliseconds)]

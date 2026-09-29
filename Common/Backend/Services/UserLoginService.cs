@@ -1,6 +1,7 @@
 using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Diagnostics;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
@@ -27,6 +28,7 @@ public sealed class UserLoginService : IUserLoginService
     private readonly IUserTombstoneGarbageCollector? _garbageCollector;
     private readonly IUserCanonicalHealthService? _canonicalHealth;
     private readonly IUserDataRecoveryCoordinator? _recoveryCoordinator;
+    private readonly IUserMembershipAuthorizationRepository _membershipAuthorizations;
 
     public UserLoginService(
         IUserLookupService userLookup,
@@ -41,7 +43,8 @@ public sealed class UserLoginService : IUserLoginService
         IAuthenticatedSessionIssuer sessionIssuer,
         IUserTombstoneGarbageCollector? garbageCollector = null,
         IUserCanonicalHealthService? canonicalHealth = null,
-        IUserDataRecoveryCoordinator? recoveryCoordinator = null)
+        IUserDataRecoveryCoordinator? recoveryCoordinator = null,
+        IUserMembershipAuthorizationRepository? membershipAuthorizations = null)
     {
         _userLookup = userLookup;
         _loginIdentities = loginIdentities;
@@ -56,6 +59,8 @@ public sealed class UserLoginService : IUserLoginService
         _garbageCollector = garbageCollector;
         _canonicalHealth = canonicalHealth;
         _recoveryCoordinator = recoveryCoordinator;
+        _membershipAuthorizations = membershipAuthorizations
+            ?? throw new ArgumentNullException(nameof(membershipAuthorizations));
     }
 
     public async Task<Guid> LoginAsync(LoginRequest request, CancellationToken ct = default)
@@ -116,6 +121,9 @@ public sealed class UserLoginService : IUserLoginService
 
         var user = await _userLookup.GetUserByUidAsync(expectedUserId, ct)
                    ?? throw new UserNotFoundException();
+        if (await _membershipAuthorizations.GetActiveAsync(
+                expectedUserId, _identity.LocalDeviceId, _identity.OriginInstanceId, ct) is null)
+            throw new UnauthorizedAccessException("This device is no longer authorized for the account.");
         byte[]? authenticatedRecoverySalt = null;
         try
         {

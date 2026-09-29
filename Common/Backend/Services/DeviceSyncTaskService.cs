@@ -439,6 +439,27 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         }
 
         var missing = antiEntropy.FindMissingOperations(localInventory, exchange.Users);
+        // A removed installation may advertise operations it created after the signed
+        // cutoff. Never request user control traffic from it (or, on the removed
+        // installation, from another peer) after delivering the revocation.
+        var operations = scope.ServiceProvider.GetRequiredService<IUserControlOperationRepository>();
+        var revokedHere = new HashSet<Guid>();
+        foreach (var operation in await operations.ListAllRelayableAsync(ct))
+        {
+            if (operation.OperationType != UserControlOperationType.DeviceRemoval ||
+                operation.Status != UserControlOperationStatus.Applied)
+                continue;
+            var envelope = UserControlOperationEnvelopeUtil.Deserialize(operation.EnvelopePayload);
+            var removal = UserControlOperationEnvelopeUtil.DeserializeDeviceRemovalPayload(envelope.OperationPayload);
+            if (removal.RemovedDeviceId == targetDevice.Id || removal.RemovedDeviceId == _identity.LocalDeviceId)
+                revokedHere.Add(operation.UserId);
+        }
+        var routes = scope.ServiceProvider.GetRequiredService<ISyncRouteRepository>();
+        var activeUsers = (await routes.ListAllEligibleUserIdsAsync(targetDevice.Id, ct)).ToHashSet();
+        missing = missing.Where(request =>
+            !revokedHere.Contains(Guid.Parse(request.UserId)) &&
+            (activeUsers.Contains(Guid.Parse(request.UserId)) ||
+             request.OperationType == (int)UserControlOperationType.AccountDeletion)).ToList();
         if (missing.Count == 0)
             return true;
 
@@ -514,6 +535,12 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         using var scope = _scopeFactory.CreateScope();
         var antiEntropy = scope.ServiceProvider.GetService<IUserSnapshotAntiEntropyService>();
         if (antiEntropy is null)
+            return true;
+
+        // The historical route is only for signed control operations. Snapshot
+        // inventories require an active user route on both ends.
+        var routes = scope.ServiceProvider.GetRequiredService<ISyncRouteRepository>();
+        if (!await routes.HasEligibleUserForDeviceAsync(targetDevice.Id, ct))
             return true;
 
         if (!await RefreshAndValidateTargetDeviceAsync(scope.ServiceProvider, targetDevice, endpoint, ct))
@@ -761,12 +788,12 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         var membership = scope.ServiceProvider.GetService<IUserMembershipAuthorizationRepository>();
         if (operations is null || membership is null)
             return false;
-        var deletedUserIds = await operations.ListAppliedAccountDeletionUserIdsAsync(ct);
-        if (deletedUserIds.Count == 0)
+        var revokedUserIds = await operations.ListAppliedRevocationUserIdsAsync(ct);
+        if (revokedUserIds.Count == 0)
             return false;
 
         var historicallyAuthorizedUsers = await membership.ListUserIdsForDeviceAsync(deviceId, ct);
-        return historicallyAuthorizedUsers.Any(userId => deletedUserIds.Contains(userId));
+        return historicallyAuthorizedUsers.Any(userId => revokedUserIds.Contains(userId));
     }
 
 

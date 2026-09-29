@@ -181,7 +181,8 @@ public sealed class NetworkDeltaProtocolService : INetworkDeltaProtocolService
     {
         if (payload.ModelType == SyncModelType.User)
         {
-            var isDeletionOperation = payload.UserControlOperation?.OperationType == UserControlOperationType.AccountDeletion;
+            var isDeletionOperation = payload.UserControlOperation?.OperationType is
+                UserControlOperationType.AccountDeletion or UserControlOperationType.DeviceRemoval;
             var isDeletedLocally = _deletionBarriers is not null && await _deletionBarriers.ExistsAsync(payload.ModelId, ct);
             if (isDeletionOperation || isDeletedLocally)
             {

@@ -71,6 +71,23 @@ public sealed class UserControlOperationRepository : IUserControlOperationReposi
             .OrderBy(userId => userId)
             .ToListAsync(ct);
 
+    public Task<bool> HasAppliedRevocationAsync(CancellationToken ct = default) =>
+        _operations.AsNoTracking().AnyAsync(operation =>
+            (operation.OperationType == UserControlOperationType.DeviceRemoval ||
+             operation.OperationType == UserControlOperationType.AccountDeletion) &&
+            operation.Status == UserControlOperationStatus.Applied, ct);
+
+    public async Task<IReadOnlyList<Guid>> ListAppliedRevocationUserIdsAsync(CancellationToken ct = default) =>
+        await _operations.AsNoTracking()
+            .Where(operation =>
+                (operation.OperationType == UserControlOperationType.DeviceRemoval ||
+                 operation.OperationType == UserControlOperationType.AccountDeletion) &&
+                operation.Status == UserControlOperationStatus.Applied)
+            .Select(operation => operation.UserId)
+            .Distinct()
+            .OrderBy(userId => userId)
+            .ToListAsync(ct);
+
     public async Task<IReadOnlyList<UserControlOperation>> ListPendingAsync(CancellationToken ct = default)
     {
         // See ListForUserAsync: DateTimeOffset ordering must happen client-side for SQLite.

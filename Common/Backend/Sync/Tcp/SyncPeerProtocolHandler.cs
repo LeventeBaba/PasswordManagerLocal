@@ -913,7 +913,14 @@ public sealed class SyncPeerProtocolHandler
 
         var routes = services.GetRequiredService<ISyncRouteRepository>();
         if (!await routes.HasEligibleUserForDeviceAsync(remoteDevice.Id, ct))
-            throw new SyncProtocolException(SyncProtocolStatusCode.PermissionDenied, "Remote device is not linked to an enabled local user.");
+        {
+            var operations = services.GetRequiredService<IUserControlOperationRepository>();
+            var membership = services.GetRequiredService<IUserMembershipAuthorizationRepository>();
+            var revokedUserIds = await operations.ListAppliedRevocationUserIdsAsync(ct);
+            var historicalUserIds = await membership.ListUserIdsForDeviceAsync(remoteDevice.Id, ct);
+            if (!historicalUserIds.Any(revokedUserIds.Contains))
+                throw new SyncProtocolException(SyncProtocolStatusCode.PermissionDenied, "Remote device is not linked to an enabled local user or a signed revocation relay.");
+        }
 
         return remoteDevice;
     }
