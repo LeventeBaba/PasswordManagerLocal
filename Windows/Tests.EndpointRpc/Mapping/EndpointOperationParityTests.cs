@@ -13,13 +13,13 @@ public sealed class EndpointOperationParityTests
     [TestMethod]
     public void EveryEndpointMethodHasExactlyOneCompleteMapping()
     {
-        Assert.AreEqual(40, EndpointOperationManifest.All.Count);
+        Assert.AreEqual(41, EndpointOperationManifest.All.Count);
         var methods = typeof(IEndpoints).GetMethods();
         var descriptors = EndpointOperationManifest.All;
         var operationIds = Enum.GetValues<EndpointOperationId>();
         var validator = new EndpointRpcContractValidator();
 
-        Assert.HasCount(40, methods);
+        Assert.HasCount(41, methods);
         Assert.HasCount(methods.Length, descriptors);
         Assert.HasCount(methods.Length, operationIds);
         Assert.HasCount(operationIds.Length, operationIds.Distinct());
@@ -64,7 +64,7 @@ public sealed class EndpointOperationParityTests
     public void EveryOperationHasOneCoherentMutationOutcomePolicy()
     {
         Assert.AreEqual(
-            32,
+            33,
             EndpointOperationManifest.All.Count(descriptor =>
                 descriptor.ReplaySafety != EndpointMutationReplaySafety.NotApplicable));
         var descriptors = EndpointOperationManifest.All;
@@ -72,7 +72,7 @@ public sealed class EndpointOperationParityTests
         var mutations = descriptors.Where(descriptor => descriptor.MutatesState).ToArray();
 
         Assert.HasCount(8, readOnly);
-        Assert.HasCount(32, mutations);
+        Assert.HasCount(33, mutations);
         Assert.IsTrue(readOnly.All(descriptor =>
             descriptor.CommitModel == EndpointMutationCommitModel.NoDurableMutation &&
             descriptor.ReplaySafety == EndpointMutationReplaySafety.NotApplicable &&

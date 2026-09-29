@@ -26,6 +26,7 @@ public sealed class SuccessfulRecordingEndpoints : IEndpoints
     public Task SetLocalUserSyncOnAsync(Guid token, bool isSyncOn, CancellationToken ct = default) { Record(nameof(SetLocalUserSyncOnAsync)); return Task.CompletedTask; }
     public Task SetLocalDeviceNameAsync(Guid token, string name, CancellationToken ct = default) { Record(nameof(SetLocalDeviceNameAsync)); return Task.CompletedTask; }
     public Task<IReadOnlyList<UserDeviceInfoResponse>> GetUserDevicesAsync(Guid token, CancellationToken ct = default) { Record(nameof(GetUserDevicesAsync)); return Task.FromResult<IReadOnlyList<UserDeviceInfoResponse>>([]); }
+    public Task<SelfDiagnosticsResultResponse> RunSelfDiagnosticsAndRepairAsync(Guid token, CancellationToken ct = default) { Record(nameof(RunSelfDiagnosticsAndRepairAsync)); return Task.FromResult(new SelfDiagnosticsResultResponse { Healthy = true }); }
     public Task SetUserDeviceNameAsync(Guid token, Guid deviceId, string name, CancellationToken ct = default) { Record(nameof(SetUserDeviceNameAsync)); return Task.CompletedTask; }
     public Task SetUserDeviceSyncOnAsync(Guid token, Guid deviceId, bool isSyncOn, CancellationToken ct = default) { Record(nameof(SetUserDeviceSyncOnAsync)); return Task.CompletedTask; }
     public Task UnblockUserDeviceAsync(Guid token, Guid deviceId, CancellationToken ct = default) { Record(nameof(UnblockUserDeviceAsync)); return Task.CompletedTask; }

@@ -1,6 +1,8 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Constants;
+using PasswordManagerLocal.Common.Backend.Diagnostics;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Internal.Devices;
 using PasswordManagerLocal.Common.Backend.Models;
@@ -130,9 +132,31 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
                     throw new InvalidInputException();
 
                 var cutoffRows = new List<DeviceRemovalOriginCutoffPayload>();
+                var evidenceRepairs = new List<(UserMembershipAuthorization Authorization, Guid? AdditionId, byte[]? AdditionHash)>();
                 var allKnownMerged = true;
                 foreach (var authorization in activeAuthorizations)
                 {
+                    var additionId = authorization.AdditionOperationId;
+                    var additionHash = authorization.AdditionOperationHash;
+                    if (additionId is null && additionHash is { Length: 0 })
+                    {
+                        if (authorization.IsGenesis && authorization.StartedMembershipEpoch == 1)
+                        {
+                            // Genesis has no addition operation. Older rows can encode its absent hash as an empty blob.
+                            additionHash = null;
+                        }
+                        else if (!authorization.IsGenesis)
+                        {
+                            (additionId, additionHash) = await RecoverSignedAdditionEvidenceAsync(authorization, lifecycleToken);
+                        }
+                        else
+                        {
+                            throw new InvalidDataException("The genesis authorization has an invalid membership epoch.");
+                        }
+
+                        evidenceRepairs.Add((authorization, additionId, additionHash));
+                    }
+
                     var knowledge = await _revisionKnowledge.ListForOriginAsync(user.UId, deviceId, authorization.OriginInstanceId, lifecycleToken);
                     var knowledgeByEpoch = knowledge.ToDictionary(item => item.UserKeyEpoch);
                     var highestControlSequence = await _controlOperations.GetHighestOriginSequenceAsync(user.UId, deviceId, authorization.OriginInstanceId, lifecycleToken);
@@ -153,8 +177,8 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
                             HighestAcceptedSnapshotRevision = item?.HighestStoredRevision ?? 0,
                             HighestAcceptedControlSequence = highestControlSequence,
                             SignPublicKeyHash = authorization.SignPublicKeyHash.ToArray(),
-                            AdditionOperationId = authorization.AdditionOperationId,
-                            AdditionOperationHash = authorization.AdditionOperationHash?.ToArray()
+                            AdditionOperationId = additionId,
+                            AdditionOperationHash = additionHash?.ToArray()
                         });
                         if (keyEpoch == long.MaxValue)
                             break;
@@ -170,7 +194,21 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
                     KeyEpoch = user.KeyEpoch,
                     Origins = cutoffRows
                 };
-                UserControlOperationEnvelopeUtil.FinalizeDeviceRemovalPayload(payload);
+                try
+                {
+                    UserControlOperationEnvelopeUtil.FinalizeDeviceRemovalPayload(payload);
+                }
+                catch (InvalidDataException ex)
+                {
+                    BackendDebugLog.Error(
+                        $"Device removal payload validation failed. UserId={user.UId}, RemovedDeviceId={deviceId}, " +
+                        $"KeyEpoch={user.KeyEpoch}, PreviousMembershipEpoch={user.MembershipEpoch}, " +
+                        $"ActiveAuthorizationCount={activeAuthorizations.Count}, CutoffCount={cutoffRows.Count}, " +
+                        $"CutoffProblems={DescribeRemovalCutoffProblems(cutoffRows)}",
+                        ex,
+                        "DeviceRemoval");
+                    throw;
+                }
 
                 // The durable version clock writes through a separate DbContext. Reserve the
                 // tombstone version before this SQLite transaction acquires the write lock.
@@ -179,6 +217,14 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
                 await using var transaction = await _uow.BeginTransactionAsync(lifecycleToken);
                 try
                 {
+                    foreach (var repair in evidenceRepairs)
+                    {
+                        repair.Authorization.AdditionOperationId = repair.AdditionId;
+                        repair.Authorization.AdditionOperationHash = repair.AdditionHash?.ToArray();
+                        repair.Authorization.Version = checked(repair.Authorization.Version + 1);
+                        _membershipAuthorizations.Update(repair.Authorization);
+                    }
+
                     using var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(token, lifecycleToken, user);
                     var now = DateTimeOffset.UtcNow;
                     var encryptedDevice = bundle.UserDevicesData.Devices.FirstOrDefault(item => item.Id == deviceId);
@@ -206,6 +252,12 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
                     await RemovePendingSyncsForUserToDeviceAsync(user.UId, deviceId, lifecycleToken);
                     await _uow.SaveChangesAsync(lifecycleToken);
                     await transaction.CommitAsync(lifecycleToken);
+                    foreach (var repair in evidenceRepairs)
+                        BackendDebugLog.Info(
+                            $"Recovered membership addition evidence during committed device removal. " +
+                            $"UserId={user.UId}, RemovedDeviceId={deviceId}, AuthorizationId={repair.Authorization.AuthorizationId}, " +
+                            $"Genesis={repair.Authorization.IsGenesis}, SignedAdditionRecovered={repair.AdditionId.HasValue}.",
+                            "DeviceRemoval");
                     if (_garbageCollector is not null)
                     {
                         try { await _garbageCollector.CollectAsync(user.UId, key, CancellationToken.None); } catch { }
@@ -236,6 +288,96 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
     private async Task<bool> HasQuarantinedSnapshotsAsync(User user, CancellationToken ct) =>
         (await _snapshots.ListForUserAsync(user.UId, ct))
             .Any(snapshot => snapshot.UserKeyEpoch == user.KeyEpoch && snapshot.Status == UserSyncSnapshotStatus.Quarantined);
+
+    private async Task<(Guid AdditionId, byte[] AdditionHash)> RecoverSignedAdditionEvidenceAsync(
+        UserMembershipAuthorization authorization, CancellationToken ct)
+    {
+        if (authorization.IsGenesis || authorization.StartedMembershipEpoch <= 1)
+            throw new InvalidDataException("The non-genesis authorization has no valid addition epoch.");
+
+        var transitions = await _controlOperations.ListMembershipTransitionsFromAsync(
+            authorization.UserId, authorization.StartedMembershipEpoch - 1, ct);
+        var matches = new List<UserControlOperationEnvelope>();
+        foreach (var operation in transitions.Where(row =>
+                     row.Status == UserControlOperationStatus.Applied &&
+                     row.OperationType == UserControlOperationType.DeviceAddition &&
+                     row.ResultingMembershipEpoch == authorization.StartedMembershipEpoch))
+        {
+            var envelope = UserControlOperationEnvelopeUtil.Deserialize(operation.EnvelopePayload);
+            if (operation.OperationId != envelope.OperationId || operation.UserId != envelope.UserId ||
+                envelope.UserId != authorization.UserId || envelope.OperationType != UserControlOperationType.DeviceAddition ||
+                operation.OriginDeviceId != envelope.OriginDeviceId || operation.OriginInstanceId != envelope.OriginInstanceId ||
+                operation.PreviousKeyEpoch != envelope.PreviousKeyEpoch ||
+                operation.PreviousMembershipEpoch != envelope.PreviousMembershipEpoch ||
+                envelope.PreviousMembershipEpoch != authorization.StartedMembershipEpoch - 1 ||
+                operation.ResultingMembershipEpoch != envelope.ResultingMembershipEpoch ||
+                !Hashing.Verify(operation.OperationHash, envelope.OperationHash))
+                throw new InvalidDataException("An applied addition operation disagrees with its signed envelope.");
+
+            var author = await _membershipAuthorizations.GetForSignedEpochAsync(
+                authorization.UserId, envelope.OriginDeviceId, envelope.OriginInstanceId,
+                envelope.PreviousMembershipEpoch, ct);
+            if (author is null || envelope.PreviousKeyEpoch < author.MinimumKeyEpoch ||
+                (author.MaximumKeyEpoch is long maximum && envelope.PreviousKeyEpoch > maximum))
+                throw new InvalidDataException("The applied addition operation has no authorized historical signer.");
+            UserControlOperationEnvelopeUtil.VerifyWithSigningKey(envelope, author.SignPublicKey);
+
+            var payload = UserControlOperationEnvelopeUtil.DeserializeDeviceAdditionPayload(envelope.OperationPayload);
+            if (payload.UserId == authorization.UserId && payload.NewDeviceId == authorization.DeviceId &&
+                payload.NewOriginInstanceId == authorization.OriginInstanceId &&
+                payload.ResultingMembershipEpoch == authorization.StartedMembershipEpoch &&
+                payload.PreviousMembershipEpoch == envelope.PreviousMembershipEpoch &&
+                payload.KeyEpoch == authorization.MinimumKeyEpoch &&
+                payload.KeyEpoch == envelope.PreviousKeyEpoch && envelope.ResultingKeyEpoch == envelope.PreviousKeyEpoch &&
+                payload.SignPublicKey.SequenceEqual(authorization.SignPublicKey) &&
+                Hashing.Verify(authorization.SignPublicKeyHash, Hashing.SHA256Hash(payload.SignPublicKey)) &&
+                Hashing.Verify(authorization.AgreementPublicKeyHash, Hashing.SHA256Hash(payload.AgreementPublicKey)) &&
+                string.Equals(SyncIdentityUtil.NormalizeFingerprint(payload.TlsCertFingerprint),
+                    SyncIdentityUtil.NormalizeFingerprint(authorization.TlsCertFingerprint), StringComparison.Ordinal) &&
+                payload.DeviceType == authorization.DeviceType)
+                matches.Add(envelope);
+        }
+
+        if (matches.Count != 1)
+            throw new InvalidDataException(
+                $"Cannot recover addition evidence for authorization {authorization.AuthorizationId}: " +
+                $"expected one matching applied signed operation, found {matches.Count}. No membership data was repaired.");
+        return (matches[0].OperationId, matches[0].OperationHash.ToArray());
+    }
+
+    private static string DescribeRemovalCutoffProblems(IReadOnlyList<DeviceRemovalOriginCutoffPayload> cutoffs)
+    {
+        var problems = new List<string>();
+        var seen = new HashSet<(Guid AuthorizationId, long KeyEpoch)>();
+        for (var index = 0; index < cutoffs.Count; index++)
+        {
+            var cutoff = cutoffs[index];
+            var fields = new List<string>();
+            if (cutoff.AuthorizationId == Guid.Empty) fields.Add("AuthorizationId is empty");
+            if (cutoff.OriginInstanceId == Guid.Empty) fields.Add("OriginInstanceId is empty");
+            if (cutoff.UserKeyEpoch <= 0) fields.Add($"UserKeyEpoch={cutoff.UserKeyEpoch}");
+            if (cutoff.HighestAcceptedSnapshotRevision < 0)
+                fields.Add($"HighestAcceptedSnapshotRevision={cutoff.HighestAcceptedSnapshotRevision}");
+            if (cutoff.HighestAcceptedControlSequence < 0)
+                fields.Add($"HighestAcceptedControlSequence={cutoff.HighestAcceptedControlSequence}");
+            if (cutoff.SignPublicKeyHash.Length != SyncConstants.SyncDeltaPayloadHashBytes)
+                fields.Add($"SignPublicKeyHashLength={cutoff.SignPublicKeyHash.Length}, expected={SyncConstants.SyncDeltaPayloadHashBytes}");
+            if ((cutoff.AdditionOperationId is null) != (cutoff.AdditionOperationHash is null))
+                fields.Add($"AdditionOperationIdPresent={cutoff.AdditionOperationId is not null}, " +
+                           $"AdditionOperationHashPresent={cutoff.AdditionOperationHash is not null}");
+            if (cutoff.AdditionOperationHash is not null && cutoff.AdditionOperationHash.Length != SyncConstants.SyncDeltaPayloadHashBytes)
+                fields.Add($"AdditionOperationHashLength={cutoff.AdditionOperationHash.Length}, expected={SyncConstants.SyncDeltaPayloadHashBytes}");
+            if (!seen.Add((cutoff.AuthorizationId, cutoff.UserKeyEpoch)))
+                fields.Add("duplicate AuthorizationId and UserKeyEpoch");
+
+            if (fields.Count > 0)
+                problems.Add($"row={index}, AuthorizationId={cutoff.AuthorizationId}, " +
+                             $"OriginInstanceId={cutoff.OriginInstanceId}, KeyEpoch={cutoff.UserKeyEpoch}: " +
+                             string.Join(", ", fields));
+        }
+
+        return problems.Count == 0 ? "no invalid origin field found" : string.Join("; ", problems);
+    }
 
     private async Task RemovePendingSyncsForUserToDeviceAsync(Guid userId, Guid targetDeviceId, CancellationToken ct)
     {

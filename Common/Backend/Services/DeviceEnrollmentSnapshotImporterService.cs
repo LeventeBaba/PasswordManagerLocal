@@ -387,7 +387,15 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
                 throw new InvalidDataException("A control operation belongs to another user.");
             var authorization = FindAuthorization(snapshot.MembershipAuthorizations, envelope.OriginDeviceId, envelope.OriginInstanceId, envelope.PreviousMembershipEpoch, envelope.PreviousKeyEpoch);
             UserControlOperationEnvelopeUtil.VerifyWithSigningKey(envelope, authorization.SignPublicKey);
-            ValidateControlPayload(envelope);
+            try
+            {
+                ValidateControlPayload(envelope, authById);
+            }
+            catch (InvalidDataException ex)
+            {
+                throw new InvalidDataException(
+                    $"Enrollment history operation {envelope.OperationId} ({envelope.OperationType}) failed validation: {ex.Message}", ex);
+            }
             if (envelope.OperationType == UserControlOperationType.AccountDeletion)
                 throw new InvalidDataException("A deleted account identity cannot be imported through enrollment bootstrap.");
             if (!authorization.IsActive)
@@ -545,7 +553,8 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             (row.EndedMembershipEpoch.HasValue && row.EndedMembershipEpoch <= row.StartedMembershipEpoch) ||
             row.IsActive == row.EndedMembershipEpoch.HasValue ||
             (!row.IsGenesis && (!row.AdditionOperationId.HasValue || row.AdditionOperationHash is not { Length: CryptographyConstants.Sha256HashSizeInBytes })) ||
-            (row.IsGenesis && row.StartedMembershipEpoch != 1) ||
+            (row.IsGenesis && (row.StartedMembershipEpoch != 1 || row.AdditionOperationId is not null ||
+                               row.AdditionOperationHash is { Length: > 0 })) ||
             (!row.IsActive && (!row.RemovalOperationId.HasValue || row.RemovalOperationHash is not { Length: CryptographyConstants.Sha256HashSizeInBytes })))
             throw new InvalidDataException("The enrollment bootstrap contains invalid membership history.");
     }
@@ -570,7 +579,9 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         return ToAuthorization(row);
     }
 
-    private void ValidateControlPayload(UserControlOperationEnvelope envelope)
+    private void ValidateControlPayload(
+        UserControlOperationEnvelope envelope,
+        IReadOnlyDictionary<Guid, DeviceEnrollmentMembershipAuthorizationSnapshot> authorizations)
     {
         switch (envelope.OperationType)
         {
@@ -596,6 +607,20 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
                 if (payload.UserId != envelope.UserId || payload.KeyEpoch != envelope.PreviousKeyEpoch || payload.PreviousMembershipEpoch != envelope.PreviousMembershipEpoch ||
                     payload.ResultingMembershipEpoch != envelope.ResultingMembershipEpoch)
                     throw new InvalidDataException("A device-removal payload does not match its immutable header.");
+                foreach (var origin in payload.Origins)
+                {
+                    if (!authorizations.TryGetValue(origin.AuthorizationId, out var authorization) ||
+                        authorization.UserId != payload.UserId || authorization.DeviceId != payload.RemovedDeviceId ||
+                        authorization.OriginInstanceId != origin.OriginInstanceId ||
+                        !Hashing.Verify(authorization.SignPublicKeyHash, origin.SignPublicKeyHash) ||
+                        (authorization.IsGenesis
+                            ? authorization.StartedMembershipEpoch != 1 || origin.AdditionOperationId is not null ||
+                              origin.AdditionOperationHash is not null
+                            : authorization.AdditionOperationId is null || authorization.AdditionOperationHash is null ||
+                              origin.AdditionOperationId != authorization.AdditionOperationId || origin.AdditionOperationHash is null ||
+                              !Hashing.Verify(origin.AdditionOperationHash, authorization.AdditionOperationHash)))
+                        throw new InvalidDataException("A signed removal cutoff conflicts with immutable membership history.");
+                }
                 break;
             }
             default:
@@ -726,7 +751,9 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         TlsCertFingerprint = SyncIdentityUtil.NormalizeFingerprint(row.TlsCertFingerprint), DeviceType = row.DeviceType,
         StartedMembershipEpoch = row.StartedMembershipEpoch, EndedMembershipEpoch = row.EndedMembershipEpoch,
         MinimumKeyEpoch = row.MinimumKeyEpoch, MaximumKeyEpoch = row.MaximumKeyEpoch, IsActive = row.IsActive, IsGenesis = row.IsGenesis,
-        AdditionOperationId = row.AdditionOperationId, AdditionOperationHash = row.AdditionOperationHash?.ToArray(),
+        AdditionOperationId = row.AdditionOperationId,
+        AdditionOperationHash = row.IsGenesis && row.AdditionOperationId is null && row.AdditionOperationHash is { Length: 0 }
+            ? null : row.AdditionOperationHash?.ToArray(),
         RemovalOperationId = row.RemovalOperationId, RemovalOperationHash = row.RemovalOperationHash?.ToArray(),
         CreatedAtUtc = UtcDateTimeUtil.ToUtc(row.CreatedAtUtc), EndedAtUtc = UtcDateTimeUtil.ToUtc(row.EndedAtUtc)
     };

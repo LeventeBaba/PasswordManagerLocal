@@ -215,6 +215,14 @@ public static class UserControlOperationEnvelopeUtil
             throw new InvalidDataException("The device-removal payload size is invalid.");
         var payload = JsonSerializer.Deserialize(bytes, BackendJsonSerializerContext.Default.DeviceRemovalPayload)
             ?? throw new InvalidDataException("The device-removal payload is invalid.");
+        // Historical genesis cutoffs used an empty blob for an absent addition hash.
+        // The signed integrity hash encodes null and empty identically. Keep the signed
+        // envelope bytes intact and verify the genesis authorization at the caller.
+        if (payload.Origins is null)
+            throw new InvalidDataException("The device-removal origin cutoffs are invalid.");
+        foreach (var origin in payload.Origins)
+            if (origin.AdditionOperationId is null && origin.AdditionOperationHash is { Length: 0 })
+                origin.AdditionOperationHash = null;
         ValidateDeviceRemovalPayload(payload);
         return payload;
     }

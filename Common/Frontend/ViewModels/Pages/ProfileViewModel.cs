@@ -121,6 +121,8 @@ public sealed class ProfileViewModel : ViewModelBase
         nameof(ScanDeviceEnrollmentQrCodeDescription),
         nameof(ConfirmAddDeviceLabel),
         nameof(CurrentDeviceLabel),
+        nameof(SelfDiagnosticsLabel),
+        nameof(SelfDiagnosticsSummary),
         nameof(BlockedLabel),
         nameof(TrustedLabel),
         nameof(NotTrustedLabel),
@@ -187,6 +189,8 @@ public sealed class ProfileViewModel : ViewModelBase
     private bool _isAddDeviceDialogOpen;
     private bool _pendingLocalSyncEnabled;
     private bool _isAddingDevice;
+    private bool _isRunningSelfDiagnostics;
+    private SelfDiagnosticsResultResponse? _selfDiagnosticsResult;
     private string _deviceEnrollmentCodeInput = string.Empty;
     private string _deviceSearchQuery = string.Empty;
     private bool _isDeviceSearchNameEnabled = true;
@@ -221,6 +225,7 @@ public sealed class ProfileViewModel : ViewModelBase
         ChangeMasterPasswordCommand = Own(ReactiveCommand.CreateFromTask(ChangeMasterPasswordAsync));
         DeleteAccountCommand = Own(ReactiveCommand.CreateFromTask(DeleteAccountAsync));
         RefreshDevicesCommand = Own(ReactiveCommand.CreateFromTask(RefreshDevicesAsync));
+        RunSelfDiagnosticsCommand = Own(ReactiveCommand.CreateFromTask(RunSelfDiagnosticsAsync));
         SearchDevicesCommand = Own(ReactiveCommand.Create(ApplyCurrentDeviceSearch));
         SelectDeviceSortOptionCommand = Own(ReactiveCommand.Create<string>(SelectDeviceSortOptionByKey));
         BackToDevicesCommand = Own(ReactiveCommand.Create(BackToDevices));
@@ -706,6 +711,8 @@ public sealed class ProfileViewModel : ViewModelBase
 
     public ReactiveCommand<RxVoid, RxVoid> RefreshDevicesCommand { get; }
 
+    public ReactiveCommand<RxVoid, RxVoid> RunSelfDiagnosticsCommand { get; }
+
     public ReactiveCommand<RxVoid, RxVoid> SearchDevicesCommand { get; }
 
     public ReactiveCommand<string, RxVoid> SelectDeviceSortOptionCommand { get; }
@@ -917,6 +924,36 @@ public sealed class ProfileViewModel : ViewModelBase
     public string ConfirmAddDeviceLabel => GetTranslation("Profile_Device_Add_Confirm");
 
     public string CurrentDeviceLabel => GetTranslation("Profile_Device_Current");
+
+    public string SelfDiagnosticsLabel => GetTranslation("Profile_Device_SelfDiagnostics_Action");
+
+    public bool IsRunningSelfDiagnostics
+    {
+        get => _isRunningSelfDiagnostics;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _isRunningSelfDiagnostics, value);
+            this.RaisePropertyChanged(nameof(CanRunSelfDiagnostics));
+        }
+    }
+
+    public bool CanRunSelfDiagnostics => !IsRunningSelfDiagnostics;
+
+    public bool HasSelfDiagnosticsResult => _selfDiagnosticsResult is not null;
+
+    public string SelfDiagnosticsSummary
+    {
+        get
+        {
+            if (_selfDiagnosticsResult is null) return string.Empty;
+            var result = _selfDiagnosticsResult;
+            var summary = GetTranslation(result.Healthy
+                ? result.RepairedCount > 0 ? "Profile_Device_SelfDiagnostics_Repaired" : "Profile_Device_SelfDiagnostics_Healthy"
+                : "Profile_Device_SelfDiagnostics_Attention");
+            var details = result.Findings.Select(code => GetTranslation("Profile_Device_SelfDiagnostics_" + code));
+            return string.Join(Environment.NewLine, new[] { summary }.Concat(details));
+        }
+    }
 
     public string BlockedLabel => GetTranslation("Profile_Device_Blocked");
 
@@ -1479,9 +1516,39 @@ public sealed class ProfileViewModel : ViewModelBase
     private Task BeginViewDeviceAsync(DeviceItemViewModel device)
     {
         SelectedDevice = device;
+        SetSelfDiagnosticsResult(null);
         ClearStatusMessage();
         CurrentDevicePane = DeviceDetailsPane;
         return Task.CompletedTask;
+    }
+
+    private void SetSelfDiagnosticsResult(SelfDiagnosticsResultResponse? result)
+    {
+        _selfDiagnosticsResult = result;
+        this.RaisePropertyChanged(nameof(HasSelfDiagnosticsResult));
+        this.RaisePropertyChanged(nameof(SelfDiagnosticsSummary));
+    }
+
+    private async Task RunSelfDiagnosticsAsync()
+    {
+        if (_token == Guid.Empty || SelectedDevice?.IsCurrentDevice != true || IsRunningSelfDiagnostics)
+            return;
+        ClearStatusMessage();
+        SetSelfDiagnosticsResult(null);
+        IsRunningSelfDiagnostics = true;
+        try
+        {
+            SetSelfDiagnosticsResult(await _endpoints.RunSelfDiagnosticsAndRepairAsync(_token));
+            await LoadDevicesAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowErrorMessage(GetSafeErrorMessage(ex));
+        }
+        finally
+        {
+            IsRunningSelfDiagnostics = false;
+        }
     }
 
     private void BackToDevices()

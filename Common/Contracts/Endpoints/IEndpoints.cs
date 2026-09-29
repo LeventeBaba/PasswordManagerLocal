@@ -24,6 +24,7 @@ public interface IEndpoints
     Task SetLocalUserSyncOnAsync(Guid token, bool isSyncOn, CancellationToken ct = default);
     Task SetLocalDeviceNameAsync(Guid token, string name, CancellationToken ct = default);
     Task<IReadOnlyList<UserDeviceInfoResponse>> GetUserDevicesAsync(Guid token, CancellationToken ct = default);
+    Task<SelfDiagnosticsResultResponse> RunSelfDiagnosticsAndRepairAsync(Guid token, CancellationToken ct = default);
     Task SetUserDeviceNameAsync(Guid token, Guid deviceId, string name, CancellationToken ct = default);
     Task SetUserDeviceSyncOnAsync(Guid token, Guid deviceId, bool isSyncOn, CancellationToken ct = default);
     Task UnblockUserDeviceAsync(Guid token, Guid deviceId, CancellationToken ct = default);

@@ -1,4 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Microsoft.Extensions.DependencyInjection;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Services.Hosted;
@@ -20,6 +22,51 @@ public sealed class RegularSyncEndToEndTests
     private static readonly TimeSpan PhaseTimeout = TimeSpan.FromSeconds(20);
 
     public TestContext TestContext { get; set; } = null!;
+
+    [TestMethod]
+    [Timeout(TestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    [TestCategory("EndToEnd")]
+    public async Task Removal_RecoversEmptyLegacyAdditionEvidenceFromSignedOperation_AndPreservesPasswords()
+    {
+        await using var pair = await CreateEnrolledPairAsync();
+        await AddPasswordAsync(pair.Source, pair.SourceToken, "Kept after removal", Encoding.UTF8.GetBytes("kept-secret"));
+
+        Guid additionId;
+        byte[] additionHash;
+        using (var scope = pair.Source.Services.CreateScope())
+        {
+            var authorizations = scope.ServiceProvider.GetRequiredService<IUserMembershipAuthorizationRepository>();
+            var authorization = (await authorizations.ListActiveForDeviceAsync(
+                (await pair.Source.GetOnlyCanonicalCheckpointAsync())!.UserId, pair.Target.Identity.LocalDeviceId)).Single();
+            Assert.IsFalse(authorization.IsGenesis);
+            additionId = authorization.AdditionOperationId!.Value;
+            additionHash = authorization.AdditionOperationHash!.ToArray();
+            authorization.AdditionOperationId = null;
+            authorization.AdditionOperationHash = [];
+            authorization.Version = checked(authorization.Version + 1);
+            authorizations.Update(authorization);
+            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+        }
+
+        var removal = await pair.Source.Endpoints.DisconnectUserDeviceAsync(
+            pair.SourceToken, pair.Target.Identity.LocalDeviceId, Encoding.UTF8.GetBytes("P@ssw0rd12345678"));
+        Assert.IsTrue(removal.Removed);
+
+        using (var scope = pair.Source.Services.CreateScope())
+        {
+            var authorizations = scope.ServiceProvider.GetRequiredService<IUserMembershipAuthorizationRepository>();
+            var row = (await authorizations.ListForUserAsync(
+                (await pair.Source.GetOnlyCanonicalCheckpointAsync())!.UserId))
+                .Single(item => item.DeviceId == pair.Target.Identity.LocalDeviceId);
+            Assert.IsFalse(row.IsActive);
+            Assert.AreEqual(additionId, row.AdditionOperationId);
+            CollectionAssert.AreEqual(additionHash, row.AdditionOperationHash);
+        }
+        Assert.IsTrue((await pair.Source.Endpoints.GetSavedPasswordsAsync(pair.SourceToken))
+            .Passwords.Any(password => password.Name == "Kept after removal"));
+    }
 
     [TestMethod]
     [Timeout(TestTimeoutMilliseconds)]

@@ -48,6 +48,7 @@ public static class EndpointOperationManifest
         new(EndpointOperationId.DeletePasswordTag, nameof(PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints.DeletePasswordTagAsync), typeof(DeletePasswordTagEndpointRequest), typeof(DeletePasswordTagEndpointResponse), EndpointOperationCancellationClassification.CriticalAdmittedOperation, EndpointMutationCommitModel.CommitThenFollowUp, EndpointMutationReplaySafety.AuthoritativeReadBackRequired, EndpointOperationId.GetSavedPasswords, EndpointMutationRecoveryAction.InspectAuthoritativeState, true, EndpointRpcLimits.MaximumSmallRequestPayloadSize, EndpointRpcLimits.MaximumSmallResponsePayloadSize),
         new(EndpointOperationId.ExportPasswordTagsToUser, nameof(PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints.ExportPasswordTagsToUserAsync), typeof(ExportPasswordTagsToUserEndpointRequest), typeof(ExportPasswordTagsToUserEndpointResponse), EndpointOperationCancellationClassification.CriticalAdmittedOperation, EndpointMutationCommitModel.MultiStageRecoverableCommit, EndpointMutationReplaySafety.AuthoritativeReadBackRequired, EndpointOperationId.GetSavedPasswords, EndpointMutationRecoveryAction.InspectAuthoritativeState, true, EndpointRpcLimits.MaximumBulkRequestPayloadSize, EndpointRpcLimits.MaximumSmallResponsePayloadSize),
         new(EndpointOperationId.UpdatePasswordTag, nameof(PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints.UpdatePasswordTagAsync), typeof(UpdatePasswordTagEndpointRequest), typeof(UpdatePasswordTagEndpointResponse), EndpointOperationCancellationClassification.CriticalAdmittedOperation, EndpointMutationCommitModel.CommitThenFollowUp, EndpointMutationReplaySafety.AuthoritativeReadBackRequired, EndpointOperationId.GetSavedPasswords, EndpointMutationRecoveryAction.InspectAuthoritativeState, true, EndpointRpcLimits.MaximumSmallRequestPayloadSize, EndpointRpcLimits.MaximumSmallResponsePayloadSize),
+        new(EndpointOperationId.RunSelfDiagnosticsAndRepair, nameof(PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints.RunSelfDiagnosticsAndRepairAsync), typeof(RunSelfDiagnosticsAndRepairEndpointRequest), typeof(RunSelfDiagnosticsAndRepairEndpointResponse), EndpointOperationCancellationClassification.CriticalAdmittedOperation, EndpointMutationCommitModel.SingleAtomicCommit, EndpointMutationReplaySafety.AuthoritativeReadBackRequired, EndpointOperationId.GetUserDevices, EndpointMutationRecoveryAction.InspectAuthoritativeState, true, EndpointRpcLimits.MaximumSmallRequestPayloadSize, EndpointRpcLimits.MaximumSmallResponsePayloadSize),
     ];
 
     public static IReadOnlyList<EndpointOperationDescriptor> All => Descriptors;
@@ -94,6 +95,7 @@ public static class EndpointOperationManifest
         EndpointOperationId.DeletePasswordTag => Descriptors[37],
         EndpointOperationId.ExportPasswordTagsToUser => Descriptors[38],
         EndpointOperationId.UpdatePasswordTag => Descriptors[39],
+        EndpointOperationId.RunSelfDiagnosticsAndRepair => Descriptors[40],
         _ => throw new ArgumentOutOfRangeException(nameof(operationId))
     };
 }

@@ -43,7 +43,7 @@ public sealed class NamedPipeEndpointsProxyMappingTests
         CollectionAssert.AreEqual(
             Enum.GetValues<EndpointOperationId>().Cast<object>().ToArray(),
             transport.Operations.Cast<object>().ToArray());
-        Assert.HasCount(40, transport.RequestPayloads);
+        Assert.HasCount(41, transport.RequestPayloads);
     }
 
     [TestMethod]
@@ -416,7 +416,8 @@ public sealed class NamedPipeEndpointsProxyMappingTests
             async () => { await proxy.AddPasswordTagAsync(EndpointRpcTestData.Token, newTag); },
             async () => { await proxy.DeletePasswordTagAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId); },
             async () => { await proxy.ExportPasswordTagsToUserAsync(EndpointRpcTestData.Token, exportTags); },
-            async () => { await proxy.UpdatePasswordTagAsync(EndpointRpcTestData.Token, updateTag); }
+            async () => { await proxy.UpdatePasswordTagAsync(EndpointRpcTestData.Token, updateTag); },
+            async () => { await proxy.RunSelfDiagnosticsAndRepairAsync(EndpointRpcTestData.Token); }
         ];
     }
 }

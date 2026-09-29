@@ -34,9 +34,9 @@ public sealed class Phase11AndroidArchitectureGuardTests
             .Select(match => match.Groups["name"].Value)
             .ToArray();
 
-        Assert.AreEqual(40, contractMethods.Length);
+        Assert.AreEqual(41, contractMethods.Length);
         CollectionAssert.AreEquivalent(contractMethods, forwardedMethods);
-        Assert.AreEqual(40, forwardedMethods.Distinct(StringComparer.Ordinal).Count());
+        Assert.AreEqual(41, forwardedMethods.Distinct(StringComparer.Ordinal).Count());
         StringAssert.Contains(wrapper, "_owner.EnsureEndpointAuthority(_client);");
         StringAssert.Contains(client, "return new AndroidAttachmentAuthorizedEndpoints");
         Assert.IsFalse(client.Contains("return endpoints;", StringComparison.Ordinal));
@@ -554,7 +554,7 @@ public sealed class Phase11AndroidArchitectureGuardTests
     }
 
     [TestMethod]
-    public void EndpointAndMutationCompletenessGuardsRemainAtFortyAndThirtyTwo()
+    public void EndpointAndMutationCompletenessGuardsIncludeSelfDiagnostics()
     {
         var source = File.ReadAllText(Path.Combine(
             GetRepositoryRoot(),
@@ -563,9 +563,9 @@ public sealed class Phase11AndroidArchitectureGuardTests
             "Mapping",
             "EndpointOperationParityTests.cs"));
 
-        StringAssert.Contains(source, "Assert.AreEqual(40, EndpointOperationManifest.All.Count);");
-        StringAssert.Contains(source, "Assert.HasCount(40, methods);");
-        StringAssert.Contains(source, "Assert.HasCount(32, mutations);");
+        StringAssert.Contains(source, "Assert.AreEqual(41, EndpointOperationManifest.All.Count);");
+        StringAssert.Contains(source, "Assert.HasCount(41, methods);");
+        StringAssert.Contains(source, "Assert.HasCount(33, mutations);");
         StringAssert.Contains(source, "operationIds.Distinct()");
     }
 

@@ -8,6 +8,7 @@ using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Tests.Fakes;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 using System.Security.Cryptography;
+using System.Text.Json;
 
 using MSTestAssert = Microsoft.VisualStudio.TestTools.UnitTesting.Assert;
 
@@ -16,6 +17,34 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 [TestClass]
 public sealed class UserMembershipAuthorizationServiceTests
 {
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    [TestCategory("Security")]
+    public void HistoricalGenesisRemoval_EmptyAdditionHashDeserializesWithoutRewritingSignedBytes()
+    {
+        var cutoff = new DeviceRemovalOriginCutoffPayload
+        {
+            AuthorizationId = Guid.NewGuid(), OriginInstanceId = Guid.NewGuid(), UserKeyEpoch = 1,
+            SignPublicKeyHash = RandomNumberGenerator.GetBytes(32)
+        };
+        var payload = new DeviceRemovalPayload
+        {
+            UserId = Guid.NewGuid(), RemovedDeviceId = Guid.NewGuid(), KeyEpoch = 1,
+            PreviousMembershipEpoch = 2, ResultingMembershipEpoch = 3, Origins = [cutoff]
+        };
+        UserControlOperationEnvelopeUtil.FinalizeDeviceRemovalPayload(payload);
+        cutoff.AdditionOperationHash = [];
+        var signedPayloadBytes = JsonSerializer.SerializeToUtf8Bytes(payload);
+
+        var recovered = UserControlOperationEnvelopeUtil.DeserializeDeviceRemovalPayload(signedPayloadBytes);
+
+        MSTestAssert.IsNull(recovered.Origins.Single().AdditionOperationId);
+        MSTestAssert.IsNull(recovered.Origins.Single().AdditionOperationHash);
+        CollectionAssert.AreEqual(payload.IntegrityHash, recovered.IntegrityHash);
+        MSTestAssert.IsNotEmpty(signedPayloadBytes);
+    }
+
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]

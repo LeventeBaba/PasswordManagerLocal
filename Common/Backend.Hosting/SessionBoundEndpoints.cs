@@ -78,6 +78,9 @@ internal sealed class SessionBoundEndpoints : IEndpoints
         CancellationToken ct = default) =>
         _session.ExecuteAsync(endpoints => endpoints.GetUserDevicesAsync(token, ct));
 
+    public Task<SelfDiagnosticsResultResponse> RunSelfDiagnosticsAndRepairAsync(Guid token, CancellationToken ct = default) =>
+        _session.ExecuteAsync(endpoints => endpoints.RunSelfDiagnosticsAndRepairAsync(token, ct));
+
     public Task SetUserDeviceNameAsync(
         Guid token,
         Guid deviceId,

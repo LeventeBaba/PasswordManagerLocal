@@ -60,6 +60,7 @@ public static class EndpointRpcTestData
         EndpointOperationId.SetLocalUserSyncOn => new SetLocalUserSyncOnEndpointRequest { Token = Token, IsSyncOn = true },
         EndpointOperationId.SetLocalDeviceName => new SetLocalDeviceNameEndpointRequest { Token = Token, Name = "Desktop" },
         EndpointOperationId.GetUserDevices => new GetUserDevicesEndpointRequest { Token = Token },
+        EndpointOperationId.RunSelfDiagnosticsAndRepair => new RunSelfDiagnosticsAndRepairEndpointRequest { Token = Token },
         EndpointOperationId.SetUserDeviceName => new SetUserDeviceNameEndpointRequest { Token = Token, DeviceId = ItemId, Name = "Laptop" },
         EndpointOperationId.SetUserDeviceSyncOn => new SetUserDeviceSyncOnEndpointRequest { Token = Token, DeviceId = ItemId, IsSyncOn = true },
         EndpointOperationId.UnblockUserDevice => new UnblockUserDeviceEndpointRequest { Token = Token, DeviceId = ItemId },

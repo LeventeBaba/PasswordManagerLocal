@@ -158,6 +158,13 @@
         </StackPanel>
         <WrapPanel Orientation="Horizontal">
           <Button
+              Classes="primary"
+              Command="{Binding RunSelfDiagnosticsCommand}"
+              Content="{Binding SelfDiagnosticsLabel}"
+              IsEnabled="{Binding CanRunSelfDiagnostics}"
+              IsVisible="{Binding SelectedDevice.IsCurrentDevice}"
+              Margin="0,0,8,8" />
+          <Button
               Classes="danger"
               Command="{Binding SelectedDevice.BeginDisconnectCommand}"
               Content="{Binding DisconnectDeviceLabel}"
@@ -166,6 +173,9 @@
             <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
           </Button>
         </WrapPanel>
+        <TextBlock Text="{Binding SelfDiagnosticsSummary}"
+                   IsVisible="{Binding HasSelfDiagnosticsResult}"
+                   TextWrapping="Wrap" />
       </StackPanel>
     </Border>
   </StackPanel>

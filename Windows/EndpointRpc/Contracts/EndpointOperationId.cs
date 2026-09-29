@@ -42,4 +42,5 @@ public enum EndpointOperationId
     DeletePasswordTag = 38,
     ExportPasswordTagsToUser = 39,
     UpdatePasswordTag = 40,
+    RunSelfDiagnosticsAndRepair = 41,
 }

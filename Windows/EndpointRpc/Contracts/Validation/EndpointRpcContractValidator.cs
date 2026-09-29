@@ -54,6 +54,7 @@ public sealed class EndpointRpcContractValidator
         typeof(DeletePasswordTagEndpointRequest),
         typeof(ExportPasswordTagsToUserEndpointRequest),
         typeof(UpdatePasswordTagEndpointRequest),
+        typeof(RunSelfDiagnosticsAndRepairEndpointRequest),
     };
 
     private static readonly IReadOnlySet<Type> ResponseTypes = new HashSet<Type>
@@ -98,6 +99,7 @@ public sealed class EndpointRpcContractValidator
         typeof(DeletePasswordTagEndpointResponse),
         typeof(ExportPasswordTagsToUserEndpointResponse),
         typeof(UpdatePasswordTagEndpointResponse),
+        typeof(RunSelfDiagnosticsAndRepairEndpointResponse),
     };
 
     public bool CanValidateRequest(Type type) => RequestTypes.Contains(type);
@@ -151,6 +153,7 @@ public sealed class EndpointRpcContractValidator
             EndpointOperationId.DeletePasswordTag when value is DeletePasswordTagEndpointRequest request => Validate(request),
             EndpointOperationId.ExportPasswordTagsToUser when value is ExportPasswordTagsToUserEndpointRequest request => Validate(request),
             EndpointOperationId.UpdatePasswordTag when value is UpdatePasswordTagEndpointRequest request => Validate(request),
+            EndpointOperationId.RunSelfDiagnosticsAndRepair when value is RunSelfDiagnosticsAndRepairEndpointRequest request => Validate(request),
                 _ => false
             };
         }
@@ -211,6 +214,7 @@ public sealed class EndpointRpcContractValidator
             EndpointOperationId.DeletePasswordTag when value is DeletePasswordTagEndpointResponse response => Validate(response),
             EndpointOperationId.ExportPasswordTagsToUser when value is ExportPasswordTagsToUserEndpointResponse response => Validate(response),
             EndpointOperationId.UpdatePasswordTag when value is UpdatePasswordTagEndpointResponse response => Validate(response),
+            EndpointOperationId.RunSelfDiagnosticsAndRepair when value is RunSelfDiagnosticsAndRepairEndpointResponse response => Validate(response),
                 _ => false
             };
         }
@@ -375,6 +379,7 @@ public sealed class EndpointRpcContractValidator
     private static bool Validate(DeletePasswordTagEndpointRequest value) => ValidGuid(value.Token) && ValidGuid(value.PasswordTagId);
     private static bool Validate(ExportPasswordTagsToUserEndpointRequest value) => ValidGuid(value.SourceToken) && value.Request is not null && value.Request.Validate(out _);
     private static bool Validate(UpdatePasswordTagEndpointRequest value) => ValidGuid(value.Token) && value.Request is not null && value.Request.Validate(out _);
+    private static bool Validate(RunSelfDiagnosticsAndRepairEndpointRequest value) => ValidGuid(value.Token);
 
     private static bool Validate(RegisterEndpointResponse value) => ValidGuid(value.Token);
     private static bool Validate(LoginEndpointResponse value) => ValidGuid(value.Token);
@@ -419,6 +424,10 @@ public sealed class EndpointRpcContractValidator
     private static bool Validate(DeletePasswordTagEndpointResponse value) => true;
     private static bool Validate(ExportPasswordTagsToUserEndpointResponse value) => true;
     private static bool Validate(UpdatePasswordTagEndpointResponse value) => true;
+    private static bool Validate(RunSelfDiagnosticsAndRepairEndpointResponse value) =>
+        value.Result is not null && value.Result.RepairedCount is >= 0 and <= 100_000 &&
+        value.Result.Findings is not null && value.Result.Findings.Count <= 32 &&
+        value.Result.Findings.All(finding => ValidString(finding, 1, 64));
 
     private static bool ValidGuid(Guid value) => value != Guid.Empty;
 

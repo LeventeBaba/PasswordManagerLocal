@@ -248,6 +248,7 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<IUserDeviceQueryService, UserDeviceQueryService>();
         services.AddScoped<IUserDeviceSettingsService, UserDeviceSettingsService>();
         services.AddScoped<IUserDeviceDisconnectionService, UserDeviceDisconnectionService>();
+        services.AddScoped<ISelfDiagnosticsService, SelfDiagnosticsService>();
         services.AddScoped<IDeviceService, DeviceService>();
 
         services.AddMemoryCache();

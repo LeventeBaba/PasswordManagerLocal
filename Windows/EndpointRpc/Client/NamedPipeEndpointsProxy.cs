@@ -227,6 +227,17 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
         return response.Devices;
     }
 
+    public async Task<SelfDiagnosticsResultResponse> RunSelfDiagnosticsAndRepairAsync(Guid token, CancellationToken ct = default)
+    {
+        var response = await InvokeAsync(
+            EndpointOperationId.RunSelfDiagnosticsAndRepair,
+            () => new RunSelfDiagnosticsAndRepairEndpointRequest { Token = token },
+            EndpointRpcJsonContext.Default.RunSelfDiagnosticsAndRepairEndpointRequest,
+            EndpointRpcJsonContext.Default.RunSelfDiagnosticsAndRepairEndpointResponse,
+            ct);
+        return response.Result;
+    }
+
     public async Task SetUserDeviceNameAsync(Guid token, Guid deviceId, string name, CancellationToken ct = default)
     {
         await InvokeAsync(

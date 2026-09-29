@@ -38,6 +38,7 @@ public class ThrowingRecordingEndpoints : IEndpoints
     public virtual Task SetLocalUserSyncOnAsync(Guid token, bool isSyncOn, CancellationToken ct = default) => Throw(nameof(SetLocalUserSyncOnAsync), ct);
     public virtual Task SetLocalDeviceNameAsync(Guid token, string name, CancellationToken ct = default) => Throw(nameof(SetLocalDeviceNameAsync), ct);
     public virtual Task<IReadOnlyList<UserDeviceInfoResponse>> GetUserDevicesAsync(Guid token, CancellationToken ct = default) => Throw<IReadOnlyList<UserDeviceInfoResponse>>(nameof(GetUserDevicesAsync), ct);
+    public virtual Task<SelfDiagnosticsResultResponse> RunSelfDiagnosticsAndRepairAsync(Guid token, CancellationToken ct = default) => Throw<SelfDiagnosticsResultResponse>(nameof(RunSelfDiagnosticsAndRepairAsync), ct);
     public virtual Task SetUserDeviceNameAsync(Guid token, Guid deviceId, string name, CancellationToken ct = default) => Throw(nameof(SetUserDeviceNameAsync), ct);
     public virtual Task SetUserDeviceSyncOnAsync(Guid token, Guid deviceId, bool isSyncOn, CancellationToken ct = default) => Throw(nameof(SetUserDeviceSyncOnAsync), ct);
     public virtual Task UnblockUserDeviceAsync(Guid token, Guid deviceId, CancellationToken ct = default) => Throw(nameof(UnblockUserDeviceAsync), ct);

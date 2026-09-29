@@ -96,6 +96,9 @@ public sealed class Endpoints : IEndpoints
         RunAsync<IUserDeviceDisconnectionService, DeviceRemovalResultResponse>(service =>
             service.DisconnectUserDeviceAsync(token, deviceId, masterPassword, ct));
 
+    public Task<SelfDiagnosticsResultResponse> RunSelfDiagnosticsAndRepairAsync(Guid token, CancellationToken ct = default) =>
+        RunAsync<ISelfDiagnosticsService, SelfDiagnosticsResultResponse>(service => service.RunAsync(token, ct));
+
     public Task<DeviceEnrollmentCodeResponse> StartDeviceEnrollmentAsync(CancellationToken ct = default) =>
         RunAsync<IDeviceEnrollmentService, DeviceEnrollmentCodeResponse>(service =>
             service.StartEnrollmentAsync(ct));

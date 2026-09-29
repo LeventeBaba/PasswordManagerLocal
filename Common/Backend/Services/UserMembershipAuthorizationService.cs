@@ -127,6 +127,13 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
                                   origin.UserKeyEpoch < authorization.MinimumKeyEpoch ||
                                   (authorization.MaximumKeyEpoch is long maximum && origin.UserKeyEpoch > maximum)))
             throw new InvalidDataException("A removal cutoff does not match the immutable authorization identity or key namespace.");
+        if (origins.Any(origin => authorization.IsGenesis
+                ? authorization.StartedMembershipEpoch != 1 || origin.AdditionOperationId is not null ||
+                  origin.AdditionOperationHash is not null
+                : authorization.AdditionOperationId is null || authorization.AdditionOperationHash is null ||
+                  origin.AdditionOperationId != authorization.AdditionOperationId || origin.AdditionOperationHash is null ||
+                  !Hashing.Verify(origin.AdditionOperationHash, authorization.AdditionOperationHash)))
+            throw new InvalidDataException("A removal cutoff does not match the authorization's addition evidence.");
 
         if (!authorization.IsActive)
         {
