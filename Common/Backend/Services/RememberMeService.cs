@@ -186,7 +186,7 @@ public class RememberMeService : IRememberMeService
                 }
 
                 user = await _lookup.GetAndVerifyUserByUidAsync(user.UId, ct);
-                var bundle = await _reader.GetAndVerifyUserDataBundleAsync(user, key, ct);
+                using var bundle = await _reader.GetAndVerifyUserDataBundleAsync(user, key, ct);
                 try
                 {
                     if (_canonicalHealth is not null)

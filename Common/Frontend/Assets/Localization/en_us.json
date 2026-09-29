@@ -235,6 +235,7 @@
   "Profile_Device_AddSyncDisabled": "This profile cannot add another device while its synchronization is disabled on the current device. Enable synchronization for this profile first.",
   "Profile_Device_AddSuccess": "The new device has been added and the initial profile data transfer has completed.",
   "Profile_Device_Add_CodeRequired": "Enter the connection code shown on the new device.",
+  "Shell_LocalDataVerificationFailed": "The local profile data could not be verified. Sign in again to attempt authenticated recovery. Your master password may be unchanged.",
   "Shell_ProfilePasswordChangedLoggedOut": "Your profile password was changed on another device, so you were logged out automatically. Sign in again with your new credentials.",
   "Shell_ProfileRemovedLoggedOut": "This profile is no longer linked to this device, so you were logged out automatically.",
   "Shell_SessionExpired": "Your session expired. Please sign in again.",

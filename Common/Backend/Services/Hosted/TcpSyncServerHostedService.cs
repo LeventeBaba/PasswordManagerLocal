@@ -74,7 +74,7 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
                 listener.Start();
                 _listener = listener;
                 _cts = lifetime;
-                _acceptLoopTask = Task.Run(() => AcceptLoopAsync(listener, lifetime.Token), CancellationToken.None);
+                _acceptLoopTask = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => AcceptLoopAsync(listener, lifetime.Token), CancellationToken.None);
                 var localEndpoint = listener.LocalEndpoint?.ToString() ?? $"0.0.0.0:{SyncConstants.SyncPort}";
                 BackendDebugLog.Info($"TCP sync server listening on {localEndpoint}. ProcessId={Environment.ProcessId}, ExclusiveAddressUse={listener.ExclusiveAddressUse}.");
                 if (_identity.IsSyncOn && _executionProfileProvider?.IsInteractive == false)
@@ -170,7 +170,7 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
             }
 
             BackendDebugLog.Info($"TCP sync server accepted an incoming connection from {remoteIp}.");
-            _ = Task.Run(() => HandleClientAsync(client, remoteIp, ct), CancellationToken.None);
+            _ = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => HandleClientAsync(client, remoteIp, ct), CancellationToken.None);
         }
     }
 

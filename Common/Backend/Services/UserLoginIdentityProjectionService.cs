@@ -19,6 +19,7 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 /// </summary>
 public sealed class UserLoginIdentityProjectionService : IUserLoginIdentityProjectionService
 {
+    private readonly IUserControlStateRepository? _controlStates;
     private readonly IUserRepository _users;
     private readonly IUserSyncSnapshotRepository _snapshots;
     private readonly IUserMembershipAuthorizationService _membershipAuthorization;
@@ -34,9 +35,11 @@ public sealed class UserLoginIdentityProjectionService : IUserLoginIdentityProje
         IUserLifecycleCoordinator lifecycle,
         IUnitOfWork uow,
         IDeletedUserBarrierRepository? deletionBarriers = null,
-        IUserCanonicalHealthService? canonicalHealth = null)
+        IUserCanonicalHealthService? canonicalHealth = null,
+        IUserControlStateRepository? controlStates = null)
     {
         _users = users;
+        _controlStates = controlStates;
         _snapshots = snapshots;
         _membershipAuthorization = membershipAuthorization;
         _lifecycle = lifecycle;
@@ -90,6 +93,49 @@ public sealed class UserLoginIdentityProjectionService : IUserLoginIdentityProje
 
     public Task<UserLoginIdentityState?> RecalculateUnderLifecycleAsync(Guid userId, CancellationToken ct = default) =>
         RecalculateCoreAsync(userId, ct);
+
+    public async Task<UserLoginIdentityMatchResult> FindSignedRecoveryCandidateAsync(
+        byte[] normalizedUsername, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(normalizedUsername);
+        var candidates = new HashSet<Guid>();
+        var invalid = false;
+        foreach (var id in await _users.ListUserIdsAsync(ct))
+        {
+            if (_deletionBarriers is not null && await _deletionBarriers.ExistsAsync(id, ct)) continue;
+            var user = await _users.GetByIdAsNoTrackingAsync(id, ct);
+            if (user is null) continue;
+            if (_controlStates is not null && (await _controlStates.GetAsync(id, ct))?.HasConflict == true)
+                continue;
+            var snapshots = await _snapshots.ListForUserAsync(id, ct);
+            if (snapshots.Any(row => row.Status == UserSyncSnapshotStatus.IsolatedFork)) continue;
+            foreach (var row in snapshots)
+            {
+                if (row.UserKeyEpoch != user.KeyEpoch || row.MembershipEpoch > user.MembershipEpoch ||
+                    row.Status is not (UserSyncSnapshotStatus.Pending or UserSyncSnapshotStatus.LocalPublished or
+                        UserSyncSnapshotStatus.MergedReceipt or UserSyncSnapshotStatus.RecoveryCandidate)) continue;
+                try
+                {
+                    var envelope = DeserializeAndValidate(row);
+                    await _membershipAuthorization.VerifySnapshotAuthorAsync(envelope, ct);
+                    ValidateUsernameMetadata(envelope.User.UsernameHash, envelope.User.UsernameSalt);
+                    var calculated = Hashing.SHA256Hash(normalizedUsername, envelope.User.UsernameSalt);
+                    try
+                    {
+                        if (Hashing.Verify(envelope.User.UsernameHash, calculated)) candidates.Add(id);
+                    }
+                    finally { CryptographicOperations.ZeroMemory(calculated); }
+                }
+                catch (Exception ex) when (ex is InvalidDataException or UnauthorizedAccessException or JsonException)
+                {
+                    invalid = true; // Never choose a possibly incomplete set of signed candidates.
+                }
+            }
+        }
+        if (invalid || candidates.Count != 1)
+            return new(candidates.Count > 1 ? UserLoginIdentityMatchState.Ambiguous : UserLoginIdentityMatchState.InvalidProjection);
+        return new(UserLoginIdentityMatchState.InvalidProjection, candidates.Single());
+    }
 
     public async Task<UserLoginIdentityMatchResult> FindByUsernameAsync(
         byte[] normalizedUsername,
@@ -147,7 +193,7 @@ public sealed class UserLoginIdentityProjectionService : IUserLoginIdentityProje
         if (match.Status == UserLoginIdentityStatus.IntegrityConflict)
             return new(UserLoginIdentityMatchState.ProjectionQuarantined, Diagnostic: match.StatusReason);
         if (match.Status != UserLoginIdentityStatus.Active)
-            return new(UserLoginIdentityMatchState.InvalidProjection, Diagnostic: match.StatusReason);
+            return new(UserLoginIdentityMatchState.InvalidProjection, match.UserId, Diagnostic: match.StatusReason);
 
         if (_deletionBarriers is not null && await _deletionBarriers.ExistsAsync(match.UserId, ct))
             return new(UserLoginIdentityMatchState.DeletedAccount);
@@ -156,7 +202,7 @@ public sealed class UserLoginIdentityProjectionService : IUserLoginIdentityProje
         if (user is null)
             return new(UserLoginIdentityMatchState.InvalidProjection, Diagnostic: "The projected user no longer exists.");
         if (match.KeyEpoch != user.KeyEpoch || match.MembershipEpoch > user.MembershipEpoch)
-            return new(UserLoginIdentityMatchState.ProjectionOutdated, Diagnostic: "The projection epochs do not match canonical lifecycle state.");
+            return new(UserLoginIdentityMatchState.ProjectionOutdated, match.UserId, Diagnostic: "The projection epochs do not match canonical lifecycle state.");
 
         try
         {
@@ -164,7 +210,7 @@ public sealed class UserLoginIdentityProjectionService : IUserLoginIdentityProje
         }
         catch (Exception ex) when (ex is InvalidDataException or UnauthorizedAccessException)
         {
-            return new(UserLoginIdentityMatchState.InvalidProjection, Diagnostic: ex.Message);
+            return new(UserLoginIdentityMatchState.InvalidProjection, match.UserId, Diagnostic: ex.Message);
         }
 
         return new(UserLoginIdentityMatchState.Matched, match.UserId, match);

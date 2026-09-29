@@ -110,7 +110,7 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
         await _snapshotPublisher.GetOrCreateAsync(user, ct);
 
         _cache.InvalidateToken(request.Token);
-        var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(request.Token, ct, user);
+        using var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(request.Token, ct, user);
         var canonicalBackup = CanonicalUserState.Capture(user);
         var previousKeyEpoch = user.KeyEpoch;
         var rememberMeWasEnabled = user.SavedKey is not null;

@@ -856,6 +856,12 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
             await _loginIdentities.RecalculateUnderLifecycleAsync(user.UId, ct);
         await _uow.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
+        try { await _syncRuntime.RefreshSyncEnabledAsync(CancellationToken.None); }
+        catch (Exception ex)
+        {
+            PasswordManagerLocal.Common.Backend.Diagnostics.BackendDebugLog.Warning(
+                $"Membership catch-up committed; runtime refresh pending. User={user.UId}, Failure={ex.GetType().Name}.", category: "Synchronization");
+        }
         return Receipt(envelope, UserControlOperationReceiptState.Applied);
     }
 

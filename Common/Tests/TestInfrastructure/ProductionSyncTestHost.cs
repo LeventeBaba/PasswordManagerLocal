@@ -31,6 +31,8 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
     private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(2);
     private readonly ServiceProvider _services;
     private readonly string _rootDirectory;
+    private bool _preserveDirectory;
+    private bool _disposed;
     private readonly FakeBackendExecutionProfileProvider _executionProfiles;
 
     static ProductionSyncTestHost() => Batteries_V2.Init();
@@ -56,10 +58,12 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
     public IDevicePresenceRegistry Presence => _services.GetRequiredService<IDevicePresenceRegistry>();
     public IDevicePresenceProbeService PresenceProbe => _services.GetRequiredService<IDevicePresenceProbeService>();
     public IDiscoveredDeviceEndpointRegistry EndpointsCache => _services.GetRequiredService<IDiscoveredDeviceEndpointRegistry>();
+    internal IReadOnlyList<(Guid PeerId, string Reason)> PeerPenaltyAttempts =>
+        _services.GetRequiredService<PeerPenaltyRecorder>().Snapshot();
 
-    public static async Task<ProductionSyncTestHost> CreateAsync()
+    internal static async Task<ProductionSyncTestHost> CreateAsync(ILocalDiscoveryTransport? discoveryTransport = null, string localAddress = "127.0.0.1", DeviceType deviceType = DeviceType.WindowsPc, string? existingDirectory = null)
     {
-        var rootDirectory = Path.Combine(
+        var rootDirectory = existingDirectory ?? Path.Combine(
             Path.GetTempPath(),
             "PasswordManagerLocal.SyncEndToEndTests",
             Guid.NewGuid().ToString("N"));
@@ -90,17 +94,21 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
         services.Replace(ServiceDescriptor.Singleton<IDeviceIdentityService>(provider =>
             new DeviceIdentityService(
                 provider.GetRequiredService<IServiceScopeFactory>(),
-                () => DeviceType.WindowsPc)));
+                () => deviceType)));
         services.Replace(ServiceDescriptor.Singleton<ISyncTransportClientService>(transport));
         services.Replace(ServiceDescriptor.Singleton<ILocalNetworkAddressService>(new FakeLocalNetworkAddressService
         {
-            PreferredLocalHosts = ["127.0.0.1"],
+            PreferredLocalHosts = [localAddress],
+            RoutedLocalAddressHandler = _ => System.Net.IPAddress.Parse(localAddress),
             RemoteEndpointPriority = 5000
         }));
         services.Replace(ServiceDescriptor.Singleton<ISyncRuntimeService>(provider =>
             new EnrollmentAwareFakeSyncRuntimeService(
                 provider.GetRequiredService<PasswordManagerLocal.Common.Backend.Abstractions.State.IEnrollmentRuntimeState>())));
-        services.Replace(ServiceDescriptor.Singleton<ILocalDiscoveryTransport>(new FakeLocalDiscoveryTransport()));
+        services.Replace(ServiceDescriptor.Singleton<ILocalDiscoveryTransport>(discoveryTransport ?? new FakeLocalDiscoveryTransport()));
+        services.AddSingleton<PeerPenaltyRecorder>();
+        services.AddScoped<DeviceSecurityService>();
+        services.Replace(ServiceDescriptor.Scoped<IDeviceSecurityService, RecordingDeviceSecurityService>());
 
         var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {
@@ -313,8 +321,20 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
         return pending.Count;
     }
 
+    public async Task<ProductionSyncTestHost> RestartAsync()
+    {
+        _preserveDirectory = true;
+        var deviceType = Identity.DeviceType;
+        await DisposeAsync();
+        return await CreateAsync(deviceType: deviceType, existingDirectory: _rootDirectory);
+    }
+
     public async ValueTask DisposeAsync()
     {
+        if (_disposed) return;
+        _disposed = true;
+        await TryRunCleanupAsync("stop automatic discovery", ct =>
+            _services.GetRequiredService<PasswordManagerLocal.Common.Backend.Services.Hosted.LocalDiscoveryHostedService>().StopAsync(ct));
         Transport.Disconnect();
 
         var syncTasksStopped = await TryRunCleanupAsync(
@@ -343,7 +363,7 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
             "dispose backend service provider",
             async _ => await _services.DisposeAsync());
 
-        if (syncTasksStopped && enrollmentClosed && interactiveDeactivated && providerDisposed)
+        if (!_preserveDirectory && syncTasksStopped && enrollmentClosed && interactiveDeactivated && providerDisposed)
         {
             try
             {

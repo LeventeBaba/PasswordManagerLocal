@@ -409,12 +409,7 @@ public sealed class RegularSyncEndToEndTests
                 setup.Original,
                 setup.NewDevice.Identity.LocalDeviceId));
 
-        // The membership update is now persisted on the original device. Log in again to make the
-        // endpoint assertions use a session opened against the updated local profile.
-        setup.OriginalToken = await RunPhaseAsync(
-            "original device login after receiving the third-device membership",
-            ct => setup.Original.Endpoints.LoginAsync(setup.Original.CreateLoginRequest(setup.Username), ct));
-
+        // Keep the original authenticated session alive across membership and snapshot arrival.
         var originalDevices = await setup.Original.Endpoints.GetUserDevicesAsync(setup.OriginalToken);
         AssertDeviceIds(
             originalDevices.Select(device => device.DeviceId),
@@ -458,15 +453,7 @@ public sealed class RegularSyncEndToEndTests
                 setup.Original,
                 setup.NewDevice.Identity.LocalDeviceId));
 
-        setup.OriginalToken = await RunPhaseAsync(
-            "refresh original-device login after membership synchronization",
-            ct => setup.Original.Endpoints.LoginAsync(setup.Original.CreateLoginRequest(setup.Username), ct));
-        setup.MiddleToken = await RunPhaseAsync(
-            "refresh second-device login after enrolling the third device",
-            ct => setup.Middle.Endpoints.LoginAsync(setup.Middle.CreateLoginRequest(setup.Username), ct));
-        setup.NewDeviceToken = await RunPhaseAsync(
-            "refresh third-device login after enrollment",
-            ct => setup.NewDevice.Endpoints.LoginAsync(setup.NewDevice.CreateLoginRequest(setup.Username), ct));
+        // All three existing sessions remain alive while the mesh converges.
 
         var originalOnlySecret = Encoding.UTF8.GetBytes("three-way-original-secret");
         var middleOnlySecret = Encoding.UTF8.GetBytes("three-way-middle-secret");
@@ -582,7 +569,12 @@ public sealed class RegularSyncEndToEndTests
                 $"{remote.Identity.LocalDeviceId} failed ({probe.FailureKind}).");
             Assert.IsTrue(observer.IsOnline(remote));
             Assert.IsTrue(observer.Presence.TryGetSnapshot(remote.Identity.FingerprintHex, out var snapshot));
-            Assert.AreEqual(DevicePresenceObservationSource.DirectProbe, snapshot!.LastObservationSource);
+            // Another authenticated sync may race the successful direct probe and become
+            // the most recent observation. The probe result above proves direct reachability.
+            Assert.IsTrue(snapshot!.LastObservationSource is
+                DevicePresenceObservationSource.DirectProbe or
+                DevicePresenceObservationSource.IncomingSync or
+                DevicePresenceObservationSource.OutgoingSync);
         }
 
         await AssertOnlineDevicesAsync(setup.Original,
@@ -599,7 +591,58 @@ public sealed class RegularSyncEndToEndTests
             setup.Middle.Identity.LocalDeviceId);
     }
 
-    private async Task<ThreeDeviceSetup> CreateThreeDeviceSetupAsync()
+    [TestMethod]
+    [Timeout(ThreeDeviceTestTimeoutMilliseconds)]
+    [TestCategory("Integration")]
+    [TestCategory("EndToEnd")]
+    public async Task ThreeDevices_DiscoverAutomatically_KeepOriginalSessions_AndLoginAfterRestart()
+    {
+        await using var setup = await CreateThreeDeviceSetupAsync(automaticDiscovery: true);
+        // A did not participate in B -> C enrollment. No endpoint seeding or StartSync calls.
+        await WaitForAutomaticAsync(async () => await HasActiveMembershipForDeviceAsync(setup.Original, setup.NewDevice.Identity.LocalDeviceId));
+        for (var round = 0; round < 3; round++)
+        {
+            await setup.NewDevice.Endpoints.SetLocalDeviceNameAsync(setup.NewDeviceToken, $"Third PC {round}");
+            await AddPasswordAsync(setup.Middle, setup.MiddleToken, $"B edit {round}", Encoding.UTF8.GetBytes($"BSecret{round}Password!"));
+            await AddPasswordAsync(setup.NewDevice, setup.NewDeviceToken, $"C edit {round}", Encoding.UTF8.GetBytes($"CSecret{round}Password!"));
+            await setup.Original.Endpoints.GetUserDevicesAsync(setup.OriginalToken);
+        }
+        await WaitForAutomaticAsync(async () =>
+        {
+            foreach (var host in setup.Hosts)
+            {
+                var token = setup.TokenFor(host);
+                if (!await HasPasswordAsync(host, token, "B edit 2") || !await HasPasswordAsync(host, token, "C edit 2")) return false;
+                var devices = await host.Endpoints.GetUserDevicesAsync(token);
+                if (!devices.Any(x => x.DeviceId == setup.NewDevice.Identity.LocalDeviceId && x.Name == "Third PC 2")) return false;
+                var penalized = devices.Where(x => x.IsBlocked || x.InvalidSyncAttemptCount != 0).ToArray();
+                Assert.IsFalse(penalized.Length != 0,
+                    $"Unexpected peer penalties on {host.Identity.LocalDeviceId}: " +
+                    string.Join(", ", penalized.Select(x => $"{x.DeviceId}: count={x.InvalidSyncAttemptCount}, blocked={x.IsBlocked}, reason={x.BlockedReason}")) +
+                    "; recorded attempts: " +
+                    string.Join("; ", host.PeerPenaltyAttempts.Select(x => $"{x.PeerId}: {x.Reason}")));
+            }
+            return true;
+        });
+        Assert.IsTrue(setup.Original.EndpointsCache.TryGetByFingerprint(setup.NewDevice.Identity.FingerprintHex, out _));
+        Assert.IsTrue(setup.NewDevice.EndpointsCache.TryGetByFingerprint(setup.Original.Identity.FingerprintHex, out _));
+        foreach (var host in setup.Hosts)
+        {
+            await using var restarted = await host.RestartAsync();
+            var token = await restarted.Endpoints.LoginAsync(restarted.CreateLoginRequest(setup.Username));
+            Assert.IsTrue(await HasPasswordAsync(restarted, token, "B edit 2"));
+            Assert.IsTrue(await HasPasswordAsync(restarted, token, "C edit 2"));
+            Assert.IsTrue((await restarted.Endpoints.GetUserDevicesAsync(token)).Any(x => x.Name == "Third PC 2"));
+        }
+    }
+
+    private static async Task WaitForAutomaticAsync(Func<Task<bool>> condition)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(70));
+        while (!await condition()) await Task.Delay(100, timeout.Token);
+    }
+
+    private async Task<ThreeDeviceSetup> CreateThreeDeviceSetupAsync(bool automaticDiscovery = false)
     {
         ProductionSyncTestHost? original = null;
         ProductionSyncTestHost? middle = null;
@@ -607,9 +650,13 @@ public sealed class RegularSyncEndToEndTests
 
         try
         {
-            original = await ProductionSyncTestHost.CreateAsync();
-            middle = await ProductionSyncTestHost.CreateAsync();
-            newDevice = await ProductionSyncTestHost.CreateAsync();
+            var network = automaticDiscovery ? new PasswordManagerLocal.Common.Tests.Fakes.InProcessDiscoveryNetwork() : null;
+            // A and C have no direct discovery route. Their first endpoint must be
+            // relayed by B after signed membership reaches both devices.
+            network?.BlockPair("192.168.50.1", "192.168.50.3");
+            original = await ProductionSyncTestHost.CreateAsync(network?.CreatePort("192.168.50.1"), "192.168.50.1");
+            middle = await ProductionSyncTestHost.CreateAsync(network?.CreatePort("192.168.50.2"), "192.168.50.2", DeviceType.AndroidMobile);
+            newDevice = await ProductionSyncTestHost.CreateAsync(network?.CreatePort("192.168.50.3"), "192.168.50.3");
 
             // Keep all transports available, but perform the second enrollment only between the
             // second and third devices. The original device can communicate with the third device
@@ -637,10 +684,6 @@ public sealed class RegularSyncEndToEndTests
                 "first enrollment from original device to second device",
                 ct => original.Endpoints.AddDeviceByCodeAsync(originalToken, middleEnrollmentCode.Code, ct));
 
-            await original.Endpoints.LogoutAsync(originalToken);
-            originalToken = await RunPhaseAsync(
-                "original device login after first enrollment",
-                ct => original.Endpoints.LoginAsync(original.CreateLoginRequest(username), ct));
             var middleToken = await RunPhaseAsync(
                 "second device first login after enrollment",
                 ct => middle.Endpoints.LoginAsync(middle.CreateLoginRequest(username), ct));
@@ -658,14 +701,16 @@ public sealed class RegularSyncEndToEndTests
                 "second enrollment from second device to third device",
                 ct => middle.Endpoints.AddDeviceByCodeAsync(middleToken, thirdEnrollmentCode.Code, ct));
 
-            await middle.Endpoints.LogoutAsync(middleToken);
-            middleToken = await RunPhaseAsync(
-                "second device login after enrolling the third device",
-                ct => middle.Endpoints.LoginAsync(middle.CreateLoginRequest(username), ct));
             var newDeviceToken = await RunPhaseAsync(
                 "third device first login after enrollment",
                 ct => newDevice.Endpoints.LoginAsync(newDevice.CreateLoginRequest(username), ct));
             await newDevice.ActivateImportedSynchronizationAsync();
+
+            if (automaticDiscovery)
+            {
+                foreach (var host in new[] { original, middle, newDevice })
+                    await host.Services.GetRequiredService<LocalDiscoveryHostedService>().StartAsync();
+            }
 
             var setup = new ThreeDeviceSetup(
                 original,

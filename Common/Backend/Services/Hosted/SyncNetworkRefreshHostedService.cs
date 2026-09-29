@@ -87,7 +87,7 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
         NetworkChange.NetworkAddressChanged += OnNetworkChanged;
         NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
 
-        _pollTask = Task.Run(
+        _pollTask = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(
             () => PollNetworkConfigurationAsync(pollCancellation.Token),
             CancellationToken.None);
 
@@ -185,7 +185,7 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
         }
 
         previousCancellation?.Cancel();
-        _ = Task.Run(() => RefreshAfterDebounceAsync(debounceCancellation), CancellationToken.None);
+        _ = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => RefreshAfterDebounceAsync(debounceCancellation), CancellationToken.None);
     }
 
     private async Task PollNetworkConfigurationAsync(CancellationToken ct)

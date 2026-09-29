@@ -72,7 +72,7 @@ public sealed class UserRegistrationService : IUserRegistrationService
 
         var now = DateTime.UtcNow;
         var linkedAt = DateTimeOffset.UtcNow;
-        var bundle = CreateInitialUserDataBundle(request, now, linkedAt);
+        using var bundle = CreateInitialUserDataBundle(request, now, linkedAt);
 
         var passwordSalt = Hashing.GenerateSalt();
         using var key = EncryptionKey.FromPassword(request.Password, passwordSalt);

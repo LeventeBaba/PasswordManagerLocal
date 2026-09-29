@@ -4,6 +4,7 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Security;
+using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Sync;
 using System.Security.Cryptography;
 
@@ -200,7 +201,7 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
                 throw new InvalidDataException("The same control operation was requested more than once.");
 
             var row = await _operations.GetByIdAsync(operationId, ct)
-                ?? throw new InvalidDataException("The requested control operation is not retained locally.");
+                ?? throw new SyncStateUnavailableException("The requested control operation is no longer retained locally.");
             var routeEligible = await _routes.IsEligibleAsync(userId, peerDeviceId, ct);
             var historicalDeletionEligible = row.OperationType == UserControlOperationType.AccountDeletion &&
                 row.Status == UserControlOperationStatus.Applied &&
@@ -208,8 +209,10 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
                 await _membershipHistory.HasHistoricalAuthorizationAsync(userId, peerDeviceId, ct);
             if (!routeEligible && !historicalDeletionEligible)
                 throw new UnauthorizedAccessException("The peer is not authorized for the requested control operation.");
-            if (row.UserId != userId || row.Status is UserControlOperationStatus.Rejected or UserControlOperationStatus.Quarantined)
-                throw new InvalidDataException("The requested control operation is not relayable.");
+            if (row.UserId != userId)
+                throw new InvalidDataException("The requested control operation belongs to another account.");
+            if (row.Status is UserControlOperationStatus.Rejected or UserControlOperationStatus.Quarantined)
+                throw new SyncStateUnavailableException("The requested control operation is no longer relayable.");
             if (!RequestMatchesRow(request, row))
                 throw new InvalidDataException("The requested control-operation identity or hash does not match durable storage.");
 

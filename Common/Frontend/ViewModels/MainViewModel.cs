@@ -2106,6 +2106,7 @@ public sealed class MainViewModel : ViewModelBase
     private string GetSessionInvalidationMessage(AuthSessionInvalidationReason reason) =>
         reason switch
         {
+            AuthSessionInvalidationReason.LocalDataVerificationFailed => GetTranslation("Shell_LocalDataVerificationFailed"),
             AuthSessionInvalidationReason.ProfilePasswordChanged => GetTranslation("Shell_ProfilePasswordChangedLoggedOut"),
             AuthSessionInvalidationReason.ProfileRemoved => GetTranslation("Shell_ProfileRemovedLoggedOut"),
             AuthSessionInvalidationReason.Expired => GetTranslation("Shell_SessionExpired"),

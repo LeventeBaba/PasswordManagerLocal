@@ -25,94 +25,110 @@ public sealed class UserCustomColorService : IUserCustomColorService
     }
 
 
-    public async Task AddCustomUserColorsAsync(
+    public Task AddCustomUserColorsAsync(
         Guid token,
         IReadOnlyList<NewCustomUserColorRequest> requests,
         CancellationToken ct = default)
     {
-        var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
-        _customUserColorService.AddCustomUserColors(requests, bundle.UserPasswordsData);
-        await _writer.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Passwords, true, ct);
+        return _writer.ExecuteMutationAsync(token, async ct =>
+        {
+            using var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
+            _customUserColorService.AddCustomUserColors(requests, bundle.UserPasswordsData);
+            await _writer.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Passwords, true, ct);
+
+        }, ct);
     }
 
 
-    public async Task DeleteCustomUserColorsAsync(
+    public Task DeleteCustomUserColorsAsync(
         Guid token,
         IReadOnlyList<Guid> customUserColorIds,
         CancellationToken ct = default)
     {
-        ArgumentNullException.ThrowIfNull(customUserColorIds);
+        return _writer.ExecuteMutationAsync(token, async ct =>
+        {
+            ArgumentNullException.ThrowIfNull(customUserColorIds);
 
-        var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
+            using var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
 
-        if (customUserColorIds.Count == 0)
-            return;
+            if (customUserColorIds.Count == 0)
+                return;
 
-        _customUserColorService.DeleteCustomUserColors(customUserColorIds, bundle.UserPasswordsData);
-        await _writer.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Passwords, true, ct);
+            _customUserColorService.DeleteCustomUserColors(customUserColorIds, bundle.UserPasswordsData);
+            await _writer.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Passwords, true, ct);
+
+        }, ct);
     }
 
 
-    public async Task ExportCustomUserColorsToUserAsync(
+    public Task ExportCustomUserColorsToUserAsync(
         Guid sourceToken,
         ExportCustomUserColorsToUserRequest request,
         CancellationToken ct = default)
     {
-        if (!request.Validate(out var errors))
-            throw new InvalidInputException(errors);
-
-        var sourceUid = _sessions.GetUidFromToken(sourceToken);
-        var targetUid = _sessions.GetUidFromToken(request.TargetToken);
-        if (sourceUid == targetUid)
-            throw new InvalidInputException(["TargetToken"]);
-
-        var sourceBundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(sourceToken, ct);
-        var targetBundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(request.TargetToken, ct);
-
-        _customUserColorService.ExportCustomUserColors(
-            request.CustomUserColorIds!,
-            sourceBundle.UserPasswordsData,
-            targetBundle.UserPasswordsData);
-
-        await _writer.UpdateUserDataBundleAsync(
-            targetBundle,
-            request.TargetToken,
-            UserDataBlobKind.Passwords,
-            true,
-            ct);
-
-        if (!request.DeleteOriginal)
-            return;
-
-        try
+        return _writer.ExecuteMutationsAsync(sourceToken, request.TargetToken, async ct =>
         {
-            _customUserColorService.DeleteCustomUserColors(
+            if (!request.Validate(out var errors))
+                throw new InvalidInputException(errors);
+
+            var sourceUid = _sessions.GetUidFromToken(sourceToken);
+            var targetUid = _sessions.GetUidFromToken(request.TargetToken);
+            if (sourceUid == targetUid)
+                throw new InvalidInputException(["TargetToken"]);
+
+            using var sourceBundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(sourceToken, ct);
+            using var targetBundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(request.TargetToken, ct);
+
+            _customUserColorService.ExportCustomUserColors(
                 request.CustomUserColorIds!,
-                sourceBundle.UserPasswordsData);
+                sourceBundle.UserPasswordsData,
+                targetBundle.UserPasswordsData);
+
             await _writer.UpdateUserDataBundleAsync(
-                sourceBundle,
-                sourceToken,
+                targetBundle,
+                request.TargetToken,
                 UserDataBlobKind.Passwords,
                 true,
                 ct);
-        }
-        catch (MutationPartiallyCommittedException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            throw new MutationPartiallyCommittedException(
-                "The custom-color export was committed to the target profile, but source cleanup did not complete.",
-                innerException: ex);
-        }
+
+            if (!request.DeleteOriginal)
+                return;
+
+            try
+            {
+                _customUserColorService.DeleteCustomUserColors(
+                    request.CustomUserColorIds!,
+                    sourceBundle.UserPasswordsData);
+                await _writer.UpdateUserDataBundleAsync(
+                    sourceBundle,
+                    sourceToken,
+                    UserDataBlobKind.Passwords,
+                    true,
+                    ct);
+            }
+            catch (MutationPartiallyCommittedException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new MutationPartiallyCommittedException(
+                    "The custom-color export was committed to the target profile, but source cleanup did not complete.",
+                    innerException: ex);
+            }
+
+        }, ct);
     }
 
 
-    public async Task UpdateCustomUserColorAsync(Guid token, UpdateCustomUserColorRequest request, CancellationToken ct = default)
+    public Task UpdateCustomUserColorAsync(Guid token, UpdateCustomUserColorRequest request, CancellationToken ct = default)
     {
-        var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
-        _customUserColorService.UpdateCustomUserColor(request, bundle.UserPasswordsData);
-        await _writer.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Passwords, true, ct);
+        return _writer.ExecuteMutationAsync(token, async ct =>
+        {
+            using var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
+            _customUserColorService.UpdateCustomUserColor(request, bundle.UserPasswordsData);
+            await _writer.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Passwords, true, ct);
+
+        }, ct);
     }
 }

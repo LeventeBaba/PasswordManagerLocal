@@ -160,8 +160,6 @@ public sealed class NetworkDeltaLifecycleService : INetworkDeltaLifecycleService
     {
         sourceDevice.LastSync = DateTime.UtcNow;
         sourceDevice.LastSeen = DateTime.UtcNow;
-        sourceDevice.InvalidSyncAttemptCount = 0;
-        sourceDevice.LastInvalidSyncAttemptAt = null;
         sourceDevice.GenerateIntegrityHash();
 
         await RefreshCachedDeviceAsync(sourceDevice, ct);

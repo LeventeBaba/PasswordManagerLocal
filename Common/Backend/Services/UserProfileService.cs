@@ -49,7 +49,7 @@ public class UserProfileService : IUserProfileService
     public async Task<UserProfileInfoResponse> GetUserProfileInfoAsync(Guid token, CancellationToken ct = default)
     {
         var user = await _lookup.GetAndVerifyUserAsync(token, ct);
-        var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct, user);
+        using var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct, user);
         return EndpointResponseMapper.ToUserProfileInfoResponse(
             bundle.UserData,
             bundle.GeneralUserData,
@@ -93,7 +93,7 @@ public class UserProfileService : IUserProfileService
         if (user.UId != expectedUserId)
             throw new InvalidTokenException();
 
-        var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct, user);
+        using var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct, user);
         var usernameBytes = Encoding.UTF8.GetBytes(newUsername);
 
         try
@@ -123,25 +123,29 @@ public class UserProfileService : IUserProfileService
     }
 
 
-    public async Task UpdateUserProfileInfoAsync(UpdateUserProfileRequest request, CancellationToken ct = default)
+    public Task UpdateUserProfileInfoAsync(UpdateUserProfileRequest request, CancellationToken ct = default)
     {
-        if (!request.Validate(out var errors))
-            throw new InvalidInputException(errors);
+        return _writer.ExecuteMutationAsync(request.Token, async ct =>
+        {
+            if (!request.Validate(out var errors))
+                throw new InvalidInputException(errors);
 
-        var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(request.Token, ct);
+            using var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(request.Token, ct);
 
-        if (request.NewEamil is not null)
-            bundle.GeneralUserData.Email = request.NewEamil;
+            if (request.NewEamil is not null)
+                bundle.GeneralUserData.Email = request.NewEamil;
 
-        if (request.newFirstName is not null)
-            bundle.GeneralUserData.FirstName = request.newFirstName;
+            if (request.newFirstName is not null)
+                bundle.GeneralUserData.FirstName = request.newFirstName;
 
-        if (request.NewLastName is not null)
-            bundle.GeneralUserData.LastName = request.NewLastName;
+            if (request.NewLastName is not null)
+                bundle.GeneralUserData.LastName = request.NewLastName;
 
-        bundle.GeneralUserData.LastUpdatedAt = DateTime.UtcNow;
-        bundle.GeneralUserData.Version = _versionClock.Next();
+            bundle.GeneralUserData.LastUpdatedAt = DateTime.UtcNow;
+            bundle.GeneralUserData.Version = _versionClock.Next();
 
-        await _writer.UpdateUserDataBundleAsync(bundle, request.Token, UserDataBlobKind.General, true, ct);
+            await _writer.UpdateUserDataBundleAsync(bundle, request.Token, UserDataBlobKind.General, true, ct);
+
+        }, ct);
     }
 }

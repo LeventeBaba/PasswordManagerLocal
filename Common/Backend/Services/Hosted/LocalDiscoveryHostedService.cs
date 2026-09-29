@@ -324,7 +324,7 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
 
         _syncQueryLoopCancellation = new CancellationTokenSource();
         var token = _syncQueryLoopCancellation.Token;
-        _syncQueryLoopTask = Task.Run(() => SyncQueryLoopAsync(token), CancellationToken.None);
+        _syncQueryLoopTask = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => SyncQueryLoopAsync(token), CancellationToken.None);
     }
 
 

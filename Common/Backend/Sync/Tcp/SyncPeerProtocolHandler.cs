@@ -17,6 +17,9 @@ using PasswordManagerLocal.Common.Backend.Sync.Enrollment;
 using PasswordManagerLocal.Common.Backend.Sync.Presence;
 
 using PasswordManagerLocal.Common.Backend.Diagnostics;
+using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Discovery;
+using System.Net;
+using System.Net.Sockets;
 
 namespace PasswordManagerLocal.Common.Backend.Sync.Tcp;
 
@@ -87,7 +90,6 @@ public sealed class SyncPeerProtocolHandler
             ValidateIncomingProtocolVersion(context.RemoteProtocolVersion.Value);
             remoteDevice = await ValidateRemoteDeviceAsync(scope.ServiceProvider, context, null, null, ct);
             var applier = scope.ServiceProvider.GetRequiredService<IIncomingDeltaApplierService>();
-            var deviceSecurity = scope.ServiceProvider.GetRequiredService<IDeviceSecurityService>();
             var identity = scope.ServiceProvider.GetRequiredService<IDeviceIdentityService>();
 
             var lastSyncedTs = 0L;
@@ -132,12 +134,18 @@ public sealed class SyncPeerProtocolHandler
                     controlOperationReceipts.Add(ToProtoReceipt(applyResult.UserControlOperationReceipt));
             }
 
-            await deviceSecurity.ResetInvalidIncomingSyncAsync(remoteDevice, ct);
+            // Authenticated success does not erase abuse evidence. Explicit administrative
+            // reauthorization owns counter reset; an empty or replayed call proves no repair.
 
             var ack = new Ack { LastSyncedTs = lastSyncedTs };
             ack.UserSnapshotReceipts.AddRange(snapshotReceipts);
             ack.UserControlOperationReceipts.AddRange(controlOperationReceipts);
             return ack;
+        }
+        catch (SyncStateUnavailableException ex)
+        {
+            BackendDebugLog.Warning($"Local synchronization retry: {ex.Message}", category: "Synchronization");
+            throw new SyncProtocolException(SyncProtocolStatusCode.Unavailable, "Local state is temporarily unavailable.");
         }
         catch (SyncProtocolException ex)
         {
@@ -187,7 +195,14 @@ public sealed class SyncPeerProtocolHandler
             ValidateAuthenticatedSyncContext(context);
             remoteDevice = await ValidateRemoteDeviceAsync(scope.ServiceProvider, context, null, null, ct);
             var antiEntropy = scope.ServiceProvider.GetRequiredService<IUserSnapshotAntiEntropyService>();
-            return await antiEntropy.BuildInventoryReplyAsync(remoteDevice.Id, request, ct);
+            var reply = await antiEntropy.BuildInventoryReplyAsync(remoteDevice.Id, request, ct);
+            await AddAuthorizedEndpointHintsAsync(scope.ServiceProvider, remoteDevice.Id, reply, ct);
+            return reply;
+        }
+        catch (SyncStateUnavailableException ex)
+        {
+            BackendDebugLog.Warning($"Snapshot retry: {ex.Message}", category: "Synchronization");
+            throw new SyncProtocolException(SyncProtocolStatusCode.Unavailable, "Snapshot state changed; exchange inventory again.");
         }
         catch (InvalidDataException ex)
         {
@@ -207,6 +222,55 @@ public sealed class SyncPeerProtocolHandler
         }
     }
 
+    private static async Task AddAuthorizedEndpointHintsAsync(
+        IServiceProvider services, Guid remoteDeviceId, UserSnapshotInventoryExchangeReply reply, CancellationToken ct)
+    {
+        var links = services.GetRequiredService<IUserDeviceRepository>();
+        var localLinks = services.GetRequiredService<ILocalUserDeviceRepository>();
+        var endpoints = services.GetRequiredService<IDiscoveredDeviceEndpointRegistry>();
+        var identity = services.GetRequiredService<IDeviceIdentityService>();
+        var shared = await links.ListByDeviceAsync(remoteDeviceId, ct);
+        var included = new HashSet<Guid>();
+        foreach (var remoteLink in shared)
+        {
+            if (reply.EndpointHints.Count >= SyncConstants.MaxPeerEndpointHints) break;
+            if (remoteLink.IsDeleted || !remoteLink.IsSyncOn ||
+                !await localLinks.IsSyncOnAsync(remoteLink.UserId, ct)) continue;
+            try { remoteLink.VerifyIntegrity(); }
+            catch (Exception ex) when (ex is InvalidDataException or PasswordManagerLocal.Common.Contracts.Errors.InvalidDataIntegrityException) { continue; }
+
+            foreach (var candidate in await links.ListByUserWithDevicesAsync(remoteLink.UserId, ct))
+            {
+                if (reply.EndpointHints.Count >= SyncConstants.MaxPeerEndpointHints) break;
+                var device = candidate.Device;
+                if (candidate.IsDeleted || !candidate.IsSyncOn || device is null ||
+                    device.Id == remoteDeviceId || device.Id == identity.LocalDeviceId ||
+                    !device.IsTrusted || device.IsBlocked || included.Contains(device.Id)) continue;
+                try { candidate.VerifyIntegrity(); device.VerifyIntegrity(); }
+                catch (Exception ex) when (ex is InvalidDataException or PasswordManagerLocal.Common.Contracts.Errors.InvalidDataIntegrityException) { continue; }
+                if (!endpoints.TryGetByFingerprint(device.TlsCertFingerprint, out var endpoint) || endpoint is null ||
+                    !endpoints.IsRecentlyDiscovered(device.TlsCertFingerprint, TimeSpan.FromMinutes(2)) ||
+                    !IsPrivateEndpoint(endpoint.Host, endpoint.Port)) continue;
+                included.Add(device.Id);
+                reply.EndpointHints.Add(new PeerEndpointHint
+                {
+                    DeviceId = device.Id.ToString("N"), Host = endpoint.Host, Port = endpoint.Port,
+                    TlsCertFingerprint = device.TlsCertFingerprint
+                });
+            }
+        }
+    }
+
+    private static bool IsPrivateEndpoint(string host, int port)
+    {
+        if (port is < 1 or > 65535 || !IPAddress.TryParse(host, out var ip) ||
+            ip.AddressFamily != AddressFamily.InterNetwork) return false;
+        var bytes = ip.GetAddressBytes();
+        return bytes[0] == 10 || bytes[0] == 127 ||
+            (bytes[0] == 172 && bytes[1] is >= 16 and <= 31) ||
+            (bytes[0] == 192 && bytes[1] == 168);
+    }
+
 
     public async Task<IReadOnlyList<NetworkDelta>> RequestUserSnapshotsAsync(
         UserSnapshotRequestBatch request,
@@ -224,6 +288,11 @@ public sealed class SyncPeerProtocolHandler
             remoteDevice = await ValidateRemoteDeviceAsync(scope.ServiceProvider, context, null, null, ct);
             var antiEntropy = scope.ServiceProvider.GetRequiredService<IUserSnapshotAntiEntropyService>();
             return await antiEntropy.BuildRequestedSnapshotDeltasAsync(remoteDevice.Id, request.Requests, ct);
+        }
+        catch (SyncStateUnavailableException ex)
+        {
+            BackendDebugLog.Warning($"Snapshot retry: {ex.Message}", category: "Synchronization");
+            throw new SyncProtocolException(SyncProtocolStatusCode.Unavailable, "Snapshot state changed; exchange inventory again.");
         }
         catch (InvalidDataException ex)
         {
@@ -257,6 +326,11 @@ public sealed class SyncPeerProtocolHandler
             remoteDevice = await ValidateRemoteDeviceAsync(scope.ServiceProvider, context, null, null, ct);
             var antiEntropy = scope.ServiceProvider.GetRequiredService<IUserControlOperationAntiEntropyService>();
             return await antiEntropy.BuildInventoryReplyAsync(remoteDevice.Id, request, ct);
+        }
+        catch (SyncStateUnavailableException ex)
+        {
+            BackendDebugLog.Warning($"Control inventory retry: {ex.Message}", category: "Synchronization");
+            throw new SyncProtocolException(SyncProtocolStatusCode.Unavailable, "Control inventory changed; exchange inventory again.");
         }
         catch (InvalidDataException ex)
         {
@@ -292,6 +366,11 @@ public sealed class SyncPeerProtocolHandler
             remoteDevice = await ValidateRemoteDeviceAsync(scope.ServiceProvider, context, null, null, ct);
             var antiEntropy = scope.ServiceProvider.GetRequiredService<IUserControlOperationAntiEntropyService>();
             return await antiEntropy.BuildRequestedOperationDeltasAsync(remoteDevice.Id, request.Requests, ct);
+        }
+        catch (SyncStateUnavailableException ex)
+        {
+            BackendDebugLog.Warning($"Control relay retry: {ex.Message}", category: "Synchronization");
+            throw new SyncProtocolException(SyncProtocolStatusCode.Unavailable, "Control inventory changed; exchange inventory again.");
         }
         catch (InvalidDataException ex)
         {
@@ -743,17 +822,16 @@ public sealed class SyncPeerProtocolHandler
     }
 
 
-    private bool ShouldRecordHelloFailure(Exception exception) =>
-        exception is not SyncProtocolException
-        {
-            StatusCode: SyncProtocolStatusCode.Unavailable
-        } &&
-        !(exception is SyncProtocolException protocolException &&
-          protocolException.StatusCode == SyncProtocolStatusCode.FailedPrecondition &&
-          protocolException.Message.Contains("Database version", StringComparison.OrdinalIgnoreCase)) &&
-        !(exception is SyncProtocolException protocolException2 &&
-          protocolException2.StatusCode == SyncProtocolStatusCode.PermissionDenied &&
-          string.Equals(protocolException2.Message, "Remote device is not linked to an enabled local user.", StringComparison.Ordinal));
+    private bool ShouldRecordHelloFailure(Exception exception) => exception switch
+    {
+        // Version skew, disabled routes, and local failures are not peer misconduct.
+        SyncProtocolException { StatusCode: SyncProtocolStatusCode.PermissionDenied } protocol =>
+            !string.Equals(protocol.Message, "Remote device is not linked to an enabled local user.", StringComparison.Ordinal),
+        SyncProtocolException { StatusCode: SyncProtocolStatusCode.InvalidArgument or SyncProtocolStatusCode.ResourceExhausted or SyncProtocolStatusCode.Unauthenticated } => true,
+        // ValidateRemoteDeviceAsync classifies every attributable identity failure with a
+        // protocol status. A repository/verification exception here describes local state.
+        _ => false
+    };
 
 
     private async Task<Device?> TryFindRemoteDeviceForInvalidAttemptAsync(IServiceProvider services, PeerConnectionContext context, CancellationToken ct)

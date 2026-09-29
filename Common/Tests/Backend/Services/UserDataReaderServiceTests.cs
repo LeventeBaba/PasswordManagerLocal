@@ -12,7 +12,7 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 public sealed class UserDataReaderServiceTests
 {
     [TestMethod]
-    public async Task GetLoadAndVerifyUserData_FirstLoadThenCache_ReturnsSameBundle()
+    public async Task GetLoadAndVerifyUserData_ReturnsIndependentCanonicalBundles()
     {
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
@@ -21,10 +21,12 @@ public sealed class UserDataReaderServiceTests
 
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("reader_user"));
 
-        var first = await reader.GetLoadAndVerifyUserDataBundleAsync(token);
-        var second = await reader.GetLoadAndVerifyUserDataBundleAsync(token);
+        using var first = await reader.GetLoadAndVerifyUserDataBundleAsync(token);
+        using var second = await reader.GetLoadAndVerifyUserDataBundleAsync(token);
 
-        MSTestAssert.AreSame(first, second);
+        MSTestAssert.AreNotSame(first, second);
+        first.GeneralUserData.FirstName = "Changed working copy";
+        MSTestAssert.AreNotEqual(first.GeneralUserData.FirstName, second.GeneralUserData.FirstName);
         MSTestAssert.IsTrue(cache.TryGetUserDataBundle(token, out _));
     }
 

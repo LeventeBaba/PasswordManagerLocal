@@ -179,17 +179,19 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
                 await using var transaction = await _uow.BeginTransactionAsync(lifecycleToken);
                 try
                 {
-                    var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(token, lifecycleToken, user);
+                    using var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(token, lifecycleToken, user);
                     var now = DateTimeOffset.UtcNow;
                     var encryptedDevice = bundle.UserDevicesData.Devices.FirstOrDefault(item => item.Id == deviceId);
+                    // Membership can arrive before its encrypted presentation metadata. The
+                    // removal must still dominate a late snapshot containing that metadata.
+                    TombstoneCleanupUtil.AddOrUpdateDeletedUserDevice(bundle.UserDevicesData, deviceId, now, encryptedDeviceRemovalVersion);
                     if (encryptedDevice is not null)
                     {
-                        TombstoneCleanupUtil.AddOrUpdateDeletedUserDevice(bundle.UserDevicesData, encryptedDevice.Id, now, encryptedDeviceRemovalVersion);
                         encryptedDevice.Dispose();
                         bundle.UserDevicesData.Devices.Remove(encryptedDevice);
-                        await _userDataWriter.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Devices, false, lifecycleToken);
-                        user = await _userLookup.GetAndVerifyUserAsync(token, lifecycleToken);
                     }
+                    await _userDataWriter.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Devices, false, lifecycleToken);
+                    user = await _userLookup.GetAndVerifyUserAsync(token, lifecycleToken);
 
                     var envelope = await _controlWriter.CreateAppliedDeviceRemovalUnderLifecycleAsync(user, payload, lifecycleToken);
                     user = await _userLookup.GetAndVerifyUserAsync(token, lifecycleToken);

@@ -14,6 +14,7 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 
 public sealed class UserLoginService : IUserLoginService
 {
+    private readonly IUserLoginIdentityProjectionService _loginIdentities;
     private readonly IUserLookupService _userLookup;
     private readonly IUserDataReaderService _userDataReader;
     private readonly IUserDataWriterService _userDataWriter;
@@ -29,6 +30,7 @@ public sealed class UserLoginService : IUserLoginService
 
     public UserLoginService(
         IUserLookupService userLookup,
+        IUserLoginIdentityProjectionService loginIdentities,
         IUserDataReaderService userDataReader,
         IUserDataWriterService userDataWriter,
         IRememberMeService rememberMe,
@@ -42,6 +44,7 @@ public sealed class UserLoginService : IUserLoginService
         IUserDataRecoveryCoordinator? recoveryCoordinator = null)
     {
         _userLookup = userLookup;
+        _loginIdentities = loginIdentities;
         _userDataReader = userDataReader;
         _userDataWriter = userDataWriter;
         _rememberMe = rememberMe;
@@ -64,7 +67,10 @@ public sealed class UserLoginService : IUserLoginService
         try
         {
             var initialResolution = await _userLookup.ResolveUsernameAsync(usernameBytes, ct);
-            if (initialResolution.State != UserLoginIdentityMatchState.Matched || !initialResolution.UserId.HasValue)
+            if (!CanAttemptLogin(initialResolution) && _recoveryCoordinator is not null &&
+                initialResolution.State is (UserLoginIdentityMatchState.InvalidProjection or UserLoginIdentityMatchState.ProjectionOutdated))
+                initialResolution = await _loginIdentities.FindSignedRecoveryCandidateAsync(usernameBytes, ct);
+            if (!CanAttemptLogin(initialResolution))
             {
                 BackendDebugLog.Warning(
                     $"Login username resolution failed. State={initialResolution.State}, " +
@@ -86,6 +92,11 @@ public sealed class UserLoginService : IUserLoginService
         }
     }
 
+    private bool CanAttemptLogin(UserLoginIdentityMatchResult result) =>
+        result.UserId.HasValue && (result.State == UserLoginIdentityMatchState.Matched ||
+            (_recoveryCoordinator is not null && result.State is
+                UserLoginIdentityMatchState.InvalidProjection or UserLoginIdentityMatchState.ProjectionOutdated));
+
     private async Task<Guid> LoginResolvedUnderLifecycleAsync(
         LoginRequest request,
         byte[] usernameBytes,
@@ -93,8 +104,14 @@ public sealed class UserLoginService : IUserLoginService
         CancellationToken ct)
     {
         var prePasswordResolution = await _userLookup.ResolveUsernameAsync(usernameBytes, ct);
-        if (prePasswordResolution.State != UserLoginIdentityMatchState.Matched ||
-            prePasswordResolution.UserId != expectedUserId)
+        if (prePasswordResolution.State is UserLoginIdentityMatchState.InvalidProjection or UserLoginIdentityMatchState.ProjectionOutdated)
+        {
+            await _loginIdentities.RecalculateAsync(expectedUserId, ct);
+            prePasswordResolution = await _userLookup.ResolveUsernameAsync(usernameBytes, ct);
+            if (!CanAttemptLogin(prePasswordResolution) && _recoveryCoordinator is not null)
+                prePasswordResolution = await _loginIdentities.FindSignedRecoveryCandidateAsync(usernameBytes, ct);
+        }
+        if (!CanAttemptLogin(prePasswordResolution) || prePasswordResolution.UserId != expectedUserId)
             throw new UsernameChangedDuringLoginException();
 
         var user = await _userLookup.GetUserByUidAsync(expectedUserId, ct)
@@ -115,6 +132,13 @@ public sealed class UserLoginService : IUserLoginService
                 authenticatedRecoverySalt = await _recoveryCoordinator.TryResolvePasswordSaltAsync(user.UId, ct);
             }
 
+            if (prePasswordResolution.State != UserLoginIdentityMatchState.Matched)
+            {
+                authenticatedRecoverySalt ??= _recoveryCoordinator is null ? null :
+                    await _recoveryCoordinator.TryResolvePasswordSaltAsync(user.UId, ct);
+                if (authenticatedRecoverySalt is null)
+                    throw new UnauthorizedAccessException("Authentication failed.");
+            }
             var passwordSalt = authenticatedRecoverySalt ?? user.PasswordSalt;
             if (passwordSalt.Length != CryptographyConstants.Sha256HashSizeInBytes)
                 throw new UnauthorizedAccessException("Authentication failed.");
@@ -144,7 +168,7 @@ public sealed class UserLoginService : IUserLoginService
             }
 
             user = await _userLookup.GetAndVerifyUserByUidAsync(user.UId, ct);
-            var bundle = await _userDataReader.GetAndVerifyUserDataBundleAsync(user, key, ct);
+            using var bundle = await _userDataReader.GetAndVerifyUserDataBundleAsync(user, key, ct);
             try
             {
                 UserLoginIdentityMetadataUtil.Verify(user, bundle.GeneralUserData);

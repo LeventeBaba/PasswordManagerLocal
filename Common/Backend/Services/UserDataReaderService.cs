@@ -73,6 +73,7 @@ public sealed class UserDataReaderService : IUserDataReaderService
 
             var bundle = new UserDataBundle
             {
+                CanonicalGeneration = UserDataGeneration.Capture(user),
                 UserData = userData,
                 GeneralUserData = await generalTask,
                 UserPasswordsData = await passwordsTask,
@@ -97,7 +98,6 @@ public sealed class UserDataReaderService : IUserDataReaderService
     {
         using var key = _interactiveState.GetEncryptionKeyFromToken(token);
         var bundle = await GetAndVerifyUserDataBundleAsync(user, key, ct);
-        _interactiveState.SetUserBlobKeys(token, bundle.UserData);
         return bundle;
     }
 
@@ -131,18 +131,17 @@ public sealed class UserDataReaderService : IUserDataReaderService
     public async Task<UserData> GetLoadAndVerifyUserDataAsync(Guid token, CancellationToken ct = default, User? user = null)
     {
         var bundle = await GetLoadAndVerifyUserDataBundleAsync(token, ct, user);
+        bundle.GeneralUserData.Dispose();
+        bundle.UserPasswordsData.Dispose();
+        bundle.UserDevicesData.Dispose();
         return bundle.UserData;
     }
 
     public async Task<UserDataBundle> GetLoadAndVerifyUserDataBundleAsync(Guid token, CancellationToken ct = default, User? user = null)
     {
-        if (TryGetAndVerifyUserDataBundleFromCache(token, out var foundBundle) && foundBundle is not null)
-            return foundBundle;
-
         user ??= await _users.GetAndVerifyUserAsync(token, ct);
 
         var bundle = await GetAndVerifyUserDataBundleAsync(user, token, ct);
-        _interactiveState.SetUserDataBundle(token, bundle);
         return bundle;
     }
 

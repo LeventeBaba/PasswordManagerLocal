@@ -41,7 +41,7 @@ internal sealed class DevicePresencePollingHostedService : IInteractiveBackendHo
 
             var lifetime = new CancellationTokenSource();
             _cancellation = lifetime;
-            _loopTask = Task.Run(() => RunAsync(lifetime.Token), CancellationToken.None);
+            _loopTask = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => RunAsync(lifetime.Token), CancellationToken.None);
             BackendDebugLog.Debug("Interactive authenticated presence polling started.", "Presence");
         }
         finally

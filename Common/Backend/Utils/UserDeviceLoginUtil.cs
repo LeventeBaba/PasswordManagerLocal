@@ -29,6 +29,8 @@ public static class UserDeviceLoginUtil
             ? UtcDateTimeUtil.ToUtc(device.LastLoginDate)
             : null;
         device.LastLoginDate = loginTime.UtcDateTime;
+        // Login activity must not advance the version of an unchanged display name.
+        device.NameVersion ??= device.Version;
         device.LastUpdatedAt = loginTime;
         device.Version = loginVersion;
         device.GenerateIntegrityHash();

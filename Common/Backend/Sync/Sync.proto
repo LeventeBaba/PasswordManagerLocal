@@ -114,9 +114,17 @@ message UserSnapshotRequest {
   bytes expected_snapshot_hash = 7;
 }
 
+message PeerEndpointHint {
+  string device_id = 1;
+  string host = 2;
+  int32 port = 3;
+  string tls_cert_fingerprint = 4;
+}
+
 message UserSnapshotInventoryExchangeReply {
   repeated UserSnapshotUserInventory users = 1;
   repeated UserSnapshotRequest requested_snapshots = 2;
+  repeated PeerEndpointHint endpoint_hints = 3;
 }
 
 message UserSnapshotRequestBatch {

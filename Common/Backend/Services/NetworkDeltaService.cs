@@ -77,6 +77,11 @@ public sealed class NetworkDeltaService : INetworkDeltaService
 
         await _protocol.ValidateSourceAuthorizationAsync(sourceDevice, payload, ct);
 
+        return await ApplyValidatedAsync(delta, sourceDevice, payload, ct);
+    }
+
+    private async Task<NetworkDeltaApplyResult> ApplyValidatedAsync(NetworkDelta delta, Device sourceDevice, SyncDeltaPayload payload, CancellationToken ct)
+    {
         if (payload.UserControlOperation is not null)
         {
             var receipt = await _controlOperationInbox.StoreAndApplyAsync(
@@ -145,6 +150,8 @@ public sealed class NetworkDeltaService : INetworkDeltaService
         if (!durable)
             return new NetworkDeltaApplyResult(transportTimestamp, receipt);
 
+        try
+        {
         var user = await users.GetByIdAsync(envelope.UserId, ct);
         if (user is null || !keyResolver.TryResolve(user, out var key) || key is null)
             return new NetworkDeltaApplyResult(transportTimestamp, receipt);
@@ -170,6 +177,10 @@ public sealed class NetworkDeltaService : INetworkDeltaService
             }
         }
 
+        var refreshedUser = await users.GetByIdWithRelationsAsync(envelope.UserId, ct);
+        if (refreshedUser is not null)
+            await _interactiveSessions.RefreshSyncedUserSessionsAsync(refreshedUser, ct);
+
         // A batch merge can succeed because of a different origin while this exact candidate
         // was quarantined. Report MergedImmediately only when durable knowledge proves that the
         // acknowledged origin revision is actually covered by canonical state.
@@ -184,9 +195,6 @@ public sealed class NetworkDeltaService : INetworkDeltaService
                 return new NetworkDeltaApplyResult(transportTimestamp, receipt);
         }
 
-        var refreshedUser = await users.GetByIdWithRelationsAsync(envelope.UserId, ct);
-        if (refreshedUser is not null)
-            await _interactiveSessions.RefreshSyncedUserSessionsAsync(refreshedUser, ct);
 
         var mergedReceipt = receipt with
         {
@@ -194,5 +202,12 @@ public sealed class NetworkDeltaService : INetworkDeltaService
             Detail = "The pending snapshot was durably stored and then incorporated into canonical state."
         };
         return new NetworkDeltaApplyResult(transportTimestamp, mergedReceipt);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or UnauthorizedAccessException or InvalidDataIntegrityException)
+        {
+            // The peer's signed envelope was already accepted and stored. A failure while
+            // merging or refreshing our own canonical state cannot be attributed to it.
+            throw new SyncStateUnavailableException("The verified snapshot is stored, but local merge is unavailable.", ex);
+        }
     }
 }

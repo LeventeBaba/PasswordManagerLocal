@@ -24,6 +24,12 @@ public sealed class LocalUserDeviceLinkManager
         _syncRuntime = syncRuntime;
     }
 
+    public async Task<LocalUserDevice> GetForDisplayAsync(Guid userId, CancellationToken ct) =>
+        await _localUserDevices.GetAsync(userId, ct) ?? new LocalUserDevice
+        {
+            UserId = userId, LocalDeviceIdentityId = _identity.LocalDeviceId, IsSyncOn = false
+        };
+
     public async Task<LocalUserDevice> GetOrCreateAsync(Guid userId, CancellationToken ct)
     {
         var link = await _localUserDevices.GetAsync(userId, ct);

@@ -43,6 +43,12 @@ public sealed class DiscoveredDeviceEndpointRegistry : IDiscoveredDeviceEndpoint
             return false;
         }
 
+        if (registeredEndpoint.Endpoint.ExpiresAtUtc is { } expires && expires <= _utcNow())
+        {
+            _endpointsByFingerprint.TryRemove(fingerprint, out _);
+            endpoint = null;
+            return false;
+        }
         endpoint = Clone(registeredEndpoint.Endpoint);
         return true;
     }
@@ -56,6 +62,8 @@ public sealed class DiscoveredDeviceEndpointRegistry : IDiscoveredDeviceEndpoint
         if (fingerprint.Length == 0 || !_endpointsByFingerprint.TryGetValue(fingerprint, out var registeredEndpoint))
             return false;
 
+        if (registeredEndpoint.Endpoint.ExpiresAtUtc is { } expires && expires <= _utcNow())
+            return false;
         var age = _utcNow() - registeredEndpoint.ObservedAt;
         return age >= TimeSpan.Zero && age <= maximumAge;
     }
@@ -74,6 +82,7 @@ public sealed class DiscoveredDeviceEndpointRegistry : IDiscoveredDeviceEndpoint
         {
             Host = endpoint.Host,
             Port = endpoint.Port,
-            TlsCertFingerprint = endpoint.TlsCertFingerprint
+            TlsCertFingerprint = endpoint.TlsCertFingerprint,
+            ExpiresAtUtc = endpoint.ExpiresAtUtc
         };
 }

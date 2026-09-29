@@ -1127,7 +1127,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
         CancelEnrollmentExpirationLocked();
         var cancellation = new CancellationTokenSource();
         _enrollmentExpirationCancellation = cancellation;
-        _ = ExpireEnrollmentSessionAsync(session.SessionId, session.ExpiresAt, cancellation);
+        _ = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => ExpireEnrollmentSessionAsync(session.SessionId, session.ExpiresAt, cancellation));
     }
 
 

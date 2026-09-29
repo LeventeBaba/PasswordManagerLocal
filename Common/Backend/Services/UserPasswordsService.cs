@@ -35,7 +35,7 @@ public sealed class UserPasswordsService : IUserPasswordsService
 
     public async Task<SavedPasswordsResponse> GetSavedPasswordsAsync(Guid token, CancellationToken ct = default)
     {
-        var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
+        using var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
         return new SavedPasswordsResponse
         {
             Passwords = _passwordService.ConvertToPasswordInfoResponses(bundle.UserPasswordsData),
@@ -45,96 +45,112 @@ public sealed class UserPasswordsService : IUserPasswordsService
     }
 
 
-    public async Task AddNewPasswordAsync(Guid token, NewPasswordRequest request, CancellationToken ct = default)
+    public Task AddNewPasswordAsync(Guid token, NewPasswordRequest request, CancellationToken ct = default)
     {
-        var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
-        await _passwordService.AddNewPassword(request, bundle.UserPasswordsData);
-        await _writer.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Passwords, true, ct);
+        return _writer.ExecuteMutationAsync(token, async ct =>
+        {
+            using var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
+            await _passwordService.AddNewPassword(request, bundle.UserPasswordsData);
+            await _writer.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Passwords, true, ct);
+
+        }, ct);
     }
 
 
-    public async Task RemovePasswordsAsync(
+    public Task RemovePasswordsAsync(
         Guid token,
         IReadOnlyList<Guid> passwordIds,
         CancellationToken ct = default)
     {
-        ArgumentNullException.ThrowIfNull(passwordIds);
+        return _writer.ExecuteMutationAsync(token, async ct =>
+        {
+            ArgumentNullException.ThrowIfNull(passwordIds);
 
-        var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
+            using var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
 
-        if (passwordIds.Count == 0)
-            return;
+            if (passwordIds.Count == 0)
+                return;
 
-        _passwordService.RemovePasswords(passwordIds, bundle.UserPasswordsData);
-        await _writer.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Passwords, true, ct);
+            _passwordService.RemovePasswords(passwordIds, bundle.UserPasswordsData);
+            await _writer.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Passwords, true, ct);
+
+        }, ct);
     }
 
 
     public async Task<byte[]> GetUnsecurePasswordAsync(Guid token, Guid passwordId, CancellationToken ct = default)
     {
-        var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
+        using var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
         return await _passwordService.GetUnsecurePasswordAsync(passwordId, bundle.UserPasswordsData);
     }
 
 
-    public async Task UpdatePasswordAsync(Guid token, UpdatePasswordRequest request, CancellationToken ct = default)
+    public Task UpdatePasswordAsync(Guid token, UpdatePasswordRequest request, CancellationToken ct = default)
     {
-        var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
-        await _passwordService.UpdatePasswordAsync(request, bundle.UserPasswordsData);
-        await _writer.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Passwords, true, ct);
+        return _writer.ExecuteMutationAsync(token, async ct =>
+        {
+            using var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
+            await _passwordService.UpdatePasswordAsync(request, bundle.UserPasswordsData);
+            await _writer.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Passwords, true, ct);
+
+        }, ct);
     }
 
-    public async Task ExportPasswordsToUserAsync(
+    public Task ExportPasswordsToUserAsync(
         Guid sourceToken,
         ExportPasswordsToUserRequest request,
         CancellationToken ct = default)
     {
-        if (!request.Validate(out var errors))
-            throw new InvalidInputException(errors);
-
-        var sourceUid = _sessions.GetUidFromToken(sourceToken);
-        var targetUid = _sessions.GetUidFromToken(request.TargetToken);
-        if (sourceUid == targetUid)
-            throw new InvalidInputException(["TargetToken"]);
-
-        var sourceBundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(sourceToken, ct);
-        var targetBundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(request.TargetToken, ct);
-
-        await _passwordService.ExportPasswordsAsync(
-            request.PasswordIds!,
-            sourceBundle.UserPasswordsData,
-            targetBundle.UserPasswordsData);
-
-        await _writer.UpdateUserDataBundleAsync(
-            targetBundle,
-            request.TargetToken,
-            UserDataBlobKind.Passwords,
-            true,
-            ct);
-
-        if (!request.DeleteOriginal)
-            return;
-
-        try
+        return _writer.ExecuteMutationsAsync(sourceToken, request.TargetToken, async ct =>
         {
-            _passwordService.RemovePasswords(request.PasswordIds!, sourceBundle.UserPasswordsData);
+            if (!request.Validate(out var errors))
+                throw new InvalidInputException(errors);
+
+            var sourceUid = _sessions.GetUidFromToken(sourceToken);
+            var targetUid = _sessions.GetUidFromToken(request.TargetToken);
+            if (sourceUid == targetUid)
+                throw new InvalidInputException(["TargetToken"]);
+
+            using var sourceBundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(sourceToken, ct);
+            using var targetBundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(request.TargetToken, ct);
+
+            await _passwordService.ExportPasswordsAsync(
+                request.PasswordIds!,
+                sourceBundle.UserPasswordsData,
+                targetBundle.UserPasswordsData);
+
             await _writer.UpdateUserDataBundleAsync(
-                sourceBundle,
-                sourceToken,
+                targetBundle,
+                request.TargetToken,
                 UserDataBlobKind.Passwords,
                 true,
                 ct);
-        }
-        catch (MutationPartiallyCommittedException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            throw new MutationPartiallyCommittedException(
-                "The password export was committed to the target profile, but source cleanup did not complete.",
-                innerException: ex);
-        }
+
+            if (!request.DeleteOriginal)
+                return;
+
+            try
+            {
+                _passwordService.RemovePasswords(request.PasswordIds!, sourceBundle.UserPasswordsData);
+                await _writer.UpdateUserDataBundleAsync(
+                    sourceBundle,
+                    sourceToken,
+                    UserDataBlobKind.Passwords,
+                    true,
+                    ct);
+            }
+            catch (MutationPartiallyCommittedException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new MutationPartiallyCommittedException(
+                    "The password export was committed to the target profile, but source cleanup did not complete.",
+                    innerException: ex);
+            }
+
+        }, ct);
     }
 
 }

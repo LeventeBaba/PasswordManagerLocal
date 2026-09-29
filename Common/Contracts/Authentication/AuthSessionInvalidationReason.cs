@@ -7,5 +7,6 @@ public enum AuthSessionInvalidationReason
     Expired,
     ProfilePasswordChanged,
     CanonicalRecovered,
-    ProfileRemoved
+    ProfileRemoved,
+    LocalDataVerificationFailed
 }

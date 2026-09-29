@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using PasswordManagerLocal.Common.Backend.Exceptions;
 using Google.Protobuf;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
@@ -18,6 +20,8 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 /// </summary>
 public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropyService
 {
+    private readonly IUserLifecycleCoordinator _lifecycle;
+    private readonly IServiceScopeFactory? _scopes;
     private readonly IUserRepository _users;
     private readonly IUserDeviceRepository _userDevices;
     private readonly ILocalUserDeviceRepository _localUsers;
@@ -39,8 +43,12 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
         IOutgoingDeltaBuilderService deltaBuilder,
         IDeviceIdentityService identity,
         IUserMembershipAuthorizationService membershipAuthorization,
-        IDeletedUserBarrierRepository? deletionBarriers = null)
+        IDeletedUserBarrierRepository? deletionBarriers = null,
+        IUserLifecycleCoordinator? lifecycle = null,
+        IServiceScopeFactory? scopes = null)
     {
+        _lifecycle = lifecycle ?? new UserLifecycleCoordinator();
+        _scopes = scopes;
         _users = users;
         _userDevices = userDevices;
         _localUsers = localUsers;
@@ -57,13 +65,28 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
         Guid peerDeviceId,
         CancellationToken ct = default)
     {
+        if (_scopes is not null)
+        {
+            using var scope = _scopes.CreateScope();
+            return await ((UserSnapshotAntiEntropyService)scope.ServiceProvider
+                .GetRequiredService<IUserSnapshotAntiEntropyService>()).BuildInventoryCoreAsync(peerDeviceId, ct);
+        }
+        return await BuildInventoryCoreAsync(peerDeviceId, ct);
+    }
+
+    private async Task<UserSnapshotInventoryExchangeRequest> BuildInventoryCoreAsync(Guid peerDeviceId, CancellationToken ct)
+    {
         await ValidatePeerAsync(peerDeviceId, ct);
         var result = new UserSnapshotInventoryExchangeRequest();
         var eligibleUsers = await LoadEligibleUsersAsync(peerDeviceId, ct);
 
         var totalEntries = 0;
-        foreach (var user in eligibleUsers.OrderBy(user => user.UId))
+        foreach (var eligible in eligibleUsers.OrderBy(user => user.UId))
         {
+            await _lifecycle.ExecuteAsync(eligible.UId, async ct =>
+            {
+            var user = await _users.GetByIdAsNoTrackingAsync(eligible.UId, ct);
+            if (user is null) return;
             var userInventory = new UserSnapshotUserInventory
             {
                 UserId = user.UId.ToString("N"),
@@ -77,14 +100,14 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
                          .ThenBy(item => item.OriginInstanceId))
             {
                 if (item.HighestStoredRevision < 0 || item.HighestMergedRevision < 0)
-                    throw new InvalidDataException("User revision knowledge contains an invalid revision.");
+                    throw new SyncStateUnavailableException("User revision knowledge contains an invalid revision.");
                 if (item.HighestStoredRevision > 0 &&
                     item.HighestStoredSnapshotHash.Length != SyncConstants.SyncDeltaPayloadHashBytes)
                 {
-                    throw new InvalidDataException("User revision knowledge is missing its known snapshot hash.");
+                    throw new SyncStateUnavailableException("User revision knowledge is missing its known snapshot hash.");
                 }
                 if (item.HighestStoredRevision == 0 && item.HighestStoredSnapshotHash.Length != 0)
-                    throw new InvalidDataException("User revision knowledge contains a hash without a known revision.");
+                    throw new SyncStateUnavailableException("User revision knowledge contains a hash without a known revision.");
 
                 // Knowledge records what has ever been received and merged, but an exact snapshot
                 // may be deleted after a successful true merge. Advertise "stored" only when the
@@ -104,17 +127,17 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
                 if (retained is not null)
                 {
                     if (retained.MembershipEpoch <= 0 || retained.MembershipEpoch > user.MembershipEpoch)
-                        throw new InvalidDataException("A retained user snapshot has an invalid historical membership epoch.");
+                        throw new SyncStateUnavailableException("A retained user snapshot has an invalid historical membership epoch.");
                     if (retained.Status is UserSyncSnapshotStatus.Pending or UserSyncSnapshotStatus.LocalPublished or UserSyncSnapshotStatus.MergedReceipt)
                     {
                         if (retained.OriginRevision <= 0 || retained.SnapshotHash.Length != SyncConstants.SyncDeltaPayloadHashBytes)
-                            throw new InvalidDataException("A retained user snapshot has invalid revision metadata.");
+                            throw new SyncStateUnavailableException("A retained user snapshot has invalid revision metadata.");
 
                         if (item.HighestStoredRevision < retained.OriginRevision ||
                             (item.HighestStoredRevision == retained.OriginRevision &&
                              !Hashing.Verify(item.HighestStoredSnapshotHash, retained.SnapshotHash)))
                         {
-                            throw new InvalidDataException("Retained snapshot is newer than, or conflicts with, durable revision knowledge.");
+                            throw new SyncStateUnavailableException("Retained snapshot is newer than, or conflicts with, durable revision knowledge.");
                         }
 
                         storedRevision = retained.OriginRevision;
@@ -123,13 +146,13 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
                     else if (retained.Status == UserSyncSnapshotStatus.IsolatedFork)
                     {
                         if (retained.OriginRevision <= 0 || retained.SnapshotHash.Length != SyncConstants.SyncDeltaPayloadHashBytes)
-                            throw new InvalidDataException("A quarantined user snapshot has invalid revision metadata.");
+                            throw new SyncStateUnavailableException("A quarantined user snapshot has invalid revision metadata.");
 
                         quarantinedRevision = retained.OriginRevision;
                         quarantinedHash = retained.SnapshotHash;
                         conflictingHash = retained.ConflictingSnapshotHash ?? [];
                         if (conflictingHash.Length is not (0 or SyncConstants.SyncDeltaPayloadHashBytes))
-                            throw new InvalidDataException("A quarantined user snapshot has an invalid conflicting hash.");
+                            throw new SyncStateUnavailableException("A quarantined user snapshot has an invalid conflicting hash.");
                     }
                 }
 
@@ -161,6 +184,7 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
             }
 
             result.Users.Add(userInventory);
+            }, ct);
         }
 
         return result;
@@ -286,6 +310,19 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
         IEnumerable<UserSnapshotRequest> requests,
         CancellationToken ct = default)
     {
+        if (_scopes is not null)
+        {
+            using var scope = _scopes.CreateScope();
+            return await ((UserSnapshotAntiEntropyService)scope.ServiceProvider
+                .GetRequiredService<IUserSnapshotAntiEntropyService>()).BuildRequestedSnapshotDeltasCoreAsync(
+                    peerDeviceId, requests, ct);
+        }
+        return await BuildRequestedSnapshotDeltasCoreAsync(peerDeviceId, requests, ct);
+    }
+
+    private async Task<IReadOnlyList<NetworkDelta>> BuildRequestedSnapshotDeltasCoreAsync(
+        Guid peerDeviceId, IEnumerable<UserSnapshotRequest> requests, CancellationToken ct)
+    {
         ArgumentNullException.ThrowIfNull(requests);
         var requestList = requests.ToList();
         if (requestList.Count > SyncConstants.MaxUserSnapshotRequestsPerCall)
@@ -312,14 +349,15 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
             ValidateRequest(request);
 
             if (_deletionBarriers is not null && await _deletionBarriers.ExistsAsync(userId, ct))
-                throw new InvalidDataException("The requested account identity is permanently deleted; ordinary snapshots are no longer relayable.");
+                throw new SyncStateUnavailableException("The requested account identity is permanently deleted; ordinary snapshots are no longer relayable.");
 
             var requestKey = (userId, originDeviceId, originInstanceId, request.UserKeyEpoch, request.OriginRevision);
             if (!seen.Add(requestKey))
                 throw new InvalidDataException("A duplicate user snapshot request was supplied.");
 
-            if (!await _localUsers.IsSyncOnAsync(userId, ct) ||
-                !await _userDevices.HasActiveLinkAsync(userId, peerDeviceId, ct))
+            if (!await _localUsers.IsSyncOnAsync(userId, ct))
+                throw new SyncStateUnavailableException("The local synchronization route is disabled.");
+            if (!await _userDevices.HasActiveLinkAsync(userId, peerDeviceId, ct))
             {
                 throw new UnauthorizedAccessException("The requesting peer cannot access this user.");
             }
@@ -327,7 +365,7 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
             var user = await _users.GetByIdAsNoTrackingAsync(userId, ct)
                 ?? throw new UnauthorizedAccessException("The requested user does not exist locally.");
             if (user.KeyEpoch != request.UserKeyEpoch || request.MembershipEpoch > user.MembershipEpoch)
-                throw new InvalidDataException("The requested snapshot epoch is not safely available from canonical state.");
+                throw new SyncStateUnavailableException("The requested snapshot epoch is not safely available from canonical state.");
 
             var snapshot = await _snapshots.GetExactAsync(
                 userId,
@@ -335,22 +373,29 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
                 originInstanceId,
                 request.UserKeyEpoch,
                 request.OriginRevision,
-                ct) ?? throw new InvalidDataException("The requested exact user snapshot is not stored locally.");
+                ct) ?? throw new SyncStateUnavailableException("The requested exact user snapshot is not stored locally.");
 
             if (snapshot.Status is not (UserSyncSnapshotStatus.Pending or UserSyncSnapshotStatus.LocalPublished or UserSyncSnapshotStatus.MergedReceipt))
-                throw new InvalidDataException("The requested user snapshot is not relayable.");
+                throw new SyncStateUnavailableException("The requested user snapshot is not relayable.");
             if (snapshot.MembershipEpoch != request.MembershipEpoch)
                 throw new InvalidDataException("The requested user snapshot membership epoch does not match.");
             if (!Hashing.Verify(snapshot.SnapshotHash, request.ExpectedSnapshotHash.ToByteArray()))
                 throw new InvalidDataException("The requested user snapshot hash does not match the stored envelope.");
 
-            var envelope = Deserialize(snapshot);
-            await _membershipAuthorization.VerifySnapshotAuthorAsync(envelope, ct);
-
-            var delta = await _deltaBuilder.BuildUserSnapshotRelayAsync(snapshot, peer, ct);
+            NetworkDelta delta;
+            try
+            {
+                var envelope = Deserialize(snapshot);
+                await _membershipAuthorization.VerifySnapshotAuthorAsync(envelope, ct);
+                delta = await _deltaBuilder.BuildUserSnapshotRelayAsync(snapshot, peer, ct);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or UnauthorizedAccessException)
+            {
+                throw new SyncStateUnavailableException("The retained local snapshot could not be verified.", ex);
+            }
             totalBytes += delta.Payload.Length;
             if (totalBytes > SyncConstants.MaxIncomingDeltaTotalBytesPerCall)
-                throw new InvalidDataException("The requested user snapshot relay batch is too large.");
+                throw new SyncStateUnavailableException("The requested user snapshot relay batch is too large.");
 
             results.Add(delta);
         }
@@ -405,12 +450,11 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
             var userId = ParseUserId(user);
             if (!seenUsers.Add(userId))
                 throw new InvalidDataException("The remote inventory contains duplicate users.");
-            if (!allowedUsers.TryGetValue(userId, out var allowed) ||
-                allowed.UserKeyEpoch != user.UserKeyEpoch ||
+            if (!allowedUsers.TryGetValue(userId, out var allowed))
+                throw new UnauthorizedAccessException("The remote inventory contains an unauthorized user.");
+            if (allowed.UserKeyEpoch != user.UserKeyEpoch ||
                 allowed.MembershipEpoch != user.MembershipEpoch)
-            {
-                throw new UnauthorizedAccessException("The remote inventory contains an unauthorized or stale user epoch.");
-            }
+                throw new SyncStateUnavailableException("The user epoch changed while peer inventories were exchanged.");
 
             var seenEntries = new HashSet<(Guid, Guid, long)>();
             foreach (var entry in user.Revisions)

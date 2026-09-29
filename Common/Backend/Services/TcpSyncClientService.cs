@@ -230,7 +230,8 @@ public sealed class TcpSyncClientService : ISyncTransportClientService
         var reply = frame.Parse(UserSnapshotInventoryExchangeReply.Parser);
         if (reply.Users.Count > SyncConstants.MaxUserSnapshotInventoryUsers ||
             reply.Users.Sum(user => user.Revisions.Count) > SyncConstants.MaxUserSnapshotInventoryEntries ||
-            reply.RequestedSnapshots.Count > SyncConstants.MaxUserSnapshotRequestsPerCall)
+            reply.RequestedSnapshots.Count > SyncConstants.MaxUserSnapshotRequestsPerCall ||
+            reply.EndpointHints.Count > SyncConstants.MaxPeerEndpointHints)
         {
             throw new InvalidDataException("The remote user snapshot inventory exceeds the protocol limits.");
         }

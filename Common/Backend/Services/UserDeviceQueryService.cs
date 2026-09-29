@@ -44,25 +44,29 @@ public sealed class UserDeviceQueryService : IUserDeviceQueryService
     public async Task<IReadOnlyList<UserDeviceInfoResponse>> GetUserDevicesAsync(Guid token, CancellationToken ct = default)
     {
         var user = await _userLookup.GetAndVerifyUserAsync(token, ct);
-        var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(token, ct, user);
+        using var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(token, ct, user);
         var userDevicesData = bundle.UserDevicesData;
-        var localLink = await _localLinkManager.GetOrCreateAsync(user.UId, ct);
+        var localLink = await _localLinkManager.GetForDisplayAsync(user.UId, ct);
         var links = await _userDevices.ListByUserWithDevicesAsync(user.UId, ct);
 
-        var changed = _metadataEditor.EnsureDeviceData(userDevicesData, _identity.LocalDeviceId, DateTimeOffset.UtcNow);
-        foreach (var link in links.Where(x => !x.IsDeleted))
-            changed |= _metadataEditor.EnsureDeviceData(userDevicesData, link.DeviceId, link.LastModifiedAt);
-        if (changed)
-            await _metadataEditor.PersistAsync(bundle, token, ct);
-
         var encryptedDevices = userDevicesData.Devices.ToDictionary(d => d.Id);
+        foreach (var id in links.Where(x => !x.IsDeleted).Select(x => x.DeviceId).Append(_identity.LocalDeviceId))
+        {
+            if (!encryptedDevices.ContainsKey(id))
+                encryptedDevices[id] = new UserDeviceData
+                {
+                    Id = id, Name = DeviceNameUtil.BuildDefaultDeviceName(id),
+                    LinkedAt = links.FirstOrDefault(x => x.DeviceId == id)?.LastModifiedAt ?? default
+                };
+        }
         var visibleDeviceIds = links
             .Where(link => !link.IsDeleted)
             .Select(link => link.DeviceId)
             .Append(_identity.LocalDeviceId)
             .ToHashSet();
         var presentationNames = UserDevicePresentationUtil.ResolveNames(
-            userDevicesData.Devices.Where(device => visibleDeviceIds.Contains(device.Id)));
+            userDevicesData.Devices.Where(device => visibleDeviceIds.Contains(device.Id)),
+            visibleDeviceIds.Except(userDevicesData.Devices.Select(device => device.Id)));
         var result = new List<UserDeviceInfoResponse>();
         var localCanSync = localLink.IsSyncOn && _identity.IsSyncOn;
         if (localCanSync)

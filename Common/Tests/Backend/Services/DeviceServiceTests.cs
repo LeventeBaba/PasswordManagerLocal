@@ -62,7 +62,7 @@ public sealed class DeviceServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
-    public async Task GetUserDevices_AddsMissingEncryptedMetadata_AndReturnsLocalAndRemoteDevices()
+    public async Task GetUserDevices_PresentsMissingEncryptedMetadata_WithoutPersistingIt()
     {
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
@@ -77,6 +77,8 @@ public sealed class DeviceServiceTests
         devices.Seed(remote);
         await userDevices.AddAsync(CreateLink(userId, remote, true, false));
 
+        using var before = await users.GetLoadAndVerifyUserDataBundleAsync(token);
+        var generation = before.CanonicalGeneration?.ToArray();
         var result = await service.GetUserDevicesAsync(token);
 
         MSTestAssert.HasCount(2, result);
@@ -99,8 +101,9 @@ public sealed class DeviceServiceTests
         MSTestAssert.IsNull(localResponse.PreviousLoginDate);
         MSTestAssert.IsTrue(localResponse.IsOnline);
 
-        var bundle = await users.GetLoadAndVerifyUserDataBundleAsync(token);
-        MSTestAssert.IsTrue(bundle.UserDevicesData.Devices.Any(device => device.Id == remote.Id));
+        using var bundle = await users.GetLoadAndVerifyUserDataBundleAsync(token);
+        MSTestAssert.IsFalse(bundle.UserDevicesData.Devices.Any(device => device.Id == remote.Id));
+        CollectionAssert.AreEqual(generation!, bundle.CanonicalGeneration!);
     }
 
     [TestMethod]

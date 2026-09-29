@@ -404,7 +404,10 @@ public sealed class AuthServiceTests
         MSTestAssert.IsTrue(tokens.Validate(newToken));
         MSTestAssert.IsTrue(keys.HasUserKey(newToken));
         MSTestAssert.IsTrue(cache.TryGetUserDataBundle(newToken, out var newUserData));
-        MSTestAssert.AreSame(oldUserData, newUserData);
+        MSTestAssert.AreNotSame(oldUserData, newUserData);
+        CollectionAssert.AreEqual(oldUserData!.CanonicalGeneration!, newUserData!.CanonicalGeneration!);
+        oldUserData.Dispose();
+        newUserData.Dispose();
         MSTestAssert.IsTrue(auth.GetSessionStatus(newToken).IsAuthenticated);
         MSTestAssert.IsFalse(auth.GetSessionStatus(oldToken).IsAuthenticated);
     }

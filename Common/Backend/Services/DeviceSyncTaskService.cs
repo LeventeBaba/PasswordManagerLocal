@@ -14,6 +14,8 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Discovery;
 using PasswordManagerLocal.Common.Backend.Internal.Sync;
 
 using PasswordManagerLocal.Common.Backend.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 namespace PasswordManagerLocal.Common.Backend.Services;
 
 public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
@@ -90,7 +92,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
 
             token = _runtimeCancellation.Token;
             targetDevice = CloneDevice(device);
-            var task = Task.Run(() => RunAsync(CloneEndpoint(endpoint), targetDevice, token), CancellationToken.None);
+            var task = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => RunAsync(CloneEndpoint(endpoint), targetDevice, token), CancellationToken.None);
             _runningTasks[device.Id] = task;
         }
 
@@ -489,7 +491,22 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             UserControlOperationReceiptState.Obsolete;
 
 
-    private async Task<bool> TryRunAntiEntropyAsync(
+    private async Task<bool> TryRunAntiEntropyAsync(DiscoveredDeviceEndpoint endpoint, Device targetDevice, CancellationToken ct)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try { return await RunAntiEntropyAttemptAsync(endpoint, targetDevice, ct); }
+            catch (Exception ex) when (ex is PasswordManagerLocal.Common.Backend.Exceptions.SyncStateUnavailableException ||
+                ex is PasswordManagerLocal.Common.Backend.Sync.Tcp.SyncProtocolException { StatusCode: PasswordManagerLocal.Common.Backend.Sync.Tcp.SyncProtocolStatusCode.Unavailable })
+            {
+                BackendDebugLog.Warning("Snapshot inventory changed; retrying without a peer penalty.", category: "Synchronization");
+                if (attempt < 2) await Task.Delay(TimeSpan.FromMilliseconds(100 * (attempt + 1)), ct);
+            }
+        }
+        return false; // Durable work remains pending for discovery/activation retry.
+    }
+
+    private async Task<bool> RunAntiEntropyAttemptAsync(
         DiscoveredDeviceEndpoint endpoint,
         Device targetDevice,
         CancellationToken ct)
@@ -509,6 +526,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             targetDevice.TlsCertFingerprint,
             localInventory,
             ct);
+        await AcceptAuthorizedEndpointHintsAsync(scope.ServiceProvider, targetDevice.Id, exchange.EndpointHints, ct);
 
         if (exchange.RequestedSnapshots.Count > 0)
         {
@@ -571,6 +589,63 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         }
 
         return fulfilled.Count == expected.Count;
+    }
+
+    private async Task AcceptAuthorizedEndpointHintsAsync(
+        IServiceProvider services, Guid sourceDeviceId,
+        IEnumerable<PeerEndpointHint> hints, CancellationToken ct)
+    {
+        var received = hints.Take(SyncConstants.MaxPeerEndpointHints + 1).ToArray();
+        if (received.Length > SyncConstants.MaxPeerEndpointHints)
+            throw new InvalidDataException("The peer supplied too many endpoint hints.");
+        var links = services.GetRequiredService<IUserDeviceRepository>();
+        var localLinks = services.GetRequiredService<ILocalUserDeviceRepository>();
+        var devices = services.GetRequiredService<IDeviceRepository>();
+        var sourceLinks = await links.ListByDeviceAsync(sourceDeviceId, ct);
+        var eligibleUsers = new HashSet<Guid>();
+        foreach (var link in sourceLinks)
+        {
+            if (link.IsDeleted || !link.IsSyncOn || !await localLinks.IsSyncOnAsync(link.UserId, ct)) continue;
+            try { link.VerifyIntegrity(); eligibleUsers.Add(link.UserId); }
+            catch (Exception ex) when (ex is InvalidDataException or PasswordManagerLocal.Common.Contracts.Errors.InvalidDataIntegrityException) { }
+        }
+        var activated = new List<Device>();
+        var seen = new HashSet<Guid>();
+        foreach (var hint in received)
+        {
+            if (!Guid.TryParse(hint.DeviceId, out var id) || id == Guid.Empty ||
+                id == sourceDeviceId || id == _identity.LocalDeviceId || !seen.Add(id) ||
+                hint.Port is < 1 or > 65535 ||
+                !IPAddress.TryParse(hint.Host, out var address) ||
+                address.AddressFamily != AddressFamily.InterNetwork) continue;
+            var bytes = address.GetAddressBytes();
+            if (!(bytes[0] == 10 || bytes[0] == 127 ||
+                bytes[0] == 172 && bytes[1] is >= 16 and <= 31 ||
+                bytes[0] == 192 && bytes[1] == 168)) continue;
+            var device = await devices.GetByIdAsNoTrackingAsync(id, ct);
+            if (device is null || !device.IsTrusted || device.IsBlocked ||
+                !string.Equals(FingerprintUtil.NormalizeOrEmpty(device.TlsCertFingerprint),
+                    FingerprintUtil.NormalizeOrEmpty(hint.TlsCertFingerprint), StringComparison.OrdinalIgnoreCase)) continue;
+            try { device.VerifyIntegrity(); }
+            catch (Exception ex) when (ex is InvalidDataException or PasswordManagerLocal.Common.Contracts.Errors.InvalidDataIntegrityException) { continue; }
+            var authorized = false;
+            foreach (var userId in eligibleUsers)
+            {
+                var candidateLink = await links.GetAsync(userId, id, ct);
+                if (candidateLink is null || candidateLink.IsDeleted || !candidateLink.IsSyncOn) continue;
+                try { candidateLink.VerifyIntegrity(); authorized = true; break; }
+                catch (Exception ex) when (ex is InvalidDataException or PasswordManagerLocal.Common.Contracts.Errors.InvalidDataIntegrityException) { }
+            }
+            if (!authorized) continue;
+            _endpointRegistry.AddOrUpdate(new DiscoveredDeviceEndpoint
+            {
+                Host = hint.Host, Port = hint.Port, TlsCertFingerprint = device.TlsCertFingerprint,
+                ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(2)
+            });
+            activated.Add(device);
+        }
+        if (activated.Count != 0)
+            services.GetRequiredService<IPendingSyncActivationService>().ActivateDevices(activated);
     }
 
 
