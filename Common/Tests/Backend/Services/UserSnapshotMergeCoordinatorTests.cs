@@ -620,6 +620,7 @@ public sealed class UserSnapshotMergeCoordinatorTests
     {
         var authorization = new UserMembershipAuthorization
         {
+            AuthorizationId = Guid.NewGuid(),
             UserId = user.UId,
             DeviceId = deviceId,
             OriginInstanceId = originInstanceId,

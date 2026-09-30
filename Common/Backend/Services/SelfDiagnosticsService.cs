@@ -76,7 +76,7 @@ public sealed class SelfDiagnosticsService : ISelfDiagnosticsService
             // Several distinct active devices are normal. Only conflicting origins for one device are unsafe.
             if (rows.Where(row => row.IsActive).GroupBy(row => row.DeviceId).Any(group => group.Count() != 1) ||
                 rows.GroupBy(row => (row.DeviceId, row.OriginInstanceId)).Any(group => group.Count() != 1) ||
-                rows.Select(row => row.AuthorizationId).Distinct().Count() != rows.Count)
+                rows.Select(UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId).Distinct().Count() != rows.Count)
                 findings.Add("MembershipHistoryInvalid");
             var remoteLinks = (await _userDevices.ListByUserWithDevicesAsync(user.UId, lifecycleToken))
                 .Where(link => link.DeviceId != _identity.LocalDeviceId).ToArray();
@@ -106,7 +106,7 @@ public sealed class SelfDiagnosticsService : ISelfDiagnosticsService
 
             var genesisRepairs = rows.Where(row => row.IsGenesis && row.StartedMembershipEpoch == 1 &&
                 row.AdditionOperationId is null && row.AdditionOperationHash is { Length: 0 }).ToArray();
-            var byId = rows.ToDictionary(row => row.AuthorizationId);
+            var byId = rows.ToDictionary(UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId);
             var operations = await _operations.ListForUserAsync(user.UId, lifecycleToken);
             var localOperations = operations.Where(operation =>
                 operation.Status != UserControlOperationStatus.Rejected &&

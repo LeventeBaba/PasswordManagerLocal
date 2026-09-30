@@ -236,6 +236,9 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
 
         var knowledge = await knowledgeRepository.ListForUserAsync(userId, ct);
         var cutoffs = await cutoffsRepository.ListForUserAsync(userId, ct);
+        var canonicalAuthorizationIds = authorizations.ToDictionary(
+            row => row.AuthorizationId,
+            UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId);
         var retainedSnapshots = (await snapshotsRepository.ListForUserAsync(userId, ct))
             .Where(row => row.Status is
                 UserSyncSnapshotStatus.Pending or
@@ -298,7 +301,7 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
             UserDevices = relationshipSnapshots,
             MembershipAuthorizations = authorizations.Select(row => new DeviceEnrollmentMembershipAuthorizationSnapshot
             {
-                AuthorizationId = row.AuthorizationId,
+                AuthorizationId = UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(row),
                 UserId = row.UserId,
                 DeviceId = row.DeviceId,
                 OriginInstanceId = row.OriginInstanceId,
@@ -325,7 +328,9 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
                 CutoffId = row.CutoffId, UserId = row.UserId, DeviceId = row.DeviceId, OriginInstanceId = row.OriginInstanceId,
                 UserKeyEpoch = row.UserKeyEpoch, HighestAcceptedSnapshotRevision = row.HighestAcceptedSnapshotRevision,
                 HighestAcceptedControlSequence = row.HighestAcceptedControlSequence, ResultingMembershipEpoch = row.ResultingMembershipEpoch,
-                AuthorizationId = row.AuthorizationId, RemovalOperationId = row.RemovalOperationId,
+                AuthorizationId = canonicalAuthorizationIds.TryGetValue(row.AuthorizationId, out var canonicalAuthorizationId)
+                    ? canonicalAuthorizationId
+                    : row.AuthorizationId, RemovalOperationId = row.RemovalOperationId,
                 RemovalOperationHash = row.RemovalOperationHash.ToArray(), CreatedAtUtc = row.CreatedAtUtc
             }).ToList(),
             ControlOperations = operations.Select(row => new DeviceEnrollmentControlOperationSnapshot
@@ -406,9 +411,13 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
         Guid token,
         Guid deviceId,
         SyncVersionStamp version,
+        DateTimeOffset linkedAtUtc,
         CancellationToken ct = default)
     {
         SyncVersionStampComparer.Validate(version);
+        if (linkedAtUtc == default)
+            throw new InvalidDataException("The authoritative enrollment timestamp is missing.");
+        linkedAtUtc = UtcDateTimeUtil.ToUtc(linkedAtUtc);
 
         using var bundle = await reader.GetAndVerifyUserDataBundleAsync(user, token, ct);
         if (bundle.UserDevicesData.Devices.Any(device => device.Id == deviceId))
@@ -420,8 +429,8 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
         {
             Id = deviceId,
             Name = name,
-            LinkedAt = DateTimeOffset.UtcNow,
-            LastUpdatedAt = DateTimeOffset.UtcNow,
+            LinkedAt = linkedAtUtc,
+            LastUpdatedAt = linkedAtUtc,
             Version = version
         };
         deviceData.GenerateIntegrityHash();

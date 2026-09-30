@@ -269,9 +269,10 @@ public sealed class UserTombstoneGarbageCollectorTests
     {
         var signKey = Enumerable.Range(1, 32).Select(value => (byte)value).ToArray();
         var operationHash = Enumerable.Range(33, 32).Select(value => (byte)value).ToArray();
+        var additionOperationId = genesis ? (Guid?)null : Guid.NewGuid();
         return new UserMembershipAuthorization
         {
-            AuthorizationId = Guid.NewGuid(),
+            AuthorizationId = additionOperationId ?? Guid.NewGuid(),
             UserId = userId,
             DeviceId = Guid.NewGuid(),
             OriginInstanceId = Guid.NewGuid(),
@@ -286,7 +287,7 @@ public sealed class UserTombstoneGarbageCollectorTests
             MaximumKeyEpoch = active ? null : maximumKeyEpoch,
             IsActive = active,
             IsGenesis = genesis,
-            AdditionOperationId = genesis ? null : Guid.NewGuid(),
+            AdditionOperationId = additionOperationId,
             AdditionOperationHash = genesis ? null : Hashing.SHA256Hash([0x42]),
             RemovalOperationId = active ? null : Guid.NewGuid(),
             RemovalOperationHash = active ? null : operationHash,

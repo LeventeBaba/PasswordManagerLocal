@@ -56,7 +56,7 @@ public sealed class FakeUserControlOperationWriterService : IUserControlOperatio
             target.SignPublicKey, target.AgreementPublicKey, target.TlsCertFingerprint, target.DeviceType);
         var envelope = Create(user, UserControlOperationType.DeviceAddition, user.KeyEpoch, user.KeyEpoch, payload.PreviousMembershipEpoch, payload.ResultingMembershipEpoch);
         envelope.OperationHash = RandomNumberGenerator.GetBytes(32);
-        await _membershipAuthorization.AuthorizeAdditionAsync(payload, envelope.OperationId, envelope.OperationHash, ct);
+        await _membershipAuthorization.AuthorizeAdditionAsync(payload, envelope.OperationId, envelope.OperationHash, envelope.CreatedAtUtc, ct);
         user.MembershipEpoch = payload.ResultingMembershipEpoch;
         user.GenerateIntegrityHash();
         _users.Update(user);
@@ -72,15 +72,15 @@ public sealed class FakeUserControlOperationWriterService : IUserControlOperatio
         var envelope = Create(user, UserControlOperationType.DeviceRemoval, user.KeyEpoch, user.KeyEpoch, payload.PreviousMembershipEpoch, payload.ResultingMembershipEpoch);
         envelope.OperationHash = RandomNumberGenerator.GetBytes(32);
         foreach (var authorization in await _authorizations.ListActiveForDeviceAsync(user.UId, payload.RemovedDeviceId, ct))
-            await _membershipAuthorization.EndAuthorizationAsync(authorization, payload, envelope.OperationId, envelope.OperationHash, ct);
+            await _membershipAuthorization.EndAuthorizationAsync(authorization, payload, envelope.OperationId, envelope.OperationHash, envelope.CreatedAtUtc, ct);
 
         var link = await _userDevices.GetAsync(user.UId, payload.RemovedDeviceId, ct);
         if (link is not null)
         {
             link.IsDeleted = true;
             link.IsSyncOn = false;
-            link.DeletedAt = DateTimeOffset.UtcNow;
-            link.LastModifiedAt = DateTimeOffset.UtcNow;
+            link.DeletedAt = envelope.CreatedAtUtc;
+            link.LastModifiedAt = envelope.CreatedAtUtc;
             link.GenerateIntegrityHash();
             _userDevices.Update(link);
         }
@@ -145,6 +145,7 @@ public sealed class FakeUserControlOperationWriterService : IUserControlOperatio
     {
         OperationId = Guid.NewGuid(), UserId = user.UId, OperationType = type,
         PreviousKeyEpoch = previousKey, ResultingKeyEpoch = resultingKey,
-        PreviousMembershipEpoch = previousMembership, ResultingMembershipEpoch = resultingMembership
+        PreviousMembershipEpoch = previousMembership, ResultingMembershipEpoch = resultingMembership,
+        CreatedAtUtc = DateTimeOffset.UtcNow
     };
 }

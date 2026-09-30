@@ -1,3 +1,4 @@
+using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
@@ -16,6 +17,7 @@ public sealed class UserDeviceMetadataEditor
     private readonly ISyncVersionClockService _versionClock;
     private readonly LocalUserDeviceLinkManager _localLinkManager;
     private readonly UserDeviceAccessor _accessor;
+    private readonly IUserMembershipAuthorizationRepository _membershipAuthorizations;
 
     public UserDeviceMetadataEditor(
         IUserLookupService userLookup,
@@ -24,7 +26,8 @@ public sealed class UserDeviceMetadataEditor
         IDeviceIdentityService identity,
         ISyncVersionClockService versionClock,
         LocalUserDeviceLinkManager localLinkManager,
-        UserDeviceAccessor accessor)
+        UserDeviceAccessor accessor,
+        IUserMembershipAuthorizationRepository membershipAuthorizations)
     {
         _userLookup = userLookup;
         _userDataReader = userDataReader;
@@ -33,6 +36,7 @@ public sealed class UserDeviceMetadataEditor
         _versionClock = versionClock;
         _localLinkManager = localLinkManager;
         _accessor = accessor;
+        _membershipAuthorizations = membershipAuthorizations;
     }
 
     public Task SetNameAsync(Guid token, Guid deviceId, string name, CancellationToken ct)
@@ -55,11 +59,15 @@ public sealed class UserDeviceMetadataEditor
             if (encryptedDevice is null)
             {
                 var version = _versionClock.Next();
+                var membership = await _membershipAuthorizations.ListActiveForDeviceAsync(user.UId, deviceId, ct);
+                var linkedAt = membership.Count == 0
+                    ? remoteLink?.LastModifiedAt ?? DateTimeOffset.UtcNow
+                    : membership.Min(row => row.CreatedAtUtc);
                 encryptedDevice = new UserDeviceData
                 {
                     Id = deviceId,
                     Name = normalizedName,
-                    LinkedAt = remoteLink?.LastModifiedAt ?? DateTimeOffset.UtcNow,
+                    LinkedAt = linkedAt,
                     LastUpdatedAt = DateTimeOffset.UtcNow,
                     Version = version
                 };
@@ -78,7 +86,7 @@ public sealed class UserDeviceMetadataEditor
             encryptedDevice.NameVersion = encryptedDevice.Version;
             encryptedDevice.GenerateIntegrityHash();
             await PersistAsync(bundle, token, ct);
-        
+
         }, ct);
     }
 

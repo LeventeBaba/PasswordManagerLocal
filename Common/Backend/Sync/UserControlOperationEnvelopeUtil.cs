@@ -262,10 +262,10 @@ public static class UserControlOperationEnvelopeUtil
             KeyEpoch = user.KeyEpoch,
             MembershipEpoch = user.MembershipEpoch,
             KnownMembers = authorizations
-                .OrderBy(row => row.AuthorizationId)
+                .OrderBy(UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId)
                 .Select(row => new AccountDeletionKnownMember
                 {
-                    AuthorizationId = row.AuthorizationId,
+                    AuthorizationId = UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(row),
                     DeviceId = row.DeviceId,
                     OriginInstanceId = row.OriginInstanceId,
                     StartedMembershipEpoch = row.StartedMembershipEpoch,

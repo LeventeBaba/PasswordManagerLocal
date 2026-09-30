@@ -36,6 +36,7 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
 
         var row = new UserMembershipAuthorization
         {
+            AuthorizationId = Guid.NewGuid(),
             UserId = user.UId,
             DeviceId = _identity.LocalDeviceId,
             OriginInstanceId = _identity.OriginInstanceId,
@@ -58,11 +59,14 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
         DeviceAdditionPayload payload,
         Guid operationId,
         byte[] operationHash,
+        DateTimeOffset createdAtUtc,
         CancellationToken ct = default)
     {
         UserControlOperationEnvelopeUtil.ValidateDeviceAdditionPayload(payload);
-        if (operationId == Guid.Empty || operationHash.Length != SyncConstants.SyncDeltaPayloadHashBytes)
+        if (operationId == Guid.Empty || operationHash.Length != SyncConstants.SyncDeltaPayloadHashBytes || createdAtUtc == default)
             throw new InvalidDataException("The authoritative addition reference is invalid.");
+
+        createdAtUtc = UtcDateTimeUtil.ToUtc(createdAtUtc);
 
         var existing = await _authorizations.GetActiveAsync(payload.UserId, payload.NewDeviceId, payload.NewOriginInstanceId, ct);
         if (existing is not null)
@@ -71,6 +75,15 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
                 existing.AdditionOperationHash is not null &&
                 Hashing.Verify(existing.AdditionOperationHash, operationHash))
             {
+                // Older builds stamped relayed additions with receiver-local time. The signed
+                // control envelope is the authoritative enrollment time, so repair that legacy
+                // metadata whenever the exact addition is observed again.
+                if (UtcDateTimeUtil.ToUtc(existing.CreatedAtUtc) != createdAtUtc)
+                {
+                    existing.CreatedAtUtc = createdAtUtc;
+                    existing.Version = checked(existing.Version + 1);
+                    _authorizations.Update(existing);
+                }
                 return existing;
             }
             throw new InvalidOperationException("The exact target installation already has a different active authorization.");
@@ -85,6 +98,7 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
 
         var row = new UserMembershipAuthorization
         {
+            AuthorizationId = operationId,
             UserId = payload.UserId,
             DeviceId = payload.NewDeviceId,
             OriginInstanceId = payload.NewOriginInstanceId,
@@ -98,7 +112,7 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
             IsActive = true,
             AdditionOperationId = operationId,
             AdditionOperationHash = operationHash.ToArray(),
-            CreatedAtUtc = DateTimeOffset.UtcNow
+            CreatedAtUtc = createdAtUtc
         };
         await _authorizations.AddAsync(row, ct);
         return row;
@@ -109,15 +123,20 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
         DeviceRemovalPayload payload,
         Guid operationId,
         byte[] operationHash,
+        DateTimeOffset createdAtUtc,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(authorization);
+        if (createdAtUtc == default)
+            throw new InvalidDataException("The authoritative removal timestamp is invalid.");
+        createdAtUtc = UtcDateTimeUtil.ToUtc(createdAtUtc);
         UserControlOperationEnvelopeUtil.ValidateDeviceRemovalPayload(payload);
         if (payload.UserId != authorization.UserId || payload.RemovedDeviceId != authorization.DeviceId)
             throw new InvalidDataException("The removal operation targets a different membership authorization.");
 
+        var canonicalAuthorizationId = UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(authorization);
         var origins = payload.Origins
-            .Where(item => item.AuthorizationId == authorization.AuthorizationId)
+            .Where(item => item.AuthorizationId == canonicalAuthorizationId)
             .OrderBy(item => item.UserKeyEpoch)
             .ToList();
         if (origins.Count == 0)
@@ -149,7 +168,7 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
             authorization.MaximumKeyEpoch = origins.Max(origin => origin.UserKeyEpoch);
             authorization.RemovalOperationId = operationId;
             authorization.RemovalOperationHash = operationHash.ToArray();
-            authorization.EndedAtUtc = DateTimeOffset.UtcNow;
+            authorization.EndedAtUtc = createdAtUtc;
             authorization.Version = checked(authorization.Version + 1);
             _authorizations.Update(authorization);
         }
@@ -164,7 +183,7 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
                 ct);
             if (existingCutoff is not null)
             {
-                if (existingCutoff.AuthorizationId == authorization.AuthorizationId &&
+                if (existingCutoff.AuthorizationId == canonicalAuthorizationId &&
                     existingCutoff.RemovalOperationId == operationId &&
                     Hashing.Verify(existingCutoff.RemovalOperationHash, operationHash) &&
                     existingCutoff.HighestAcceptedSnapshotRevision == origin.HighestAcceptedSnapshotRevision &&
@@ -182,10 +201,10 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
                 HighestAcceptedSnapshotRevision = origin.HighestAcceptedSnapshotRevision,
                 HighestAcceptedControlSequence = origin.HighestAcceptedControlSequence,
                 ResultingMembershipEpoch = payload.ResultingMembershipEpoch,
-                AuthorizationId = authorization.AuthorizationId,
+                AuthorizationId = canonicalAuthorizationId,
                 RemovalOperationId = operationId,
                 RemovalOperationHash = operationHash.ToArray(),
-                CreatedAtUtc = DateTimeOffset.UtcNow
+                CreatedAtUtc = createdAtUtc
             }, ct);
         }
     }

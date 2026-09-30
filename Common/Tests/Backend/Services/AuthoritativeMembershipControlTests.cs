@@ -126,7 +126,7 @@ public sealed class AuthoritativeMembershipControlTests
             [
                 new DeviceRemovalOriginCutoffPayload
                 {
-                    AuthorizationId = targetAuthorization.AuthorizationId,
+                    AuthorizationId = UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(targetAuthorization),
                     OriginInstanceId = target.OriginInstanceId,
                     UserKeyEpoch = 1,
                     HighestAcceptedSnapshotRevision = 6,

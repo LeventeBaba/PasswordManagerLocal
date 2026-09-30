@@ -171,7 +171,7 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
                             allKnownMerged &= item.HighestMergedRevision >= item.HighestStoredRevision;
                         cutoffRows.Add(new DeviceRemovalOriginCutoffPayload
                         {
-                            AuthorizationId = authorization.AuthorizationId,
+                            AuthorizationId = UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(authorization),
                             OriginInstanceId = authorization.OriginInstanceId,
                             UserKeyEpoch = keyEpoch,
                             HighestAcceptedSnapshotRevision = item?.HighestStoredRevision ?? 0,

@@ -49,6 +49,104 @@ public sealed class UserMembershipAuthorizationServiceTests
     [TestCategory("Backend")]
     [TestCategory("Integration")]
     [TestCategory("Security")]
+    public async Task RelayedAddition_UsesSignedOperationAsCanonicalAuthorizationIdentityAndEnrollmentTime()
+    {
+        await using var firstDatabase = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var secondDatabase = await SqliteIntegrationTestDatabase.CreateAsync();
+        using var firstSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        using var secondSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        var firstIdentity = CreateIdentity(firstSigningKey);
+        var secondIdentity = CreateIdentity(secondSigningKey);
+        var userId = Guid.NewGuid();
+        var addedDeviceId = Guid.NewGuid();
+        var addedOriginId = Guid.NewGuid();
+        var signPublicKey = Enumerable.Repeat((byte)0x52, 32).ToArray();
+        var agreementPublicKey = Enumerable.Repeat((byte)0x62, 32).ToArray();
+        var payload = UserControlOperationEnvelopeUtil.CreateDeviceAdditionPayload(
+            userId, 1, 1, addedDeviceId, addedOriginId, signPublicKey, agreementPublicKey,
+            new string('C', 64), DeviceType.AndroidMobile);
+        var operationId = Guid.NewGuid();
+        var operationHash = RandomNumberGenerator.GetBytes(32);
+        var enrolledAtUtc = new DateTimeOffset(2026, 9, 30, 17, 45, 0, TimeSpan.Zero);
+
+        var firstService = new UserMembershipAuthorizationService(
+            firstDatabase.UserMembershipAuthorizations, firstDatabase.UserOriginRemovalCutoffs, firstIdentity);
+        var secondService = new UserMembershipAuthorizationService(
+            secondDatabase.UserMembershipAuthorizations, secondDatabase.UserOriginRemovalCutoffs, secondIdentity);
+
+        var first = await firstService.AuthorizeAdditionAsync(payload, operationId, operationHash, enrolledAtUtc);
+        var second = await secondService.AuthorizeAdditionAsync(payload, operationId, operationHash, enrolledAtUtc);
+
+        MSTestAssert.AreEqual(operationId, first.AuthorizationId);
+        MSTestAssert.AreEqual(operationId, second.AuthorizationId);
+        MSTestAssert.AreEqual(first.AuthorizationId, second.AuthorizationId);
+        MSTestAssert.AreEqual(enrolledAtUtc, first.CreatedAtUtc);
+        MSTestAssert.AreEqual(enrolledAtUtc, second.CreatedAtUtc);
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    [TestCategory("Security")]
+    public async Task LegacyReceiverLocalAuthorizationId_AcceptsRemovalByCanonicalAdditionIdentity()
+    {
+        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        var identity = CreateIdentity(signingKey);
+        var additionOperationId = Guid.NewGuid();
+        var legacyReceiverLocalAuthorizationId = Guid.NewGuid();
+        var additionHash = RandomNumberGenerator.GetBytes(32);
+        var authorization = new UserMembershipAuthorization
+        {
+            AuthorizationId = legacyReceiverLocalAuthorizationId,
+            UserId = Guid.NewGuid(),
+            DeviceId = Guid.NewGuid(),
+            OriginInstanceId = Guid.NewGuid(),
+            SignPublicKey = Enumerable.Repeat((byte)0x71, 32).ToArray(),
+            SignPublicKeyHash = Hashing.SHA256Hash(Enumerable.Repeat((byte)0x71, 32).ToArray()),
+            AgreementPublicKeyHash = Hashing.SHA256Hash(Enumerable.Repeat((byte)0x72, 32).ToArray()),
+            TlsCertFingerprint = new string('D', 64),
+            DeviceType = DeviceType.AndroidMobile,
+            StartedMembershipEpoch = 2,
+            MinimumKeyEpoch = 1,
+            IsActive = true,
+            IsGenesis = false,
+            AdditionOperationId = additionOperationId,
+            AdditionOperationHash = additionHash,
+            CreatedAtUtc = DateTimeOffset.UtcNow.AddHours(-1)
+        };
+        var cutoff = CreateCutoff(authorization, keyEpoch: 1, snapshotRevision: 4, controlSequence: 6);
+        var removal = new DeviceRemovalPayload
+        {
+            UserId = authorization.UserId,
+            RemovedDeviceId = authorization.DeviceId,
+            PreviousMembershipEpoch = 2,
+            ResultingMembershipEpoch = 3,
+            KeyEpoch = 1,
+            Origins = [cutoff]
+        };
+        UserControlOperationEnvelopeUtil.FinalizeDeviceRemovalPayload(removal);
+        var removalOperationId = Guid.NewGuid();
+        var removalHash = RandomNumberGenerator.GetBytes(32);
+        var removedAtUtc = new DateTimeOffset(2026, 9, 30, 18, 0, 0, TimeSpan.Zero);
+        var service = new UserMembershipAuthorizationService(
+            database.UserMembershipAuthorizations, database.UserOriginRemovalCutoffs, identity);
+
+        await service.EndAuthorizationAsync(authorization, removal, removalOperationId, removalHash, removedAtUtc);
+
+        MSTestAssert.IsFalse(authorization.IsActive);
+        MSTestAssert.AreEqual(removalOperationId, authorization.RemovalOperationId);
+        MSTestAssert.AreEqual(removedAtUtc, authorization.EndedAtUtc);
+        MSTestAssert.AreEqual(additionOperationId, cutoff.AuthorizationId);
+        var retainedCutoff = database.Db.UserOriginRemovalCutoffs.Local.Single();
+        MSTestAssert.AreEqual(additionOperationId, retainedCutoff.AuthorizationId);
+        MSTestAssert.AreEqual(removedAtUtc, retainedCutoff.CreatedAtUtc);
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    [TestCategory("Security")]
     public async Task HistoricalAuthorization_UsesExactInstallationKeyAndSurvivesCurrentDeviceDeletion()
     {
         await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
@@ -115,7 +213,7 @@ public sealed class UserMembershipAuthorizationServiceTests
             ]
         };
         UserControlOperationEnvelopeUtil.FinalizeDeviceRemovalPayload(removal);
-        await service.EndAuthorizationAsync(authorization, removal, operationId, operationHash);
+        await service.EndAuthorizationAsync(authorization, removal, operationId, operationHash, DateTimeOffset.UtcNow);
         await database.UnitOfWork.SaveChangesAsync();
         database.Db.ChangeTracker.Clear();
 
@@ -158,20 +256,20 @@ public sealed class UserMembershipAuthorizationServiceTests
             Origins = [CreateCutoff(genesis, keyEpoch: 1, snapshotRevision: 0, controlSequence: 0)]
         };
         UserControlOperationEnvelopeUtil.FinalizeDeviceRemovalPayload(removal);
-        await service.EndAuthorizationAsync(genesis, removal, Guid.NewGuid(), RandomNumberGenerator.GetBytes(32));
+        await service.EndAuthorizationAsync(genesis, removal, Guid.NewGuid(), RandomNumberGenerator.GetBytes(32), DateTimeOffset.UtcNow);
         await database.UnitOfWork.SaveChangesAsync();
 
         var reusedOrigin = UserControlOperationEnvelopeUtil.CreateDeviceAdditionPayload(
             user.UId, 1, 2, identity.LocalDeviceId, identity.OriginInstanceId,
             identity.SignPublicKey, identity.AgreementPublicKey, identity.FingerprintHex, identity.DeviceType);
         await MSTestAssert.ThrowsExactlyAsync<InvalidOperationException>(() =>
-            service.AuthorizeAdditionAsync(reusedOrigin, Guid.NewGuid(), RandomNumberGenerator.GetBytes(32)));
+            service.AuthorizeAdditionAsync(reusedOrigin, Guid.NewGuid(), RandomNumberGenerator.GetBytes(32), DateTimeOffset.UtcNow));
 
         var newOrigin = Guid.NewGuid();
         var readdition = UserControlOperationEnvelopeUtil.CreateDeviceAdditionPayload(
             user.UId, 1, 2, identity.LocalDeviceId, newOrigin,
             identity.SignPublicKey, identity.AgreementPublicKey, identity.FingerprintHex, identity.DeviceType);
-        var authorized = await service.AuthorizeAdditionAsync(readdition, Guid.NewGuid(), RandomNumberGenerator.GetBytes(32));
+        var authorized = await service.AuthorizeAdditionAsync(readdition, Guid.NewGuid(), RandomNumberGenerator.GetBytes(32), DateTimeOffset.UtcNow);
 
         MSTestAssert.AreEqual(newOrigin, authorized.OriginInstanceId);
         MSTestAssert.IsTrue(authorized.IsActive);
@@ -181,7 +279,7 @@ public sealed class UserMembershipAuthorizationServiceTests
     private static DeviceRemovalOriginCutoffPayload CreateCutoff(UserMembershipAuthorization authorization, long keyEpoch, long snapshotRevision, long controlSequence) =>
         new()
         {
-            AuthorizationId = authorization.AuthorizationId,
+            AuthorizationId = UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(authorization),
             OriginInstanceId = authorization.OriginInstanceId,
             UserKeyEpoch = keyEpoch,
             HighestAcceptedSnapshotRevision = snapshotRevision,

@@ -277,7 +277,7 @@ public sealed class DeviceServiceTests
         var addition = UserControlOperationEnvelopeUtil.CreateDeviceAdditionPayload(
             userId, canonical.KeyEpoch, canonical.MembershipEpoch, remote.Id, remoteOrigin,
             remote.SignPublicKey, remote.PublicKey, remote.TlsCertFingerprint, remote.DeviceType);
-        await membership.AuthorizeAdditionAsync(addition, Guid.NewGuid(), RandomNumberGenerator.GetBytes(32));
+        await membership.AuthorizeAdditionAsync(addition, Guid.NewGuid(), RandomNumberGenerator.GetBytes(32), DateTimeOffset.UtcNow);
         canonical.MembershipEpoch = addition.ResultingMembershipEpoch;
         canonical.GenerateIntegrityHash();
         userRepository.Update(canonical);

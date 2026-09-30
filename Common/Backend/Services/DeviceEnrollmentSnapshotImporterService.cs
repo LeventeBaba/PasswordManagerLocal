@@ -251,27 +251,41 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
                 .Select(row => row.DeviceId)
                 .Distinct()
                 .ToHashSet();
+            var relationshipByDevice = snapshot.UserDevices.ToDictionary(row => row.DeviceId);
             var currentLinks = await userDevices.ListByUserAsync(snapshot.PrimaryUserId, ct);
             foreach (var current in currentLinks)
             {
                 var shouldBeActive = current.DeviceId != _identity.LocalDeviceId && activeDeviceIds.Contains(current.DeviceId);
-                current.IsDeleted = !shouldBeActive;
-                current.IsSyncOn = shouldBeActive;
-                current.DeletedAt = shouldBeActive ? null : DateTimeOffset.UtcNow;
-                current.LastModifiedAt = DateTimeOffset.UtcNow;
+                if (shouldBeActive)
+                {
+                    var relationship = relationshipByDevice[current.DeviceId];
+                    current.IsDeleted = false;
+                    current.IsSyncOn = relationship.IsSyncOn;
+                    current.DeletedAt = null;
+                    current.LastModifiedAt = UtcDateTimeUtil.ToUtc(relationship.LastModifiedAt);
+                }
+                else
+                {
+                    current.IsDeleted = true;
+                    current.IsSyncOn = false;
+                    current.DeletedAt ??= DateTimeOffset.UtcNow;
+                    current.LastModifiedAt = current.DeletedAt.Value;
+                }
                 userDevices.Update(current);
             }
             foreach (var deviceId in activeDeviceIds.Where(id => id != _identity.LocalDeviceId))
             {
                 if (currentLinks.Any(link => link.DeviceId == deviceId))
                     continue;
+                var relationship = relationshipByDevice[deviceId];
                 await userDevices.AddAsync(new UserDevice
                 {
                     UserId = snapshot.PrimaryUserId,
                     DeviceId = deviceId,
-                    IsSyncOn = true,
+                    IsSyncOn = relationship.IsSyncOn,
                     IsDeleted = false,
-                    LastModifiedAt = DateTimeOffset.UtcNow
+                    DeletedAt = null,
+                    LastModifiedAt = UtcDateTimeUtil.ToUtc(relationship.LastModifiedAt)
                 }, ct);
             }
 
@@ -363,6 +377,25 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             throw new InvalidDataException("A physical device cannot have multiple active installation origins for one user.");
         foreach (var auth in snapshot.MembershipAuthorizations)
             ValidateAuthorization(auth, snapshot.PrimaryUserId);
+
+        if (snapshot.UserDevices.Select(row => row.DeviceId).Distinct().Count() != snapshot.UserDevices.Count)
+            throw new InvalidDataException("The enrollment bootstrap contains duplicate user-device relationships.");
+        foreach (var relationship in snapshot.UserDevices)
+            ValidateUserDeviceRelationship(relationship, snapshot.PrimaryUserId);
+        var activeDeviceIds = snapshot.MembershipAuthorizations
+            .Where(row => row.IsActive)
+            .Select(row => row.DeviceId)
+            .Distinct()
+            .OrderBy(id => id)
+            .ToArray();
+        var relationshipDeviceIds = snapshot.UserDevices
+            .Where(row => !row.IsDeleted)
+            .Select(row => row.DeviceId)
+            .Distinct()
+            .OrderBy(id => id)
+            .ToArray();
+        if (!activeDeviceIds.SequenceEqual(relationshipDeviceIds))
+            throw new InvalidDataException("The enrollment bootstrap user-device relationships do not match active membership.");
 
         var targetAuthorization = snapshot.MembershipAuthorizations.SingleOrDefault(row => row.IsActive && row.DeviceId == _identity.LocalDeviceId && row.OriginInstanceId == _identity.OriginInstanceId)
             ?? throw new InvalidDataException("The target installation has no active authoritative membership authorization.");
@@ -542,6 +575,26 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         target.GenerateIntegrityHash();
     }
 
+    private void ValidateUserDeviceRelationship(DeviceEnrollmentUserDeviceSnapshot row, Guid userId)
+    {
+        if (row.UserId != userId || row.DeviceId == Guid.Empty || row.LastModifiedAt == default || row.IsDeleted || row.DeletedAt is not null)
+            throw new InvalidDataException("The enrollment bootstrap contains an invalid active user-device relationship.");
+
+        var relationship = new UserDevice
+        {
+            UserId = row.UserId,
+            DeviceId = row.DeviceId,
+            IsSyncOn = row.IsSyncOn,
+            IsDeleted = false,
+            DeletedAt = null,
+            LastModifiedAt = UtcDateTimeUtil.ToUtc(row.LastModifiedAt)
+        };
+        relationship.GenerateIntegrityHash();
+        if (row.IntegrityHash.Length != CryptographyConstants.Sha256HashSizeInBytes ||
+            !Hashing.Verify(row.IntegrityHash, relationship.IntegrityHash))
+            throw new InvalidDataException("The enrollment bootstrap user-device relationship integrity hash is invalid.");
+    }
+
     private void ValidateAuthorization(DeviceEnrollmentMembershipAuthorizationSnapshot row, Guid userId)
     {
         if (row.AuthorizationId == Guid.Empty || row.UserId != userId || row.DeviceId == Guid.Empty || row.OriginInstanceId == Guid.Empty ||
@@ -552,7 +605,8 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             row.StartedMembershipEpoch <= 0 || row.MinimumKeyEpoch <= 0 ||
             (row.EndedMembershipEpoch.HasValue && row.EndedMembershipEpoch <= row.StartedMembershipEpoch) ||
             row.IsActive == row.EndedMembershipEpoch.HasValue ||
-            (!row.IsGenesis && (!row.AdditionOperationId.HasValue || row.AdditionOperationHash is not { Length: CryptographyConstants.Sha256HashSizeInBytes })) ||
+            (!row.IsGenesis && (!row.AdditionOperationId.HasValue || row.AuthorizationId != row.AdditionOperationId.Value ||
+                                row.AdditionOperationHash is not { Length: CryptographyConstants.Sha256HashSizeInBytes })) ||
             (row.IsGenesis && (row.StartedMembershipEpoch != 1 || row.AdditionOperationId is not null ||
                                row.AdditionOperationHash is { Length: > 0 })) ||
             (!row.IsActive && (!row.RemovalOperationId.HasValue || row.RemovalOperationHash is not { Length: CryptographyConstants.Sha256HashSizeInBytes })))

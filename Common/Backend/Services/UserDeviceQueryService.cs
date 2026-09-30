@@ -16,6 +16,7 @@ public sealed class UserDeviceQueryService : IUserDeviceQueryService
     private readonly IUserDataReaderService _userDataReader;
     private readonly IDeviceIdentityService _identity;
     private readonly IUserDeviceRepository _userDevices;
+    private readonly IUserMembershipAuthorizationRepository _membershipAuthorizations;
     private readonly DeviceOnlineStatusEvaluator _onlineStatusEvaluator;
     private readonly IDevicePresenceProbeService _presenceProbeService;
     private readonly LocalUserDeviceLinkManager _localLinkManager;
@@ -26,6 +27,7 @@ public sealed class UserDeviceQueryService : IUserDeviceQueryService
         IUserDataReaderService userDataReader,
         IDeviceIdentityService identity,
         IUserDeviceRepository userDevices,
+        IUserMembershipAuthorizationRepository membershipAuthorizations,
         DeviceOnlineStatusEvaluator onlineStatusEvaluator,
         IDevicePresenceProbeService presenceProbeService,
         LocalUserDeviceLinkManager localLinkManager,
@@ -35,6 +37,7 @@ public sealed class UserDeviceQueryService : IUserDeviceQueryService
         _userDataReader = userDataReader;
         _identity = identity;
         _userDevices = userDevices;
+        _membershipAuthorizations = membershipAuthorizations;
         _onlineStatusEvaluator = onlineStatusEvaluator;
         _presenceProbeService = presenceProbeService;
         _localLinkManager = localLinkManager;
@@ -48,6 +51,10 @@ public sealed class UserDeviceQueryService : IUserDeviceQueryService
         var userDevicesData = bundle.UserDevicesData;
         var localLink = await _localLinkManager.GetForDisplayAsync(user.UId, ct);
         var links = await _userDevices.ListByUserWithDevicesAsync(user.UId, ct);
+        var membershipAuthorizations = await _membershipAuthorizations.ListForUserAsync(user.UId, ct);
+        var linkedAtByDevice = membershipAuthorizations
+            .GroupBy(row => row.DeviceId)
+            .ToDictionary(group => group.Key, group => group.Min(row => row.CreatedAtUtc));
 
         var encryptedDevices = userDevicesData.Devices.ToDictionary(d => d.Id);
         foreach (var id in links.Where(x => !x.IsDeleted).Select(x => x.DeviceId).Append(_identity.LocalDeviceId))
@@ -56,7 +63,9 @@ public sealed class UserDeviceQueryService : IUserDeviceQueryService
                 encryptedDevices[id] = new UserDeviceData
                 {
                     Id = id, Name = DeviceNameUtil.BuildDefaultDeviceName(id),
-                    LinkedAt = links.FirstOrDefault(x => x.DeviceId == id)?.LastModifiedAt ?? default
+                    LinkedAt = linkedAtByDevice.TryGetValue(id, out var linkedAt)
+                        ? linkedAt
+                        : links.FirstOrDefault(x => x.DeviceId == id)?.LastModifiedAt ?? default
                 };
         }
         var visibleDeviceIds = links

@@ -515,6 +515,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
                                 token,
                                 endpoint.DeviceId,
                                 encryptedDeviceVersion,
+                                envelope.CreatedAtUtc,
                                 lifecycleToken);
                             canonicalUser = await users.GetAndVerifyUserAsync(token, lifecycleToken);
                             await publisher.GetOrCreateAsync(canonicalUser, lifecycleToken);

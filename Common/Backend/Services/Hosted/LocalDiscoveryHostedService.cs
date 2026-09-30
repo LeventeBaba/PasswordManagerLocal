@@ -513,6 +513,7 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
         {
             _endpointRegistry.AddOrUpdate(requesterEndpoint);
             _presenceProbeService?.OnEndpointDiscovered(requester, requesterEndpoint);
+            _syncDeviceIdentities.TryAdd(requester);
             if (_syncDeviceIdentities.ContainsId(requester.Id))
                 _deviceSyncTasks.TryStart(requesterEndpoint, requester);
         }
@@ -568,6 +569,7 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
 
         _endpointRegistry.AddOrUpdate(endpoint);
         _presenceProbeService?.OnEndpointDiscovered(device, endpoint);
+        _syncDeviceIdentities.TryAdd(device);
 
         if (IsSyncResponseThrottled(response.ResponderDeviceId, DateTimeOffset.UtcNow))
             return;

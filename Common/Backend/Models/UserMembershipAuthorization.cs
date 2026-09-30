@@ -6,7 +6,7 @@ namespace PasswordManagerLocal.Common.Backend.Models;
 /// </summary>
 public sealed class UserMembershipAuthorization
 {
-    public Guid AuthorizationId { get; set; } = Guid.NewGuid();
+    public Guid AuthorizationId { get; set; }
     public Guid UserId { get; set; }
     public Guid DeviceId { get; set; }
     public Guid OriginInstanceId { get; set; }
