@@ -11,6 +11,8 @@ public static class EndpointRpcLimits
     public const int MaximumCollectionItems = 1000;
     public const int MaximumSensitiveBinaryFieldSize = 300;
     public const int MaximumSafeErrorMessageLength = 512;
+    public const int MaximumValidationErrorFields = 16;
+    public const int MaximumValidationErrorFieldLength = 64;
     public const int MaximumErrorPayloadSize = 4 * 1024;
     public const int MaximumLargeResultChunkBytes = 512 * 1024;
     public const int MaximumLargeResultChunkResponsePayloadSize = 768 * 1024;

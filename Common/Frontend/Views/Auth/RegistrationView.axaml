@@ -7,6 +7,13 @@
     xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Auth"
     x:DataType="vm:RegistrationViewModel">
 
+  <UserControl.Styles>
+    <Style Selector="TextBox.registrationInvalid">
+      <Setter Property="BorderBrush" Value="#FFD13438" />
+      <Setter Property="BorderThickness" Value="2" />
+    </Style>
+  </UserControl.Styles>
+
   <UserControl.KeyBindings>
     <KeyBinding Gesture="Enter" Command="{Binding RegisterCommand}" />
   </UserControl.KeyBindings>
@@ -19,8 +26,7 @@
             <Button Classes="ghost iconButton"
                     IsVisible="{Binding IsBackButtonVisible}"
                     Command="{Binding NavigateBackCommand}"
-
-                    ToolTip.Tip="{Binding BackLabel}" >
+                    ToolTip.Tip="{Binding BackLabel}">
               <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
             </Button>
             <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
@@ -38,17 +44,31 @@
             <StackPanel Spacing="6">
               <TextBlock Text="{Binding UsernameLabel}" />
               <TextBox Text="{Binding Username}"
+                       MaxLength="{Binding UsernameMaxLength}"
+                       Classes.registrationInvalid="{Binding HasUsernameValidationError}"
+                       AutomationProperties.HelpText="{Binding UsernameValidationMessage}"
                        PlaceholderText="{Binding UsernamePlaceholder}"
                        TextInputOptions.AutoCapitalization="False"
                        TextInputOptions.ShowSuggestions="False" />
+              <TextBlock Text="{Binding UsernameValidationMessage}"
+                         Classes="errorText"
+                         IsVisible="{Binding HasUsernameValidationError}"
+                         TextWrapping="Wrap" />
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="6">
               <TextBlock Text="{Binding EmailLabel}" />
               <TextBox Text="{Binding Email}"
+                       MaxLength="{Binding EmailMaxLength}"
+                       Classes.registrationInvalid="{Binding HasEmailValidationError}"
+                       AutomationProperties.HelpText="{Binding EmailValidationMessage}"
                        PlaceholderText="{Binding EmailPlaceholder}"
                        TextInputOptions.ContentType="Email"
                        TextInputOptions.AutoCapitalization="False"
                        TextInputOptions.ShowSuggestions="False" />
+              <TextBlock Text="{Binding EmailValidationMessage}"
+                         Classes="errorText"
+                         IsVisible="{Binding HasEmailValidationError}"
+                         TextWrapping="Wrap" />
             </StackPanel>
           </Grid>
 
@@ -56,16 +76,30 @@
             <StackPanel Spacing="6">
               <TextBlock Text="{Binding FirstNameLabel}" />
               <TextBox Text="{Binding FirstName}"
+                       MaxLength="{Binding FirstNameMaxLength}"
+                       Classes.registrationInvalid="{Binding HasFirstNameValidationError}"
+                       AutomationProperties.HelpText="{Binding FirstNameValidationMessage}"
                        PlaceholderText="{Binding FirstNamePlaceholder}"
                        TextInputOptions.ContentType="Name"
                        TextInputOptions.AutoCapitalization="True" />
+              <TextBlock Text="{Binding FirstNameValidationMessage}"
+                         Classes="errorText"
+                         IsVisible="{Binding HasFirstNameValidationError}"
+                         TextWrapping="Wrap" />
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="6">
               <TextBlock Text="{Binding LastNameLabel}" />
               <TextBox Text="{Binding LastName}"
+                       MaxLength="{Binding LastNameMaxLength}"
+                       Classes.registrationInvalid="{Binding HasLastNameValidationError}"
+                       AutomationProperties.HelpText="{Binding LastNameValidationMessage}"
                        PlaceholderText="{Binding LastNamePlaceholder}"
                        TextInputOptions.ContentType="Name"
                        TextInputOptions.AutoCapitalization="True" />
+              <TextBlock Text="{Binding LastNameValidationMessage}"
+                         Classes="errorText"
+                         IsVisible="{Binding HasLastNameValidationError}"
+                         TextWrapping="Wrap" />
             </StackPanel>
           </Grid>
 
@@ -81,6 +115,8 @@
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
               <TextBox Grid.Column="0"
                        Text="{Binding Password}"
+                       Classes.registrationInvalid="{Binding HasPasswordValidationError}"
+                       AutomationProperties.HelpText="{Binding PasswordValidationMessage}"
                        PasswordChar="{Binding PasswordMaskCharacter}"
                        PlaceholderText="{Binding PasswordPlaceholder}"
                        TextInputOptions.ContentType="Password"
@@ -90,10 +126,14 @@
               <Button Grid.Column="1"
                       Classes="ghost"
                       Command="{Binding TogglePasswordVisibilityCommand}"
-                      Content="{Binding PasswordVisibilityToggleText}" >
-              <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
-            </Button>
+                      Content="{Binding PasswordVisibilityToggleText}">
+                <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+              </Button>
             </Grid>
+            <TextBlock Text="{Binding PasswordValidationMessage}"
+                       Classes="errorText"
+                       IsVisible="{Binding HasPasswordValidationError}"
+                       TextWrapping="Wrap" />
             <controls:PasswordStrengthIndicator
                 Strength="{Binding PasswordStrength}"
                 Label="{Binding PasswordStrengthLabel}" />
@@ -104,6 +144,8 @@
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
               <TextBox Grid.Column="0"
                        Text="{Binding ConfirmPassword}"
+                       Classes.registrationInvalid="{Binding HasConfirmPasswordValidationError}"
+                       AutomationProperties.HelpText="{Binding ConfirmPasswordValidationMessage}"
                        PasswordChar="{Binding ConfirmPasswordMaskCharacter}"
                        PlaceholderText="{Binding ConfirmPasswordPlaceholder}"
                        TextInputOptions.ContentType="Password"
@@ -114,10 +156,14 @@
               <Button Grid.Column="1"
                       Classes="ghost"
                       Command="{Binding ToggleConfirmPasswordVisibilityCommand}"
-                      Content="{Binding ConfirmPasswordVisibilityToggleText}" >
-              <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
-            </Button>
+                      Content="{Binding ConfirmPasswordVisibilityToggleText}">
+                <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+              </Button>
             </Grid>
+            <TextBlock Text="{Binding ConfirmPasswordValidationMessage}"
+                       Classes="errorText"
+                       IsVisible="{Binding HasConfirmPasswordValidationError}"
+                       TextWrapping="Wrap" />
           </StackPanel>
 
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
@@ -135,16 +181,19 @@
                 VerticalAlignment="Center" />
           </Grid>
 
-          <TextBlock Text="{Binding StatusMessage}" Classes="errorText" IsVisible="{Binding HasStatusMessage}" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding StatusMessage}"
+                     Classes="errorText"
+                     IsVisible="{Binding HasStatusMessage}"
+                     TextWrapping="Wrap" />
 
           <Button Classes="primary"
                   HorizontalAlignment="Stretch"
                   HorizontalContentAlignment="Center"
                   IsEnabled="{Binding CanRegister}"
                   Command="{Binding RegisterCommand}"
-                  Content="{Binding RegisterButtonLabel}" >
-              <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
-            </Button>
+                  Content="{Binding RegisterButtonLabel}">
+            <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+          </Button>
 
           <Border Classes="toolbarGroup" Padding="14">
             <Button

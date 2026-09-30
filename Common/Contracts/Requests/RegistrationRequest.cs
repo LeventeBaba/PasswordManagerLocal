@@ -30,7 +30,7 @@ public sealed class RegistrationRequest
         if (!IsValidLastName(LastName))
             errors.Add($"LastName");
 
-        if (!IsValidPassword(Password))
+        if (Password is null || !IsValidPassword(Password))
             errors.Add("Password");
 
         return errors.Count == 0;

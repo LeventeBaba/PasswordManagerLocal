@@ -863,6 +863,8 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
                 new OperationCanceledException(exception.Error.SafeMessage, exception),
             EndpointRpcErrorCode.Disconnected =>
                 new EndpointRpcDisconnectedException(exception),
+            EndpointRpcErrorCode.ValidationFailed =>
+                new InvalidInputException(exception.Error.ValidationErrors?.ToList()),
             _ => exception
         };
     }

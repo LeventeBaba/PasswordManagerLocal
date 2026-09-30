@@ -1,8 +1,11 @@
+using PasswordManagerLocal.Common.Contracts.Constants;
+using PasswordManagerLocal.Common.Contracts.Endpoints;
+using PasswordManagerLocal.Common.Contracts.Errors;
+using PasswordManagerLocal.Common.Contracts.Requests;
+using PasswordManagerLocal.Common.Contracts.Validation;
 using PasswordManagerLocal.Common.Frontend.Helpers;
 using PasswordManagerLocal.Common.Frontend.Security;
 using PasswordManagerLocal.Common.Frontend.Services;
-using PasswordManagerLocal.Common.Contracts.Endpoints;
-using PasswordManagerLocal.Common.Contracts.Requests;
 using ReactiveUI;
 using ReactiveUI.Primitives;
 
@@ -29,6 +32,19 @@ public sealed class RegistrationViewModel : ViewModelBase
     private bool _isBackendInitialized;
     private int _passwordStrength;
 
+    private bool _usernameTouched;
+    private bool _firstNameTouched;
+    private bool _lastNameTouched;
+    private bool _emailTouched;
+    private bool _passwordTouched;
+    private bool _confirmPasswordTouched;
+
+    private string? _usernameServerValidationMessage;
+    private string? _firstNameServerValidationMessage;
+    private string? _lastNameServerValidationMessage;
+    private string? _emailServerValidationMessage;
+    private string? _passwordServerValidationMessage;
+
     public RegistrationViewModel(
         UiPreferencesService uiPreferences,
         IEndpoints endpoints,
@@ -52,9 +68,15 @@ public sealed class RegistrationViewModel : ViewModelBase
         get => _username;
         set
         {
+            value ??= string.Empty;
+            if (string.Equals(_username, value, StringComparison.Ordinal))
+                return;
+
             this.RaiseAndSetIfChanged(ref _username, value);
+            _usernameTouched = true;
+            _usernameServerValidationMessage = null;
             RefreshPasswordStrength();
-            this.RaisePropertyChanged(nameof(CanRegister));
+            RaiseRegistrationValidationChanged();
         }
     }
 
@@ -63,9 +85,15 @@ public sealed class RegistrationViewModel : ViewModelBase
         get => _firstName;
         set
         {
+            value ??= string.Empty;
+            if (string.Equals(_firstName, value, StringComparison.Ordinal))
+                return;
+
             this.RaiseAndSetIfChanged(ref _firstName, value);
+            _firstNameTouched = true;
+            _firstNameServerValidationMessage = null;
             RefreshPasswordStrength();
-            this.RaisePropertyChanged(nameof(CanRegister));
+            RaiseRegistrationValidationChanged();
         }
     }
 
@@ -74,9 +102,15 @@ public sealed class RegistrationViewModel : ViewModelBase
         get => _lastName;
         set
         {
+            value ??= string.Empty;
+            if (string.Equals(_lastName, value, StringComparison.Ordinal))
+                return;
+
             this.RaiseAndSetIfChanged(ref _lastName, value);
+            _lastNameTouched = true;
+            _lastNameServerValidationMessage = null;
             RefreshPasswordStrength();
-            this.RaisePropertyChanged(nameof(CanRegister));
+            RaiseRegistrationValidationChanged();
         }
     }
 
@@ -85,9 +119,15 @@ public sealed class RegistrationViewModel : ViewModelBase
         get => _email;
         set
         {
+            value ??= string.Empty;
+            if (string.Equals(_email, value, StringComparison.Ordinal))
+                return;
+
             this.RaiseAndSetIfChanged(ref _email, value);
+            _emailTouched = true;
+            _emailServerValidationMessage = null;
             RefreshPasswordStrength();
-            this.RaisePropertyChanged(nameof(CanRegister));
+            RaiseRegistrationValidationChanged();
         }
     }
 
@@ -96,9 +136,15 @@ public sealed class RegistrationViewModel : ViewModelBase
         get => _password;
         set
         {
+            value ??= string.Empty;
+            if (string.Equals(_password, value, StringComparison.Ordinal))
+                return;
+
             this.RaiseAndSetIfChanged(ref _password, value);
+            _passwordTouched = true;
+            _passwordServerValidationMessage = null;
             RefreshPasswordStrength();
-            this.RaisePropertyChanged(nameof(CanRegister));
+            RaiseRegistrationValidationChanged();
         }
     }
 
@@ -107,8 +153,13 @@ public sealed class RegistrationViewModel : ViewModelBase
         get => _confirmPassword;
         set
         {
+            value ??= string.Empty;
+            if (string.Equals(_confirmPassword, value, StringComparison.Ordinal))
+                return;
+
             this.RaiseAndSetIfChanged(ref _confirmPassword, value);
-            this.RaisePropertyChanged(nameof(CanRegister));
+            _confirmPasswordTouched = true;
+            RaiseRegistrationValidationChanged();
         }
     }
 
@@ -168,15 +219,48 @@ public sealed class RegistrationViewModel : ViewModelBase
 
     public int PasswordStrength => _passwordStrength;
 
+    public int UsernameMaxLength => DataLengthConstants.UsernameMaxLength;
+
+    public int FirstNameMaxLength => DataLengthConstants.FirstNameMaxLength;
+
+    public int LastNameMaxLength => DataLengthConstants.LastNameMaxLength;
+
+    public int EmailMaxLength => DataLengthConstants.EmailMaxLength;
+
+    public string? UsernameValidationMessage => GetUsernameValidationMessage();
+
+    public string? FirstNameValidationMessage => GetFirstNameValidationMessage();
+
+    public string? LastNameValidationMessage => GetLastNameValidationMessage();
+
+    public string? EmailValidationMessage => GetEmailValidationMessage();
+
+    public string? PasswordValidationMessage => GetPasswordValidationMessage();
+
+    public string? ConfirmPasswordValidationMessage => GetConfirmPasswordValidationMessage();
+
+    public bool HasUsernameValidationError => UsernameValidationMessage is not null;
+
+    public bool HasFirstNameValidationError => FirstNameValidationMessage is not null;
+
+    public bool HasLastNameValidationError => LastNameValidationMessage is not null;
+
+    public bool HasEmailValidationError => EmailValidationMessage is not null;
+
+    public bool HasPasswordValidationError => PasswordValidationMessage is not null;
+
+    public bool HasConfirmPasswordValidationError => ConfirmPasswordValidationMessage is not null;
+
     public bool CanRegister =>
         IsBackendInitialized &&
         !IsBusy &&
-        !string.IsNullOrWhiteSpace(Username) &&
-        !string.IsNullOrWhiteSpace(FirstName) &&
-        !string.IsNullOrWhiteSpace(LastName) &&
-        !string.IsNullOrWhiteSpace(Email) &&
-        !string.IsNullOrWhiteSpace(Password) &&
-        !string.IsNullOrWhiteSpace(ConfirmPassword);
+        IsUsernameLocallyValid() &&
+        IsFirstNameLocallyValid() &&
+        IsLastNameLocallyValid() &&
+        IsEmailLocallyValid() &&
+        IsPasswordLocallyValid() &&
+        IsConfirmPasswordLocallyValid() &&
+        !HasServerValidationErrors;
 
     public ReactiveCommand<RxVoid, RxVoid> RegisterCommand { get; }
 
@@ -274,6 +358,9 @@ public sealed class RegistrationViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(PasswordStrengthInfoTitle));
         this.RaisePropertyChanged(nameof(PasswordStrengthInfoBody));
         this.RaisePropertyChanged(nameof(PasswordStrengthInfoAccessibleLabel));
+
+        RefreshLocalizedServerValidationMessages();
+        RaiseRegistrationValidationChanged();
     }
 
     public void Reset()
@@ -287,16 +374,16 @@ public sealed class RegistrationViewModel : ViewModelBase
         RememberMe = false;
         IsPasswordVisible = false;
         IsConfirmPasswordVisible = false;
+
+        ResetValidationInteractionState();
         ClearStatusMessage();
     }
-
 
     internal void SetBackendInitialized(bool isInitialized) =>
         IsBackendInitialized = isInitialized;
 
     public void SetBackNavigation(Func<Task>? navigateBackAsync) =>
         _navigateBackAsync = navigateBackAsync;
-
 
     private async Task NavigateBackAsync()
     {
@@ -314,59 +401,287 @@ public sealed class RegistrationViewModel : ViewModelBase
 
     private async Task RegisterAsync()
     {
-        if (!CanRegister || !ValidateRegistrationInput())
+        if (!CanRegister)
+        {
+            MarkAllFieldsTouched();
+            RaiseRegistrationValidationChanged();
             return;
+        }
+
+        ClearStatusMessage();
+        ClearServerValidationMessages();
 
         var passwordHash = SecretTransform.HashPassword(Password);
-        Password = string.Empty;
-        ConfirmPassword = string.Empty;
+        var registrationCommitted = false;
 
         try
         {
             IsBusy = true;
             var token = await _endpoints.RegisterAsync(CreateRegistrationRequest(passwordHash));
-            await _endpoints.AddCustomUserColorsAsync(token, CreateDefaultCustomColorRequests());
+            registrationCommitted = true;
+
+            await TryInitializeDefaultCustomColorsAsync(token);
             await _onAuthenticationSucceededAsync(token);
             Reset();
         }
+        catch (InvalidInputException ex) when (!registrationCommitted)
+        {
+            MarkAllFieldsTouched();
+            if (!ApplyBackendValidationErrors(ex))
+                ShowErrorMessage(GetSafeErrorMessage(ex));
+        }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            if (registrationCommitted)
+            {
+                ShowErrorMessage(GetTranslation("Register_AccountCreated_PostSetupFailed"));
+            }
+            else
+            {
+                ShowErrorMessage(GetSafeErrorMessage(ex));
+            }
         }
         finally
         {
             IsBusy = false;
             System.Security.Cryptography.CryptographicOperations.ZeroMemory(passwordHash);
+
+            if (registrationCommitted)
+                ClearCommittedPasswordFields();
         }
     }
 
-    private bool ValidateRegistrationInput()
+    private async Task TryInitializeDefaultCustomColorsAsync(Guid token)
     {
-        ClearStatusMessage();
-        var validationError = GetRegistrationValidationError();
-        if (validationError is null)
-            return true;
-
-        ShowErrorMessage(validationError);
-        return false;
+        try
+        {
+            await _endpoints.AddCustomUserColorsAsync(token, CreateDefaultCustomColorRequests());
+        }
+        catch (OperationCanceledException) when (LifetimeToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Default colors are convenience data. Their initialization must never turn an
+            // already-created account into an apparent registration failure.
+        }
     }
 
-    private string? GetRegistrationValidationError()
+    private void ClearCommittedPasswordFields()
     {
+        Password = string.Empty;
+        ConfirmPassword = string.Empty;
+        _passwordTouched = false;
+        _confirmPasswordTouched = false;
+        _passwordServerValidationMessage = null;
+        RaiseRegistrationValidationChanged();
+    }
+
+    private bool ApplyBackendValidationErrors(InvalidInputException exception)
+    {
+        if (exception.Errors.Count == 0)
+            return false;
+
+        var applied = false;
+        foreach (var error in exception.Errors)
+        {
+            switch (error)
+            {
+                case "Username":
+                    _usernameTouched = true;
+                    _usernameServerValidationMessage = GetTranslation("Validation_Username_Unavailable");
+                    applied = true;
+                    break;
+                case "FirstName":
+                    _firstNameTouched = true;
+                    _firstNameServerValidationMessage = GetTranslation("Validation_FirstName_Invalid");
+                    applied = true;
+                    break;
+                case "LastName":
+                    _lastNameTouched = true;
+                    _lastNameServerValidationMessage = GetTranslation("Validation_LastName_Invalid");
+                    applied = true;
+                    break;
+                case "Email":
+                    _emailTouched = true;
+                    _emailServerValidationMessage = GetTranslation("Validation_Email_Invalid");
+                    applied = true;
+                    break;
+                case "Password":
+                    _passwordTouched = true;
+                    _passwordServerValidationMessage = GetTranslation("Validation_RegisterPassword_Invalid");
+                    applied = true;
+                    break;
+            }
+        }
+
+        if (applied)
+            RaiseRegistrationValidationChanged();
+
+        return applied;
+    }
+
+    private string? GetUsernameValidationMessage()
+    {
+        if (_usernameServerValidationMessage is not null)
+            return _usernameServerValidationMessage;
+        if (!_usernameTouched && Username.Length == 0)
+            return null;
         if (string.IsNullOrWhiteSpace(Username))
             return GetTranslation("Validation_Username_Required");
+        return IsUsernameLocallyValid()
+            ? null
+            : GetTranslation("Validation_Username_Invalid");
+    }
+
+    private string? GetFirstNameValidationMessage()
+    {
+        if (_firstNameServerValidationMessage is not null)
+            return _firstNameServerValidationMessage;
+        if (!_firstNameTouched && FirstName.Length == 0)
+            return null;
         if (string.IsNullOrWhiteSpace(FirstName))
             return GetTranslation("Validation_FirstName_Required");
+        return IsFirstNameLocallyValid()
+            ? null
+            : GetTranslation("Validation_FirstName_Invalid");
+    }
+
+    private string? GetLastNameValidationMessage()
+    {
+        if (_lastNameServerValidationMessage is not null)
+            return _lastNameServerValidationMessage;
+        if (!_lastNameTouched && LastName.Length == 0)
+            return null;
         if (string.IsNullOrWhiteSpace(LastName))
             return GetTranslation("Validation_LastName_Required");
+        return IsLastNameLocallyValid()
+            ? null
+            : GetTranslation("Validation_LastName_Invalid");
+    }
+
+    private string? GetEmailValidationMessage()
+    {
+        if (_emailServerValidationMessage is not null)
+            return _emailServerValidationMessage;
+        if (!_emailTouched && Email.Length == 0)
+            return null;
         if (string.IsNullOrWhiteSpace(Email))
             return GetTranslation("Validation_Email_Required");
-        if (string.IsNullOrWhiteSpace(Password))
-            return GetTranslation("Validation_RegisterPassword_Required");
-        if (!string.Equals(Password, ConfirmPassword, StringComparison.Ordinal))
-            return GetTranslation("Validation_RegisterPassword_Mismatch");
+        return IsEmailLocallyValid()
+            ? null
+            : GetTranslation("Validation_Email_Invalid");
+    }
 
-        return null;
+    private string? GetPasswordValidationMessage()
+    {
+        if (_passwordServerValidationMessage is not null)
+            return _passwordServerValidationMessage;
+        if (!_passwordTouched && Password.Length == 0)
+            return null;
+        return IsPasswordLocallyValid()
+            ? null
+            : GetTranslation("Validation_RegisterPassword_Required");
+    }
+
+    private string? GetConfirmPasswordValidationMessage()
+    {
+        if (!_confirmPasswordTouched && ConfirmPassword.Length == 0)
+            return null;
+        if (string.IsNullOrWhiteSpace(ConfirmPassword))
+            return GetTranslation("Validation_RegisterConfirmPassword_Required");
+        return string.Equals(Password, ConfirmPassword, StringComparison.Ordinal)
+            ? null
+            : GetTranslation("Validation_RegisterPassword_Mismatch");
+    }
+
+    private bool IsUsernameLocallyValid() =>
+        DataValidation.IsValidUsername(Username.Trim());
+
+    private bool IsFirstNameLocallyValid() =>
+        DataValidation.IsValidFirstName(FirstName.Trim());
+
+    private bool IsLastNameLocallyValid() =>
+        DataValidation.IsValidLastName(LastName.Trim());
+
+    private bool IsEmailLocallyValid() =>
+        DataValidation.IsValidEmail(Email.Trim());
+
+    private bool IsPasswordLocallyValid() =>
+        !string.IsNullOrWhiteSpace(Password);
+
+    private bool IsConfirmPasswordLocallyValid() =>
+        !string.IsNullOrWhiteSpace(ConfirmPassword) &&
+        string.Equals(Password, ConfirmPassword, StringComparison.Ordinal);
+
+    private bool HasServerValidationErrors =>
+        _usernameServerValidationMessage is not null ||
+        _firstNameServerValidationMessage is not null ||
+        _lastNameServerValidationMessage is not null ||
+        _emailServerValidationMessage is not null ||
+        _passwordServerValidationMessage is not null;
+
+    private void MarkAllFieldsTouched()
+    {
+        _usernameTouched = true;
+        _firstNameTouched = true;
+        _lastNameTouched = true;
+        _emailTouched = true;
+        _passwordTouched = true;
+        _confirmPasswordTouched = true;
+    }
+
+    private void ResetValidationInteractionState()
+    {
+        _usernameTouched = false;
+        _firstNameTouched = false;
+        _lastNameTouched = false;
+        _emailTouched = false;
+        _passwordTouched = false;
+        _confirmPasswordTouched = false;
+        ClearServerValidationMessages();
+        RaiseRegistrationValidationChanged();
+    }
+
+    private void ClearServerValidationMessages()
+    {
+        _usernameServerValidationMessage = null;
+        _firstNameServerValidationMessage = null;
+        _lastNameServerValidationMessage = null;
+        _emailServerValidationMessage = null;
+        _passwordServerValidationMessage = null;
+    }
+
+    private void RefreshLocalizedServerValidationMessages()
+    {
+        if (_usernameServerValidationMessage is not null)
+            _usernameServerValidationMessage = GetTranslation("Validation_Username_Unavailable");
+        if (_firstNameServerValidationMessage is not null)
+            _firstNameServerValidationMessage = GetTranslation("Validation_FirstName_Invalid");
+        if (_lastNameServerValidationMessage is not null)
+            _lastNameServerValidationMessage = GetTranslation("Validation_LastName_Invalid");
+        if (_emailServerValidationMessage is not null)
+            _emailServerValidationMessage = GetTranslation("Validation_Email_Invalid");
+        if (_passwordServerValidationMessage is not null)
+            _passwordServerValidationMessage = GetTranslation("Validation_RegisterPassword_Invalid");
+    }
+
+    private void RaiseRegistrationValidationChanged()
+    {
+        this.RaisePropertyChanged(nameof(CanRegister));
+        this.RaisePropertyChanged(nameof(UsernameValidationMessage));
+        this.RaisePropertyChanged(nameof(FirstNameValidationMessage));
+        this.RaisePropertyChanged(nameof(LastNameValidationMessage));
+        this.RaisePropertyChanged(nameof(EmailValidationMessage));
+        this.RaisePropertyChanged(nameof(PasswordValidationMessage));
+        this.RaisePropertyChanged(nameof(ConfirmPasswordValidationMessage));
+        this.RaisePropertyChanged(nameof(HasUsernameValidationError));
+        this.RaisePropertyChanged(nameof(HasFirstNameValidationError));
+        this.RaisePropertyChanged(nameof(HasLastNameValidationError));
+        this.RaisePropertyChanged(nameof(HasEmailValidationError));
+        this.RaisePropertyChanged(nameof(HasPasswordValidationError));
+        this.RaisePropertyChanged(nameof(HasConfirmPasswordValidationError));
     }
 
     private void RefreshPasswordStrength()
@@ -393,7 +708,6 @@ public sealed class RegistrationViewModel : ViewModelBase
             RememberMe = RememberMe
         };
 
-
     private IReadOnlyList<NewCustomUserColorRequest> CreateDefaultCustomColorRequests() =>
     [
         new() { ColorName = GetTranslation("Passwords_Color_Gold"), ColorCode = "#FFFFD700" },
@@ -405,14 +719,13 @@ public sealed class RegistrationViewModel : ViewModelBase
         new() { ColorName = GetTranslation("Passwords_Color_Gray"), ColorCode = "#FF94A3B8" }
     ];
 
-
     private void TogglePasswordVisibility() => IsPasswordVisible = !IsPasswordVisible;
 
     private void ToggleConfirmPasswordVisibility() => IsConfirmPasswordVisible = !IsConfirmPasswordVisible;
+
     protected override void DisposeManaged()
     {
         Reset();
         base.DisposeManaged();
     }
-
 }

@@ -238,6 +238,7 @@ public sealed class EndpointRpcContractValidator
             error.SafeMessage.Length > EndpointRpcLimits.MaximumSafeErrorMessageLength ||
             error.OccurredAtUtc.Offset != TimeSpan.Zero ||
             !HasExpectedErrorCategory(error.ErrorCode, error.ErrorCategory) ||
+            !HasValidValidationErrors(error) ||
             !HasValidMutationOutcome(error) ||
             (error.RequiresProcessRestart &&
                 error.ErrorCode is not EndpointRpcErrorCode.RuntimeUnavailable and
@@ -258,6 +259,23 @@ public sealed class EndpointRpcContractValidator
 
         if (!valid)
             throw new EndpointRpcPayloadException("The endpoint RPC error does not match the operation mutation policy.");
+    }
+
+    private static bool HasValidValidationErrors(EndpointRpcError error)
+    {
+        if (error.ValidationErrors is null)
+            return true;
+
+        if (error.ErrorCode != EndpointRpcErrorCode.ValidationFailed ||
+            error.ValidationErrors.Count == 0 ||
+            error.ValidationErrors.Count > EndpointRpcLimits.MaximumValidationErrorFields)
+        {
+            return false;
+        }
+
+        return error.ValidationErrors.All(static field =>
+            !string.IsNullOrWhiteSpace(field) &&
+            field.Length <= EndpointRpcLimits.MaximumValidationErrorFieldLength);
     }
 
     private static bool HasValidMutationOutcome(EndpointRpcError error) => error.ErrorCode switch

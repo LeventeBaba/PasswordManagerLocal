@@ -9,4 +9,5 @@ public sealed record EndpointRpcError(
     bool IsRetryable,
     bool RequiresProcessRestart,
     EndpointMutationOutcome MutationOutcome,
-    EndpointRecoveryMetadata? Recovery);
+    EndpointRecoveryMetadata? Recovery,
+    IReadOnlyList<string>? ValidationErrors = null);

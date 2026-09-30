@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using PasswordManagerLocal.Common.Contracts.Errors;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Windows.EndpointRpc.Client;
 using PasswordManagerLocal.Windows.EndpointRpc.Contracts;
@@ -187,7 +188,7 @@ public sealed class NamedPipeEndpointsProxyMappingTests
             new EndpointRpcSerializer(),
             new EndpointRpcContractValidator());
 
-        var exception = await Assert.ThrowsExactlyAsync<EndpointRpcRemoteException>(() =>
+        var exception = await Assert.ThrowsExactlyAsync<InvalidInputException>(() =>
             proxy.DeleteUserAccountAsync(EndpointRpcTestData.Token, password));
 
         CollectionAssert.AreEqual(expected, password);

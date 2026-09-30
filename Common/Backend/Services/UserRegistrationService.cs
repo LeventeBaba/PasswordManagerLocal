@@ -2,6 +2,7 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Exceptions;
+using PasswordManagerLocal.Common.Backend.Diagnostics;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Contracts.Requests;
@@ -64,6 +65,9 @@ public sealed class UserRegistrationService : IUserRegistrationService
 
     public async Task<Guid> RegisterAsync(RegistrationRequest request, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(request);
+        NormalizeRegistrationRequest(request);
+
         if (!request.Validate(out var errors))
             throw new InvalidInputException(errors);
 
@@ -79,10 +83,11 @@ public sealed class UserRegistrationService : IUserRegistrationService
         var user = await CreateEncryptedUserForRegistrationAsync(bundle, usernameBytes, passwordSalt, key, linkedAt, ct);
 
         await SaveRegisteredUserAsync(user, request.RememberMe, key, ct);
+
+        Guid token;
         try
         {
-            await _syncRuntime.RefreshSyncEnabledAsync(ct);
-            return _sessionIssuer.IssueAuthenticatedSession(user.UId, key, bundle);
+            token = _sessionIssuer.IssueAuthenticatedSession(user.UId, key, bundle);
         }
         catch (Exception ex)
         {
@@ -90,6 +95,30 @@ public sealed class UserRegistrationService : IUserRegistrationService
                 "The account registration was committed, but the local runtime session could not be completed.",
                 innerException: ex);
         }
+
+        try
+        {
+            await _syncRuntime.RefreshSyncEnabledAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            BackendDebugLog.Warning(
+                "Registration completed successfully, but the synchronization runtime could not be refreshed. " +
+                "The account remains registered and the runtime can retry synchronization later.",
+                ex,
+                "Registration");
+        }
+
+        return token;
+    }
+
+
+    private static void NormalizeRegistrationRequest(RegistrationRequest request)
+    {
+        request.Username = request.Username?.Trim() ?? string.Empty;
+        request.FirstName = request.FirstName?.Trim() ?? string.Empty;
+        request.LastName = request.LastName?.Trim() ?? string.Empty;
+        request.Email = request.Email?.Trim() ?? string.Empty;
     }
 
 
@@ -97,7 +126,7 @@ public sealed class UserRegistrationService : IUserRegistrationService
     {
         var resolution = await _userLookup.ResolveUsernameAsync(usernameBytes, ct);
         if (resolution.State != UserLoginIdentityMatchState.NotFound)
-            throw new InvalidInputException();
+            throw new InvalidInputException(["Username"]);
     }
 
 

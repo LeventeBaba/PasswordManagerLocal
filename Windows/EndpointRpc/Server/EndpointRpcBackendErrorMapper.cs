@@ -55,11 +55,20 @@ public sealed class EndpointRpcBackendErrorMapper
             _ => Error(EndpointRpcErrorCode.BackendFailure, EndpointRpcErrorCategory.Internal, "The endpoint operation failed.")
         };
 
+        var validationErrors = exception is InvalidInputException invalidInput && invalidInput.Errors.Count > 0
+            ? invalidInput.Errors
+                .Where(static error => !string.IsNullOrWhiteSpace(error))
+                .Distinct(StringComparer.Ordinal)
+                .Take(EndpointRpcLimits.MaximumValidationErrorFields)
+                .ToArray()
+            : null;
+
         return CreateError(
             metadata,
             context,
             GetConclusiveMutationOutcome(context.OperationId),
-            recovery: null);
+            recovery: null,
+            validationErrors: validationErrors);
     }
 
     public bool TryMapKnownMutationFailure(
@@ -179,7 +188,8 @@ public sealed class EndpointRpcBackendErrorMapper
         (EndpointRpcErrorCode Code, EndpointRpcErrorCategory Category, string Message, bool Retryable, bool RequiresRestart) metadata,
         EndpointRequestContext context,
         EndpointMutationOutcome mutationOutcome,
-        EndpointRecoveryMetadata? recovery) =>
+        EndpointRecoveryMetadata? recovery,
+        IReadOnlyList<string>? validationErrors = null) =>
         new(
             metadata.Code,
             metadata.Category,
@@ -189,7 +199,8 @@ public sealed class EndpointRpcBackendErrorMapper
             metadata.Retryable,
             metadata.RequiresRestart,
             mutationOutcome,
-            recovery);
+            recovery,
+            validationErrors);
 
     private static (EndpointRpcErrorCode Code, EndpointRpcErrorCategory Category, string Message, bool Retryable, bool RequiresRestart) MapDeviceEnrollmentError(
         DeviceEnrollmentErrorCode errorCode) => errorCode switch

@@ -11,7 +11,7 @@ namespace PasswordManagerLocal.Common.Tests.Architecture;
 public sealed class Phase3ApplicationPreferencesArchitectureTests
 {
     [TestMethod]
-    public void AuthoritativeContractContainsOnlyVersionLanguageAndTheme()
+    public void AuthoritativeContractContainsOnlyVersionLanguageThemeAndInterfaceAnimations()
     {
         var properties = typeof(ApplicationPreferences)
             .GetProperties(BindingFlags.Instance | BindingFlags.Public)
@@ -20,7 +20,7 @@ public sealed class Phase3ApplicationPreferencesArchitectureTests
             .ToArray();
 
         CollectionAssert.AreEqual(
-            new[] { "Language", "SchemaVersion", "Theme" },
+            new[] { "InterfaceAnimationsEnabled", "Language", "SchemaVersion", "Theme" },
             properties);
     }
 
