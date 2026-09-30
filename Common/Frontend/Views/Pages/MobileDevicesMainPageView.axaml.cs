@@ -2,9 +2,9 @@ using Avalonia.Controls;
 
 namespace PasswordManagerLocal.Common.Frontend.Views.Pages;
 
-public partial class ProfileView : UserControl
+public partial class MobileDevicesMainPageView : UserControl
 {
-    public ProfileView()
+    public MobileDevicesMainPageView()
     {
         InitializeComponent();
     }

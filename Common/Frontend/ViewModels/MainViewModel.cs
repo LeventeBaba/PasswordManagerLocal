@@ -40,7 +40,7 @@ public sealed class MainViewModel : ViewModelBase
     private Task? _initializationTask;
 
     private ViewModelBase _currentPageViewModel;
-    private MainPageContentViewModel _currentAnimatedPageViewModel;
+    private MainPageContentViewModel _currentPageContentViewModel;
     private bool _isPageTransitionReversed;
     private bool _isAuthenticated;
     private bool _isBackendInitialized;
@@ -69,6 +69,8 @@ public sealed class MainViewModel : ViewModelBase
     private ChangeProfileViewModel? _changeProfileViewModel;
     private ViewModelBase? _observedPageStatusViewModel;
     private ViewModelBase? _settingsReturnPageViewModel;
+    private IReadOnlyList<MobileMainPageViewModel>? _mobileMainPages;
+    private int _currentMobileNavigationIndex;
 
     public MainViewModel(
         IEndpoints endpoints,
@@ -104,7 +106,7 @@ public sealed class MainViewModel : ViewModelBase
         LoginViewModel = new LoginViewModel(uiPreferences, _endpoints, NavigateToRegistration, OnAuthenticationSucceededAsync);
 
         _currentPageViewModel = LoginViewModel;
-        _currentAnimatedPageViewModel = new MainPageContentViewModel(LoginViewModel);
+        _currentPageContentViewModel = new MainPageContentViewModel(LoginViewModel);
         ObservePageStatus(_currentPageViewModel);
 
         SettingsViewModel = new SettingsViewModel(
@@ -159,7 +161,7 @@ public sealed class MainViewModel : ViewModelBase
         CurrentUserSubtitle = string.Empty;
         IsAuthenticated = false;
         _currentPageViewModel = LoginViewModel;
-        _currentAnimatedPageViewModel = new MainPageContentViewModel(LoginViewModel);
+        _currentPageContentViewModel = new MainPageContentViewModel(LoginViewModel);
         base.DisposeManaged();
     }
 
@@ -219,7 +221,8 @@ public sealed class MainViewModel : ViewModelBase
             ClearStatusMessage();
             this.RaiseAndSetIfChanged(ref _currentPageViewModel, value);
             ObservePageStatus(value);
-            CurrentAnimatedPageViewModel = new MainPageContentViewModel(value);
+            this.RaisePropertyChanged(nameof(CurrentDesktopPageViewModel));
+            CurrentPageContentViewModel = new MainPageContentViewModel(value);
             RaiseNavigationStateProperties();
             RaiseHeaderSubtitleProperties();
         }
@@ -243,6 +246,11 @@ public sealed class MainViewModel : ViewModelBase
             this.RaisePropertyChanged(nameof(DevicesNavigationFrameBrush));
             this.RaisePropertyChanged(nameof(ProfileNavigationFrameBrush));
             this.RaisePropertyChanged(nameof(CanChangeRememberMe));
+            this.RaisePropertyChanged(nameof(IsMobileMainContentVisible));
+            this.RaisePropertyChanged(nameof(IsMobileStandaloneContentVisible));
+            this.RaisePropertyChanged(nameof(CurrentMobileStandalonePageViewModel));
+            this.RaisePropertyChanged(nameof(MobileMainPages));
+            RaiseMobileSwipeEligibilityProperties();
         }
     }
 
@@ -251,7 +259,14 @@ public sealed class MainViewModel : ViewModelBase
     public bool IsSessionRenewalDialogOpen
     {
         get => _isSessionRenewalDialogOpen;
-        private set => this.RaiseAndSetIfChanged(ref _isSessionRenewalDialogOpen, value);
+        private set
+        {
+            if (_isSessionRenewalDialogOpen == value)
+                return;
+
+            this.RaiseAndSetIfChanged(ref _isSessionRenewalDialogOpen, value);
+            RaiseMobileSwipeEligibilityProperties();
+        }
     }
 
     public bool IsRenewingSession
@@ -264,11 +279,21 @@ public sealed class MainViewModel : ViewModelBase
         }
     }
 
-    public MainPageContentViewModel CurrentAnimatedPageViewModel
+    public MainPageContentViewModel CurrentPageContentViewModel
     {
-        get => _currentAnimatedPageViewModel;
-        private set => this.RaiseAndSetIfChanged(ref _currentAnimatedPageViewModel, value);
+        get => _currentPageContentViewModel;
+        private set
+        {
+            if (ReferenceEquals(_currentPageContentViewModel, value))
+                return;
+
+            this.RaiseAndSetIfChanged(ref _currentPageContentViewModel, value);
+            this.RaisePropertyChanged(nameof(CurrentMobileStandalonePageViewModel));
+        }
     }
+
+    public MainPageContentViewModel? CurrentMobileStandalonePageViewModel =>
+        IsMobileStandaloneContentVisible ? CurrentPageContentViewModel : null;
 
     public bool IsPageTransitionReversed
     {
@@ -280,9 +305,32 @@ public sealed class MainViewModel : ViewModelBase
 
     public bool IsDesktopContentVisible => !IsMobileNavigationEnabled;
 
+    public ViewModelBase? CurrentDesktopPageViewModel => IsAndroidUi ? null : CurrentPageViewModel;
+
+    public bool IsMobileMainContentVisible => IsMobileNavigationEnabled && IsMainContentPageVisible;
+
+    public bool IsMobileStandaloneContentVisible => IsMobileNavigationEnabled && !IsMainContentPageVisible;
+
     public bool IsDesktopNavigationVisible => IsAuthenticated && !IsMobileNavigationEnabled && IsMainContentPageVisible;
 
     public bool IsMobilePageIndicatorVisible => IsAuthenticated && IsMobileNavigationEnabled && IsMainContentPageVisible;
+
+    public bool IsMobileMainPageAnimationEnabled =>
+        EffectiveInterfaceAnimationsEnabled;
+
+    public bool CanNavigateMobileMainPagesBySwipe =>
+        IsMobileNavigationEnabled &&
+        IsAuthenticated &&
+        IsMainContentPageVisible &&
+        IsApplicationInteractionEnabled &&
+        !HasConfirmableDialogOpen &&
+        IsCurrentMainPageAtSwipeRoot();
+
+    public bool IsAnimatedMobileMainPageSwipeEnabled =>
+        IsMobileMainPageAnimationEnabled && CanNavigateMobileMainPagesBySwipe;
+
+    public bool IsCustomMobileMainPageSwipeEnabled =>
+        !IsMobileMainPageAnimationEnabled && CanNavigateMobileMainPagesBySwipe;
 
     public bool IsPasswordsMainPageSelected => IsAuthenticated && CurrentMainPageIndex == 0;
 
@@ -312,16 +360,48 @@ public sealed class MainViewModel : ViewModelBase
         ReferenceEquals(CurrentPageViewModel, _passwordsViewModel) ||
         ReferenceEquals(CurrentPageViewModel, _profileViewModel);
 
-    public int CurrentMobileNavigationIndex => CurrentMainPageIndex;
+    public IReadOnlyList<MobileMainPageViewModel> MobileMainPages
+    {
+        get
+        {
+            if (!IsMobileNavigationEnabled || !IsAuthenticated)
+                return Array.Empty<MobileMainPageViewModel>();
 
-    public string MobileCurrentPageLabel => CurrentMainPageIndex switch
+            return _mobileMainPages ??=
+            [
+                new MobilePasswordsMainPageViewModel(PasswordsViewModel),
+                new MobileDevicesMainPageViewModel(ProfileViewModel),
+                new MobileProfileMainPageViewModel(ProfileViewModel)
+            ];
+        }
+    }
+
+    public int CurrentMobileNavigationIndex
+    {
+        get => _currentMobileNavigationIndex;
+        set
+        {
+            if (value is < 0 or > 2 || value == _currentMobileNavigationIndex)
+                return;
+
+            if (!CanNavigateMobileMainPagesBySwipe)
+            {
+                this.RaisePropertyChanged(nameof(CurrentMobileNavigationIndex));
+                return;
+            }
+
+            NavigateToMainPageFromMobileCarousel(value);
+        }
+    }
+
+    public string MobileCurrentPageLabel => _currentMobileNavigationIndex switch
     {
         1 => DevicesLabel,
         2 => ProfileLabel,
         _ => PasswordVaultLabel
     };
 
-    public string MobilePageIndicatorText => CurrentMainPageIndex switch
+    public string MobilePageIndicatorText => _currentMobileNavigationIndex switch
     {
         1 => "○ ● ○",
         2 => "○ ○ ●",
@@ -900,6 +980,7 @@ public sealed class MainViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(DatabaseRecoveryMessage));
         this.RaisePropertyChanged(nameof(DatabaseRecoveryPrimaryButtonLabel));
         this.RaisePropertyChanged(nameof(DatabaseRecoverySecondaryButtonLabel));
+        RaiseMobileSwipeEligibilityProperties();
     }
 
     protected override void OnLanguageChanged()
@@ -1034,6 +1115,9 @@ public sealed class MainViewModel : ViewModelBase
         {
             RaiseHeaderSubtitleProperties();
         }
+
+        if (sender is PasswordsViewModel _ || sender is ProfileViewModel _)
+            RaiseMobileSwipeEligibilityProperties();
     }
 
     private void ShowShellMessage(string? message, OperationMessageKind kind = OperationMessageKind.Success)
@@ -1282,6 +1366,19 @@ public sealed class MainViewModel : ViewModelBase
 
         ConfigureDirectMobileMainPageTransition(targetMainPageIndex);
 
+        NavigateToMainPage(targetMainPageIndex);
+    }
+
+    private void NavigateToMainPageFromMobileCarousel(int targetMainPageIndex)
+    {
+        if (!IsAuthenticated || !IsMainContentPageVisible)
+            return;
+
+        NavigateToMainPage(targetMainPageIndex);
+    }
+
+    private void NavigateToMainPage(int targetMainPageIndex)
+    {
         switch (targetMainPageIndex)
         {
             case 1:
@@ -1325,6 +1422,7 @@ public sealed class MainViewModel : ViewModelBase
         PasswordsViewModel.ShowMainPage();
         ProfileViewModel.DiscardTransientNavigationState();
         ShowMainContentPage(PasswordsViewModel);
+        SetCurrentMobileNavigationIndex(0);
 
         if (isReselectingPasswords)
         {
@@ -1343,6 +1441,7 @@ public sealed class MainViewModel : ViewModelBase
         PasswordsViewModel.ShowMainPage();
         ProfileViewModel.ShowProfileMainPage();
         ShowMainContentPage(ProfileViewModel);
+        SetCurrentMobileNavigationIndex(2);
     }
 
     private void NavigateToDevices()
@@ -1358,6 +1457,7 @@ public sealed class MainViewModel : ViewModelBase
         PasswordsViewModel.ShowMainPage();
         ProfileViewModel.ShowDevicesMainPage();
         ShowMainContentPage(ProfileViewModel);
+        SetCurrentMobileNavigationIndex(1);
 
         if (isReselectingDevices)
         {
@@ -1373,7 +1473,7 @@ public sealed class MainViewModel : ViewModelBase
             return;
         }
 
-        CurrentAnimatedPageViewModel = new MainPageContentViewModel(pageViewModel);
+        CurrentPageContentViewModel = new MainPageContentViewModel(pageViewModel);
         RaiseNavigationStateProperties();
     }
 
@@ -1568,6 +1668,7 @@ public sealed class MainViewModel : ViewModelBase
         var profileLoaded = await profileLoadTask;
 
         CurrentPageViewModel = passwordsViewModel;
+        SetCurrentMobileNavigationIndex(0);
 
         if (!passwordsLoaded)
         {
@@ -1638,7 +1739,8 @@ public sealed class MainViewModel : ViewModelBase
             ProfileViewModel.SetSessionToken(token);
 
             var passwordsLoaded = await PasswordsViewModel.RefreshCurrentDataAsync(false);
-            var profileLoaded = await ProfileViewModel.LoadAsync(token, profile);
+            var profileLoaded = await ProfileViewModel.LoadAsync(token, profile)
+                && await ProfileViewModel.RefreshLoadedDevicesAsync();
 
             if (!passwordsLoaded)
             {
@@ -1677,7 +1779,8 @@ public sealed class MainViewModel : ViewModelBase
         ApplyRememberMeFromSession(profile.IsRememberMeEnabled);
         SetSessionProfile(token, profile);
 
-        return await ProfileViewModel.LoadAsync(token, profile);
+        return await ProfileViewModel.LoadAsync(token, profile)
+            && await ProfileViewModel.RefreshLoadedDevicesAsync();
     }
 
     private async Task RefreshAuthenticatedStateAsync()
@@ -1734,6 +1837,7 @@ public sealed class MainViewModel : ViewModelBase
         ApplyRememberMeFromSession(false);
         _passwordsViewModel?.Reset();
         _profileViewModel?.Reset();
+        SetCurrentMobileNavigationIndex(0);
         LoginViewModel.Reset();
         _registrationViewModel?.Reset();
         CurrentPageViewModel = LoginViewModel;
@@ -2141,9 +2245,6 @@ public sealed class MainViewModel : ViewModelBase
 
     private void RaiseNavigationStateProperties()
     {
-        this.RaisePropertyChanged(nameof(CurrentMobileNavigationIndex));
-        this.RaisePropertyChanged(nameof(MobileCurrentPageLabel));
-        this.RaisePropertyChanged(nameof(MobilePageIndicatorText));
         this.RaisePropertyChanged(nameof(IsPasswordsMainPageSelected));
         this.RaisePropertyChanged(nameof(IsDevicesMainPageSelected));
         this.RaisePropertyChanged(nameof(IsProfileMainPageSelected));
@@ -2153,8 +2254,64 @@ public sealed class MainViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(ProfileNavigationFrameBrush));
         this.RaisePropertyChanged(nameof(IsDesktopNavigationVisible));
         this.RaisePropertyChanged(nameof(IsMobilePageIndicatorVisible));
+        this.RaisePropertyChanged(nameof(IsMobileMainContentVisible));
+        this.RaisePropertyChanged(nameof(IsMobileStandaloneContentVisible));
+        this.RaisePropertyChanged(nameof(CurrentMobileStandalonePageViewModel));
+        RaiseMobileSwipeEligibilityProperties();
     }
 
+
+    public void RefreshPlatformAnimationAvailability() =>
+        UiPreferences.MotionPolicy.RefreshPlatformState();
+
+    protected override void OnInterfaceMotionChanged() =>
+        RaiseMobileAnimationProperties();
+
+    private bool IsCurrentMainPageAtSwipeRoot()
+    {
+        if (_passwordsViewModel is not null && ReferenceEquals(CurrentPageViewModel, _passwordsViewModel))
+        {
+            return _passwordsViewModel.IsListPaneVisible &&
+                   !_passwordsViewModel.IsMultiSelectionToolbarVisible;
+        }
+
+        if (_profileViewModel is null || !ReferenceEquals(CurrentPageViewModel, _profileViewModel))
+            return false;
+
+        if (_profileViewModel.IsDevicesMainPage)
+        {
+            return _profileViewModel.IsDeviceListPaneVisible &&
+                   !_profileViewModel.IsAddDeviceDialogOpen &&
+                   !_profileViewModel.IsDeviceDisconnectDialogOpen &&
+                   !_profileViewModel.IsLocalSyncDialogOpen;
+        }
+
+        return _profileViewModel.IsProfileMainPage && _profileViewModel.IsProfileTabsPaneVisible;
+    }
+
+    private void SetCurrentMobileNavigationIndex(int index)
+    {
+        if (_currentMobileNavigationIndex == index)
+            return;
+
+        _currentMobileNavigationIndex = index;
+        this.RaisePropertyChanged(nameof(CurrentMobileNavigationIndex));
+        this.RaisePropertyChanged(nameof(MobileCurrentPageLabel));
+        this.RaisePropertyChanged(nameof(MobilePageIndicatorText));
+    }
+
+    private void RaiseMobileSwipeEligibilityProperties()
+    {
+        this.RaisePropertyChanged(nameof(CanNavigateMobileMainPagesBySwipe));
+        this.RaisePropertyChanged(nameof(IsAnimatedMobileMainPageSwipeEnabled));
+        this.RaisePropertyChanged(nameof(IsCustomMobileMainPageSwipeEnabled));
+    }
+
+    private void RaiseMobileAnimationProperties()
+    {
+        this.RaisePropertyChanged(nameof(IsMobileMainPageAnimationEnabled));
+        RaiseMobileSwipeEligibilityProperties();
+    }
 
     private static string BuildSubtitle(UserProfileInfoResponse profile) =>
         string.IsNullOrWhiteSpace(profile.Username)

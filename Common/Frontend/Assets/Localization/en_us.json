@@ -12,6 +12,8 @@
   "Settings_Appearance_Description": "Language and visual theme.",
   "Settings_Language_Description": "Select the language used for menus, labels, and messages.",
   "Settings_Theme_Description": "Choose the light or dark appearance for this device.",
+  "Settings_InterfaceAnimations_Label": "Interface animations",
+  "Settings_InterfaceAnimations_Description": "Animate Android navigation and page changes. Turning this off makes navigation instant. System animation settings are respected.",
   "Settings_Background_Title": "Background operation",
   "Settings_Background_Description": "Background synchronization with automatic startup.",
   "Settings_BackgroundSync_Label": "Background synchronization",

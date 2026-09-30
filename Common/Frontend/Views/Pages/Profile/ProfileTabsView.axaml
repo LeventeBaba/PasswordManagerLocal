@@ -5,6 +5,8 @@
     xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
     x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Profile.ProfileTabsView"
     x:DataType="vm:ProfileViewModel">
+  <ScrollViewer Classes="comfortableListScroller"
+                Classes.androidComfortableListScroller="{Binding IsAndroidUi}">
   <TabControl
       SelectedIndex="{Binding SelectedProfileTabIndex, Mode=TwoWay}"
       HorizontalAlignment="Stretch">
@@ -254,4 +256,5 @@
       </StackPanel>
     </TabItem>
   </TabControl>
+  </ScrollViewer>
 </UserControl>

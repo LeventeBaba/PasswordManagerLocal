@@ -1,3 +1,4 @@
+using PasswordManagerLocal.Common.Frontend.Services;
 using Avalonia.Media;
 using PasswordManagerLocal.Common.Contracts.Constants;
 using PasswordManagerLocal.Common.Contracts.Requests;
@@ -26,13 +27,14 @@ public sealed partial class PasswordsViewModel
     private string _passwordTagEditorColor = PasswordColorUtility.DefaultColor;
     private PasswordColorOptionViewModel? _selectedPasswordTagColorOption;
     private string _passwordTagSearchQuery = string.Empty;
+    private readonly DebouncedUiAction _passwordTagSearchDebounce = new(TimeSpan.FromMilliseconds(125));
     private bool _isPasswordTagSearchNameEnabled = true;
     private bool _isPasswordTagSearchColorEnabled = true;
     private string _passwordTagSortKey = "name-asc";
     private bool _isPasswordTagMultiSelectionActive;
     private string _customColorListReturnPane = EditorPane;
 
-    public ObservableCollection<PasswordTagManagementItemViewModel> PasswordTags { get; } = [];
+    public ObservableCollection<PasswordTagManagementItemViewModel> PasswordTags { get; private set; } = [];
 
     public ObservableCollection<PasswordColorOptionViewModel> PasswordTagColorOptions { get; } = [];
 
@@ -116,7 +118,7 @@ public sealed partial class PasswordsViewModel
             }
 
             this.RaiseAndSetIfChanged(ref _passwordTagSearchQuery, value);
-            ApplyPasswordTagFiltersAndSorting();
+            _passwordTagSearchDebounce.Schedule(ApplyPasswordTagFiltersAndSorting);
         }
     }
 
@@ -152,6 +154,8 @@ public sealed partial class PasswordsViewModel
 
     public bool IsPasswordTagSearchResultEmpty => HasStoredPasswordTags && !HasPasswordTags;
 
+    public bool IsPasswordTagSelectionModeInactive => !IsPasswordTagMultiSelectionActive;
+
     public bool IsPasswordTagMultiSelectionActive
     {
         get => _isPasswordTagMultiSelectionActive;
@@ -163,6 +167,7 @@ public sealed partial class PasswordsViewModel
             }
 
             this.RaiseAndSetIfChanged(ref _isPasswordTagMultiSelectionActive, value);
+            this.RaisePropertyChanged(nameof(IsPasswordTagSelectionModeInactive));
             RaiseMultiSelectionStateChanged();
         }
     }
@@ -395,8 +400,7 @@ public sealed partial class PasswordsViewModel
             var item = PasswordTagManagementItemViewModel.Create(
                 tag,
                 DeletePasswordLabel,
-                OpenPasswordTagEditorForEditing,
-                BeginDeletePasswordTagAsync);
+                this);
             item.PropertyChanged += HandleManagedPasswordTagItemPropertyChanged;
             _allManagedPasswordTags.Add(item);
         }
@@ -409,16 +413,17 @@ public sealed partial class PasswordsViewModel
         foreach (var tag in _allManagedPasswordTags)
         {
             tag.PropertyChanged -= HandleManagedPasswordTagItemPropertyChanged;
-            tag.Dispose();
         }
 
         _allManagedPasswordTags.Clear();
-        PasswordTags.Clear();
+        PasswordTags = [];
+        this.RaisePropertyChanged(nameof(PasswordTags));
         RaisePasswordTagCollectionStateChanged();
     }
 
     private void ApplyPasswordTagFiltersAndSorting()
     {
+        _passwordTagSearchDebounce.Cancel();
         IEnumerable<PasswordTagManagementItemViewModel> query = _allManagedPasswordTags;
 
         if (!string.IsNullOrWhiteSpace(PasswordTagSearchQuery))
@@ -437,11 +442,8 @@ public sealed partial class PasswordsViewModel
             : query.OrderBy(tag => tag.Name, StringComparer.CurrentCultureIgnoreCase)
                 .ThenBy(tag => tag.Id);
 
-        PasswordTags.Clear();
-        foreach (var tag in query)
-        {
-            PasswordTags.Add(tag);
-        }
+        PasswordTags = new ObservableCollection<PasswordTagManagementItemViewModel>(query);
+        this.RaisePropertyChanged(nameof(PasswordTags));
 
         RaisePasswordTagCollectionStateChanged();
     }
@@ -594,7 +596,7 @@ public sealed partial class PasswordsViewModel
         if (!IsPasswordTagMultiSelectionActive)
         {
             IsPasswordTagMultiSelectionActive = true;
-            SetSelectionMode(_allManagedPasswordTags, true);
+
         }
 
         tag.IsSelected = true;
@@ -603,7 +605,7 @@ public sealed partial class PasswordsViewModel
     private void ExitPasswordTagMultiSelection()
     {
         IsPasswordTagMultiSelectionActive = false;
-        SetSelectionMode(_allManagedPasswordTags, false);
+        SetSelected(_allManagedPasswordTags, false);
     }
 
     private void HandleManagedPasswordTagItemPropertyChanged(object? sender, PropertyChangedEventArgs e)

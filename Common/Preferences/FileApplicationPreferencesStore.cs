@@ -47,8 +47,28 @@ public sealed class FileApplicationPreferencesStore : IApplicationPreferencesSto
                 var json = await _fileSystem.ReadAllTextAsync(
                     _preferencesPath,
                     cancellationToken).ConfigureAwait(false);
-                if (TryParse(json, out var preferences))
+                if (TryParse(json, out var preferences, out var requiresMigration))
+                {
+                    if (requiresMigration)
+                    {
+                        try
+                        {
+                            await WriteCoreAsync(preferences, cancellationToken).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception exception)
+                        {
+                            // Keep the valid migrated values for this session even if the
+                            // best-effort schema upgrade could not be persisted yet.
+                            _diagnostics.ReportFailure("migrate", exception);
+                        }
+                    }
+
                     return preferences;
+                }
             }
             catch (OperationCanceledException)
             {
@@ -167,9 +187,11 @@ public sealed class FileApplicationPreferencesStore : IApplicationPreferencesSto
 
     private static bool TryParse(
         string json,
-        out ApplicationPreferences preferences)
+        out ApplicationPreferences preferences,
+        out bool requiresMigration)
     {
         preferences = null!;
+        requiresMigration = false;
         if (string.IsNullOrWhiteSpace(json))
             return false;
 
@@ -178,11 +200,9 @@ public sealed class FileApplicationPreferencesStore : IApplicationPreferencesSto
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object ||
-                root.EnumerateObject().Count() != 3 ||
                 !root.TryGetProperty("schemaVersion", out var schemaVersionElement) ||
                 schemaVersionElement.ValueKind != JsonValueKind.Number ||
                 !schemaVersionElement.TryGetInt32(out var schemaVersion) ||
-                schemaVersion != ApplicationPreferences.CurrentSchemaVersion ||
                 !root.TryGetProperty("language", out var languageElement) ||
                 languageElement.ValueKind != JsonValueKind.String ||
                 !TryParseLanguage(languageElement.GetString(), out var language) ||
@@ -193,12 +213,38 @@ public sealed class FileApplicationPreferencesStore : IApplicationPreferencesSto
                 return false;
             }
 
+            if (schemaVersion == 1)
+            {
+                if (root.EnumerateObject().Count() != 3)
+                    return false;
+
+                preferences = new ApplicationPreferences
+                {
+                    SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
+                    Language = language,
+                    Theme = theme,
+                    InterfaceAnimationsEnabled = ApplicationPreferencesDefaults.DefaultInterfaceAnimationsEnabled
+                };
+                requiresMigration = true;
+                return true;
+            }
+
+            if (schemaVersion is not (2 or ApplicationPreferences.CurrentSchemaVersion) ||
+                root.EnumerateObject().Count() != 4 ||
+                !root.TryGetProperty(schemaVersion == 2 ? "animateMobileMainPageTransitions" : "interfaceAnimationsEnabled", out var animationElement) ||
+                animationElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                return false;
+            }
+
             preferences = new ApplicationPreferences
             {
-                SchemaVersion = schemaVersion,
+                SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
                 Language = language,
-                Theme = theme
+                Theme = theme,
+                InterfaceAnimationsEnabled = animationElement.GetBoolean()
             };
+            requiresMigration = schemaVersion != ApplicationPreferences.CurrentSchemaVersion;
             return true;
         }
         catch (JsonException)

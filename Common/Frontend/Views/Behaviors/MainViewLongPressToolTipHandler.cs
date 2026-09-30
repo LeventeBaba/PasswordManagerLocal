@@ -56,8 +56,13 @@ internal sealed class MainViewLongPressToolTipHandler
             return;
 
         var movement = e.GetPosition(_view) - _pressPosition;
-        if (Math.Abs(movement.X) <= CancelDistance && Math.Abs(movement.Y) <= CancelDistance)
+        var intent = TouchGestureIntentClassifier.Classify(movement);
+        if (intent == TouchGestureIntent.Undetermined &&
+            Math.Abs(movement.X) <= CancelDistance &&
+            Math.Abs(movement.Y) <= CancelDistance)
+        {
             return;
+        }
 
         CancelPendingLongPress();
 

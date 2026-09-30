@@ -163,6 +163,8 @@ public sealed class ProfileViewModel : ViewModelBase
     private readonly Func<Task<bool>> _refreshAuthenticatedStateAsync;
     private readonly Func<Task> _handleAccountDeletedAsync;
     private readonly List<DeviceItemViewModel> _allDevices = [];
+    private bool _areDevicesLoaded;
+    private readonly DebouncedUiAction _deviceSearchDebounce = new(TimeSpan.FromMilliseconds(125));
 
     private Guid _token;
     private string _username = string.Empty;
@@ -198,8 +200,8 @@ public sealed class ProfileViewModel : ViewModelBase
     private string _currentMainPage = MainProfilePage;
     private string _currentProfilePane = ProfileTabsPane;
     private string _currentDevicePane = DeviceListPane;
-    private ProfilePaneTransitionViewModel? _currentAnimatedProfilePaneViewModel;
-    private DevicePaneTransitionViewModel? _currentAnimatedDevicePaneViewModel;
+    private ProfilePaneTransitionViewModel? _currentProfilePaneViewModel;
+    private DevicePaneTransitionViewModel? _currentDevicePaneViewModel;
     private bool _isProfilePaneTransitionReversed;
     private bool _isDevicePaneTransitionReversed;
     private int _selectedProfileTabIndex;
@@ -224,6 +226,11 @@ public sealed class ProfileViewModel : ViewModelBase
         ChangeUsernameCommand = Own(ReactiveCommand.CreateFromTask(ChangeUsernameAsync));
         ChangeMasterPasswordCommand = Own(ReactiveCommand.CreateFromTask(ChangeMasterPasswordAsync));
         DeleteAccountCommand = Own(ReactiveCommand.CreateFromTask(DeleteAccountAsync));
+        ViewDeviceCommand = Own(ReactiveCommand.CreateFromTask<DeviceItemViewModel>(BeginViewDeviceAsync));
+        SaveDeviceNameCommand = Own(ReactiveCommand.CreateFromTask<DeviceItemViewModel>(SaveDeviceNameAsync));
+        ToggleDeviceSyncCommand = Own(ReactiveCommand.CreateFromTask<DeviceItemViewModel>(ToggleDeviceSyncAsync));
+        UnblockDeviceCommand = Own(ReactiveCommand.CreateFromTask<DeviceItemViewModel>(UnblockDeviceAsync));
+        DisconnectDeviceCommand = Own(ReactiveCommand.Create<DeviceItemViewModel>(BeginDisconnectDevice));
         RefreshDevicesCommand = Own(ReactiveCommand.CreateFromTask(RefreshDevicesAsync));
         RunSelfDiagnosticsCommand = Own(ReactiveCommand.CreateFromTask(RunSelfDiagnosticsAsync));
         SearchDevicesCommand = Own(ReactiveCommand.Create(ApplyCurrentDeviceSearch));
@@ -381,7 +388,13 @@ public sealed class ProfileViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _disconnectDevicePassword, value);
     }
 
-    public ObservableCollection<DeviceItemViewModel> Devices { get; }
+    public ReactiveCommand<DeviceItemViewModel, RxVoid> ViewDeviceCommand { get; }
+    public ReactiveCommand<DeviceItemViewModel, RxVoid> SaveDeviceNameCommand { get; }
+    public ReactiveCommand<DeviceItemViewModel, RxVoid> ToggleDeviceSyncCommand { get; }
+    public ReactiveCommand<DeviceItemViewModel, RxVoid> UnblockDeviceCommand { get; }
+    public ReactiveCommand<DeviceItemViewModel, RxVoid> DisconnectDeviceCommand { get; }
+
+    public ObservableCollection<DeviceItemViewModel> Devices { get; private set; }
 
     public event EventHandler? DeviceListScrollToTopRequested;
 
@@ -451,7 +464,7 @@ public sealed class ProfileViewModel : ViewModelBase
             }
 
             this.RaiseAndSetIfChanged(ref _deviceSearchQuery, value);
-            ApplyDeviceFiltersAndSorting(SelectedDevice?.DeviceId, preserveSelection: true);
+            _deviceSearchDebounce.Schedule(() => ApplyDeviceFiltersAndSorting(SelectedDevice?.DeviceId, preserveSelection: true));
         }
     }
 
@@ -503,8 +516,15 @@ public sealed class ProfileViewModel : ViewModelBase
             this.RaiseAndSetIfChanged(ref _currentMainPage, value);
             this.RaisePropertyChanged(nameof(IsProfileMainPage));
             this.RaisePropertyChanged(nameof(IsDevicesMainPage));
+            this.RaisePropertyChanged(nameof(CurrentMainPageViewModel));
         }
     }
+
+    private ProfileAccountPageViewModel? _accountPage;
+    private ProfileDevicesPageViewModel? _devicesPage;
+    public ProfileMainPageViewModel CurrentMainPageViewModel => IsDevicesMainPage
+        ? _devicesPage ??= new ProfileDevicesPageViewModel(this)
+        : _accountPage ??= new ProfileAccountPageViewModel(this);
 
     public bool IsProfileMainPage => CurrentMainPage == MainProfilePage;
 
@@ -522,10 +542,10 @@ public sealed class ProfileViewModel : ViewModelBase
         private set => SetCurrentProfilePane(value, false);
     }
 
-    public ProfilePaneTransitionViewModel CurrentAnimatedProfilePaneViewModel
+    public ProfilePaneTransitionViewModel CurrentProfilePaneViewModel
     {
-        get => _currentAnimatedProfilePaneViewModel ??= CreateProfilePaneTransitionViewModel(CurrentProfilePane);
-        private set => this.RaiseAndSetIfChanged(ref _currentAnimatedProfilePaneViewModel, value);
+        get => _currentProfilePaneViewModel ??= CreateProfilePaneTransitionViewModel(CurrentProfilePane);
+        private set => this.RaiseAndSetIfChanged(ref _currentProfilePaneViewModel, value);
     }
 
     public bool IsProfilePaneTransitionReversed
@@ -533,10 +553,6 @@ public sealed class ProfileViewModel : ViewModelBase
         get => _isProfilePaneTransitionReversed;
         private set => this.RaiseAndSetIfChanged(ref _isProfilePaneTransitionReversed, value);
     }
-
-    public bool IsAndroidPaneTransitionEnabled => OperatingSystem.IsAndroid();
-
-    public bool IsStaticPaneContentVisible => !IsAndroidPaneTransitionEnabled;
 
     public bool IsProfileTabsPaneVisible => CurrentProfilePane == ProfileTabsPane;
 
@@ -563,7 +579,7 @@ public sealed class ProfileViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(IsProfileUsernamePaneVisible));
         this.RaisePropertyChanged(nameof(IsProfilePasswordPaneVisible));
         this.RaisePropertyChanged(nameof(IsProfileDeleteAccountPaneVisible));
-        CurrentAnimatedProfilePaneViewModel = CreateProfilePaneTransitionViewModel(value);
+        CurrentProfilePaneViewModel = CreateProfilePaneTransitionViewModel(value);
     }
 
     private ProfilePaneTransitionViewModel CreateProfilePaneTransitionViewModel(string pane) =>
@@ -582,10 +598,10 @@ public sealed class ProfileViewModel : ViewModelBase
         private set => SetCurrentDevicePane(value, false);
     }
 
-    public DevicePaneTransitionViewModel CurrentAnimatedDevicePaneViewModel
+    public DevicePaneTransitionViewModel CurrentDevicePaneViewModel
     {
-        get => _currentAnimatedDevicePaneViewModel ??= CreateDevicePaneTransitionViewModel(CurrentDevicePane);
-        private set => this.RaiseAndSetIfChanged(ref _currentAnimatedDevicePaneViewModel, value);
+        get => _currentDevicePaneViewModel ??= CreateDevicePaneTransitionViewModel(CurrentDevicePane);
+        private set => this.RaiseAndSetIfChanged(ref _currentDevicePaneViewModel, value);
     }
 
     public bool IsDevicePaneTransitionReversed
@@ -619,7 +635,7 @@ public sealed class ProfileViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(IsDeviceAddPaneVisible));
         this.RaisePropertyChanged(nameof(IsDeviceDisconnectPaneVisible));
         this.RaisePropertyChanged(nameof(IsDeviceToolbarVisible));
-        CurrentAnimatedDevicePaneViewModel = CreateDevicePaneTransitionViewModel(value);
+        CurrentDevicePaneViewModel = CreateDevicePaneTransitionViewModel(value);
     }
 
     private DevicePaneTransitionViewModel CreateDevicePaneTransitionViewModel(string pane) =>
@@ -1053,14 +1069,16 @@ public sealed class ProfileViewModel : ViewModelBase
     {
         DiscardTransientNavigationState();
         CurrentMainPage = MainDevicesPage;
-        _ = RefreshDevicesAfterPageOpenAsync();
+        _ = EnsureDevicesLoadedAsync();
     }
 
-    private async Task RefreshDevicesAfterPageOpenAsync()
-    {
-        if (_token != Guid.Empty)
-            await LoadDevicesAsync();
-    }
+    public Task<bool> EnsureDevicesLoadedAsync() =>
+        _areDevicesLoaded ? Task.FromResult(true) : LoadDevicesAsync();
+
+    public Task<bool> RefreshLoadedDevicesAsync() =>
+        _areDevicesLoaded ? LoadDevicesAsync() : Task.FromResult(true);
+
+    public bool AreDevicesLoaded => _areDevicesLoaded;
 
     public void RequestDeviceListScrollToTop() => DeviceListScrollToTopRequested?.Invoke(this, EventArgs.Empty);
 
@@ -1166,7 +1184,9 @@ public sealed class ProfileViewModel : ViewModelBase
         {
             ClearStatusMessage();
             var profile = await _endpoints.GetUserProfileInfoAsync(_token);
-            if (await LoadAsync(_token, profile))
+            var profileLoaded = await LoadAsync(_token, profile);
+            var devicesLoaded = !profileLoaded || await RefreshLoadedDevicesAsync();
+            if (profileLoaded && devicesLoaded)
                 ShowSuccessMessage(GetTranslation("Shell_DataRefreshed"));
         }
         catch (Exception ex)
@@ -1200,7 +1220,7 @@ public sealed class ProfileViewModel : ViewModelBase
         CancelAddDevice();
         CurrentProfilePane = ProfileTabsPane;
         CurrentDevicePane = DeviceListPane;
-        return await LoadDevicesAsync();
+        return true;
     }
 
     public void SetSessionToken(Guid token) => _token = token;
@@ -1208,6 +1228,7 @@ public sealed class ProfileViewModel : ViewModelBase
     public void Reset()
     {
         _token = Guid.Empty;
+        _deviceSearchDebounce.Cancel();
         Username = string.Empty;
         FirstName = string.Empty;
         LastName = string.Empty;
@@ -1225,10 +1246,10 @@ public sealed class ProfileViewModel : ViewModelBase
         DeleteAccountPassword = string.Empty;
         DisconnectDevicePassword = string.Empty;
         ClearStatusMessage();
-        foreach (var device in _allDevices)
-            device.Dispose();
         _allDevices.Clear();
-        Devices.Clear();
+        Devices = [];
+        this.RaisePropertyChanged(nameof(Devices));
+        _areDevicesLoaded = false;
         SelectedDevice = null;
         DeviceSearchQuery = string.Empty;
         CurrentMainPage = MainProfilePage;
@@ -1456,13 +1477,12 @@ public sealed class ProfileViewModel : ViewModelBase
         try
         {
             var devices = await _endpoints.GetUserDevicesAsync(_token);
-            foreach (var device in _allDevices)
-            device.Dispose();
-        _allDevices.Clear();
+            _allDevices.Clear();
 
             foreach (var device in devices)
                 _allDevices.Add(CreateDeviceItem(device));
 
+            _areDevicesLoaded = true;
             ApplyDeviceFiltersAndSorting(selectedId, preserveSelection: selectedId.HasValue);
             return true;
         }
@@ -1477,11 +1497,7 @@ public sealed class ProfileViewModel : ViewModelBase
         DeviceItemViewModel.Create(
             device,
             CreateDeviceItemLocalization(),
-            BeginViewDeviceAsync,
-            SaveDeviceNameAsync,
-            ToggleDeviceSyncAsync,
-            UnblockDeviceAsync,
-            BeginDisconnectDevice);
+            this);
 
     private DeviceItemLocalization CreateDeviceItemLocalization() =>
         new()
@@ -1561,8 +1577,11 @@ public sealed class ProfileViewModel : ViewModelBase
         SetCurrentDevicePane(DeviceListPane, true);
     }
 
-    private void ApplyCurrentDeviceSearch() =>
+    private void ApplyCurrentDeviceSearch()
+    {
+        _deviceSearchDebounce.Cancel();
         ApplyDeviceFiltersAndSorting(SelectedDevice?.DeviceId, preserveSelection: true);
+    }
 
     private async Task SaveDeviceNameAsync(DeviceItemViewModel device)
     {
@@ -1931,6 +1950,7 @@ public sealed class ProfileViewModel : ViewModelBase
 
     private void ApplyDeviceFiltersAndSorting(Guid? preferredSelectionId, bool preserveSelection)
     {
+        _deviceSearchDebounce.Cancel();
         IEnumerable<DeviceItemViewModel> query = _allDevices;
 
         if (!string.IsNullOrWhiteSpace(DeviceSearchQuery))
@@ -1944,10 +1964,8 @@ public sealed class ProfileViewModel : ViewModelBase
         query = ApplyDeviceSort(query, SelectedDeviceSortOption?.Key);
 
         var filtered = query.ToList();
-        Devices.Clear();
-
-        foreach (var device in filtered)
-            Devices.Add(device);
+        Devices = new ObservableCollection<DeviceItemViewModel>(filtered);
+        this.RaisePropertyChanged(nameof(Devices));
 
         RaiseDeviceCollectionStateChanged();
 
@@ -2103,6 +2121,7 @@ public sealed class ProfileViewModel : ViewModelBase
     }
     protected override void DisposeManaged()
     {
+        _deviceSearchDebounce.Dispose();
         Reset();
         base.DisposeManaged();
     }

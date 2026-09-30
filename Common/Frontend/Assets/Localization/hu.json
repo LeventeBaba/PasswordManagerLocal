@@ -12,6 +12,8 @@
   "Settings_Appearance_Description": "Nyelv és vizuális téma.",
   "Settings_Language_Description": "Válaszd ki a menük, címkék és üzenetek nyelvét.",
   "Settings_Theme_Description": "Válaszd ki az ezen az eszközön használt világos vagy sötét megjelenést.",
+  "Settings_InterfaceAnimations_Label": "Felület animációi",
+  "Settings_InterfaceAnimations_Description": "Animálja az Android-felület navigációját és oldalváltásait. Kikapcsolva a váltások azonnaliak. A rendszer animációs beállításai továbbra is érvényesek.",
   "Settings_Background_Title": "Háttérben történő működés",
   "Settings_Background_Description": "Háttérszinkronizálás automatikus indítással.",
   "Settings_BackgroundSync_Label": "Háttérszinkronizálás",

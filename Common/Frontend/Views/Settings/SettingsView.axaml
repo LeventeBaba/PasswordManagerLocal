@@ -136,6 +136,30 @@
                   </ComboBox>
                 </StackPanel>
               </Border>
+
+              <Border Classes="toolbarGroup"
+                      IsVisible="{Binding IsInterfaceAnimationsControlVisible}">
+                <Grid ColumnDefinitions="*,Auto"
+                      ColumnSpacing="16">
+                  <StackPanel Spacing="4"
+                              VerticalAlignment="Center">
+                    <TextBlock Text="{Binding InterfaceAnimationsLabel}"
+                               FontWeight="SemiBold"
+                               FontSize="16"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding InterfaceAnimationsDescription}"
+                               Classes="subtleText"
+                               TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1"
+                                MinWidth="0"
+                                VerticalAlignment="Center"
+                                IsChecked="{Binding IsInterfaceAnimationsEnabled, Mode=TwoWay}"
+                                OnContent="{Binding OnLabel}"
+                                OffContent="{Binding OffLabel}"
+                                AutomationProperties.Name="{Binding InterfaceAnimationsLabel}" />
+                </Grid>
+              </Border>
             </StackPanel>
           </StackPanel>
         </Border>

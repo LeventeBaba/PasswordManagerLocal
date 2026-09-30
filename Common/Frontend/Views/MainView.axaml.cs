@@ -1,4 +1,6 @@
 using Avalonia;
+using Avalonia.Animation;
+using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -17,6 +19,7 @@ public partial class MainView : UserControl, IDisposable
     private readonly MainViewSwipeNavigationHandler _swipeNavigationHandler;
     private readonly MainViewTapOutsideKeyboardDismissHandler _tapOutsideKeyboardDismissHandler;
     private readonly MainViewLongPressToolTipHandler _longPressToolTipHandler;
+    private readonly PageSlide _mobileMainPageTransition;
     private bool _disposed;
     internal FrontendPlatformServices? PlatformServices => (DataContext as MainViewModel)?.PlatformServices;
     private TopLevel? _inputTopLevel;
@@ -25,6 +28,13 @@ public partial class MainView : UserControl, IDisposable
     public MainView()
     {
         InitializeComponent();
+        _mobileMainPageTransition = new PageSlide(
+            TimeSpan.FromMilliseconds(280),
+            PageSlide.SlideAxis.Horizontal)
+        {
+            SlideInEasing = new CubicEaseOut(),
+            SlideOutEasing = new CubicEaseOut()
+        };
         _keyboardHandler = new MainViewKeyboardHandler(this);
         _swipeNavigationHandler = new MainViewSwipeNavigationHandler(this);
         _tapOutsideKeyboardDismissHandler = new MainViewTapOutsideKeyboardDismissHandler(this);
@@ -107,6 +117,7 @@ public partial class MainView : UserControl, IDisposable
         _observedViewModel = viewModel;
         SetActiveTopLevelForUiServices(TopLevel.GetTopLevel(this));
         _observedViewModel.PropertyChanged += HandleViewModelPropertyChanged;
+        UpdateMobileMainPageTransition();
     }
 
     private void DetachObservedViewModel()
@@ -124,6 +135,20 @@ public partial class MainView : UserControl, IDisposable
             && sender is MainViewModel { IsAuthenticated: false };
         if (loggedOut || e.PropertyName == nameof(MainViewModel.CurrentUserDisplayName))
             HideAccountMenuFlyout();
+
+        if (e.PropertyName == nameof(MainViewModel.IsMobileMainPageAnimationEnabled))
+            UpdateMobileMainPageTransition();
+    }
+
+    private void UpdateMobileMainPageTransition()
+    {
+        var carousel = this.FindControl<Carousel>("MobileMainCarousel");
+        if (carousel is null)
+            return;
+
+        carousel.PageTransition = _observedViewModel?.IsMobileMainPageAnimationEnabled == true
+            ? _mobileMainPageTransition
+            : null;
     }
 
     private void HandleAccountMenuActionClick(object? sender, RoutedEventArgs e) =>

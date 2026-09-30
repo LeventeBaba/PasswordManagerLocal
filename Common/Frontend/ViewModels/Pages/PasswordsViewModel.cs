@@ -181,6 +181,8 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     private readonly IAuthSessionRegistry _authSessionRegistry;
     private readonly PasswordStrengthEstimator _passwordStrengthEstimator = new();
     private readonly MaximumStrengthPasswordGenerator _passwordGenerator;
+    private readonly DebouncedUiAction _searchDebounce = new(TimeSpan.FromMilliseconds(125));
+    private readonly DebouncedUiAction _customColorSearchDebounce = new(TimeSpan.FromMilliseconds(125));
     private readonly List<PasswordItemViewModel> _allPasswords = [];
     private readonly List<PasswordTagItemViewModel> _allPasswordTags = [];
     private readonly List<CustomUserColorInfoResponse> _savedCustomColors = [];
@@ -194,7 +196,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     private IReadOnlyList<CustomColorItemViewModel> _customColorsPendingDeletion = [];
     private string? _revealedPassword;
     private string _currentPane = ListPane;
-    private PasswordPaneTransitionViewModel? _currentAnimatedPaneViewModel;
+    private PasswordPaneTransitionViewModel? _currentPaneViewModel;
     private bool _isPaneTransitionReversed;
     private bool _isCreateMode;
     private bool _isDeleteConfirmationOpen;
@@ -263,6 +265,15 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         PresetColors = new ObservableCollection<PasswordColorOptionViewModel>();
         SortOptions = new ObservableCollection<PasswordSortOptionViewModel>();
 
+        SelectEditorTagCommand = Own(ReactiveCommand.Create<PasswordTagItemViewModel>(SelectEditorTag));
+        RemoveEditorTagCommand = Own(ReactiveCommand.Create<PasswordTagItemViewModel>(RemoveEditorTag));
+        ViewPasswordCommand = Own(ReactiveCommand.CreateFromTask<PasswordItemViewModel>(BeginViewPasswordAsync));
+        EditPasswordCommand = Own(ReactiveCommand.CreateFromTask<PasswordItemViewModel>(BeginEditPasswordAsync));
+        DeletePasswordCommand = Own(ReactiveCommand.CreateFromTask<PasswordItemViewModel>(BeginDeletePasswordAsync));
+        EditCustomColorCommand = Own(ReactiveCommand.Create<CustomColorItemViewModel>(OpenCustomColorPickerForEditing));
+        DeleteCustomColorCommand = Own(ReactiveCommand.CreateFromTask<CustomColorItemViewModel>(BeginDeleteCustomColorAsync));
+        EditPasswordTagCommand = Own(ReactiveCommand.Create<PasswordTagManagementItemViewModel>(OpenPasswordTagEditorForEditing));
+        DeletePasswordTagCommand = Own(ReactiveCommand.CreateFromTask<PasswordTagManagementItemViewModel>(BeginDeletePasswordTagAsync));
         RefreshCommand = Own(ReactiveCommand.CreateFromTask(async () => { await RefreshAsync(true); }));
         ExecutePrimaryActionCommand = Own(ReactiveCommand.CreateFromTask(ExecutePrimaryActionAsync));
         SearchCommand = Own(ReactiveCommand.Create(ApplyCurrentSearch));
@@ -306,7 +317,17 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         SelectDefaultSortOption();
     }
 
-    public ObservableCollection<PasswordItemViewModel> Passwords { get; }
+    public ReactiveCommand<PasswordTagItemViewModel, RxVoid> SelectEditorTagCommand { get; }
+    public ReactiveCommand<PasswordTagItemViewModel, RxVoid> RemoveEditorTagCommand { get; }
+    public ReactiveCommand<PasswordItemViewModel, RxVoid> ViewPasswordCommand { get; }
+    public ReactiveCommand<PasswordItemViewModel, RxVoid> EditPasswordCommand { get; }
+    public ReactiveCommand<PasswordItemViewModel, RxVoid> DeletePasswordCommand { get; }
+    public ReactiveCommand<CustomColorItemViewModel, RxVoid> EditCustomColorCommand { get; }
+    public ReactiveCommand<CustomColorItemViewModel, RxVoid> DeleteCustomColorCommand { get; }
+    public ReactiveCommand<PasswordTagManagementItemViewModel, RxVoid> EditPasswordTagCommand { get; }
+    public ReactiveCommand<PasswordTagManagementItemViewModel, RxVoid> DeletePasswordTagCommand { get; }
+
+    public ObservableCollection<PasswordItemViewModel> Passwords { get; private set; }
 
     public ObservableCollection<PasswordTagItemViewModel> SelectedPasswordTags { get; }
 
@@ -314,13 +335,17 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     public ObservableCollection<PasswordTagItemViewModel> EditorTagSuggestions { get; }
 
-    public ObservableCollection<CustomColorItemViewModel> CustomColors { get; }
+    public ObservableCollection<CustomColorItemViewModel> CustomColors { get; private set; }
 
     public ObservableCollection<ExportTargetProfileItemViewModel> ExportTargetProfiles { get; }
 
     public bool HasExportTargetProfiles => ExportTargetProfiles.Count > 0;
 
     public bool IsExportTargetProfilesEmpty => ExportTargetProfiles.Count == 0;
+
+    public bool IsPasswordSelectionModeInactive => !IsPasswordMultiSelectionActive;
+
+    public bool IsCustomColorSelectionModeInactive => !IsCustomColorMultiSelectionActive;
 
     public bool IsPasswordMultiSelectionActive
     {
@@ -333,6 +358,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             }
 
             this.RaiseAndSetIfChanged(ref _isPasswordMultiSelectionActive, value);
+            this.RaisePropertyChanged(nameof(IsPasswordSelectionModeInactive));
             RaiseMultiSelectionStateChanged();
         }
     }
@@ -348,6 +374,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             }
 
             this.RaiseAndSetIfChanged(ref _isCustomColorMultiSelectionActive, value);
+            this.RaisePropertyChanged(nameof(IsCustomColorSelectionModeInactive));
             RaiseMultiSelectionStateChanged();
         }
     }
@@ -486,10 +513,10 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         private set => SetCurrentPane(value, false);
     }
 
-    public PasswordPaneTransitionViewModel CurrentAnimatedPaneViewModel
+    public PasswordPaneTransitionViewModel CurrentPaneViewModel
     {
-        get => _currentAnimatedPaneViewModel ??= CreatePaneTransitionViewModel(CurrentPane);
-        private set => this.RaiseAndSetIfChanged(ref _currentAnimatedPaneViewModel, value);
+        get => _currentPaneViewModel ??= CreatePaneTransitionViewModel(CurrentPane);
+        private set => this.RaiseAndSetIfChanged(ref _currentPaneViewModel, value);
     }
 
     public bool IsPaneTransitionReversed
@@ -497,10 +524,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         get => _isPaneTransitionReversed;
         private set => this.RaiseAndSetIfChanged(ref _isPaneTransitionReversed, value);
     }
-
-    public bool IsAndroidPaneTransitionEnabled => OperatingSystem.IsAndroid();
-
-    public bool IsStaticPaneContentVisible => !IsAndroidPaneTransitionEnabled;
 
     public bool IsListPaneVisible => CurrentPane == ListPane;
 
@@ -556,7 +579,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(IsExportTargetPaneVisible));
         this.RaisePropertyChanged(nameof(IsEditorOpen));
         this.RaisePropertyChanged(nameof(IsEditorClosed));
-        CurrentAnimatedPaneViewModel = CreatePaneTransitionViewModel(value);
+        CurrentPaneViewModel = CreatePaneTransitionViewModel(value);
     }
 
     private PasswordPaneTransitionViewModel CreatePaneTransitionViewModel(string pane) =>
@@ -899,7 +922,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             }
 
             this.RaiseAndSetIfChanged(ref _searchQuery, value);
-            ApplyFiltersAndSorting(SelectedPassword?.Id, preserveSelection: true);
+            _searchDebounce.Schedule(() => ApplyFiltersAndSorting(SelectedPassword?.Id, preserveSelection: true));
         }
     }
 
@@ -939,7 +962,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             }
 
             this.RaiseAndSetIfChanged(ref _customColorSearchQuery, value);
-            ApplyCustomColorFiltersAndSorting();
+            _customColorSearchDebounce.Schedule(ApplyCustomColorFiltersAndSorting);
         }
     }
 
@@ -1463,6 +1486,8 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     public void Reset()
     {
         _token = Guid.Empty;
+        _searchDebounce.Cancel();
+        _customColorSearchDebounce.Cancel();
         ExitPasswordMultiSelection();
         ExitCustomColorMultiSelection();
         ExitPasswordTagMultiSelection();
@@ -1471,9 +1496,10 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         ClearManagedPasswordTagItems();
         _savedCustomColors.Clear();
         ClearCustomColorItems();
-        Passwords.Clear();
-        CustomColors.Clear();
-        PasswordTags.Clear();
+        Passwords = [];
+        CustomColors = [];
+        PasswordTags = [];
+        RaisePropertiesChanged([nameof(Passwords), nameof(CustomColors), nameof(PasswordTags)]);
         RebuildPresetColors();
         RebuildPasswordTagColorOptions();
         RaisePasswordCollectionStateChanged();
@@ -1495,6 +1521,9 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         SearchQuery = string.Empty;
         CustomColorSearchQuery = string.Empty;
         PasswordTagSearchQuery = string.Empty;
+        _searchDebounce.Cancel();
+        _customColorSearchDebounce.Cancel();
+        _passwordTagSearchDebounce.Cancel();
         _customColorSortKey = "name-asc";
         _passwordTagSortKey = "name-asc";
         RaiseCustomColorSortMenuLabelProperties();
@@ -1533,7 +1562,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         if (!IsPasswordMultiSelectionActive)
         {
             IsPasswordMultiSelectionActive = true;
-            SetSelectionMode(_allPasswords, true);
+
         }
 
         password.IsSelected = true;
@@ -1549,7 +1578,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         if (!IsCustomColorMultiSelectionActive)
         {
             IsCustomColorMultiSelectionActive = true;
-            SetSelectionMode(_allCustomColors, true);
+
         }
 
         customColor.IsSelected = true;
@@ -1564,10 +1593,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             var deselectAll = IsDeselectAllMultiSelectionAction;
             IEnumerable<PasswordItemViewModel> affectedPasswords = deselectAll ? _allPasswords : Passwords;
 
-            foreach (var password in affectedPasswords)
-            {
-                password.IsSelected = !deselectAll;
-            }
+            SetSelected(affectedPasswords, !deselectAll);
 
             return;
         }
@@ -1578,10 +1604,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             IEnumerable<CustomColorItemViewModel> affectedCustomColors =
                 deselectAllCustomColors ? _allCustomColors : CustomColors;
 
-            foreach (var customColor in affectedCustomColors)
-            {
-                customColor.IsSelected = !deselectAllCustomColors;
-            }
+            SetSelected(affectedCustomColors, !deselectAllCustomColors);
 
             return;
         }
@@ -1595,10 +1618,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         IEnumerable<PasswordTagManagementItemViewModel> affectedPasswordTags =
             deselectAllPasswordTags ? _allManagedPasswordTags : PasswordTags;
 
-        foreach (var tag in affectedPasswordTags)
-        {
-            tag.IsSelected = !deselectAllPasswordTags;
-        }
+        SetSelected(affectedPasswordTags, !deselectAllPasswordTags);
     }
 
     private void BeginExportMultiSelection()
@@ -1882,7 +1902,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         if (exportKind == MultiSelectionExportKind.Passwords)
         {
             IsPasswordMultiSelectionActive = true;
-            SetSelectionMode(_allPasswords, true);
+
             foreach (var item in _allPasswords)
             {
                 item.IsSelected = selectedIds.Contains(item.Id);
@@ -1891,7 +1911,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         else if (exportKind == MultiSelectionExportKind.CustomColors)
         {
             IsCustomColorMultiSelectionActive = true;
-            SetSelectionMode(_allCustomColors, true);
+
             foreach (var item in _allCustomColors)
             {
                 item.IsSelected = selectedIds.Contains(item.Id);
@@ -1900,7 +1920,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         else
         {
             IsPasswordTagMultiSelectionActive = true;
-            SetSelectionMode(_allManagedPasswordTags, true);
+
             foreach (var item in _allManagedPasswordTags)
             {
                 item.IsSelected = selectedIds.Contains(item.Id);
@@ -1970,21 +1990,30 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     private void ExitPasswordMultiSelection()
     {
         IsPasswordMultiSelectionActive = false;
-        SetSelectionMode(_allPasswords, false);
+        SetSelected(_allPasswords, false);
     }
 
     private void ExitCustomColorMultiSelection()
     {
         IsCustomColorMultiSelectionActive = false;
-        SetSelectionMode(_allCustomColors, false);
+        SetSelected(_allCustomColors, false);
     }
 
-    private static void SetSelectionMode<TItem>(IEnumerable<TItem> items, bool isActive)
+    private int _selectionBatchDepth;
+
+    private void SetSelected<TItem>(IEnumerable<TItem> items, bool selected)
         where TItem : MultiSelectableListItemViewModel
     {
-        foreach (var item in items)
+        _selectionBatchDepth++;
+        try
         {
-            item.SetSelectionModeActive(isActive);
+            foreach (var item in items)
+                item.IsSelected = selected;
+        }
+        finally
+        {
+            _selectionBatchDepth--;
+            RaiseMultiSelectionStateChanged();
         }
     }
 
@@ -2006,6 +2035,8 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     private void RaiseMultiSelectionStateChanged()
     {
+        if (_selectionBatchDepth > 0)
+            return;
         this.RaisePropertyChanged(nameof(IsMultiSelectionToolbarVisible));
         this.RaisePropertyChanged(nameof(HasSelectedMultiSelectionItems));
         this.RaisePropertyChanged(nameof(AreAllVisibleMultiSelectionItemsSelected));
@@ -2262,9 +2293,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
                     colorName,
                     EditPasswordLabel,
                     DeletePasswordLabel,
-                    BeginViewPasswordAsync,
-                    BeginEditPasswordAsync,
-                    BeginDeletePasswordAsync);
+                    this);
 
                 passwordItem.PropertyChanged += HandlePasswordItemPropertyChanged;
                 _allPasswords.Add(passwordItem);
@@ -2304,7 +2333,11 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         return namesByCode;
     }
 
-    private void ApplyCurrentSearch() => ApplyFiltersAndSorting(SelectedPassword?.Id, preserveSelection: true);
+    private void ApplyCurrentSearch()
+    {
+        _searchDebounce.Cancel();
+        ApplyFiltersAndSorting(SelectedPassword?.Id, preserveSelection: true);
+    }
 
     private Task BeginViewPasswordAsync(PasswordItemViewModel password)
     {
@@ -2353,7 +2386,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     private void SelectEditorTag(PasswordTagItemViewModel tag)
     {
-        if (EditorSelectedTags.Any(selectedTag => selectedTag.Id == tag.Id))
+        if (!_allPasswordTags.Contains(tag) || EditorSelectedTags.Any(selectedTag => selectedTag.Id == tag.Id))
         {
             return;
         }
@@ -2377,6 +2410,8 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     private void RemoveEditorTag(PasswordTagItemViewModel tag)
     {
+        if (!_allPasswordTags.Contains(tag))
+            return;
         var selectedTag = EditorSelectedTags.FirstOrDefault(item => item.Id == tag.Id);
         if (selectedTag is null)
         {
@@ -2391,8 +2426,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         IReadOnlyList<PasswordTagInfoResponse> tags,
         IReadOnlyCollection<Guid> selectedTagIds)
     {
-        foreach (var tag in _allPasswordTags)
-            tag.Dispose();
         _allPasswordTags.Clear();
 
         foreach (var tag in tags.OrderBy(tag => tag.Name, StringComparer.CurrentCultureIgnoreCase))
@@ -2400,8 +2433,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             _allPasswordTags.Add(PasswordTagItemViewModel.Create(
                 tag,
                 GetEditorRemoveTagLabel(tag.Name),
-                SelectEditorTag,
-                RemoveEditorTag));
+                this));
         }
 
         SetEditorSelectedTags(selectedTagIds);
@@ -2410,8 +2442,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     private void ClearPasswordTagItems()
     {
-        foreach (var tag in _allPasswordTags)
-            tag.Dispose();
         _allPasswordTags.Clear();
         RefreshSelectedPasswordTags();
         ClearEditorTagSelection();
@@ -2856,6 +2886,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     private void ApplyFiltersAndSorting(Guid? preferredSelectionId, bool preserveSelection)
     {
+        _searchDebounce.Cancel();
         IEnumerable<PasswordItemViewModel> query = _allPasswords;
 
         if (!string.IsNullOrWhiteSpace(SearchQuery))
@@ -2878,11 +2909,8 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         };
 
         var filtered = query.ToList();
-        Passwords.Clear();
-        foreach (var password in filtered)
-        {
-            Passwords.Add(password);
-        }
+        Passwords = new ObservableCollection<PasswordItemViewModel>(filtered);
+        this.RaisePropertyChanged(nameof(Passwords));
 
         RaisePasswordCollectionStateChanged();
 
@@ -2911,7 +2939,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         foreach (var password in _allPasswords)
         {
             password.PropertyChanged -= HandlePasswordItemPropertyChanged;
-            password.Dispose();
         }
 
         _allPasswords.Clear();
@@ -2933,8 +2960,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             var customColorItem = CustomColorItemViewModel.Create(
                 customColor,
                 DeletePasswordLabel,
-                OpenCustomColorPickerForEditing,
-                BeginDeleteCustomColorAsync);
+                this);
 
             customColorItem.PropertyChanged += HandleCustomColorItemPropertyChanged;
             _allCustomColors.Add(customColorItem);
@@ -2945,6 +2971,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     private void ApplyCustomColorFiltersAndSorting()
     {
+        _customColorSearchDebounce.Cancel();
         IEnumerable<CustomColorItemViewModel> query = _allCustomColors;
 
         if (!string.IsNullOrWhiteSpace(CustomColorSearchQuery))
@@ -2964,11 +2991,8 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             _ => query.OrderBy(item => item.DisplayName, StringComparer.CurrentCultureIgnoreCase)
         };
 
-        CustomColors.Clear();
-        foreach (var customColor in query)
-        {
-            CustomColors.Add(customColor);
-        }
+        CustomColors = new ObservableCollection<CustomColorItemViewModel>(query);
+        this.RaisePropertyChanged(nameof(CustomColors));
 
         RaiseCustomColorCollectionStateChanged();
     }
@@ -2987,7 +3011,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         foreach (var customColor in _allCustomColors)
         {
             customColor.PropertyChanged -= HandleCustomColorItemPropertyChanged;
-            customColor.Dispose();
         }
 
         _allCustomColors.Clear();
@@ -3568,6 +3591,8 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     protected override void DisposeManaged()
     {
+        _searchDebounce.Dispose();
+        _customColorSearchDebounce.Dispose();
         Reset();
         base.DisposeManaged();
     }

@@ -11,10 +11,6 @@ namespace PasswordManagerLocal.Common.Frontend.Views.Behaviors;
 
 internal sealed class MainViewSwipeNavigationHandler
 {
-    private const double EarlyHorizontalLockDistance = 5;
-    private const double DirectionLockDistance = 10;
-    private const double EarlyHorizontalDominanceRatio = 1.2;
-    private const double HorizontalDominanceRatio = 1.15;
     private const double MinimumFlickDistance = 24;
     private const double FlickVelocityThreshold = 650;
     private const double VelocitySmoothingFactor = 0.35;
@@ -23,6 +19,8 @@ internal sealed class MainViewSwipeNavigationHandler
     private Point? _startPoint;
     private Point _lastPoint;
     private IPointer? _trackedPointer;
+    private IPointer? _nativeSwipeSuppressedPointer;
+    private Carousel? _nativeSwipeSuppressedCarousel;
     private long _lastVelocityTimestamp;
     private double _horizontalVelocity;
     private bool _isHorizontalSwipe;
@@ -36,7 +34,14 @@ internal sealed class MainViewSwipeNavigationHandler
 
     public void HandlePointerPressed(PointerPressedEventArgs e)
     {
+        // A second contact must not steal/reset an active primary swipe.
+        if (_trackedPointer is not null || _nativeSwipeSuppressedPointer is not null)
+            return;
+
         Reset();
+        if (TrySuppressNativeSwipeForExcludedControl(e))
+            return;
+
         if (!CanStartTracking(e))
             return;
 
@@ -67,6 +72,12 @@ internal sealed class MainViewSwipeNavigationHandler
 
     public void HandlePointerReleased(PointerReleasedEventArgs e)
     {
+        if (Equals(_nativeSwipeSuppressedPointer, e.Pointer))
+        {
+            RestoreNativeSwipeIfSuppressed();
+            return;
+        }
+
         if (!CanContinueTracking(e))
         {
             Reset();
@@ -93,20 +104,61 @@ internal sealed class MainViewSwipeNavigationHandler
 
     public void HandlePointerCaptureLost(PointerCaptureLostEventArgs e)
     {
+        if (Equals(_nativeSwipeSuppressedPointer, e.Pointer))
+            RestoreNativeSwipeIfSuppressed();
+
         if (Equals(_trackedPointer, e.Pointer))
             ResetState();
     }
 
     public void Reset()
     {
+        RestoreNativeSwipeIfSuppressed();
         ReleasePointerCapture();
         ResetState();
+    }
+
+    private bool TrySuppressNativeSwipeForExcludedControl(PointerPressedEventArgs e)
+    {
+        if (e.Pointer.Type is not (PointerType.Touch or PointerType.Pen) ||
+            _view.DataContext is not MainViewModel { IsAnimatedMobileMainPageSwipeEnabled: true } ||
+            !IsPointerInsideView(e) ||
+            !IsExcludedInputSource(e.Source) ||
+            e.GetCurrentPoint(_view).Properties.IsLeftButtonPressed == false)
+        {
+            return false;
+        }
+
+        var carousel = FindMobileMainCarousel(e.Source);
+        if (carousel is null)
+            return false;
+
+        _nativeSwipeSuppressedPointer = e.Pointer;
+        _nativeSwipeSuppressedCarousel = carousel;
+        carousel.SetCurrentValue(Carousel.IsSwipeEnabledProperty, false);
+        return true;
+    }
+
+    private void RestoreNativeSwipeIfSuppressed()
+    {
+        if (_nativeSwipeSuppressedCarousel is { } carousel)
+        {
+            var shouldEnable = _view.DataContext is MainViewModel
+            {
+                IsAnimatedMobileMainPageSwipeEnabled: true
+            };
+            carousel.SetCurrentValue(Carousel.IsSwipeEnabledProperty, shouldEnable);
+        }
+
+        _nativeSwipeSuppressedPointer = null;
+        _nativeSwipeSuppressedCarousel = null;
     }
 
     private bool CanStartTracking(PointerPressedEventArgs e) =>
         e.Pointer.Type is PointerType.Touch or PointerType.Pen
         && IsNavigationEnabled()
         && IsPointerInsideView(e)
+        && IsPointerInsideMobileMainPager(e.Source)
         && !IsExcludedInputSource(e.Source);
 
     private bool CanContinueTracking(PointerEventArgs e) =>
@@ -117,27 +169,15 @@ internal sealed class MainViewSwipeNavigationHandler
 
     private bool TryLockDirection(Vector movement, PointerEventArgs e)
     {
-        var absoluteX = Math.Abs(movement.X);
-        var absoluteY = Math.Abs(movement.Y);
-
-        if (absoluteX >= EarlyHorizontalLockDistance
-            && absoluteX >= absoluteY * EarlyHorizontalDominanceRatio)
+        switch (TouchGestureIntentClassifier.Classify(movement))
         {
-            BeginHorizontalSwipe(e);
-            return true;
+            case TouchGestureIntent.Horizontal:
+                BeginHorizontalSwipe(e);
+                return true;
+            case TouchGestureIntent.Vertical:
+                _trackingCancelled = true;
+                break;
         }
-
-        if (Math.Max(absoluteX, absoluteY) < DirectionLockDistance)
-            return false;
-
-        if (absoluteX >= absoluteY * HorizontalDominanceRatio)
-        {
-            BeginHorizontalSwipe(e);
-            return true;
-        }
-
-        if (absoluteY >= absoluteX)
-            _trackingCancelled = true;
 
         return false;
     }
@@ -219,20 +259,34 @@ internal sealed class MainViewSwipeNavigationHandler
         new Rect(0, 0, _view.Bounds.Width, _view.Bounds.Height).Contains(e.GetPosition(_view));
 
     private bool IsNavigationEnabled() =>
-        _view.DataContext is MainViewModel
-        {
-            IsMobileNavigationEnabled: true,
-            IsAuthenticated: true,
-            IsSessionRenewalDialogOpen: false
-        };
+        _view.DataContext is MainViewModel { IsCustomMobileMainPageSwipeEnabled: true };
+
+    private bool IsPointerInsideMobileMainPager(object? source) =>
+        FindMobileMainCarousel(source) is not null;
+
+    private Carousel? FindMobileMainCarousel(object? source)
+    {
+        if (source is not Control sourceControl)
+            return null;
+
+        var carousel = _view.FindControl<Carousel>("MobileMainCarousel");
+        if (carousel is null)
+            return null;
+
+        return ReferenceEquals(sourceControl, carousel) || sourceControl.FindAncestorOfType<Carousel>() == carousel
+            ? carousel
+            : null;
+    }
 
     private static bool IsExcludedInputSource(object? source)
     {
         if (source is not Control sourceControl)
             return false;
 
+        // Ordinary release-mode buttons deliberately remain swipe-capable. Once the
+        // horizontal gesture wins, pointer capture cancels the pending tap. Controls
+        // that own text selection or horizontal/direct manipulation keep priority.
         return TextBoxClipboardHandler.FindSourceTextBox(sourceControl) is not null
-            || IsWithin<Button>(sourceControl)
             || IsWithin<ToggleButton>(sourceControl)
             || IsWithin<ComboBox>(sourceControl)
             || IsWithin<Slider>(sourceControl)

@@ -103,6 +103,18 @@ public sealed class SettingsViewModel : ViewModelBase
         }
     }
 
+    public bool IsInterfaceAnimationsControlVisible => OperatingSystem.IsAndroid();
+
+    public bool IsInterfaceAnimationsEnabled
+    {
+        get => InterfaceAnimationsEnabled;
+        set
+        {
+            if (value != InterfaceAnimationsEnabled)
+                UiPreferences.InterfaceAnimationsEnabled = value;
+        }
+    }
+
     public bool IsBackgroundSyncEnabled
     {
         get => _isBackgroundSyncEnabled;
@@ -165,6 +177,8 @@ public sealed class SettingsViewModel : ViewModelBase
     public string LanguageDescription => GetTranslation("Settings_Language_Description");
     public string ThemeLabel => GetTranslation("Settings_Theme");
     public string ThemeDescription => GetTranslation("Settings_Theme_Description");
+    public string InterfaceAnimationsLabel => GetTranslation("Settings_InterfaceAnimations_Label");
+    public string InterfaceAnimationsDescription => GetTranslation("Settings_InterfaceAnimations_Description");
     public string BackgroundOperationTitle => GetTranslation("Settings_Background_Title");
     public string BackgroundOperationDescription => GetTranslation("Settings_Background_Description");
     public string BackgroundSyncLabel => GetTranslation("Settings_BackgroundSync_Label");
@@ -212,6 +226,8 @@ public sealed class SettingsViewModel : ViewModelBase
             nameof(LanguageDescription),
             nameof(ThemeLabel),
             nameof(ThemeDescription),
+            nameof(InterfaceAnimationsLabel),
+            nameof(InterfaceAnimationsDescription),
             nameof(SelectedLanguageOption),
             nameof(SelectedThemeOption),
             nameof(BackgroundOperationTitle),
@@ -226,6 +242,9 @@ public sealed class SettingsViewModel : ViewModelBase
 
     protected override void OnThemeChanged() =>
         this.RaisePropertyChanged(nameof(SelectedThemeOption));
+
+    protected override void OnInterfaceMotionChanged() =>
+        this.RaisePropertyChanged(nameof(IsInterfaceAnimationsEnabled));
 
     private async Task ChangeBackgroundSyncAsync(bool isEnabled)
     {

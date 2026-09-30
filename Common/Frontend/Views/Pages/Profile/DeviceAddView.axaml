@@ -5,6 +5,8 @@
     xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
     x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Profile.DeviceAddView"
     x:DataType="vm:ProfileViewModel">
+  <ScrollViewer Classes="comfortableListScroller"
+                Classes.androidComfortableListScroller="{Binding IsAndroidUi}">
   <StackPanel Spacing="12">
     <Border Classes="card">
       <StackPanel Spacing="14">
@@ -70,4 +72,5 @@
       </StackPanel>
     </Border>
   </StackPanel>
+  </ScrollViewer>
 </UserControl>

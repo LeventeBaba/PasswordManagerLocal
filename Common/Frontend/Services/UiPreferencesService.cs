@@ -22,10 +22,13 @@ public sealed class UiPreferencesService
         _changeNotifier = changeNotifier;
         PlatformServices = platformServices ?? new FrontendPlatformServices();
         _current = initialPreferences ?? _store.ReadAsync().GetAwaiter().GetResult();
+        MotionPolicy = new InterfaceMotionPolicy(PlatformServices, _current.InterfaceAnimationsEnabled);
         ApplyTheme(_current.Theme);
     }
 
     public FrontendPlatformServices PlatformServices { get; }
+
+    public InterfaceMotionPolicy MotionPolicy { get; }
 
     public event EventHandler<UiPreferencesChangedEventArgs>? PreferencesChanged;
 
@@ -44,7 +47,12 @@ public sealed class UiPreferencesService
             {
                 PreferencesChanged?.Invoke(
                     this,
-                    new UiPreferencesChangedEventArgs(true, false, value, _current.Theme));
+                    new UiPreferencesChangedEventArgs(
+                        true,
+                        false,
+                        false,
+                        value,
+                        _current.Theme));
             }
             finally
             {
@@ -67,7 +75,36 @@ public sealed class UiPreferencesService
             ApplyTheme(value);
             PreferencesChanged?.Invoke(
                 this,
-                new UiPreferencesChangedEventArgs(false, true, _current.Language, value));
+                new UiPreferencesChangedEventArgs(
+                    false,
+                    true,
+                    false,
+                    _current.Language,
+                    value));
+        }
+    }
+
+
+    public bool InterfaceAnimationsEnabled
+    {
+        get => _current.InterfaceAnimationsEnabled;
+        set
+        {
+            if (value == _current.InterfaceAnimationsEnabled)
+                return;
+
+            var updated = _current with { InterfaceAnimationsEnabled = value };
+            _store.WriteAsync(updated).GetAwaiter().GetResult();
+            _current = updated;
+            MotionPolicy.SetUserPreference(value);
+            PreferencesChanged?.Invoke(
+                this,
+                new UiPreferencesChangedEventArgs(
+                    false,
+                    false,
+                    true,
+                    _current.Language,
+                    _current.Theme));
         }
     }
 

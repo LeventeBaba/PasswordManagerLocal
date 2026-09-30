@@ -87,10 +87,10 @@ public partial class CustomColorListView : UserControl
             return;
         }
 
-        ICommand command = customColor.EditCommand;
-        if (command.CanExecute(null))
+        ICommand command = customColor.Owner.EditCustomColorCommand;
+        if (command.CanExecute(customColor))
         {
-            command.Execute(null);
+            command.Execute(customColor);
         }
     }
 

@@ -6,7 +6,8 @@
     xmlns:passwords="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Pages.Passwords"
     x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Passwords.CustomColorListView"
     x:DataType="vm:PasswordsViewModel">
-  <StackPanel Spacing="12">
+  <Grid RowDefinitions="Auto,*">
+    <StackPanel Grid.Row="0" Spacing="12">
     <Border Classes="card">
       <StackPanel Orientation="Horizontal" Spacing="10">
         <Button
@@ -56,8 +57,17 @@
       </StackPanel>
     </Border>
 
-    <ItemsControl ItemsSource="{Binding CustomColors}" HorizontalAlignment="Stretch" IsVisible="{Binding HasCustomColors}">
-      <ItemsControl.ItemTemplate>
+    </StackPanel>
+    <ScrollViewer Grid.Row="1" Classes="comfortableListScroller"
+                  Classes.androidComfortableListScroller="{Binding IsAndroidUi}"
+                 >
+        <ItemsControl ItemsSource="{Binding CustomColors}" HorizontalAlignment="Stretch">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <VirtualizingStackPanel />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
         <DataTemplate x:DataType="vm:CustomColorItemViewModel">
           <Border
               Classes="interactiveListItem"
@@ -75,7 +85,7 @@
             <Grid ColumnDefinitions="Auto,8,*,Auto">
               <CheckBox
                   Grid.Column="0"
-                  IsVisible="{Binding IsSelectionModeActive}"
+                  IsVisible="{Binding Owner.IsCustomColorMultiSelectionActive}"
                   IsChecked="{Binding IsSelected, Mode=TwoWay}"
                   VerticalAlignment="Center"
                   Margin="0,0,12,0" />
@@ -97,9 +107,10 @@
                   Grid.Column="3"
                   Classes="danger iconButton"
                   Margin="12,0,0,0"
-                  IsVisible="{Binding IsSelectionModeInactive}"
+                  IsVisible="{Binding Owner.IsCustomColorSelectionModeInactive}"
                   PointerEntered="InteractiveListItem_PointerEntered"
-                  Command="{Binding DeleteCommand}"
+                  Command="{Binding Owner.DeleteCustomColorCommand}"
+                  CommandParameter="{Binding}"
                   ToolTip.Tip="{Binding DeleteLabel}"
                   AutomationProperties.Name="{Binding DeleteLabel}">
                 <PathIcon
@@ -109,7 +120,8 @@
             </Grid>
           </Border>
         </DataTemplate>
-      </ItemsControl.ItemTemplate>
-    </ItemsControl>
-  </StackPanel>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </Grid>
 </UserControl>

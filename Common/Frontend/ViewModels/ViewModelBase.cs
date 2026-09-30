@@ -15,6 +15,7 @@ public abstract class ViewModelBase : DisposableReactiveObject
     {
         UiPreferences = uiPreferences;
         UiPreferences.PreferencesChanged += HandlePreferencesChanged;
+        UiPreferences.MotionPolicy.Changed += HandleInterfaceMotionChanged;
         OperationMessage.PropertyChanged += HandleOperationMessageChanged;
     }
 
@@ -27,6 +28,12 @@ public abstract class ViewModelBase : DisposableReactiveObject
     public AppLanguage CurrentLanguage => UiPreferences.CurrentLanguage;
 
     public AppThemeMode CurrentThemeMode => UiPreferences.CurrentThemeMode;
+
+    public bool InterfaceAnimationsEnabled => UiPreferences.InterfaceAnimationsEnabled;
+
+    public bool IsAndroidUi => UiPreferences.MotionPolicy.IsAndroidUi;
+
+    public bool EffectiveInterfaceAnimationsEnabled => UiPreferences.MotionPolicy.EffectiveInterfaceAnimationsEnabled;
 
     public string? StatusMessage => OperationMessage.Message;
 
@@ -128,6 +135,10 @@ public abstract class ViewModelBase : DisposableReactiveObject
     {
     }
 
+    protected virtual void OnInterfaceMotionChanged()
+    {
+    }
+
     protected virtual void OnStatusMessageChanged()
     {
     }
@@ -135,6 +146,7 @@ public abstract class ViewModelBase : DisposableReactiveObject
     protected override void DisposeManaged()
     {
         UiPreferences.PreferencesChanged -= HandlePreferencesChanged;
+        UiPreferences.MotionPolicy.Changed -= HandleInterfaceMotionChanged;
         OperationMessage.PropertyChanged -= HandleOperationMessageChanged;
         OperationMessage.Dispose();
         base.DisposeManaged();
@@ -167,6 +179,12 @@ public abstract class ViewModelBase : DisposableReactiveObject
         OnStatusMessageChanged();
     }
 
+    private void HandleInterfaceMotionChanged(object? sender, EventArgs e)
+    {
+        this.RaisePropertyChanged(nameof(EffectiveInterfaceAnimationsEnabled));
+        OnInterfaceMotionChanged();
+    }
+
     private void HandlePreferencesChanged(object? sender, UiPreferencesChangedEventArgs e)
     {
         if (e.LanguageChanged)
@@ -174,5 +192,10 @@ public abstract class ViewModelBase : DisposableReactiveObject
 
         if (e.ThemeChanged)
             OnThemeChanged();
+
+        if (e.InterfaceAnimationsChanged)
+        {
+            this.RaisePropertyChanged(nameof(InterfaceAnimationsEnabled));
+        }
     }
 }

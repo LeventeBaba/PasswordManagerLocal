@@ -8,6 +8,7 @@
     xmlns:pagesViews="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Pages"
     xmlns:pagesVm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
     xmlns:settingsViews="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Settings"
+    xmlns:controls="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Controls"
     xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels"
     x:DataType="vm:MainViewModel">
 
@@ -32,6 +33,15 @@
     </DataTemplate>
     <DataTemplate x:DataType="vm:MainPageContentViewModel">
       <ContentControl Content="{Binding PageViewModel}" />
+    </DataTemplate>
+    <DataTemplate x:DataType="vm:MobilePasswordsMainPageViewModel">
+      <pagesViews:PasswordListView DataContext="{Binding Owner}" />
+    </DataTemplate>
+    <DataTemplate x:DataType="vm:MobileDevicesMainPageViewModel">
+      <pagesViews:MobileDevicesMainPageView DataContext="{Binding Owner}" />
+    </DataTemplate>
+    <DataTemplate x:DataType="vm:MobileProfileMainPageViewModel">
+      <pagesViews:MobileProfileMainPageView DataContext="{Binding Owner}" />
     </DataTemplate>
   </UserControl.DataTemplates>
 
@@ -337,24 +347,24 @@
       </Border>
     </Grid>
 
-    <TransitioningContentControl Grid.Row="2"
-                                  ClipToBounds="True"
-                                  Content="{Binding CurrentAnimatedPageViewModel}"
-                                  IsVisible="{Binding IsMobileNavigationEnabled}"
-                                  IsTransitionReversed="{Binding IsPageTransitionReversed}">
-      <TransitioningContentControl.PageTransition>
-        <CompositePageTransition>
-          <PageSlide Duration="0:0:0.38"
-                     Orientation="Horizontal"
-                     SlideInEasing="CircularEaseOut"
-                     SlideOutEasing="SineEaseIn" />
-          <CrossFade Duration="0:0:0.26" />
-        </CompositePageTransition>
-      </TransitioningContentControl.PageTransition>
-    </TransitioningContentControl>
+    <Carousel x:Name="MobileMainCarousel"
+              Grid.Row="2"
+              ClipToBounds="True"
+              ItemsSource="{Binding MobileMainPages}"
+              SelectedIndex="{Binding CurrentMobileNavigationIndex, Mode=TwoWay}"
+              IsSwipeEnabled="{Binding IsAnimatedMobileMainPageSwipeEnabled}"
+              WrapSelection="True"
+              ViewportFraction="1"
+              IsVisible="{Binding IsMobileMainContentVisible}" />
+
+    <controls:AdaptiveTransitioningContentControl Grid.Row="2"
+        Content="{Binding CurrentMobileStandalonePageViewModel}"
+        AnimationsEnabled="{Binding EffectiveInterfaceAnimationsEnabled}"
+        IsVisible="{Binding IsMobileStandaloneContentVisible}"
+        IsTransitionReversed="{Binding IsPageTransitionReversed}" />
 
     <ContentControl Grid.Row="2"
-                    Content="{Binding CurrentPageViewModel}"
+                    Content="{Binding CurrentDesktopPageViewModel}"
                     IsVisible="{Binding IsDesktopContentVisible}" />
   </Grid>
 

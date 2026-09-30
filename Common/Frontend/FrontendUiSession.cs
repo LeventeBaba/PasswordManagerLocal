@@ -66,7 +66,11 @@ public sealed class FrontendUiSession : IAsyncDisposable
     {
         var initializedBeforeResume = _initialization?.IsCompleted == true;
         await InitializeAsync();
-        if (initializedBeforeResume && !IsDisposed && ViewModel is { IsAuthenticated: false } model)
+        if (IsDisposed || ViewModel is not { } model)
+            return;
+
+        model.RefreshPlatformAnimationAvailability();
+        if (initializedBeforeResume && !model.IsAuthenticated)
             await model.InitializeAsync();
     }
 

@@ -5,7 +5,8 @@
     xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
     x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Profile.DeviceListView"
     x:DataType="vm:ProfileViewModel">
-  <StackPanel Spacing="12">
+  <Grid RowDefinitions="Auto,*">
+    <StackPanel Grid.Row="0" Spacing="12">
     <Border Classes="card" IsVisible="{Binding IsDeviceListEmpty}">
       <StackPanel Spacing="14" HorizontalAlignment="Center" MaxWidth="520">
         <PathIcon Classes="largeEmptyStateIcon" Data="{StaticResource AddIconGeometry}" HorizontalAlignment="Center" />
@@ -32,8 +33,17 @@
         <TextBlock Text="{Binding DeviceSearchEmptyDescription}" Classes="subtleText" TextWrapping="Wrap" />
       </StackPanel>
     </Border>
-    <ItemsControl ItemsSource="{Binding Devices}" HorizontalAlignment="Stretch" IsVisible="{Binding HasDevices}">
-      <ItemsControl.ItemTemplate>
+    </StackPanel>
+    <ScrollViewer x:Name="DeviceListScrollViewer" Grid.Row="1" Classes="comfortableListScroller"
+                  Classes.androidComfortableListScroller="{Binding IsAndroidUi}"
+                 >
+        <ItemsControl ItemsSource="{Binding Devices}" HorizontalAlignment="Stretch">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <VirtualizingStackPanel />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
         <DataTemplate x:DataType="vm:DeviceItemViewModel">
           <Border
               Classes="interactiveListItem"
@@ -55,7 +65,8 @@
                   Grid.Column="1"
                   Classes="listItemContentButton"
                   PointerEntered="InteractiveListItem_PointerEntered"
-                  Command="{Binding ViewCommand}">
+                  Command="{Binding Owner.ViewDeviceCommand}"
+                  CommandParameter="{Binding}">
                 <StackPanel Spacing="6" VerticalAlignment="Center">
                   <WrapPanel VerticalAlignment="Center">
                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" VerticalAlignment="Center" />
@@ -127,14 +138,16 @@
                   Grid.Column="2"
                   PointerEntered="InteractiveListItem_PointerEntered"
                   IsChecked="{Binding IsSyncOn, Mode=OneWay}"
-                  Command="{Binding ToggleSyncCommand}"
+                  Command="{Binding Owner.ToggleDeviceSyncCommand}"
+                  CommandParameter="{Binding}"
                   OnContent="{Binding SyncToggleOnLabel}"
                   OffContent="{Binding SyncToggleOffLabel}"
                   VerticalAlignment="Center" />
             </Grid>
           </Border>
         </DataTemplate>
-      </ItemsControl.ItemTemplate>
-    </ItemsControl>
-  </StackPanel>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </Grid>
 </UserControl>

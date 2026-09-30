@@ -5,6 +5,8 @@
     xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
     x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Profile.DeviceDetailsView"
     x:DataType="vm:ProfileViewModel">
+  <ScrollViewer Classes="comfortableListScroller"
+                Classes.androidComfortableListScroller="{Binding IsAndroidUi}">
   <StackPanel Spacing="12">
     <Border Classes="card" IsVisible="{Binding HasSelectedDevice}">
       <StackPanel Spacing="14">
@@ -89,7 +91,7 @@
             <TextBox Text="{Binding SelectedDevice.EditableName}"
                      TextInputOptions.ReturnKeyType="Done">
               <TextBox.KeyBindings>
-                <KeyBinding Gesture="Enter" Command="{Binding SelectedDevice.SaveNameCommand}" />
+                <KeyBinding Gesture="Enter" Command="{Binding SaveDeviceNameCommand}" CommandParameter="{Binding SelectedDevice}" />
               </TextBox.KeyBindings>
             </TextBox>
           </StackPanel>
@@ -97,7 +99,7 @@
               Grid.Column="1"
               Classes="primary"
               VerticalAlignment="Bottom"
-              Command="{Binding SelectedDevice.SaveNameCommand}"
+              Command="{Binding SaveDeviceNameCommand}" CommandParameter="{Binding SelectedDevice}"
               Content="{Binding SaveDeviceNameLabel}">
             <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
           </Button>
@@ -128,7 +130,7 @@
           <TextBlock Text="{Binding SyncEnabledLabel}" Classes="subtleText" />
           <ToggleSwitch
               IsChecked="{Binding SelectedDevice.IsSyncOn, Mode=OneWay}"
-              Command="{Binding SelectedDevice.ToggleSyncCommand}"
+              Command="{Binding ToggleDeviceSyncCommand}" CommandParameter="{Binding SelectedDevice}"
               OnContent="{Binding SelectedDevice.SyncToggleOnLabel}"
               OffContent="{Binding SelectedDevice.SyncToggleOffLabel}" />
         </StackPanel>
@@ -145,7 +147,7 @@
             </StackPanel>
             <Button
                 Classes="ghost"
-                Command="{Binding SelectedDevice.UnblockCommand}"
+                Command="{Binding UnblockDeviceCommand}" CommandParameter="{Binding SelectedDevice}"
                 Content="{Binding UnblockDeviceLabel}"
                 IsVisible="{Binding SelectedDevice.CanUnblock}">
               <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
@@ -166,7 +168,7 @@
               Margin="0,0,8,8" />
           <Button
               Classes="danger"
-              Command="{Binding SelectedDevice.BeginDisconnectCommand}"
+              Command="{Binding DisconnectDeviceCommand}" CommandParameter="{Binding SelectedDevice}"
               Content="{Binding DisconnectDeviceLabel}"
               IsVisible="{Binding SelectedDevice.CanDisconnect}"
               Margin="0,0,8,8">
@@ -179,4 +181,5 @@
       </StackPanel>
     </Border>
   </StackPanel>
+  </ScrollViewer>
 </UserControl>

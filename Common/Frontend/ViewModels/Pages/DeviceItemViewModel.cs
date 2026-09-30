@@ -5,21 +5,15 @@ using PasswordManagerLocal.Common.Contracts.Security;
 using PasswordManagerLocal.Common.Contracts.Responses;
 using PasswordManagerLocal.Common.Frontend.Services;
 using ReactiveUI;
-using ReactiveUI.Primitives;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
 
-public sealed class DeviceItemViewModel : DisposableReactiveObject
+public sealed class DeviceItemViewModel : ReactiveObject
 {
     private static readonly IBrush OnlineStatusBrush = new SolidColorBrush(Color.Parse("#FF2E7D32"));
     private static readonly IBrush BlockedStatusBrush = new SolidColorBrush(Color.Parse("#FFD13438"));
     private static readonly IBrush OfflineStatusBrush = new SolidColorBrush(Color.Parse("#FFF59E0B"));
 
-    private readonly Func<DeviceItemViewModel, Task> _viewAsync;
-    private readonly Func<DeviceItemViewModel, Task> _saveNameAsync;
-    private readonly Func<DeviceItemViewModel, Task> _toggleSyncAsync;
-    private readonly Func<DeviceItemViewModel, Task> _unblockAsync;
-    private readonly Action<DeviceItemViewModel> _beginDisconnect;
     private string _editableName = string.Empty;
     private bool _isSyncOn;
     private string _currentDeviceLabel = string.Empty;
@@ -50,12 +44,9 @@ public sealed class DeviceItemViewModel : DisposableReactiveObject
     private DeviceItemViewModel(
         UserDeviceInfoResponse device,
         DeviceItemLocalization localization,
-        Func<DeviceItemViewModel, Task> viewAsync,
-        Func<DeviceItemViewModel, Task> saveNameAsync,
-        Func<DeviceItemViewModel, Task> toggleSyncAsync,
-        Func<DeviceItemViewModel, Task> unblockAsync,
-        Action<DeviceItemViewModel> beginDisconnect)
+        ProfileViewModel owner)
     {
+        Owner = owner;
         DeviceId = device.DeviceId;
         DeviceType = device.DeviceType;
         Name = device.Name;
@@ -73,17 +64,9 @@ public sealed class DeviceItemViewModel : DisposableReactiveObject
         LinkedAt = device.LinkedAt;
         IsCurrentDevice = device.IsCurrentDevice;
         AssignLocalization(localization);
-        _viewAsync = viewAsync;
-        _saveNameAsync = saveNameAsync;
-        _toggleSyncAsync = toggleSyncAsync;
-        _unblockAsync = unblockAsync;
-        _beginDisconnect = beginDisconnect;
-        ViewCommand = Own(ReactiveCommand.CreateFromTask(() => _viewAsync(this)));
-        SaveNameCommand = Own(ReactiveCommand.CreateFromTask(() => _saveNameAsync(this)));
-        ToggleSyncCommand = Own(ReactiveCommand.CreateFromTask(() => _toggleSyncAsync(this)));
-        UnblockCommand = Own(ReactiveCommand.CreateFromTask(() => _unblockAsync(this)));
-        BeginDisconnectCommand = Own(ReactiveCommand.Create(() => _beginDisconnect(this)));
     }
+
+    public ProfileViewModel Owner { get; }
 
     public Guid DeviceId { get; }
 
@@ -234,16 +217,6 @@ public sealed class DeviceItemViewModel : DisposableReactiveObject
 
     public string BlockedAtText => FrontendDateTimeUtil.ToLocalFromBackendUtc(BlockedAt)?.ToString("g") ?? string.Empty;
 
-    public ReactiveCommand<RxVoid, RxVoid> ViewCommand { get; }
-
-    public ReactiveCommand<RxVoid, RxVoid> SaveNameCommand { get; }
-
-    public ReactiveCommand<RxVoid, RxVoid> ToggleSyncCommand { get; }
-
-    public ReactiveCommand<RxVoid, RxVoid> UnblockCommand { get; }
-
-    public ReactiveCommand<RxVoid, RxVoid> BeginDisconnectCommand { get; }
-
     public void ApplySyncState(bool isSyncOn) =>
         IsSyncOn = isSyncOn;
 
@@ -322,17 +295,9 @@ public sealed class DeviceItemViewModel : DisposableReactiveObject
     public static DeviceItemViewModel Create(
         UserDeviceInfoResponse device,
         DeviceItemLocalization localization,
-        Func<DeviceItemViewModel, Task> viewAsync,
-        Func<DeviceItemViewModel, Task> saveNameAsync,
-        Func<DeviceItemViewModel, Task> toggleSyncAsync,
-        Func<DeviceItemViewModel, Task> unblockAsync,
-        Action<DeviceItemViewModel> beginDisconnect) =>
+        ProfileViewModel owner) =>
         new(
             device,
             localization,
-            viewAsync,
-            saveNameAsync,
-            toggleSyncAsync,
-            unblockAsync,
-            beginDisconnect);
+            owner);
 }

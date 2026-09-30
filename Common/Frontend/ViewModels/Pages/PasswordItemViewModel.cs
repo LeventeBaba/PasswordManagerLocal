@@ -2,7 +2,6 @@ using Avalonia.Media;
 using PasswordManagerLocal.Common.Contracts.Responses;
 using PasswordManagerLocal.Common.Frontend.Services;
 using ReactiveUI;
-using ReactiveUI.Primitives;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
 
@@ -18,10 +17,9 @@ public sealed class PasswordItemViewModel : MultiSelectableListItemViewModel
         string? colorName,
         string editLabel,
         string deleteLabel,
-        Func<PasswordItemViewModel, Task> viewAsync,
-        Func<PasswordItemViewModel, Task> editAsync,
-        Func<PasswordItemViewModel, Task> deleteAsync)
+        PasswordsViewModel owner)
     {
+        Owner = owner;
         Id = password.Id;
         Name = password.Name;
         Description = password.Description;
@@ -35,10 +33,11 @@ public sealed class PasswordItemViewModel : MultiSelectableListItemViewModel
         _editLabel = editLabel;
         _deleteLabel = deleteLabel;
 
-        ViewCommand = Own(ReactiveCommand.CreateFromTask(() => viewAsync(this)));
-        EditCommand = Own(ReactiveCommand.CreateFromTask(() => editAsync(this)));
-        DeleteCommand = Own(ReactiveCommand.CreateFromTask(() => deleteAsync(this)));
     }
+
+    public PasswordsViewModel Owner { get; }
+
+    public override bool IsSelectionModeActive => Owner.IsPasswordMultiSelectionActive;
 
     public Guid Id { get; }
 
@@ -79,12 +78,6 @@ public sealed class PasswordItemViewModel : MultiSelectableListItemViewModel
         get => _deleteLabel;
         private set => this.RaiseAndSetIfChanged(ref _deleteLabel, value);
     }
-
-    public ReactiveCommand<RxVoid, RxVoid> ViewCommand { get; }
-
-    public ReactiveCommand<RxVoid, RxVoid> EditCommand { get; }
-
-    public ReactiveCommand<RxVoid, RxVoid> DeleteCommand { get; }
 
     public string DescriptionPreview => string.IsNullOrWhiteSpace(Description) ? "—" : Description;
 
@@ -141,10 +134,8 @@ public sealed class PasswordItemViewModel : MultiSelectableListItemViewModel
         string? colorName,
         string editLabel,
         string deleteLabel,
-        Func<PasswordItemViewModel, Task> viewAsync,
-        Func<PasswordItemViewModel, Task> editAsync,
-        Func<PasswordItemViewModel, Task> deleteAsync) =>
-        new(password, tagNames, colorName, editLabel, deleteLabel, viewAsync, editAsync, deleteAsync);
+        PasswordsViewModel owner) =>
+        new(password, tagNames, colorName, editLabel, deleteLabel, owner);
 
     private static IBrush ParseBrush(string color) =>
         PasswordColorUtility.ParseBrush(color);

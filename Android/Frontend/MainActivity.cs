@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Android.Animation;
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
@@ -41,6 +42,7 @@ public class MainActivity : AvaloniaMainActivity
         var view = Content as MainView
             ?? throw new InvalidOperationException("The Android main-view factory did not create a MainView.");
         var platforms = new FrontendPlatformServices();
+        platforms.SetPlatformAnimationsEnabledProvider(ValueAnimator.AreAnimatorsEnabled);
         platforms.Clipboard.SetPlatformClipboardWriter(new AndroidClipboardWriter(this));
         platforms.Keyboard.SetPlatformHideAction(HideSoftwareKeyboard);
         platforms.CameraScanner.SetPlatformScanner(new AndroidQrCodeCameraScanner(this));

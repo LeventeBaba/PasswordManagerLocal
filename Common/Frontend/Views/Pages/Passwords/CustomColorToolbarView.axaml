@@ -7,12 +7,12 @@
     x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Passwords.CustomColorToolbarView"
     x:DataType="vm:PasswordsViewModel"
     Classes="searchToolbar"
-    Classes.compactSearchToolbar="{Binding IsAndroidPaneTransitionEnabled}">
+    Classes.compactSearchToolbar="{Binding IsAndroidUi}">
   <Border Classes="card searchToolbarCard"
-          Classes.compactSearchCard="{Binding IsAndroidPaneTransitionEnabled}">
+          Classes.compactSearchCard="{Binding IsAndroidUi}">
     <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" MaxWidth="560" HorizontalAlignment="Center">
       <Border Classes="toolbarGroup searchToolbarGroup"
-              Classes.compactSearchGroup="{Binding IsAndroidPaneTransitionEnabled}"
+              Classes.compactSearchGroup="{Binding IsAndroidUi}"
               Grid.Column="0"
               MinWidth="0">
         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" MinWidth="0">
@@ -71,7 +71,7 @@
       </Border>
       <Button
           Classes="ghost iconButton searchToolbarButton"
-          Classes.compactSearchButton="{Binding IsAndroidPaneTransitionEnabled}"
+          Classes.compactSearchButton="{Binding IsAndroidUi}"
           Grid.Column="1"
           ToolTip.Tip="{Binding CustomColorsSortLabel}">
         <PathIcon Classes="actionButtonIcon" Data="{StaticResource SortIconGeometry}" />
@@ -90,7 +90,7 @@
       </Button>
       <Button
           Classes="primary iconButton searchToolbarButton"
-          Classes.compactSearchButton="{Binding IsAndroidPaneTransitionEnabled}"
+          Classes.compactSearchButton="{Binding IsAndroidUi}"
           Grid.Column="2"
           Command="{Binding OpenCustomColorPickerCommand}"
           ToolTip.Tip="{Binding AddCustomColorLabel}">
