@@ -70,6 +70,7 @@
   "Validation_Username_Required": "Kérjük, add meg a felhasználóneved.",
   "Validation_Username_Invalid": "A felhasználónév 3–32 karakter hosszú lehet, és csak betűt, számot, aláhúzást, kötőjelet vagy aposztrófot tartalmazhat.",
   "Validation_Username_Unavailable": "Ez a felhasználónév már foglalt. Válassz másikat.",
+  "Validation_Username_AvailabilityIndeterminate": "A felhasználónév elérhetőségét nem lehetett ellenőrizni, mert egy meglévő helyi fiók azonosítóadatai helyreállítást igényelnek. Ez nem jelenti azt, hogy a felhasználónév foglalt. Állítsd helyre a meglévő helyi fiók adatait, majd próbáld újra.",
   "Validation_Password_Required": "Kérjük, add meg a jelszavad.",
   "Validation_FirstName_Required": "Kérjük, add meg a keresztneved.",
   "Validation_FirstName_Invalid": "A keresztnév 1–32 betűből állhat.",

@@ -70,6 +70,7 @@
   "Validation_Username_Required": "Please enter your username.",
   "Validation_Username_Invalid": "Username must be 3–32 characters and can contain only letters, numbers, underscores, hyphens, or apostrophes.",
   "Validation_Username_Unavailable": "This username is already in use. Please choose another one.",
+  "Validation_Username_AvailabilityIndeterminate": "Username availability could not be verified because existing local account identity data needs recovery. This does not mean the username is taken. Repair or recover the existing local account data, then try again.",
   "Validation_Password_Required": "Please enter your password.",
   "Validation_FirstName_Required": "Please enter your first name.",
   "Validation_FirstName_Invalid": "First name must contain 1–32 letters only.",

@@ -1,3 +1,4 @@
+using PasswordManagerLocal.Common.Contracts.Errors;
 using static PasswordManagerLocal.Common.Contracts.Validation.DataValidation;
 
 namespace PasswordManagerLocal.Common.Contracts.Requests;
@@ -22,7 +23,7 @@ public sealed class RegistrationRequest
             errors.Add("Email");
 
         if (!IsValidUsername(Username))
-            errors.Add("Username");
+            errors.Add(RegistrationValidationErrors.UsernameInvalid);
 
         if (!IsValidFirstName(FirstName))
             errors.Add($"FirstName");

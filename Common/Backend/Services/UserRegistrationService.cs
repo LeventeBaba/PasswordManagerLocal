@@ -6,6 +6,7 @@ using PasswordManagerLocal.Common.Backend.Diagnostics;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Contracts.Requests;
+using PasswordManagerLocal.Common.Contracts.Errors;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Utils;
 using System.Security.Cryptography;
@@ -17,6 +18,7 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 public sealed class UserRegistrationService : IUserRegistrationService
 {
     private readonly IUserLookupService _userLookup;
+    private readonly IUserRepository _users;
     private readonly IUserDataWriterService _userDataWriter;
     private readonly IRememberMeService _rememberMe;
     private readonly IDeviceIdentityService _identity;
@@ -33,6 +35,7 @@ public sealed class UserRegistrationService : IUserRegistrationService
 
     public UserRegistrationService(
         IUserLookupService userLookup,
+        IUserRepository users,
         IUserDataWriterService userDataWriter,
         IRememberMeService rememberMe,
         IDeviceIdentityService identity,
@@ -48,6 +51,7 @@ public sealed class UserRegistrationService : IUserRegistrationService
         IAuthenticatedSessionIssuer sessionIssuer)
     {
         _userLookup = userLookup;
+        _users = users;
         _userDataWriter = userDataWriter;
         _rememberMe = rememberMe;
         _identity = identity;
@@ -125,8 +129,89 @@ public sealed class UserRegistrationService : IUserRegistrationService
     private async Task ThrowIfUsernameExistsAsync(byte[] usernameBytes, CancellationToken ct)
     {
         var resolution = await _userLookup.ResolveUsernameAsync(usernameBytes, ct);
-        if (resolution.State != UserLoginIdentityMatchState.NotFound)
-            throw new InvalidInputException(["Username"]);
+
+        if (NeedsUsernameProjectionRepair(resolution.State))
+        {
+            await TryRepairUsernameProjectionsAsync(resolution, ct);
+            resolution = await _userLookup.ResolveUsernameAsync(usernameBytes, ct);
+        }
+
+        switch (resolution.State)
+        {
+            case UserLoginIdentityMatchState.NotFound:
+                return;
+
+            case UserLoginIdentityMatchState.Matched:
+            case UserLoginIdentityMatchState.Ambiguous:
+            case UserLoginIdentityMatchState.DeletedAccount:
+                throw new InvalidInputException([RegistrationValidationErrors.UsernameUnavailable]);
+
+            case UserLoginIdentityMatchState.InvalidProjection:
+            case UserLoginIdentityMatchState.ProjectionOutdated:
+            case UserLoginIdentityMatchState.ProjectionQuarantined:
+                BackendDebugLog.Warning(
+                    $"Registration could not prove username availability after projection repair. " +
+                    $"State={resolution.State}, HasProjectedUserId={resolution.UserId.HasValue}, " +
+                    $"Diagnostic={resolution.Diagnostic ?? "<none>"}.",
+                    category: "Registration");
+                throw new InvalidInputException([RegistrationValidationErrors.UsernameAvailabilityIndeterminate]);
+
+            default:
+                BackendDebugLog.Warning(
+                    $"Registration encountered an unknown username-resolution state: {resolution.State}.",
+                    category: "Registration");
+                throw new InvalidInputException([RegistrationValidationErrors.UsernameAvailabilityIndeterminate]);
+        }
+    }
+
+
+    private static bool NeedsUsernameProjectionRepair(UserLoginIdentityMatchState state) =>
+        state is UserLoginIdentityMatchState.Ambiguous or
+            UserLoginIdentityMatchState.InvalidProjection or
+            UserLoginIdentityMatchState.ProjectionOutdated or
+            UserLoginIdentityMatchState.ProjectionQuarantined;
+
+
+    private async Task TryRepairUsernameProjectionsAsync(
+        UserLoginIdentityMatchResult resolution,
+        CancellationToken ct)
+    {
+        IReadOnlyCollection<Guid> userIds;
+        if (resolution.UserId is Guid projectedUserId)
+        {
+            userIds = [projectedUserId];
+        }
+        else
+        {
+            var canonicalUserIds = await _users.ListUserIdsAsync(ct);
+            var projectionStates = await _users.ListLoginIdentityStatesAsync(ct);
+            userIds = canonicalUserIds
+                .Concat(projectionStates.Select(state => state.UserId))
+                .Distinct()
+                .ToArray();
+        }
+
+        foreach (var userId in userIds)
+        {
+            try
+            {
+                await _loginIdentities.RecalculateAsync(userId, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Availability remains fail-closed. A failed repair is not interpreted as a
+                // duplicate username; the post-repair lookup below will report an indeterminate
+                // availability state instead.
+                BackendDebugLog.Warning(
+                    $"Registration username projection repair failed for user {userId}.",
+                    ex,
+                    "Registration");
+            }
+        }
     }
 
 

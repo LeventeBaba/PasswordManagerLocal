@@ -488,9 +488,19 @@ public sealed class RegistrationViewModel : ViewModelBase
         {
             switch (error)
             {
-                case "Username":
+                case RegistrationValidationErrors.UsernameInvalid:
+                    _usernameTouched = true;
+                    _usernameServerValidationMessage = GetTranslation("Validation_Username_Invalid");
+                    applied = true;
+                    break;
+                case RegistrationValidationErrors.UsernameUnavailable:
                     _usernameTouched = true;
                     _usernameServerValidationMessage = GetTranslation("Validation_Username_Unavailable");
+                    applied = true;
+                    break;
+                case RegistrationValidationErrors.UsernameAvailabilityIndeterminate:
+                    _usernameTouched = true;
+                    _usernameServerValidationMessage = GetTranslation("Validation_Username_AvailabilityIndeterminate");
                     applied = true;
                     break;
                 case "FirstName":

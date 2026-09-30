@@ -5,6 +5,7 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Contracts.Errors;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Tests.Fakes;
 using System.Text;
@@ -125,7 +126,7 @@ public sealed class AuthServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Unit")]
-    public async Task Register_DuplicateUsername_Throws()
+    public async Task Register_DuplicateUsername_ReportsUsernameUnavailable()
     {
         using var host = new BackendTestHost();
 
@@ -133,10 +134,67 @@ public sealed class AuthServiceTests
 
         await auth.RegisterAsync(host.CreateValidRegistrationRequest("bob"));
 
-        await ExpectThrowsAsync<InvalidInputException>(async () =>
-        {
-            await auth.RegisterAsync(host.CreateValidRegistrationRequest("bob"));
-        });
+        var exception = await MSTestAssert.ThrowsExactlyAsync<InvalidInputException>(() =>
+            auth.RegisterAsync(host.CreateValidRegistrationRequest("bob")));
+
+        CollectionAssert.Contains(exception.Errors, RegistrationValidationErrors.UsernameUnavailable);
+        CollectionAssert.DoesNotContain(exception.Errors, RegistrationValidationErrors.UsernameAvailabilityIndeterminate);
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Unit")]
+    public async Task Register_UnrelatedRepairableInvalidProjection_IsRepairedBeforeAvailabilityDecision()
+    {
+        using var host = new BackendTestHost();
+        var auth = host.Services.GetRequiredService<IAuthService>();
+        var users = host.Services.GetRequiredService<IUserRepository>();
+        var userService = host.Services.GetRequiredService<IUserService>();
+
+        var existingToken = await auth.RegisterAsync(host.CreateValidRegistrationRequest("existing_projection_user"));
+        var existingUserId = userService.GetUidFromToken(existingToken);
+        var projection = await users.GetLoginIdentityStateAsync(existingUserId)
+            ?? throw new AssertFailedException("The registered user must have a login-identity projection.");
+        projection.Status = UserLoginIdentityStatus.InvalidSource;
+        projection.StatusReason = "Injected stale projection for registration availability test.";
+        users.UpdateLoginIdentityState(projection);
+
+        var newToken = await auth.RegisterAsync(host.CreateValidRegistrationRequest("definitely_new_username"));
+
+        MSTestAssert.AreNotEqual(Guid.Empty, newToken);
+        var repairedProjection = await users.GetLoginIdentityStateAsync(existingUserId);
+        MSTestAssert.IsNotNull(repairedProjection);
+        MSTestAssert.AreEqual(UserLoginIdentityStatus.Active, repairedProjection.Status);
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Unit")]
+    public async Task Register_UnrelatedUnrepairableProjection_ReportsAvailabilityIndeterminate_NotTaken()
+    {
+        using var host = new BackendTestHost();
+        var auth = host.Services.GetRequiredService<IAuthService>();
+        var users = host.Services.GetRequiredService<IUserRepository>();
+        var userService = host.Services.GetRequiredService<IUserService>();
+
+        var existingToken = await auth.RegisterAsync(host.CreateValidRegistrationRequest("broken_projection_user"));
+        var existingUserId = userService.GetUidFromToken(existingToken);
+        var existingUser = await users.GetByIdAsync(existingUserId)
+            ?? throw new AssertFailedException("The registered user must exist.");
+        existingUser.UsernameHash = [];
+        users.Update(existingUser);
+
+        var projection = await users.GetLoginIdentityStateAsync(existingUserId)
+            ?? throw new AssertFailedException("The registered user must have a login-identity projection.");
+        projection.Status = UserLoginIdentityStatus.InvalidSource;
+        projection.StatusReason = "Injected unrepairable projection for registration availability test.";
+        users.UpdateLoginIdentityState(projection);
+
+        var exception = await MSTestAssert.ThrowsExactlyAsync<InvalidInputException>(() =>
+            auth.RegisterAsync(host.CreateValidRegistrationRequest("another_new_username")));
+
+        CollectionAssert.Contains(exception.Errors, RegistrationValidationErrors.UsernameAvailabilityIndeterminate);
+        CollectionAssert.DoesNotContain(exception.Errors, RegistrationValidationErrors.UsernameUnavailable);
     }
 
     [TestMethod]

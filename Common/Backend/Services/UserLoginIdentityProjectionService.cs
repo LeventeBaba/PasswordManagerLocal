@@ -191,7 +191,7 @@ public sealed class UserLoginIdentityProjectionService : IUserLoginIdentityProje
 
         var match = matches[0];
         if (match.Status == UserLoginIdentityStatus.IntegrityConflict)
-            return new(UserLoginIdentityMatchState.ProjectionQuarantined, Diagnostic: match.StatusReason);
+            return new(UserLoginIdentityMatchState.ProjectionQuarantined, match.UserId, Diagnostic: match.StatusReason);
         if (match.Status != UserLoginIdentityStatus.Active)
             return new(UserLoginIdentityMatchState.InvalidProjection, match.UserId, Diagnostic: match.StatusReason);
 
@@ -200,7 +200,7 @@ public sealed class UserLoginIdentityProjectionService : IUserLoginIdentityProje
 
         var user = await _users.GetByIdAsync(match.UserId, ct);
         if (user is null)
-            return new(UserLoginIdentityMatchState.InvalidProjection, Diagnostic: "The projected user no longer exists.");
+            return new(UserLoginIdentityMatchState.InvalidProjection, match.UserId, Diagnostic: "The projected user no longer exists.");
         if (match.KeyEpoch != user.KeyEpoch || match.MembershipEpoch > user.MembershipEpoch)
             return new(UserLoginIdentityMatchState.ProjectionOutdated, match.UserId, Diagnostic: "The projection epochs do not match canonical lifecycle state.");
 
