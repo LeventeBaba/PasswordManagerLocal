@@ -104,6 +104,9 @@ public sealed class UserMembershipAuthorizationRepository : IUserMembershipAutho
     public Task AddAsync(UserMembershipAuthorization authorization, CancellationToken ct = default) =>
         _rows.AddAsync(authorization, ct).AsTask();
 
+    public void DeleteRange(IEnumerable<UserMembershipAuthorization> authorizations) =>
+        _rows.RemoveRange(authorizations);
+
     public void Update(UserMembershipAuthorization authorization)
     {
         var entry = _context.Entry(authorization);

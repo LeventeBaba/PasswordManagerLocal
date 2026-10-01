@@ -20,4 +20,5 @@ public sealed class UserOriginRemovalCutoffRepository : IUserOriginRemovalCutoff
         await _rows.Where(row => row.UserId == userId && row.DeviceId == deviceId && row.OriginInstanceId == originInstanceId).OrderBy(row => row.UserKeyEpoch).ToListAsync(ct);
 
     public Task AddAsync(UserOriginRemovalCutoff cutoff, CancellationToken ct = default) => _rows.AddAsync(cutoff, ct).AsTask();
+    public void DeleteRange(IEnumerable<UserOriginRemovalCutoff> cutoffs) => _rows.RemoveRange(cutoffs);
 }

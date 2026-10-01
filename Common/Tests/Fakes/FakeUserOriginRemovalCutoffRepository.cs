@@ -21,4 +21,10 @@ public sealed class FakeUserOriginRemovalCutoffRepository : IUserOriginRemovalCu
         _rows.Add(cutoff);
         return Task.CompletedTask;
     }
+
+    public void DeleteRange(IEnumerable<UserOriginRemovalCutoff> cutoffs)
+    {
+        foreach (var cutoff in cutoffs.ToArray())
+            _rows.Remove(cutoff);
+    }
 }

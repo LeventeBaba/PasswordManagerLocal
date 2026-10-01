@@ -342,6 +342,86 @@ public sealed class UserControlOperationServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
+    public async Task RelayedDeviceAddition_ReactivatesRelayPeerForEndpointHintCatchUp()
+    {
+        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        using var authorSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        var author = CreateIdentity(authorSigningKey);
+        var canonical = CreateUser(keyEpoch: 1, marker: 0x31);
+        var relayDeviceId = Guid.NewGuid();
+        var relayDevice = CreateTrustedDevice(relayDeviceId, Enumerable.Repeat((byte)0x52, 32).ToArray());
+        var relayLink = new UserDevice
+        {
+            UserId = canonical.UId,
+            DeviceId = relayDeviceId,
+            IsSyncOn = true,
+            IsDeleted = false
+        };
+        relayLink.GenerateIntegrityHash();
+
+        await database.Users.AddAsync(canonical);
+        await database.Devices.AddAsync(relayDevice);
+        await database.UserDevices.AddAsync(relayLink);
+        await database.UnitOfWork.SaveChangesAsync();
+
+        var newDeviceId = Guid.NewGuid();
+        var payload = UserControlOperationEnvelopeUtil.CreateDeviceAdditionPayload(
+            canonical.UId,
+            canonical.KeyEpoch,
+            canonical.MembershipEpoch,
+            newDeviceId,
+            Guid.NewGuid(),
+            Enumerable.Repeat((byte)0x63, 32).ToArray(),
+            Enumerable.Repeat((byte)0x74, 32).ToArray(),
+            Convert.ToHexString(newDeviceId.ToByteArray().Concat(newDeviceId.ToByteArray()).ToArray()),
+            DeviceType.WindowsPc);
+        var envelope = new UserControlOperationEnvelope
+        {
+            OperationId = Guid.NewGuid(),
+            UserId = canonical.UId,
+            OperationType = UserControlOperationType.DeviceAddition,
+            OriginDeviceId = author.LocalDeviceId,
+            OriginInstanceId = author.OriginInstanceId,
+            OriginSequence = 1,
+            PreviousKeyEpoch = canonical.KeyEpoch,
+            ResultingKeyEpoch = canonical.KeyEpoch,
+            PreviousMembershipEpoch = canonical.MembershipEpoch,
+            ResultingMembershipEpoch = canonical.MembershipEpoch + 1,
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            OperationPayload = UserControlOperationEnvelopeUtil.SerializeDeviceAdditionPayload(payload)
+        };
+        UserControlOperationEnvelopeUtil.FillOriginAuthentication(envelope, author);
+
+        var activation = new FakeSyncQueueService();
+        var localIdentity = new FakeDeviceIdentityService { LocalDeviceId = Guid.NewGuid() };
+        var service = new UserControlOperationInboxService(
+            database.UserControlOperations,
+            database.UserControlStates,
+            database.Users,
+            database.Devices,
+            database.UserDevices,
+            database.UserSyncSnapshots,
+            new UserLifecycleCoordinator(),
+            new FakeInteractiveSessionStateService(new FakeAuthService()),
+            database.UnitOfWork,
+            new FakeUserMembershipAuthorizationService(),
+            database.UserMembershipAuthorizations,
+            database.LocalUserDevices,
+            localIdentity,
+            new FakeSyncRuntimeService(),
+            pendingSyncActivation: activation);
+
+        var receipt = await service.StoreAndApplyAsync(envelope, relayDeviceId);
+
+        MSTestAssert.AreEqual(UserControlOperationReceiptState.Applied, receipt.State);
+        CollectionAssert.AreEquivalent(
+            new[] { newDeviceId, relayDeviceId },
+            activation.ActivatedDevices.Select(device => device.Id).Distinct().ToArray());
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
     public async Task AppliedOperation_PersistsAfterCanonicalUserDeletion()
     {
         await using var database = await SqliteIntegrationTestDatabase.CreateAsync();

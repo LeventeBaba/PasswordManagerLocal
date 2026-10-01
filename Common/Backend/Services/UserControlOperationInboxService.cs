@@ -816,6 +816,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
                 if (_loginIdentities is not null)
                     await _loginIdentities.RecalculateUnderLifecycleAsync(user.UId, ct);
                 await _uow.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
+                await TryActivateAdditionSyncPeersAsync(row, payload);
                 return Receipt(envelope, UserControlOperationReceiptState.Applied, row.StatusReason);
             }
             row.Status = UserControlOperationStatus.Rejected;
@@ -859,19 +860,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
             await _loginIdentities.RecalculateUnderLifecycleAsync(user.UId, ct);
         await _uow.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-        if (_pendingSyncActivation is not null)
-        {
-            try
-            {
-                var addedDevice = await _devices.GetByIdAsync(payload.NewDeviceId, CancellationToken.None);
-                if (addedDevice is not null)
-                    _pendingSyncActivation.ActivateDevices([addedDevice]);
-            }
-            catch
-            {
-                // The durable membership is committed; discovery activation is retryable.
-            }
-        }
+        await TryActivateAdditionSyncPeersAsync(row, payload);
         try { await _syncRuntime.RefreshSyncEnabledAsync(CancellationToken.None); }
         catch (Exception ex)
         {
@@ -879,6 +868,64 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
                 $"Membership catch-up committed; runtime refresh pending. User={user.UId}, Failure={ex.GetType().Name}.", category: "Synchronization");
         }
         return Receipt(envelope, UserControlOperationReceiptState.Applied);
+    }
+
+    private async Task TryActivateAdditionSyncPeersAsync(
+        UserControlOperation row,
+        DeviceAdditionPayload payload)
+    {
+        if (_pendingSyncActivation is null)
+            return;
+
+        try
+        {
+            var devicesToActivate = new List<Device>(2);
+            var addedDevice = await _devices.GetByIdAsync(payload.NewDeviceId, CancellationToken.None);
+            if (addedDevice is not null)
+                devicesToActivate.Add(addedDevice);
+
+            // A relayed addition can arrive before this installation knows the new device's
+            // network endpoint. Re-activate the authenticated relay peer as well. Its next
+            // anti-entropy exchange can supply an authorized endpoint hint for the newly
+            // learned device, avoiding a topology-dependent wait for unrelated outgoing work.
+            if (row.LastReceivedFromDeviceId is Guid relayDeviceId &&
+                relayDeviceId != Guid.Empty &&
+                relayDeviceId != _identity.LocalDeviceId &&
+                relayDeviceId != payload.NewDeviceId)
+            {
+                var relayLink = await _userDevices.GetAsync(payload.UserId, relayDeviceId, CancellationToken.None);
+                var relayLinkIsUsable = relayLink is { IsDeleted: false, IsSyncOn: true };
+                if (relayLinkIsUsable)
+                {
+                    try
+                    {
+                        relayLink!.VerifyIntegrity();
+                    }
+                    catch
+                    {
+                        relayLinkIsUsable = false;
+                    }
+                }
+
+                if (relayLinkIsUsable)
+                {
+                    var relayDevice = await _devices.GetByIdAsync(relayDeviceId, CancellationToken.None);
+                    if (relayDevice is not null)
+                        devicesToActivate.Add(relayDevice);
+                }
+            }
+
+            if (devicesToActivate.Count != 0)
+                _pendingSyncActivation.ActivateDevices(devicesToActivate.DistinctBy(device => device.Id).ToArray());
+        }
+        catch (Exception ex)
+        {
+            // Membership is already durable. Endpoint-hint reacquisition is best-effort and
+            // can be retried by discovery/runtime refresh without rolling back the addition.
+            PasswordManagerLocal.Common.Backend.Diagnostics.BackendDebugLog.Warning(
+                $"Membership addition committed; peer activation for endpoint-hint catch-up is pending. User={payload.UserId}, Failure={ex.GetType().Name}.",
+                category: "Synchronization");
+        }
     }
 
     private async Task<UserControlOperationReceiptResult> ApplyDeviceRemovalAsync(

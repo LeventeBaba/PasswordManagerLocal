@@ -179,6 +179,8 @@
   "Profile_Device_SelfDiagnostics_AdditionHistoryInvalid": "A device addition is missing signed history.",
   "Profile_Device_SelfDiagnostics_SignedRemovalHistoryInvalid": "Signed device removal history is inconsistent. See the backend diagnostic log.",
   "Profile_Device_SelfDiagnostics_MembershipHistoryInvalid": "Membership history has duplicate authorization identifiers.",
+  "Profile_Device_SelfDiagnostics_SingleDeviceLegacyHistoryReset": "Legacy single-device membership and sync history was reset safely. The current device and account data were preserved; obsolete removed-device history was cleared.",
+  "Profile_Device_SelfDiagnostics_RemovedDeviceMetadataCleaned": "Stale encrypted metadata from a previously disconnected device was removed and protected by a deletion marker.",
   "Profile_Device_Blocked": "Blocked",
   "Profile_Device_Trusted": "Trusted",
   "Profile_Device_NotTrusted": "Not trusted",

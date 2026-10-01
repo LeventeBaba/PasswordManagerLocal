@@ -8,4 +8,5 @@ public interface IUserOriginRemovalCutoffRepository
     Task<IReadOnlyList<UserOriginRemovalCutoff>> ListForUserAsync(Guid userId, CancellationToken ct = default);
     Task<IReadOnlyList<UserOriginRemovalCutoff>> ListForOriginAsync(Guid userId, Guid deviceId, Guid originInstanceId, CancellationToken ct = default);
     Task AddAsync(UserOriginRemovalCutoff cutoff, CancellationToken ct = default);
+    void DeleteRange(IEnumerable<UserOriginRemovalCutoff> cutoffs);
 }

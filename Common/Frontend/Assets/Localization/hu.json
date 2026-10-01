@@ -179,6 +179,8 @@
   "Profile_Device_SelfDiagnostics_AdditionHistoryInvalid": "Egy eszköz hozzáadásának hitelesített előzménye hiányzik.",
   "Profile_Device_SelfDiagnostics_SignedRemovalHistoryInvalid": "A hitelesített eltávolítási előzmény hibás. Nézd meg a backend naplóját.",
   "Profile_Device_SelfDiagnostics_MembershipHistoryInvalid": "A tagsági előzményben ismétlődő engedélyazonosítók vannak.",
+  "Profile_Device_SelfDiagnostics_SingleDeviceLegacyHistoryReset": "A korábbi verzióból megmaradt egyeszközös tagsági és szinkronizációs előzmények biztonságosan alaphelyzetbe kerültek. A jelenlegi eszköz és a fiók adatai megmaradtak; az elavult, eltávolított eszközökhöz tartozó előzmények törlődtek.",
+  "Profile_Device_SelfDiagnostics_RemovedDeviceMetadataCleaned": "Egy korábban leválasztott eszköz beragadt titkosított metaadatai törölve lettek, és törlési jelölő védi őket a visszakerüléstől.",
   "Profile_Device_Blocked": "Blokkolva",
   "Profile_Device_Trusted": "Megbízható",
   "Profile_Device_NotTrusted": "Nem megbízható",

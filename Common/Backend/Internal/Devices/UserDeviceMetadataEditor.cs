@@ -18,6 +18,7 @@ public sealed class UserDeviceMetadataEditor
     private readonly LocalUserDeviceLinkManager _localLinkManager;
     private readonly UserDeviceAccessor _accessor;
     private readonly IUserMembershipAuthorizationRepository _membershipAuthorizations;
+    private readonly IUserDeviceRepository _userDevices;
 
     public UserDeviceMetadataEditor(
         IUserLookupService userLookup,
@@ -27,7 +28,8 @@ public sealed class UserDeviceMetadataEditor
         ISyncVersionClockService versionClock,
         LocalUserDeviceLinkManager localLinkManager,
         UserDeviceAccessor accessor,
-        IUserMembershipAuthorizationRepository membershipAuthorizations)
+        IUserMembershipAuthorizationRepository membershipAuthorizations,
+        IUserDeviceRepository userDevices)
     {
         _userLookup = userLookup;
         _userDataReader = userDataReader;
@@ -37,6 +39,7 @@ public sealed class UserDeviceMetadataEditor
         _localLinkManager = localLinkManager;
         _accessor = accessor;
         _membershipAuthorizations = membershipAuthorizations;
+        _userDevices = userDevices;
     }
 
     public Task SetNameAsync(Guid token, Guid deviceId, string name, CancellationToken ct)
@@ -52,7 +55,11 @@ public sealed class UserDeviceMetadataEditor
             if (deviceId != _identity.LocalDeviceId)
                 remoteLink = await _accessor.GetActiveRemoteAsync(user.UId, deviceId, ct);
 
-            if (userDevicesData.Devices.Any(d => d.Id != deviceId && string.Equals(d.Name, normalizedName, StringComparison.OrdinalIgnoreCase)))
+            var activeDeviceIds = await GetActiveDeviceIdsAsync(user.UId, ct);
+            if (userDevicesData.Devices.Any(d =>
+                    d.Id != deviceId &&
+                    activeDeviceIds.Contains(d.Id) &&
+                    string.Equals(d.Name, normalizedName, StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidInputException();
 
             var encryptedDevice = userDevicesData.Devices.FirstOrDefault(d => d.Id == deviceId);
@@ -88,6 +95,21 @@ public sealed class UserDeviceMetadataEditor
             await PersistAsync(bundle, token, ct);
 
         }, ct);
+    }
+
+    private async Task<HashSet<Guid>> GetActiveDeviceIdsAsync(Guid userId, CancellationToken ct)
+    {
+        var activeDeviceIds = (await _membershipAuthorizations.ListForUserAsync(userId, ct))
+            .Where(row => row.IsActive)
+            .Select(row => row.DeviceId)
+            .ToHashSet();
+        activeDeviceIds.Add(_identity.LocalDeviceId);
+        foreach (var link in await _userDevices.ListByUserAsync(userId, ct))
+        {
+            if (!link.IsDeleted)
+                activeDeviceIds.Add(link.DeviceId);
+        }
+        return activeDeviceIds;
     }
 
     public bool EnsureDeviceData(UserDevicesData userDevicesData, Guid deviceId, DateTimeOffset linkedAt)

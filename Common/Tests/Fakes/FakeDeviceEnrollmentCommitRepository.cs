@@ -23,4 +23,9 @@ public sealed class FakeDeviceEnrollmentCommitRepository : IDeviceEnrollmentComm
     }
 
     public void Update(DeviceEnrollmentCommit commit) { }
+    public void DeleteRange(IEnumerable<DeviceEnrollmentCommit> commits)
+    {
+        foreach (var commit in commits.ToArray())
+            _rows.Remove(commit);
+    }
 }

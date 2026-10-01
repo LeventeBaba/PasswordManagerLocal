@@ -41,4 +41,5 @@ public sealed class UserRevisionKnowledgeRepository : IUserRevisionKnowledgeRepo
         _knowledge.AddAsync(knowledge, ct).AsTask();
 
     public void Update(UserRevisionKnowledge knowledge) => _knowledge.Update(knowledge);
+    public void DeleteRange(IEnumerable<UserRevisionKnowledge> knowledge) => _knowledge.RemoveRange(knowledge);
 }

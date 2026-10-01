@@ -18,5 +18,6 @@ public interface IUserControlOperationRepository
     Task<long> GetHighestOriginSequenceAsync(Guid userId, Guid originDeviceId, Guid originInstanceId, CancellationToken ct = default);
     Task AddAsync(UserControlOperation operation, CancellationToken ct = default);
     void Update(UserControlOperation operation);
+    void DeleteRange(IEnumerable<UserControlOperation> operations);
     void Detach(UserControlOperation operation);
 }

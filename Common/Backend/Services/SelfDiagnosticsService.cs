@@ -4,8 +4,10 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Diagnostics;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Sync;
+using PasswordManagerLocal.Common.Backend.Sync.Tombstones;
 using PasswordManagerLocal.Common.Contracts.Responses;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
@@ -23,6 +25,16 @@ public sealed class SelfDiagnosticsService : ISelfDiagnosticsService
     private readonly IUserControlOperationRepository _operations;
     private readonly IUserOriginRemovalCutoffRepository _cutoffs;
     private readonly IUserControlStateRepository _states;
+    private readonly IUserSyncFaultRepository _syncFaults;
+    private readonly IUserRevisionKnowledgeRepository _revisionKnowledge;
+    private readonly IUserSyncSnapshotRepository _snapshots;
+    private readonly IUserSyncStateRepository _syncStates;
+    private readonly IDeviceEnrollmentCommitRepository _enrollmentCommits;
+    private readonly IUserCanonicalHealthService _canonicalHealth;
+    private readonly IUserLoginIdentityProjectionService _loginIdentities;
+    private readonly IUserDataReaderService _userDataReader;
+    private readonly IUserDataWriterService _userDataWriter;
+    private readonly ISyncVersionClockService _versionClock;
     private readonly IUnitOfWork _uow;
 
     public SelfDiagnosticsService(
@@ -30,7 +42,12 @@ public sealed class SelfDiagnosticsService : ISelfDiagnosticsService
         ILocalUserDeviceRepository localLinks, IUserMembershipAuthorizationRepository authorizations,
         IUserDeviceRepository userDevices,
         IUserControlOperationRepository operations, IUserOriginRemovalCutoffRepository cutoffs,
-        IUserControlStateRepository states, IUnitOfWork uow)
+        IUserControlStateRepository states, IUserSyncFaultRepository syncFaults,
+        IUserRevisionKnowledgeRepository revisionKnowledge,
+        IUserSyncSnapshotRepository snapshots, IUserSyncStateRepository syncStates,
+        IDeviceEnrollmentCommitRepository enrollmentCommits, IUserCanonicalHealthService canonicalHealth,
+        IUserLoginIdentityProjectionService loginIdentities, IUserDataReaderService userDataReader,
+        IUserDataWriterService userDataWriter, ISyncVersionClockService versionClock, IUnitOfWork uow)
     {
         _users = users;
         _lifecycle = lifecycle;
@@ -41,6 +58,16 @@ public sealed class SelfDiagnosticsService : ISelfDiagnosticsService
         _operations = operations;
         _cutoffs = cutoffs;
         _states = states;
+        _syncFaults = syncFaults;
+        _revisionKnowledge = revisionKnowledge;
+        _snapshots = snapshots;
+        _syncStates = syncStates;
+        _enrollmentCommits = enrollmentCommits;
+        _canonicalHealth = canonicalHealth;
+        _loginIdentities = loginIdentities;
+        _userDataReader = userDataReader;
+        _userDataWriter = userDataWriter;
+        _versionClock = versionClock;
         _uow = uow;
     }
 
@@ -101,13 +128,19 @@ public sealed class SelfDiagnosticsService : ISelfDiagnosticsService
             if (state is null || state.HasConflict || state.AppliedMembershipEpoch != user.MembershipEpoch ||
                 state.AppliedKeyEpoch != user.KeyEpoch)
                 findings.Add("ControlStateInvalid");
+            var operations = await _operations.ListForUserAsync(user.UId, lifecycleToken);
             if (findings.Contains("MembershipHistoryInvalid"))
+            {
+                var reset = await TryResetSingleDeviceLegacyHistoryAsync(
+                    token, user, localIdentityMatches, rows, remoteLinks, state, operations, findings, lifecycleToken);
+                if (reset is not null)
+                    return reset;
                 return new SelfDiagnosticsResultResponse { Healthy = false, Findings = findings.ToArray() };
+            }
 
             var genesisRepairs = rows.Where(row => row.IsGenesis && row.StartedMembershipEpoch == 1 &&
                 row.AdditionOperationId is null && row.AdditionOperationHash is { Length: 0 }).ToArray();
             var byId = rows.ToDictionary(UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId);
-            var operations = await _operations.ListForUserAsync(user.UId, lifecycleToken);
             var localOperations = operations.Where(operation =>
                 operation.Status != UserControlOperationStatus.Rejected &&
                 operation.OriginDeviceId == _identity.LocalDeviceId &&
@@ -277,7 +310,13 @@ public sealed class SelfDiagnosticsService : ISelfDiagnosticsService
             if (existingCutoffs.Any(row => !expectedCutoffs.ContainsKey((row.DeviceId, row.OriginInstanceId, row.UserKeyEpoch))))
                 findings.Add("RemovalCutoffInvalid");
             if (findings.Count != 0)
+            {
+                var reset = await TryResetSingleDeviceLegacyHistoryAsync(
+                    token, user, localIdentityMatches, rows, remoteLinks, state, operations, findings, lifecycleToken);
+                if (reset is not null)
+                    return reset;
                 return new SelfDiagnosticsResultResponse { Healthy = false, Findings = findings.ToArray() };
+            }
 
             var repairCount = genesisRepairs.Length + additionRepairs.Count + missingCutoffs.Count +
                               membershipSignHashRepairs.Count +
@@ -335,8 +374,272 @@ public sealed class SelfDiagnosticsService : ISelfDiagnosticsService
             if (missingCutoffs.Count != 0) repaired.Add("RemovalCutoffRecovered");
             if (localSignHashRepair) repaired.Add("LocalSignHashRecovered");
             if (membershipSignHashRepairs.Count != 0) repaired.Add("MembershipSignHashRecovered");
+            var metadataRepairCount = await RepairRemovedDeviceMetadataAsync(
+                token, user.UId, localIdentityMatches, lifecycleToken);
+            if (metadataRepairCount != 0)
+            {
+                repairCount += metadataRepairCount;
+                repaired.Add("RemovedDeviceMetadataCleaned");
+            }
             return new SelfDiagnosticsResultResponse { Healthy = true, RepairedCount = repairCount, Findings = repaired };
         }, ct);
+    }
+
+    private async Task<SelfDiagnosticsResultResponse?> TryResetSingleDeviceLegacyHistoryAsync(
+        Guid token,
+        User user,
+        bool localIdentityMatches,
+        IReadOnlyList<UserMembershipAuthorization> rows,
+        IReadOnlyList<UserDevice> remoteLinks,
+        UserControlState? state,
+        IReadOnlyList<UserControlOperation> operations,
+        IReadOnlyCollection<string> findings,
+        CancellationToken ct)
+    {
+        if (findings.Count == 0 || !localIdentityMatches || user.KeyEpoch != 1)
+            return null;
+
+        var resettableFindings = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "LocalMembershipInvalid",
+            "GenesisHistoryInvalid",
+            "MembershipHistoryInvalid",
+            "ControlStateInvalid",
+            "ControlSequenceInvalid",
+            "AdditionHistoryInvalid",
+            "MembershipIdentityInvalid",
+            "RemovalCutoffMissing",
+            "RemovalCutoffInvalid",
+            "SignedRemovalHistoryInvalid"
+        };
+        if (findings.Any(finding => !resettableFindings.Contains(finding)))
+            return null;
+        var hasLegacyHistoryEvidence = findings.Any(finding => finding is
+            "LocalMembershipInvalid" or "GenesisHistoryInvalid" or "MembershipHistoryInvalid" or
+            "AdditionHistoryInvalid" or "MembershipIdentityInvalid" or "RemovalCutoffMissing" or
+            "RemovalCutoffInvalid" or "SignedRemovalHistoryInvalid");
+        if (!hasLegacyHistoryEvidence)
+            return null;
+
+        var active = rows.Where(row => row.IsActive).ToArray();
+        if (active.Length != 1 || active[0].DeviceId != _identity.LocalDeviceId ||
+            active[0].OriginInstanceId != _identity.OriginInstanceId ||
+            operations.Any(operation => operation.OperationType == UserControlOperationType.AccountDeletion &&
+                                        operation.Status != UserControlOperationStatus.Rejected))
+            return null;
+
+        var current = active[0];
+        var staleAuthorizations = rows.Where(row => row.AuthorizationId != current.AuthorizationId).ToArray();
+        var cutoffs = await _cutoffs.ListForUserAsync(user.UId, ct);
+        var revisionKnowledge = await _revisionKnowledge.ListForUserAsync(user.UId, ct);
+        var snapshots = await _snapshots.ListForUserAsync(user.UId, ct);
+        var enrollmentCommits = await _enrollmentCommits.ListForUserAsync(user.UId, ct);
+        var syncFaults = await _syncFaults.ListForUserAsync(user.UId, ct);
+        var obsoleteSyncFaults = syncFaults.Where(fault =>
+            fault.Scope is UserSyncFaultScope.ControlPlane or UserSyncFaultScope.SnapshotOrigin or
+                UserSyncFaultScope.SnapshotFork).ToArray();
+        var syncState = await _syncStates.GetAsync(user.UId, ct);
+        var now = DateTimeOffset.UtcNow;
+        using var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(token, ct, user);
+        var staleEncryptedDevices = bundle.UserDevicesData.Devices
+            .Where(device => device.Id != _identity.LocalDeviceId)
+            .ToArray();
+        var staleEncryptedTombstones = bundle.UserDevicesData.DeletedDevices.ToArray();
+
+        await using var transaction = await _uow.BeginTransactionAsync(ct);
+        try
+        {
+            current.SignPublicKey = _identity.SignPublicKey.ToArray();
+            current.SignPublicKeyHash = Hashing.SHA256Hash(_identity.SignPublicKey);
+            current.AgreementPublicKeyHash = Hashing.SHA256Hash(_identity.AgreementPublicKey);
+            current.TlsCertFingerprint = SyncIdentityUtil.NormalizeFingerprint(_identity.FingerprintHex);
+            current.DeviceType = _identity.DeviceType;
+            current.StartedMembershipEpoch = 1;
+            current.EndedMembershipEpoch = null;
+            current.MinimumKeyEpoch = 1;
+            current.MaximumKeyEpoch = null;
+            current.IsActive = true;
+            current.IsGenesis = true;
+            current.AdditionOperationId = null;
+            current.AdditionOperationHash = null;
+            current.RemovalOperationId = null;
+            current.RemovalOperationHash = null;
+            current.EndedAtUtc = null;
+            if (current.CreatedAtUtc == default)
+                current.CreatedAtUtc = _identity.CreatedAt;
+            current.Version = checked(current.Version + 1);
+            _authorizations.Update(current);
+
+            _authorizations.DeleteRange(staleAuthorizations);
+            _cutoffs.DeleteRange(cutoffs);
+            _operations.DeleteRange(operations);
+            _revisionKnowledge.DeleteRange(revisionKnowledge);
+            _snapshots.DeleteRange(snapshots);
+            _enrollmentCommits.DeleteRange(enrollmentCommits);
+            _syncFaults.DeleteRange(obsoleteSyncFaults);
+            foreach (var link in remoteLinks)
+                _userDevices.Delete(link);
+
+            foreach (var device in staleEncryptedDevices)
+            {
+                device.Dispose();
+                bundle.UserDevicesData.Devices.Remove(device);
+            }
+            foreach (var tombstone in staleEncryptedTombstones)
+                tombstone.Dispose();
+            bundle.UserDevicesData.DeletedDevices.Clear();
+            if (staleEncryptedDevices.Length != 0 || staleEncryptedTombstones.Length != 0)
+                await _userDataWriter.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Devices, false, ct);
+
+            user.MembershipEpoch = 1;
+            user.GenerateIntegrityHash();
+
+            var stateIsNew = state is null;
+            state ??= new UserControlState { UserId = user.UId };
+            if (stateIsNew)
+                await _states.AddAsync(state, ct);
+            state.LocalOriginInstanceId = _identity.OriginInstanceId;
+            state.NextOriginSequence = 1;
+            state.AppliedKeyEpoch = user.KeyEpoch;
+            state.AppliedMembershipEpoch = 1;
+            state.HasConflict = false;
+            state.ConflictReason = null;
+            state.ConflictingOperationId = null;
+            state.ConflictingOperationHash = null;
+            state.LastUpdatedAtUtc = now;
+            if (!stateIsNew)
+                _states.Update(state);
+
+            var syncStateIsNew = syncState is null;
+            syncState ??= new UserSyncState
+            {
+                UserId = user.UId,
+                NextOriginRevision = 1
+            };
+            syncState.LocalOriginInstanceId = _identity.OriginInstanceId;
+            syncState.NextOriginRevision = Math.Max(1, syncState.NextOriginRevision);
+            syncState.LastPublishedContentHash = [];
+            syncState.LastUpdatedAtUtc = now;
+            if (syncStateIsNew)
+                await _syncStates.AddAsync(syncState, ct);
+            else
+                _syncStates.Update(syncState);
+
+            await _canonicalHealth.UpdateCheckpointAsync(user, ct);
+            await _loginIdentities.SetCanonicalAsync(user, user.GetGeneralUserDataVersion(), ct);
+            await _uow.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            _uow.ClearTrackedChanges();
+            throw;
+        }
+
+        BackendDebugLog.Warning(
+            $"Reset legacy membership/control history for a verified single-device account. " +
+            $"UserId={user.UId}, Findings={string.Join(',', findings)}, " +
+            $"RemovedAuthorizations={staleAuthorizations.Length}, RemovedOperations={operations.Count}, " +
+            $"RemovedCutoffs={cutoffs.Count}, RemovedSnapshots={snapshots.Count}, " +
+            $"RemovedRevisionKnowledge={revisionKnowledge.Count}, RemovedEnrollmentCommits={enrollmentCommits.Count}, " +
+            $"RemovedObsoleteSyncFaults={obsoleteSyncFaults.Length}, " +
+            $"RemovedEncryptedDeviceMetadata={staleEncryptedDevices.Length}, " +
+            $"RemovedEncryptedDeviceTombstones={staleEncryptedTombstones.Length}.",
+            category: "SelfDiagnostics");
+
+        return new SelfDiagnosticsResultResponse
+        {
+            Healthy = true,
+            RepairedCount = 1,
+            Findings = ["SingleDeviceLegacyHistoryReset"]
+        };
+    }
+
+    private async Task<int> RepairRemovedDeviceMetadataAsync(
+        Guid token, Guid userId, bool localIdentityMatches, CancellationToken ct)
+    {
+        var authorizations = await _authorizations.ListForUserAsync(userId, ct);
+        var links = await _userDevices.ListByUserAsync(userId, ct);
+        var activeAuthorizations = authorizations.Where(row => row.IsActive).ToArray();
+        var activeDeviceIds = activeAuthorizations.Select(row => row.DeviceId).ToHashSet();
+        activeDeviceIds.Add(_identity.LocalDeviceId);
+        var verifiedSingleDeviceState = localIdentityMatches && activeAuthorizations.Length == 1 &&
+            activeAuthorizations[0].DeviceId == _identity.LocalDeviceId &&
+            activeAuthorizations[0].OriginInstanceId == _identity.OriginInstanceId &&
+            !links.Any(link => link.DeviceId != _identity.LocalDeviceId && !link.IsDeleted);
+
+        using var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
+        var staleDevices = bundle.UserDevicesData.Devices
+            .Where(device => !activeDeviceIds.Contains(device.Id) &&
+                             (verifiedSingleDeviceState || HasVerifiedRemovalEvidence(
+                                 device.Id, authorizations, links, bundle.UserDevicesData)))
+            .ToArray();
+        if (staleDevices.Length == 0)
+            return 0;
+
+        var staleDeviceIds = staleDevices.Select(device => device.Id).ToHashSet();
+        _versionClock.Observe(staleDevices.Select(device => device.Version)
+            .Concat(bundle.UserDevicesData.DeletedDevices
+                .Where(deleted => staleDeviceIds.Contains(deleted.Id))
+                .Select(deleted => deleted.Version)));
+
+        var repairs = staleDevices
+            .Select(device => new
+            {
+                Device = device,
+                DeletedAt = ResolveRemovalTime(device.Id, authorizations, links, bundle.UserDevicesData),
+                Version = _versionClock.Next()
+            })
+            .ToArray();
+
+        foreach (var repair in repairs)
+        {
+            TombstoneCleanupUtil.AddOrUpdateDeletedUserDevice(
+                bundle.UserDevicesData, repair.Device.Id, repair.DeletedAt, repair.Version);
+            repair.Device.Dispose();
+            bundle.UserDevicesData.Devices.Remove(repair.Device);
+        }
+
+        await _userDataWriter.UpdateUserDataBundleAsync(
+            bundle, token, UserDataBlobKind.Devices, true, ct);
+        BackendDebugLog.Info(
+            $"Removed stale encrypted metadata for {repairs.Length} previously disconnected device(s). UserId={userId}.",
+            "SelfDiagnostics");
+        return repairs.Length;
+    }
+
+    private static bool HasVerifiedRemovalEvidence(
+        Guid deviceId,
+        IReadOnlyList<UserMembershipAuthorization> authorizations,
+        IReadOnlyList<UserDevice> links,
+        UserDevicesData userDevicesData)
+    {
+        if (userDevicesData.DeletedDevices.Any(deleted => deleted.Id == deviceId))
+            return true;
+        if (authorizations.Any(row => row.DeviceId == deviceId && !row.IsActive &&
+                                      (row.EndedMembershipEpoch.HasValue || row.RemovalOperationId.HasValue ||
+                                       row.EndedAtUtc.HasValue)))
+            return true;
+        return links.Any(link => link.DeviceId == deviceId && link.IsDeleted && link.IsIntegrityValid());
+    }
+
+    private static DateTimeOffset ResolveRemovalTime(
+        Guid deviceId,
+        IReadOnlyList<UserMembershipAuthorization> authorizations,
+        IReadOnlyList<UserDevice> links,
+        UserDevicesData userDevicesData)
+    {
+        var candidates = authorizations
+            .Where(row => row.DeviceId == deviceId && !row.IsActive && row.EndedAtUtc.HasValue)
+            .Select(row => row.EndedAtUtc!.Value)
+            .Concat(links.Where(link => link.DeviceId == deviceId && link.IsDeleted && link.DeletedAt.HasValue &&
+                                        link.IsIntegrityValid())
+                .Select(link => link.DeletedAt!.Value))
+            .Concat(userDevicesData.DeletedDevices.Where(deleted => deleted.Id == deviceId)
+                .Select(deleted => deleted.DeletedAt))
+            .ToArray();
+        return candidates.Length == 0 ? DateTimeOffset.UtcNow : candidates.Max();
     }
 
     private bool IsSignedByThisInstallation(UserControlOperationEnvelope envelope) =>

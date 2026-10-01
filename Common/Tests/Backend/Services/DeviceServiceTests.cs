@@ -5,6 +5,7 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Tests.Fakes;
@@ -176,6 +177,43 @@ public sealed class DeviceServiceTests
         var result = await service.GetUserDevicesAsync(token);
         MSTestAssert.AreEqual("Main PC", result.Single(item => item.DeviceId == identity.LocalDeviceId).Name);
         MSTestAssert.AreEqual("Phone", result.Single(item => item.DeviceId == remote.Id).Name);
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task DeviceName_CanReuseNameOwnedOnlyByDeletedStaleMetadata()
+    {
+        using var host = new BackendTestHost();
+        var auth = host.Services.GetRequiredService<IAuthService>();
+        var users = host.Services.GetRequiredService<IUserService>();
+        var service = host.Services.GetRequiredService<IDeviceService>();
+        var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
+        var versionClock = host.Services.GetRequiredService<ISyncVersionClockService>();
+        var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("device_reuse_deleted_name"));
+        var userId = users.GetUidFromToken(token);
+        var removedDevice = CreateRemoteDevice();
+        await userDevices.AddAsync(CreateLink(userId, removedDevice, false, true));
+
+        using (var bundle = await users.GetLoadAndVerifyUserDataBundleAsync(token))
+        {
+            var stale = new UserDeviceData
+            {
+                Id = removedDevice.Id,
+                Name = "Reusable device name",
+                LinkedAt = DateTimeOffset.UtcNow.AddDays(-2),
+                LastUpdatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+                Version = versionClock.Next()
+            };
+            stale.GenerateIntegrityHash();
+            bundle.UserDevicesData.Devices.Add(stale);
+            await users.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Devices, false);
+        }
+
+        await service.SetLocalDeviceNameAsync(token, "Reusable device name");
+
+        var result = await service.GetUserDevicesAsync(token);
+        MSTestAssert.AreEqual("Reusable device name", result.Single(item => item.IsCurrentDevice).Name);
     }
 
     [TestMethod]

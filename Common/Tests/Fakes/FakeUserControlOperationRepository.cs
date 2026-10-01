@@ -62,5 +62,10 @@ public sealed class FakeUserControlOperationRepository : IUserControlOperationRe
     }
 
     public void Update(UserControlOperation operation) { }
+    public void DeleteRange(IEnumerable<UserControlOperation> operations)
+    {
+        foreach (var operation in operations.ToArray())
+            _rows.Remove(operation);
+    }
     public void Detach(UserControlOperation operation) => _rows.Remove(operation);
 }

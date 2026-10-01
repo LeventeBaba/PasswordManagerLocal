@@ -32,4 +32,5 @@ public sealed class DeviceEnrollmentCommitRepository : IDeviceEnrollmentCommitRe
 
     public Task AddAsync(DeviceEnrollmentCommit commit, CancellationToken ct = default) => _rows.AddAsync(commit, ct).AsTask();
     public void Update(DeviceEnrollmentCommit commit) => _rows.Update(commit);
+    public void DeleteRange(IEnumerable<DeviceEnrollmentCommit> commits) => _rows.RemoveRange(commits);
 }

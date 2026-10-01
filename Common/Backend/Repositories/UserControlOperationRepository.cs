@@ -141,6 +141,8 @@ public sealed class UserControlOperationRepository : IUserControlOperationReposi
 
     public void Update(UserControlOperation operation) => _operations.Update(operation);
 
+    public void DeleteRange(IEnumerable<UserControlOperation> operations) => _operations.RemoveRange(operations);
+
     public void Detach(UserControlOperation operation) =>
         _context.Entry(operation).State = EntityState.Detached;
 }
