@@ -97,13 +97,20 @@ internal sealed class DevicePresencePollingHostedService : IInteractiveBackendHo
             return;
         }
 
-        _presenceRegistry.ExpireStale(profile.DeviceOnlineTimeout);
         var devices = await LoadEligibleDevicesAsync(cancellationToken);
-        if (devices.Count == 0)
-            return;
+        if (devices.Count != 0)
+        {
+            // Refresh reachable peers before expiring old observations. If a polling
+            // iteration is delayed by scheduling or a temporary runtime pause, a peer
+            // that is still healthy should not momentarily transition offline and then
+            // online again within the same iteration. Unreachable peers are still
+            // expired immediately after failed probes when their authenticated
+            // observation is older than the configured timeout.
+            await Task.WhenAll(devices.Select(device =>
+                _probeService.ProbeAsync(device, force: false, cancellationToken: cancellationToken)));
+        }
 
-        await Task.WhenAll(devices.Select(device =>
-            _probeService.ProbeAsync(device, force: false, cancellationToken: cancellationToken)));
+        _presenceRegistry.ExpireStale(profile.DeviceOnlineTimeout);
     }
 
     public void Dispose()

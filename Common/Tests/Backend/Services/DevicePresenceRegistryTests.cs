@@ -112,14 +112,38 @@ public sealed class DevicePresenceRegistryTests
     }
 
     [TestMethod]
-    public void EndpointChange_InvalidatesPresenceUntilReauthenticated()
+    public void EndpointCandidateChange_KeepsAuthenticatedPresenceStableUntilReauthenticatedOrExpired()
     {
-        var registry = CreateRegistry(out _);
-        registry.RefreshAuthenticated(Fingerprint, Endpoint("10.0.0.2"), DevicePresenceObservationSource.DirectProbe);
+        var registry = CreateRegistry(out var clock);
+        var originalEndpoint = Endpoint("10.0.0.2");
+        registry.RefreshAuthenticated(Fingerprint, originalEndpoint, DevicePresenceObservationSource.DirectProbe);
 
         registry.HandleEndpointChanged(Fingerprint, Endpoint("10.0.1.2"));
 
+        Assert.IsTrue(registry.IsOnline(Fingerprint, TimeSpan.FromSeconds(35)));
+        Assert.IsTrue(registry.TryGetSnapshot(Fingerprint, out var snapshot));
+        Assert.AreEqual("10.0.0.2:26688", snapshot!.EndpointKey);
+
+        clock.Now = clock.Now.AddSeconds(36);
         Assert.IsFalse(registry.IsOnline(Fingerprint, TimeSpan.FromSeconds(35)));
+    }
+
+    [TestMethod]
+    public void UnauthenticatedReplacementEndpointFailures_DoNotFlickerStillFreshAuthenticatedPresence()
+    {
+        var registry = CreateRegistry(out _);
+        var authenticatedEndpoint = Endpoint("10.0.0.2");
+        var candidateEndpoint = Endpoint("10.0.1.2");
+        registry.RefreshAuthenticated(Fingerprint, authenticatedEndpoint, DevicePresenceObservationSource.DirectProbe);
+        registry.HandleEndpointChanged(Fingerprint, candidateEndpoint);
+
+        for (var index = 0; index < DevicePresenceRegistry.FailureThreshold; index++)
+            registry.RecordFailure(Fingerprint, candidateEndpoint, DevicePresenceFailureKind.Unreachable);
+
+        Assert.IsTrue(registry.IsOnline(Fingerprint, TimeSpan.FromSeconds(35)));
+        Assert.IsTrue(registry.TryGetSnapshot(Fingerprint, out var snapshot));
+        Assert.AreEqual(0, snapshot!.ConsecutiveFailures);
+        Assert.AreEqual("10.0.0.2:26688", snapshot.EndpointKey);
     }
 
     [TestMethod]

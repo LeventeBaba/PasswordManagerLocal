@@ -127,32 +127,30 @@ public sealed class DevicePresenceRegistry : IDevicePresenceRegistry
         if (fingerprint.Length == 0 || endpointKey is null)
             return;
 
-        bool invalidated = false;
-        string? previousEndpoint = null;
+        string? authenticatedEndpoint = null;
+        bool changedCandidate = false;
         lock (_gate)
         {
             if (!_entries.TryGetValue(fingerprint, out var entry))
                 return;
 
-            previousEndpoint = entry.EndpointKey;
-            if (previousEndpoint is null ||
-                string.Equals(previousEndpoint, endpointKey, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            invalidated = entry.IsOnline || entry.LastAuthenticatedAt.HasValue;
-            entry.IsOnline = false;
-            entry.LastAuthenticatedAt = null;
-            entry.LastObservationSource = null;
-            entry.ConsecutiveFailures = 0;
-            entry.EndpointKey = endpointKey;
+            authenticatedEndpoint = entry.EndpointKey;
+            changedCandidate = authenticatedEndpoint is not null &&
+                !string.Equals(authenticatedEndpoint, endpointKey, StringComparison.OrdinalIgnoreCase);
         }
 
-        if (invalidated)
+        if (changedCandidate)
         {
+            // Discovery and relayed endpoint hints are candidates, not authenticated
+            // availability evidence. Keep the last authenticated online state during
+            // the handover window. RefreshAuthenticated adopts the new endpoint only
+            // after a successful TLS/peer-identity probe. Failures against an
+            // unconfirmed candidate therefore do not penalize the still-valid previous
+            // observation, while normal presence expiry still makes a genuinely
+            // unreachable peer offline. This avoids online/offline UI flicker during
+            // harmless endpoint rediscovery.
             BackendDebugLog.Debug(
-                $"Device presence invalidated because the endpoint changed. FingerprintPrefix={Prefix(fingerprint)}, PreviousEndpoint={previousEndpoint}, NewEndpoint={endpointKey}.",
+                $"Device endpoint candidate changed while authenticated presence was retained. FingerprintPrefix={Prefix(fingerprint)}, AuthenticatedEndpoint={authenticatedEndpoint}, CandidateEndpoint={endpointKey}.",
                 "Presence");
         }
     }

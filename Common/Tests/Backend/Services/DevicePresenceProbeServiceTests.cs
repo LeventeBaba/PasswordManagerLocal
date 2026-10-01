@@ -76,7 +76,7 @@ public sealed class DevicePresenceProbeServiceTests
     }
 
     [TestMethod]
-    public async Task EndpointChange_InvalidatesOldPresenceAndSuccessfulReprobeRestoresIt()
+    public async Task EndpointChange_KeepsPresenceOnlineWhileSuccessfulReprobeAdoptsNewEndpoint()
     {
         using var fixture = CreateFixture(isInteractive: true);
         fixture.Endpoints.AddOrUpdate(fixture.Endpoint);
@@ -92,9 +92,15 @@ public sealed class DevicePresenceProbeServiceTests
         fixture.Endpoints.AddOrUpdate(changed);
         fixture.Presence.HandleEndpointChanged(fixture.Device.TlsCertFingerprint, changed);
 
-        Assert.IsFalse(fixture.Presence.IsOnline(fixture.Device.TlsCertFingerprint, TimeSpan.FromSeconds(35)));
-        await fixture.Service.ProbeAsync(fixture.Device, force: true);
         Assert.IsTrue(fixture.Presence.IsOnline(fixture.Device.TlsCertFingerprint, TimeSpan.FromSeconds(35)));
+        Assert.IsTrue(fixture.Presence.TryGetSnapshot(fixture.Device.TlsCertFingerprint, out var beforeProbe));
+        Assert.AreEqual($"{fixture.Endpoint.Host}:{fixture.Endpoint.Port}", beforeProbe!.EndpointKey);
+
+        await fixture.Service.ProbeAsync(fixture.Device, force: true);
+
+        Assert.IsTrue(fixture.Presence.IsOnline(fixture.Device.TlsCertFingerprint, TimeSpan.FromSeconds(35)));
+        Assert.IsTrue(fixture.Presence.TryGetSnapshot(fixture.Device.TlsCertFingerprint, out var afterProbe));
+        Assert.AreEqual("10.0.1.25:26688", afterProbe!.EndpointKey);
     }
 
     [TestMethod]
