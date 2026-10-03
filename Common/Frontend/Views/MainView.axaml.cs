@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Animation.Easings;
 using Avalonia.Controls;
+using Avalonia.Controls.Platform;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -21,6 +22,7 @@ public partial class MainView : UserControl, IDisposable
     private readonly MainViewLongPressToolTipHandler _longPressToolTipHandler;
     private readonly PageSlide _mobileMainPageTransition;
     private bool _disposed;
+    private IInputPane? _inputPane;
     internal FrontendPlatformServices? PlatformServices => (DataContext as MainViewModel)?.PlatformServices;
     private TopLevel? _inputTopLevel;
     private MainViewModel? _observedViewModel;
@@ -95,10 +97,40 @@ public partial class MainView : UserControl, IDisposable
         if (!OperatingSystem.IsAndroid())
             return;
 
+        _inputPane = topLevel.InputPane;
+        _inputPane.StateChanged += HandleInputPaneStateChanged;
+        SetPageViewportKeyboardInset(_inputPane.State == InputPaneState.Open ? _inputPane.OccludedRect.Height : 0);
+
         topLevel.AddHandler(PointerPressedEvent, HandlePointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
         topLevel.AddHandler(PointerMovedEvent, HandlePointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
         topLevel.AddHandler(PointerReleasedEvent, HandlePointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(PointerCaptureLostEvent, HandlePointerCaptureLost, RoutingStrategies.Direct, handledEventsToo: true);
+    }
+
+    private void HandleInputPaneStateChanged(object? sender, InputPaneStateEventArgs e)
+    {
+        if (!OperatingSystem.IsAndroid())
+            return;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            SetPageViewportKeyboardInset(e.NewState == InputPaneState.Open ? e.EndRect.Height : 0);
+        });
+    }
+
+    private void SetPageViewportKeyboardInset(double occludedHeight)
+    {
+        var inset = Math.Max(0, occludedHeight);
+        PageViewport.Margin = new Thickness(0, 0, 0, inset);
+
+        if (inset <= 0 || _inputTopLevel?.FocusManager.GetFocusedElement() is not Control focusedControl)
+            return;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (TopLevel.GetTopLevel(focusedControl) == _inputTopLevel)
+                focusedControl.BringIntoView();
+        }, DispatcherPriority.Background);
     }
 
     private void HandleDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
@@ -168,6 +200,13 @@ public partial class MainView : UserControl, IDisposable
 
     private void DetachTopLevelInputHandlers()
     {
+        if (_inputPane is not null)
+        {
+            _inputPane.StateChanged -= HandleInputPaneStateChanged;
+            _inputPane = null;
+            PageViewport.Margin = default;
+        }
+
         if (_inputTopLevel is not null)
         {
             _inputTopLevel.RemoveHandler(KeyDownEvent, HandleTopLevelKeyDown);

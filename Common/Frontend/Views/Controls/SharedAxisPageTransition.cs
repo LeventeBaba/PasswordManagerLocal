@@ -9,7 +9,6 @@ namespace PasswordManagerLocal.Common.Frontend.Views.Controls;
 /// <summary>Short render-transform navigation, with no full-page opacity blending.</summary>
 internal sealed class SharedAxisPageTransition : IPageTransition
 {
-    private const double Offset = 32;
     private TransitionRun? _activeRun;
 
     public async Task Start(Visual? from, Visual? to, bool forward, CancellationToken cancellationToken)
@@ -27,15 +26,23 @@ internal sealed class SharedAxisPageTransition : IPageTransition
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var run = new TransitionRun(from, to, cancellation);
         _activeRun = run;
+        var offset = Math.Max(from.Bounds.Width, to.Bounds.Width);
+        if (!double.IsFinite(offset) || offset <= 0)
+        {
+            run.Restore();
+            _activeRun = null;
+            return;
+        }
+
         var direction = forward ? 1d : -1d;
         from.RenderTransform = new TranslateTransform();
-        to.RenderTransform = new TranslateTransform(direction * Offset, 0);
+        to.RenderTransform = new TranslateTransform(direction * offset, 0);
         to.IsVisible = true;
         try
         {
             await Task.WhenAll(
-                CreateAnimation(0, -direction * Offset).RunAsync(from, cancellation.Token),
-                CreateAnimation(direction * Offset, 0).RunAsync(to, cancellation.Token));
+                CreateAnimation(0, -direction * offset).RunAsync(from, cancellation.Token),
+                CreateAnimation(direction * offset, 0).RunAsync(to, cancellation.Token));
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {

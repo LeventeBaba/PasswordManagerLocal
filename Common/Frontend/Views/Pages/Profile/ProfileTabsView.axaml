@@ -28,64 +28,62 @@
         <Border Classes="card">
           <StackPanel Spacing="14">
             <TextBlock Text="{Binding AccountOverviewLabel}" Classes="sectionTitle" />
-            <WrapPanel Orientation="Horizontal">
-              <Border Classes="toolbarGroup" Margin="0,0,8,8" MinWidth="220">
+            <StackPanel Spacing="8">
+              <Border Classes="toolbarGroup" HorizontalAlignment="Stretch">
                 <StackPanel Spacing="4">
-                  <TextBlock Text="{Binding UsernameLabel}" Classes="subtleText" />
+                  <TextBlock Text="{Binding UsernameLabel}" Classes="subtleText" TextWrapping="Wrap" />
                   <TextBlock Text="{Binding Username}" TextWrapping="Wrap" FontWeight="SemiBold" />
                 </StackPanel>
               </Border>
-              <Border Classes="toolbarGroup" Margin="0,0,8,8" MinWidth="220">
+              <Border Classes="toolbarGroup" HorizontalAlignment="Stretch">
                 <StackPanel Spacing="4">
-                  <TextBlock Text="{Binding EmailLabel}" Classes="subtleText" />
+                  <TextBlock Text="{Binding EmailLabel}" Classes="subtleText" TextWrapping="Wrap" />
                   <TextBlock Text="{Binding Email}" TextWrapping="Wrap" FontWeight="SemiBold" />
                 </StackPanel>
               </Border>
-              <Border Classes="toolbarGroup" Margin="0,0,8,8" MinWidth="220">
+              <Border Classes="toolbarGroup" HorizontalAlignment="Stretch">
                 <StackPanel Spacing="4">
-                  <TextBlock Text="{Binding FirstNameLabel}" Classes="subtleText" />
+                  <TextBlock Text="{Binding FirstNameLabel}" Classes="subtleText" TextWrapping="Wrap" />
                   <TextBlock Text="{Binding FirstName}" TextWrapping="Wrap" FontWeight="SemiBold" />
                 </StackPanel>
               </Border>
-              <Border Classes="toolbarGroup" Margin="0,0,8,8" MinWidth="220">
+              <Border Classes="toolbarGroup" HorizontalAlignment="Stretch">
                 <StackPanel Spacing="4">
-                  <TextBlock Text="{Binding LastNameLabel}" Classes="subtleText" />
+                  <TextBlock Text="{Binding LastNameLabel}" Classes="subtleText" TextWrapping="Wrap" />
                   <TextBlock Text="{Binding LastName}" TextWrapping="Wrap" FontWeight="SemiBold" />
                 </StackPanel>
               </Border>
-              <Border Classes="toolbarGroup" Margin="0,0,8,8" MinWidth="220">
+              <Border Classes="toolbarGroup" HorizontalAlignment="Stretch">
                 <StackPanel Spacing="4">
-                  <TextBlock Text="{Binding RegistrationDateLabel}" Classes="subtleText" />
+                  <TextBlock Text="{Binding RegistrationDateLabel}" Classes="subtleText" TextWrapping="Wrap" />
                   <TextBlock Text="{Binding RegistrationDateText}" TextWrapping="Wrap" />
                 </StackPanel>
               </Border>
               <Border
                   Classes="toolbarGroup"
-                  Margin="0,0,8,8"
-                  MinWidth="220"
+                  HorizontalAlignment="Stretch"
                   IsVisible="{Binding ShowRegistrationDateInOriginalTimeZone}">
                 <StackPanel Spacing="4">
-                  <TextBlock Text="{Binding RegistrationDateInOriginalTimeZoneLabel}" Classes="subtleText" />
+                  <TextBlock Text="{Binding RegistrationDateInOriginalTimeZoneLabel}" Classes="subtleText" TextWrapping="Wrap" />
                   <TextBlock Text="{Binding RegistrationDateInOriginalTimeZoneText}" TextWrapping="Wrap" />
                 </StackPanel>
               </Border>
               <Border
                   Classes="toolbarGroup"
-                  Margin="0,0,8,8"
-                  MinWidth="220"
+                  HorizontalAlignment="Stretch"
                   IsVisible="{Binding ShowRegistrationDateInOriginalTimeZone}">
                 <StackPanel Spacing="4">
-                  <TextBlock Text="{Binding RegistrationTimeZoneLabel}" Classes="subtleText" />
+                  <TextBlock Text="{Binding RegistrationTimeZoneLabel}" Classes="subtleText" TextWrapping="Wrap" />
                   <TextBlock Text="{Binding RegistrationTimeZoneText}" TextWrapping="Wrap" />
                 </StackPanel>
               </Border>
-              <Border Classes="toolbarGroup" Margin="0,0,8,8" MinWidth="220">
+              <Border Classes="toolbarGroup" HorizontalAlignment="Stretch">
                 <StackPanel Spacing="4">
-                  <TextBlock Text="{Binding RegistrationDeviceTypeLabel}" Classes="subtleText" />
+                  <TextBlock Text="{Binding RegistrationDeviceTypeLabel}" Classes="subtleText" TextWrapping="Wrap" />
                   <TextBlock Text="{Binding RegistrationDeviceTypeText}" TextWrapping="Wrap" />
                 </StackPanel>
               </Border>
-            </WrapPanel>
+            </StackPanel>
           </StackPanel>
         </Border>
       </StackPanel>

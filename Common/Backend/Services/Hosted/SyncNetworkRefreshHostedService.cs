@@ -308,12 +308,35 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
     {
         try
         {
-            var addresses = _networkAddresses.GetMulticastInterfaceAddresses()
-                .Select(address => address.ToString())
-                .OrderBy(address => address, StringComparer.Ordinal)
+            var interfaces = NetworkInterface.GetAllNetworkInterfaces()
+                .Where(networkInterface =>
+                    networkInterface.OperationalStatus == OperationalStatus.Up ||
+                    (OperatingSystem.IsAndroid() && networkInterface.OperationalStatus == OperationalStatus.Unknown))
+                .Where(networkInterface => networkInterface.NetworkInterfaceType is not NetworkInterfaceType.Loopback and not NetworkInterfaceType.Tunnel)
+                .Select(networkInterface =>
+                {
+                    var properties = networkInterface.GetIPProperties();
+                    var addresses = properties.UnicastAddresses
+                        .Select(addressInfo => addressInfo.Address.ToString())
+                        .OrderBy(address => address, StringComparer.Ordinal);
+                    var ipv4Networks = properties.UnicastAddresses
+                        .Where(addressInfo => addressInfo.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                        .Select(addressInfo => $"{addressInfo.Address}/{addressInfo.IPv4Mask}")
+                        .OrderBy(network => network, StringComparer.Ordinal);
+                    var gateways = properties.GatewayAddresses
+                        .Select(gateway => gateway.Address.ToString())
+                        .OrderBy(address => address, StringComparer.Ordinal);
+
+                    return $"{networkInterface.Id}:{networkInterface.NetworkInterfaceType}:{string.Join(",", addresses)}:{string.Join(",", ipv4Networks)}:{string.Join(",", gateways)}";
+                })
+                .OrderBy(value => value, StringComparer.Ordinal)
                 .ToArray();
 
-            return $"{NetworkInterface.GetIsNetworkAvailable()}:{string.Join("|", addresses)}";
+            var multicastAddresses = _networkAddresses.GetMulticastInterfaceAddresses()
+                .Select(address => address.ToString())
+                .OrderBy(address => address, StringComparer.Ordinal);
+
+            return $"{NetworkInterface.GetIsNetworkAvailable()}:{string.Join("|", interfaces)}:{string.Join("|", multicastAddresses)}";
         }
         catch
         {
