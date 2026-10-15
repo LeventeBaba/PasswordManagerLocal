@@ -109,12 +109,19 @@ public partial class MainView : UserControl, IDisposable
 
     private void HandleInputPaneStateChanged(object? sender, InputPaneStateEventArgs e)
     {
-        if (!OperatingSystem.IsAndroid())
+        if (!OperatingSystem.IsAndroid() || sender is not IInputPane inputPane)
             return;
 
         Dispatcher.UIThread.Post(() =>
         {
-            SetPageViewportKeyboardInset(e.NewState == InputPaneState.Open ? e.EndRect.Height : 0);
+            // State changes can be queued while the view is detaching or when a newer
+            // keyboard state has already arrived. Read the current pane state when the
+            // callback runs instead of applying the possibly stale event rectangle.
+            if (!ReferenceEquals(_inputPane, inputPane))
+                return;
+
+            SetPageViewportKeyboardInset(
+                inputPane.State == InputPaneState.Open ? inputPane.OccludedRect.Height : 0);
         });
     }
 

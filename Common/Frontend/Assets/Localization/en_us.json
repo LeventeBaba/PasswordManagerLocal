@@ -203,7 +203,7 @@
   "Profile_Device_Type_AndroidMobile": "Android mobile device",
   "Profile_Device_Type_Unknown": "Unknown device",
   "Profile_Device_Fingerprint": "TLS certificate fingerprint",
-  "Profile_Device_LastSync": "Last successful sync",
+  "Profile_Device_LastSync": "Last successful sync from this device",
   "Profile_Device_CurrentLinkedAt": "Profile added to this device",
   "Profile_Device_RemoteLinkedAt": "Device added to profile",
   "Profile_Device_BlockedReason": "Block reason",

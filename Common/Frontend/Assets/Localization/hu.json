@@ -203,7 +203,7 @@
   "Profile_Device_Type_AndroidMobile": "Android mobileszköz",
   "Profile_Device_Type_Unknown": "Ismeretlen eszköz",
   "Profile_Device_Fingerprint": "TLS tanúsítvány ujjlenyomata",
-  "Profile_Device_LastSync": "Utolsó sikeres szinkronizáció",
+  "Profile_Device_LastSync": "Utolsó sikeres szinkron erről az eszközről",
   "Profile_Device_CurrentLinkedAt": "Profil hozzáadva ehhez az eszközhöz",
   "Profile_Device_RemoteLinkedAt": "Eszköz hozzáadva a profilhoz",
   "Profile_Device_BlockedReason": "Blokkolás oka",
