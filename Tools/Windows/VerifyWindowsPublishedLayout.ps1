@@ -23,6 +23,7 @@ function Assert-Files([string[]]$Names) {
 
 Assert-Files @(
     'PasswordManagerLocal.exe',
+    'PasswordManagerLocal.ico',
     'PasswordManagerLocal.dll',
     'PasswordManagerLocal.deps.json',
     'PasswordManagerLocal.runtimeconfig.json',
@@ -53,9 +54,14 @@ Assert-Files @(
     'e_sqlcipher.dll',
     'NSec.Cryptography.dll',
     'libsodium.dll',
-    'Google.Protobuf.dll',
-    'Assets\app_icon.ico'
+    'Google.Protobuf.dll'
 )
+
+$iconFiles = @(Get-ChildItem -LiteralPath $publish -Recurse -File | Where-Object { $_.Extension -ieq '.ico' })
+if ($iconFiles.Count -ne 1 -or
+    -not [string]::Equals($iconFiles[0].FullName, (Join-Path $publish 'PasswordManagerLocal.ico'), [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'The product must contain exactly one .ico file at its root: PasswordManagerLocal.ico.'
+}
 
 if (Test-Path -LiteralPath (Join-Path $publish 'AgentRuntime')) {
     throw 'The prohibited legacy AgentRuntime directory is present.'

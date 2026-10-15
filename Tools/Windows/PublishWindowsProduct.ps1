@@ -61,6 +61,7 @@ $commonPublishArguments = @(
 
 $frontendStageRequiredFiles = @(
     'PasswordManagerLocal.exe',
+    'PasswordManagerLocal.ico',
     'PasswordManagerLocal.dll',
     'PasswordManagerLocal.deps.json',
     'PasswordManagerLocal.runtimeconfig.json',
@@ -75,6 +76,7 @@ $frontendStageRequiredFiles = @(
 )
 $agentStageRequiredFiles = @(
     'PasswordManagerLocal.Windows.Agent.exe',
+    'PasswordManagerLocal.ico',
     'PasswordManagerLocal.Windows.Agent.dll',
     'PasswordManagerLocal.Windows.Agent.deps.json',
     'PasswordManagerLocal.Windows.Agent.runtimeconfig.json',

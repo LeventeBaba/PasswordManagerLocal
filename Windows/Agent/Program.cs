@@ -171,7 +171,7 @@ internal sealed class Program
             var trayText = WindowsAgentTrayText.Create(localizer!);
             var trayController = new WindowsTrayIconController(
                 new WindowsNativeTrayIconAdapter(
-                    Path.Combine(AppContext.BaseDirectory, "Assets", "app_icon.ico"),
+                    Path.Combine(AppContext.BaseDirectory, "PasswordManagerLocal.ico"),
                     trayText,
                     applicationLoop.MessageWindow,
                     applicationLoop.Dispatcher));

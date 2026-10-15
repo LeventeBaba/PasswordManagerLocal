@@ -8,6 +8,7 @@ public sealed class WindowsProductValidator
     private static readonly string[] FrontendRequiredFiles =
     [
         "PasswordManagerLocal.exe",
+        "PasswordManagerLocal.ico",
         "PasswordManagerLocal.dll",
         "PasswordManagerLocal.deps.json",
         "PasswordManagerLocal.runtimeconfig.json",
@@ -48,7 +49,7 @@ public sealed class WindowsProductValidator
         "NSec.Cryptography.dll",
         "libsodium.dll",
         "Google.Protobuf.dll",
-        "Assets/app_icon.ico"
+        "PasswordManagerLocal.ico"
     ];
 
     private static readonly string[] FrontendForbiddenDependencies =
@@ -147,6 +148,7 @@ public sealed class WindowsProductValidator
     {
         var root = RequireDirectory(directory, "final product");
         AssertRequired(root, FrontendRequiredFiles.Concat(AgentRequiredFiles).Distinct(StringComparer.OrdinalIgnoreCase), "final product");
+        AssertSingleProductIcon(root);
         if (Directory.Exists(Path.Combine(root, "AgentRuntime")))
             throw new InvalidOperationException("The final product contains the prohibited AgentRuntime directory.");
         AssertNoDevelopmentArtifacts(root);
@@ -178,6 +180,20 @@ public sealed class WindowsProductValidator
                 $"Final product totals differ from the packaging report. " +
                 $"Report: {report.Summary.FinalFileCount} files/{report.Summary.FinalSizeBytes} bytes; " +
                 $"filesystem: {files.Length} files/{bytes} bytes.");
+        }
+    }
+
+    private static void AssertSingleProductIcon(string root)
+    {
+        var icons = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Where(static path => Path.GetExtension(path).Equals(".ico", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var expected = Path.Combine(root, "PasswordManagerLocal.ico");
+        if (icons.Length != 1 ||
+            !string.Equals(icons[0], expected, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "The final product must contain exactly one .ico file at its root: PasswordManagerLocal.ico.");
         }
     }
 
