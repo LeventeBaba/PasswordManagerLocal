@@ -12,8 +12,8 @@ public sealed class Avalonia12AndroidSessionArchitectureTests
         var root = GetRepositoryRoot();
         var packages = File.ReadAllText(Path.Combine(root, "Directory.Packages.props"));
 
-        StringAssert.Contains(packages, "<PackageVersion Include=\"Avalonia\" Version=\"12.1.3\" />");
-        StringAssert.Contains(packages, "<PackageVersion Include=\"ReactiveUI.Avalonia\" Version=\"12.1.2\" />");
+        StringAssert.Contains(packages, "<PackageVersion Include=\"Avalonia\" Version=\"12.1.4\" />");
+        StringAssert.Contains(packages, "<PackageVersion Include=\"ReactiveUI.Avalonia\" Version=\"12.1.6\" />");
         StringAssert.Contains(packages, "<PackageVersion Include=\"SkiaSharp\" Version=\"3.119.4\" />");
         Assert.IsFalse(packages.Contains("Avalonia.ReactiveUI", StringComparison.Ordinal));
     }
