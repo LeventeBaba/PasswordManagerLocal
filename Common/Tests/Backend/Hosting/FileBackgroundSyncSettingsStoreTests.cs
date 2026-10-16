@@ -21,7 +21,7 @@ public sealed class FileBackgroundSyncSettingsStoreTests
         Assert.IsFalse(settings.IsEnabled);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(true)]
     [DataRow(false)]
     public async Task ValidSettingReturnsPersistedValue(bool isEnabled)
@@ -35,7 +35,7 @@ public sealed class FileBackgroundSyncSettingsStoreTests
         Assert.AreEqual(isEnabled, settings.IsEnabled);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("{")]
     [DataRow("{}")]
     [DataRow("{\"isEnabled\":null}")]

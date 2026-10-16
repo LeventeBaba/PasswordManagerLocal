@@ -8,11 +8,15 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Protocol;
 [TestClass]
 public sealed class IpcFrameCodecTests
 {
+    private static int ReadPublishedProtocolConstant(string fieldName) =>
+        (int)(typeof(WindowsIpcProtocol).GetField(fieldName)?.GetRawConstantValue()
+            ?? throw new InvalidOperationException($"Missing IPC protocol constant: {fieldName}."));
+
     [TestMethod]
     public void ProtocolIdentifiersRemainStableForVersionThree()
     {
-        Assert.AreEqual(3, WindowsIpcProtocol.CurrentVersion);
-        Assert.AreEqual(28, WindowsIpcProtocol.HeaderSize);
+        Assert.AreEqual(3, ReadPublishedProtocolConstant(nameof(WindowsIpcProtocol.CurrentVersion)));
+        Assert.AreEqual(28, ReadPublishedProtocolConstant(nameof(WindowsIpcProtocol.HeaderSize)));
         Assert.AreEqual(1, (int)IpcMessageKind.HandshakeRequest);
         Assert.AreEqual(5, (int)IpcMessageKind.RequestCancellation);
         Assert.AreEqual(1, (int)IpcOperationId.Ping);

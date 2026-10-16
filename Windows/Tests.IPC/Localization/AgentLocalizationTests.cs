@@ -11,7 +11,7 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Localization;
 [TestClass]
 public sealed class AgentLocalizationTests
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(AppLanguage.English)]
     [DataRow(AppLanguage.Hungarian)]
     public async Task EmbeddedResourceLoadsForEverySupportedLanguage(AppLanguage language)

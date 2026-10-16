@@ -97,9 +97,14 @@ public partial class MainView : UserControl, IDisposable
         if (!OperatingSystem.IsAndroid())
             return;
 
+        // Not every Android top-level exposes an input pane (e.g. during
+        // initialization/teardown). Keep pointer handlers active either way.
         _inputPane = topLevel.InputPane;
-        _inputPane.StateChanged += HandleInputPaneStateChanged;
-        SetPageViewportKeyboardInset(_inputPane.State == InputPaneState.Open ? _inputPane.OccludedRect.Height : 0);
+        if (_inputPane is { } inputPane)
+        {
+            inputPane.StateChanged += HandleInputPaneStateChanged;
+            SetPageViewportKeyboardInset(inputPane.State == InputPaneState.Open ? inputPane.OccludedRect.Height : 0);
+        }
 
         topLevel.AddHandler(PointerPressedEvent, HandlePointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
         topLevel.AddHandler(PointerMovedEvent, HandlePointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);

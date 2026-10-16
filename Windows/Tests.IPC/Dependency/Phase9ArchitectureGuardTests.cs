@@ -373,7 +373,10 @@ public sealed class Phase9ArchitectureGuardTests
             .ToArray();
 
     private static string[] ProjectReferenceNames(string projectPath) =>
-        ProjectReferences(projectPath).Select(Path.GetFileName).ToArray();
+        ProjectReferences(projectPath)
+            .Select(path => Path.GetFileName(path)
+                ?? throw new InvalidDataException($"Project reference has no file name: {path}"))
+            .ToArray();
 
     private static string? Property(XDocument project, string name) =>
         project.Descendants(name).Select(element => element.Value).FirstOrDefault();

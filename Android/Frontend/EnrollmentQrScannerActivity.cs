@@ -46,6 +46,9 @@ public sealed class EnrollmentQrScannerActivity : Activity, TextureView.ISurface
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        // The system Back gesture closes this Activity with its default canceled
+        // result. Only a successfully decoded QR code sets Result.Ok.
+        SetResult(Result.Canceled);
         BuildLayout();
 
         if (HasCameraPermission())
@@ -154,13 +157,6 @@ public sealed class EnrollmentQrScannerActivity : Activity, TextureView.ISurface
         var height = _previewHeight;
 
         _ = Task.Run(() => DecodePreviewFrame(frame, width, height));
-    }
-
-
-    public override void OnBackPressed()
-    {
-        SetResult(Result.Canceled);
-        base.OnBackPressed();
     }
 
 
@@ -309,7 +305,17 @@ public sealed class EnrollmentQrScannerActivity : Activity, TextureView.ISurface
                 return;
             }
 
-            var parameters = ConfigureCameraParameters(_camera.GetParameters());
+            // Some camera drivers cannot supply parameters even after opening.
+            // In that case stop safely instead of failing on a null value.
+            var cameraParameters = _camera.GetParameters();
+            if (cameraParameters is null)
+            {
+                StopCamera();
+                SetStatus("The camera settings could not be read.");
+                return;
+            }
+
+            var parameters = ConfigureCameraParameters(cameraParameters);
             _camera.SetParameters(parameters);
             StartCameraPreview(surfaceTexture, parameters);
             SetStatus("Looking for an enrollment QR code...");

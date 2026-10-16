@@ -277,7 +277,7 @@ function Publish-AndroidArchitecture {
         '-f', $script:AndroidTargetFramework,
         '-r', $Architecture.RuntimeIdentifier,
         '-t:SignAndroidPackage',
-        "-p:SupportedOSPlatformVersion=$($Settings.MinimumApiLevel)",
+        "-p:SupportedOSPlatformVersion=$($Settings.MinimumApiLevel).0",
         "-p:AndroidMinimumVersion=$($Settings.Version)",
         "-p:AndroidArtifactsPublishDir=$architectureOutput",
         '-p:WarningsAsErrors=XA0141'

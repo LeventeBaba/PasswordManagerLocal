@@ -15,9 +15,14 @@ public sealed class EndpointRpcPayloadLimitTests
     [TestMethod]
     public void MaximumEndpointPayloadsFitHardenedOuterTransportBounds()
     {
-        Assert.IsTrue(EndpointRpcLimits.MaximumRequestPayloadSize + 5 <= IpcContractLimits.MaximumInnerPayloadSize);
-        Assert.IsTrue(EndpointRpcLimits.MaximumResponsePayloadSize + 1 <= IpcContractLimits.MaximumInnerPayloadSize);
-        Assert.IsTrue(IpcContractLimits.MaximumInnerPayloadSize < WindowsIpcProtocol.MaximumPayloadSize);
+        var maxRequest = ReadPublishedConstant(typeof(EndpointRpcLimits), nameof(EndpointRpcLimits.MaximumRequestPayloadSize));
+        var maxResponse = ReadPublishedConstant(typeof(EndpointRpcLimits), nameof(EndpointRpcLimits.MaximumResponsePayloadSize));
+        var maxInner = ReadPublishedConstant(typeof(IpcContractLimits), nameof(IpcContractLimits.MaximumInnerPayloadSize));
+        var maxOuter = ReadPublishedConstant(typeof(WindowsIpcProtocol), nameof(WindowsIpcProtocol.MaximumPayloadSize));
+
+        Assert.IsTrue(maxRequest + 5 <= maxInner, "Request frames must fit inside the IPC envelope.");
+        Assert.IsTrue(maxResponse + 1 <= maxInner, "Response frames must fit inside the IPC envelope.");
+        Assert.IsTrue(maxInner < maxOuter, "The outer transport must accommodate the IPC envelope.");
     }
 
 
@@ -93,7 +98,9 @@ public sealed class EndpointRpcPayloadLimitTests
             WindowsIpcJsonContext.Default.IpcResponseEnvelope);
 
         Assert.IsTrue(serialized.Length <= EndpointRpcLimits.MaximumLargeResultChunkResponsePayloadSize);
-        Assert.IsTrue(EndpointRpcLimits.MaximumLargeResultChunkResponsePayloadSize <= EndpointRpcLimits.MaximumResponsePayloadSize);
+        Assert.IsTrue(
+            ReadPublishedConstant(typeof(EndpointRpcLimits), nameof(EndpointRpcLimits.MaximumLargeResultChunkResponsePayloadSize)) <=
+            ReadPublishedConstant(typeof(EndpointRpcLimits), nameof(EndpointRpcLimits.MaximumResponsePayloadSize)));
         Assert.IsTrue(encoded.Length <= IpcContractLimits.MaximumInnerPayloadSize);
         Assert.IsTrue(outer.Length <= WindowsIpcProtocol.MaximumPayloadSize);
         Array.Clear(serialized);
@@ -102,4 +109,7 @@ public sealed class EndpointRpcPayloadLimitTests
         Array.Clear(response.ChunkPayload);
     }
 
+    private static int ReadPublishedConstant(Type declaringType, string fieldName) =>
+        (int)(declaringType.GetField(fieldName)?.GetRawConstantValue()
+            ?? throw new InvalidOperationException($"Missing published constant {declaringType.FullName}.{fieldName}."));
 }

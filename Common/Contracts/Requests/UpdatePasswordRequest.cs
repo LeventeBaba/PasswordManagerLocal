@@ -38,7 +38,10 @@ public sealed class UpdatePasswordRequest
         if (!passwordEmpty && (Password is null || !IsValidPassword(Password)))
             errors.Add("Password");
 
-        if (!tagIdsEmpty && (TagIds!.Any(id => id == Guid.Empty) || TagIds.Distinct().Count() != TagIds.Count))
+        // Work with one non-null snapshot of this optional field. A null TagIds
+        // means "do not update tags"; an empty list means "remove all tags".
+        if (TagIds is { } tagIds &&
+            (tagIds.Any(id => id == Guid.Empty) || tagIds.Distinct().Count() != tagIds.Count))
             errors.Add("TagIds");
 
         return errors.Count == 0;

@@ -9,7 +9,7 @@ namespace PasswordManagerLocal.Common.Tests.Preferences;
 [DoNotParallelize]
 public sealed class ApplicationPreferencesDefaultsTests
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("en-US", AppLanguage.English)]
     [DataRow("hu-HU", AppLanguage.Hungarian)]
     public void DefaultsFollowCultureAndAlwaysUseDarkTheme(

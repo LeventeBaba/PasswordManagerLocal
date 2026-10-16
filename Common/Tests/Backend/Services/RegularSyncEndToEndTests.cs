@@ -746,6 +746,18 @@ public sealed class RegularSyncEndToEndTests
             }
             return true;
         });
+        // Passwords and device names can converge before A and C learn each other's
+        // addresses through B's authenticated endpoint hints. Unlike the adjacent peers,
+        // A and C cannot exchange multicast announcements in this scenario. Wait for
+        // both relayed endpoints rather than assuming they arrived with the last edit.
+        // Do not inject endpoints or start a direct synchronization session here: that
+        // would bypass the automatic discovery path this regression test protects.
+        TestContext.WriteLine("Waiting for A and C to discover each other through B's authenticated endpoint hints.");
+        await WaitForAutomaticAsync(
+            () => Task.FromResult(
+                setup.Original.EndpointsCache.TryGetByFingerprint(setup.NewDevice.Identity.FingerprintHex, out _) &&
+                setup.NewDevice.EndpointsCache.TryGetByFingerprint(setup.Original.Identity.FingerprintHex, out _)),
+            "A and C did not both learn each other's endpoints through authenticated relay via B.");
         Assert.IsTrue(setup.Original.EndpointsCache.TryGetByFingerprint(setup.NewDevice.Identity.FingerprintHex, out _));
         Assert.IsTrue(setup.NewDevice.EndpointsCache.TryGetByFingerprint(setup.Original.Identity.FingerprintHex, out _));
         foreach (var host in setup.Hosts)
@@ -758,10 +770,20 @@ public sealed class RegularSyncEndToEndTests
         }
     }
 
-    private static async Task WaitForAutomaticAsync(Func<Task<bool>> condition)
+    private static async Task WaitForAutomaticAsync(Func<Task<bool>> condition, string? failureMessage = null)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(70));
-        while (!await condition()) await Task.Delay(100, timeout.Token);
+        while (!await condition())
+        {
+            try
+            {
+                await Task.Delay(100, timeout.Token);
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            {
+                Assert.Fail(failureMessage ?? "Automatic synchronization did not converge within 70 seconds.");
+            }
+        }
     }
 
     private async Task<ThreeDeviceSetup> CreateThreeDeviceSetupAsync(bool automaticDiscovery = false)

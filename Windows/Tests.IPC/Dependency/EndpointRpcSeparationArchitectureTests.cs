@@ -205,7 +205,8 @@ public sealed class EndpointRpcSeparationArchitectureTests
 
     private static string[] ProjectReferenceNames(string projectPath) =>
         ProjectReferences(projectPath)
-            .Select(Path.GetFileName)
+            .Select(path => Path.GetFileName(path)
+                ?? throw new InvalidDataException($"Project reference has no file name: {path}"))
             .ToArray();
 
     private static HashSet<string> GetTransitiveProjectClosure(string rootProject)

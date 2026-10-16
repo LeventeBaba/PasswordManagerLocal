@@ -109,7 +109,7 @@ public sealed class UserDataBundleRecoveryTests
         }
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(UserDataBlobKind.General)]
     [DataRow(UserDataBlobKind.Passwords)]
     [DataRow(UserDataBlobKind.Devices)]

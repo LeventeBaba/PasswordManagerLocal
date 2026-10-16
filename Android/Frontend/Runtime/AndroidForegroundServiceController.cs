@@ -191,7 +191,7 @@ public sealed class AndroidForegroundServiceController : IAndroidForegroundServi
         NotificationManager manager,
         NotificationChannel channel)
     {
-        if (Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu &&
+        if (OperatingSystem.IsAndroidVersionAtLeast(33) &&
             _service.CheckSelfPermission(global::Android.Manifest.Permission.PostNotifications) !=
                 Permission.Granted)
         {

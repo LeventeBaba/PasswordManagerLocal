@@ -186,7 +186,10 @@ public sealed class WindowsAgentEndpointHostTests
     [TestMethod]
     public void ProductionConnectionBoundIsOneAuthoritativeEndpoint()
     {
-        Assert.AreEqual(1, WindowsAgentEndpointHost.MaximumActiveEndpointConnections);
+        Assert.AreEqual(1,
+            (int)(typeof(WindowsAgentEndpointHost)
+                .GetField(nameof(WindowsAgentEndpointHost.MaximumActiveEndpointConnections))?.GetRawConstantValue()
+                ?? throw new InvalidOperationException("The authoritative connection limit is missing.")));
     }
 
     private static EndpointHostTestContext CreateContext(

@@ -17,6 +17,18 @@
     <!-- Android -->
     <PackageVersion Include="Google.Protobuf" Version="3.36.2" />
     <PackageVersion Include="Xamarin.AndroidX.Core.SplashScreen" Version="1.2.0.3" />
+    <!-- AndroidX Core 1.19 merged Core.Ktx bytecode into Core. Keep both at
+         1.19.0.1: older Core.Ktx alongside newer Core causes D8/JAVA0000
+         duplicate androidx.core.animation.AnimatorKt classes. -->
+    <PackageVersion Include="Xamarin.AndroidX.Core" Version="1.19.0.1" />
+    <PackageVersion Include="Xamarin.AndroidX.Core.Core.Ktx" Version="1.19.0.1" />
+    <!-- Avalonia/AndroidX dependencies can otherwise mix Lifecycle 2.10 and 2.11,
+         causing NU1608 version-constraint warnings. Align the 2.10 stragglers
+         with the 2.11 common/runtime artifacts already selected by NuGet. -->
+    <PackageVersion Include="Xamarin.AndroidX.Lifecycle.ViewModelSavedState" Version="2.11.0.1" />
+    <PackageVersion Include="Xamarin.AndroidX.Lifecycle.ViewModelSavedState.Android" Version="2.11.0.1" />
+    <PackageVersion Include="Xamarin.AndroidX.Lifecycle.Process" Version="2.11.0.1" />
+    <PackageVersion Include="Xamarin.AndroidX.Lifecycle.LiveData.Core" Version="2.11.0.1" />
     <!-- Avalonia 12.1.x uses SkiaSharp 3.x; keep native assets aligned for Android 16 KB pages. -->
     <PackageVersion Include="SkiaSharp" Version="3.119.4" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Android" Version="3.119.4" />

@@ -26,7 +26,11 @@ public sealed class AndroidBackgroundRestorationReceiver : BroadcastReceiver
         if (context is null || trigger == AndroidBackgroundRestorationTrigger.Unsupported)
             return;
 
-        var pendingResult = GoAsync();
+        // Without a pending result Android does not grant time for async work.
+        // Never start untracked background restoration in that case.
+        if (GoAsync() is not { } pendingResult)
+            return;
+
         _ = RestoreAsync(context.ApplicationContext ?? context, trigger, pendingResult);
     }
 

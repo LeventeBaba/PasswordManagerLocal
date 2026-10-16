@@ -44,7 +44,7 @@ public sealed class FileApplicationPreferencesStoreTests
         StringAssert.Contains(fileSystem.GetFile(PreferencesPath()), "\"theme\": \"Light\"");
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("")]
     [DataRow("   ")]
     [DataRow("{")]
@@ -81,7 +81,7 @@ public sealed class FileApplicationPreferencesStoreTests
         AssertValidCurrentSchema(fileSystem.GetFile(PreferencesPath()));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("Klingon", "Dark")]
     [DataRow("99", "Dark")]
     [DataRow("English", "FluentCustom")]

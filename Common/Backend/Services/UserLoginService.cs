@@ -85,7 +85,9 @@ public sealed class UserLoginService : IUserLoginService
                 throw new UserNotFoundException();
             }
 
-            var userId = initialResolution.UserId.Value;
+            // CanAttemptLogin establishes this invariant at runtime, but the
+            // nullable property must also be checked at the point of use.
+            var userId = initialResolution.UserId ?? throw new UserNotFoundException();
             return await _lifecycle.ExecuteAsync(
                 userId,
                 token => LoginResolvedUnderLifecycleAsync(request, usernameBytes, userId, token),

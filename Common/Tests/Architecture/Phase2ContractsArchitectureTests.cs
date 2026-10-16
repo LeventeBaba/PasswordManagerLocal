@@ -110,8 +110,9 @@ public sealed class Phase2ContractsArchitectureTests
     public void NotificationCompositeFlagsMatchPublishedScopes()
     {
         Assert.AreEqual(FrontendChangeScope.UserProfile | FrontendChangeScope.Passwords | FrontendChangeScope.Devices,
-            FrontendChangeScope.AllAuthenticatedData);
-        Assert.AreEqual((FrontendChangeScope)255, FrontendChangeScope.Everything);
+            Enum.Parse<FrontendChangeScope>(nameof(FrontendChangeScope.AllAuthenticatedData)));
+        Assert.AreEqual((FrontendChangeScope)255,
+            Enum.Parse<FrontendChangeScope>(nameof(FrontendChangeScope.Everything)));
     }
 
     private static void AssertContractClosure(Type type, Assembly contractsAssembly, string methodName)

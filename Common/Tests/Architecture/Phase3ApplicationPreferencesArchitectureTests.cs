@@ -221,12 +221,11 @@ public sealed class Phase3ApplicationPreferencesArchitectureTests
     [TestMethod]
     public void BackgroundSyncAndFirewallConfigurationRemainSeparate()
     {
-        Assert.AreNotEqual(
-            ApplicationFileNames.ApplicationPreferencesFileName,
-            ApplicationFileNames.BackgroundSyncSettingsFileName);
-        Assert.AreNotEqual(
-            ApplicationFileNames.ApplicationPreferencesFileName,
-            ApplicationFileNames.WindowsFirewallConfigurationFileName);
+        var preferencesFile = ReadPublishedFileName(nameof(ApplicationFileNames.ApplicationPreferencesFileName));
+        var backgroundSyncFile = ReadPublishedFileName(nameof(ApplicationFileNames.BackgroundSyncSettingsFileName));
+        var firewallFile = ReadPublishedFileName(nameof(ApplicationFileNames.WindowsFirewallConfigurationFileName));
+        Assert.AreNotEqual(preferencesFile, backgroundSyncFile);
+        Assert.AreNotEqual(preferencesFile, firewallFile);
 
         var preferencePropertyNames = typeof(ApplicationPreferences)
             .GetProperties()
@@ -235,6 +234,10 @@ public sealed class Phase3ApplicationPreferencesArchitectureTests
         CollectionAssert.DoesNotContain(preferencePropertyNames, "IsBackgroundSyncEnabled");
         CollectionAssert.DoesNotContain(preferencePropertyNames, "WindowsFirewallConfigured");
     }
+
+    private static string ReadPublishedFileName(string fieldName) =>
+        (string)(typeof(ApplicationFileNames).GetField(fieldName)?.GetRawConstantValue()
+            ?? throw new InvalidOperationException($"Missing application file-name constant: {fieldName}."));
 
     private static string[] ReadProjectReferences(string projectPath) =>
         XDocument.Load(projectPath)
