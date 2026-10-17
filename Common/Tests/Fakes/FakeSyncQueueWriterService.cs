@@ -6,6 +6,7 @@ namespace PasswordManagerLocal.Common.Tests.Fakes;
 public sealed class FakeSyncQueueWriterService : ISyncQueueWriterService
 {
     public List<SyncItem> EnqueuedItems { get; } = [];
+    public List<IReadOnlyCollection<Guid>> ExcludedDeviceIds { get; } = [];
 
     public Task EnqueueAsync(
         SyncItem item,
@@ -17,6 +18,7 @@ public sealed class FakeSyncQueueWriterService : ISyncQueueWriterService
     {
         item.ChangedAtTs = changedAtTs;
         EnqueuedItems.Add(item);
+        ExcludedDeviceIds.Add(excludedDeviceIds.ToArray());
         return Task.CompletedTask;
     }
 

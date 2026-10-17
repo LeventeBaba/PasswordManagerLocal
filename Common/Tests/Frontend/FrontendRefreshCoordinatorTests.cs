@@ -408,10 +408,30 @@ public sealed class FrontendRefreshCoordinatorTests
         var replacementRuntime = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
         source.PublishMarker(0, replacementRuntime);
         await delay.WaitForScheduledCountAsync(2);
-        delay.AdvanceAll();
         await oldRequestCancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        // The cancellation callback runs before the fake endpoint and coordinator batch
+        // have completed their finally blocks. Retire that generation before releasing
+        // the replacement debounce so this test has one deterministic handoff barrier.
+        await endpoints.WaitForCompletedCallCountAsync(1);
+        release.TrySetResult();
+        delay.AdvanceAll();
+        await endpoints.WaitForCallCountAsync(8);
+        await endpoints.WaitForCompletedCallCountAsync(8);
         // Wait for the coordinator to drain the replacement generation before checking its calls.
-        await coordinator.WaitForIdleAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            await coordinator.WaitForIdleAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        catch (TimeoutException)
+        {
+            var dirtyPages = Enum.GetValues<FrontendRefreshPage>()
+                .Where(coordinator.IsDirty)
+                .Select(page => $"{page}:{coordinator.DirtyScopes(page)}");
+            throw new AssertFailedException(
+                $"Refresh calls completed, but the coordinator did not become idle. " +
+                $"Calls={endpoints.Calls.Count}, completed={endpoints.CompletedCount}, " +
+                $"dirty=[{string.Join(", ", dirtyPages)}].");
+        }
 
         Assert.AreEqual(8, endpoints.Calls.Count, "The cancelled request must be followed by all seven visible page refreshes.");
         Assert.AreEqual(7, endpoints.CommittedCount);
@@ -457,6 +477,41 @@ public sealed class FrontendRefreshCoordinatorTests
 
         Assert.AreEqual(0, endpoints.CommittedCount);
         Assert.IsFalse(coordinator.IsDirty(FrontendRefreshPage.Passwords));
+    }
+
+    [TestMethod]
+    public async Task DisposalAfterDebounceCompletionDoesNotLeaveCompletedWorkInIdleWait()
+    {
+        var source = new FakeChangeHintSource();
+        var delay = new CompletingAfterCancellationDelay();
+        var endpoints = new FakeFrontendRefreshEndpointClient();
+        var target = new FakeFrontendRefreshTarget(endpoints)
+        {
+            VisiblePages = [FrontendRefreshPage.Passwords]
+        };
+        var coordinator = new FrontendRefreshCoordinator(source, target, target.Dispatcher, delay);
+        try
+        {
+            coordinator.Start(target.VisiblePages, new FrontendChangeStreamStart(RuntimeId, 0, false));
+            source.Publish(1, FrontendChangeScope.Passwords);
+            await delay.Entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            // Model a timer completion that has already won its race with cancellation,
+            // while the coordinator has not yet resumed its debounce continuation.
+            coordinator.Deactivate();
+            delay.Complete.TrySetResult();
+            await coordinator.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            await Task.Run(() => coordinator.WaitForIdleAsync(timeout.Token)).WaitAsync(TimeSpan.FromSeconds(3));
+
+            Assert.AreEqual(0, endpoints.Calls.Count);
+            Assert.IsTrue(coordinator.IsDisposed);
+        }
+        finally
+        {
+            delay.Complete.TrySetResult();
+            await coordinator.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+        }
     }
 
     [TestMethod]
@@ -540,6 +595,18 @@ public sealed class FrontendRefreshCoordinatorTests
             cancellationToken.ThrowIfCancellationRequested();
             DispatchCount++;
             return operation();
+        }
+    }
+
+    private sealed class CompletingAfterCancellationDelay : IFrontendRefreshDelay
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Complete { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
+        {
+            Entered.TrySetResult();
+            return Complete.Task;
         }
     }
 
@@ -639,14 +706,17 @@ public sealed class FrontendRefreshCoordinatorTests
     {
         private readonly ConcurrentQueue<EndpointCall> _calls = new();
         private readonly SemaphoreSlim _callSignal = new(0);
+        private readonly SemaphoreSlim _completionSignal = new(0);
         private int _activeCalls;
         private int _maximumConcurrentCalls;
         private int _committedCount;
+        private int _completedCount;
 
         public IReadOnlyList<EndpointCall> Calls => _calls.ToArray();
         public bool Result { get; set; } = true;
         public int MaximumConcurrentCalls => Volatile.Read(ref _maximumConcurrentCalls);
         public int CommittedCount => Volatile.Read(ref _committedCount);
+        public int CompletedCount => Volatile.Read(ref _completedCount);
         public Func<EndpointCall, CancellationToken, Task>? BeforeResult { get; set; }
 
         public async Task<bool> RefreshAsync(
@@ -672,14 +742,43 @@ public sealed class FrontendRefreshCoordinatorTests
             finally
             {
                 Interlocked.Decrement(ref _activeCalls);
+                Interlocked.Increment(ref _completedCount);
+                _completionSignal.Release();
             }
         }
 
         public async Task WaitForCallCountAsync(int count)
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            while (_calls.Count < count)
-                await _callSignal.WaitAsync(timeout.Token);
+            try
+            {
+                while (_calls.Count < count)
+                    await _callSignal.WaitAsync(timeout.Token);
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            {
+                throw new AssertFailedException(
+                    $"Timed out waiting for {count} endpoint calls. " +
+                    $"Observed={_calls.Count}, completed={CompletedCount}, " +
+                    $"calls=[{string.Join(", ", _calls.Select(call => $"{call.Index}:{call.Page}:{call.Scopes}"))}].");
+            }
+        }
+
+        public async Task WaitForCompletedCallCountAsync(int count)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                while (CompletedCount < count)
+                    await _completionSignal.WaitAsync(timeout.Token);
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            {
+                throw new AssertFailedException(
+                    $"Timed out waiting for {count} completed endpoint calls. " +
+                    $"Started={_calls.Count}, completed={CompletedCount}, " +
+                    $"calls=[{string.Join(", ", _calls.Select(call => $"{call.Index}:{call.Page}:{call.Scopes}"))}].");
+            }
         }
 
         private void UpdateMaximum(int active)

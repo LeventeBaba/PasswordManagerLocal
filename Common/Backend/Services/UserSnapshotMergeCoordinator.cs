@@ -318,7 +318,12 @@ public sealed class UserSnapshotMergeCoordinator : IUserSnapshotMergeCoordinator
                     ChangedAtTs = localSnapshot.CreatedAtUtc.ToUnixTimeMilliseconds()
                 },
                 localSnapshot.CreatedAtUtc.ToUnixTimeMilliseconds(),
-                [],
+                mergedRows
+                    .Where(row => results[(row.OriginDeviceId, row.OriginInstanceId, row.OriginRevision)]
+                        .MatchesCanonicalContent)
+                    .Select(row => row.OriginDeviceId)
+                    .Distinct()
+                    .ToArray(),
                 touchLocalSyncState: true,
                 activateTargets: false,
                 ct);

@@ -1,3 +1,4 @@
+using PasswordManagerLocal.Common.Contracts.Notifications;
 using PasswordManagerLocal.Common.Contracts.Runtime;
 
 namespace PasswordManagerLocal.Common.Frontend.Services;
@@ -12,6 +13,7 @@ public sealed class FrontendChangeNotificationForwarder : IAsyncDisposable
 
     private readonly IBackendRuntimeClient _runtimeClient;
     private readonly IFrontendChangeNotificationClient? _notificationClient;
+    private readonly IFrontendChangeStreamClient? _streamClient;
     private readonly Func<Guid?> _userIdProvider;
     private readonly Func<bool> _isSessionActive;
     private readonly CancellationToken _sessionLifetime;
@@ -34,6 +36,7 @@ public sealed class FrontendChangeNotificationForwarder : IAsyncDisposable
     {
         _runtimeClient = runtimeClient ?? throw new ArgumentNullException(nameof(runtimeClient));
         _notificationClient = notificationClient;
+        _streamClient = runtimeClient as IFrontendChangeStreamClient;
         _userIdProvider = userIdProvider ?? throw new ArgumentNullException(nameof(userIdProvider));
         _isSessionActive = isSessionActive ?? throw new ArgumentNullException(nameof(isSessionActive));
         _sessionLifetime = sessionLifetime;
@@ -107,13 +110,14 @@ public sealed class FrontendChangeNotificationForwarder : IAsyncDisposable
 
     private void Reconcile(bool forceRestart)
     {
-        if (_notificationClient is null)
+        if (_notificationClient is null && _streamClient is null)
             return;
 
         IFrontendChangeNotificationSubscription? subscription = null;
         CancellationTokenSource? pumpCancellation = null;
         FrontendChangeStreamDelivery? startHint = null;
         long generation = 0;
+        Guid? streamUserId = null;
 
         lock (_gate)
         {
@@ -138,15 +142,16 @@ public sealed class FrontendChangeNotificationForwarder : IAsyncDisposable
                 userId = null;
             }
 
-            if (!forceRestart && _subscription is not null && _subscribedUserId == userId)
+            if (!forceRestart && _pumpCancellation is not null && _subscribedUserId == userId)
                 return;
 
             RetireCurrentLocked(waitForPump: true);
             try
             {
-                subscription = _notificationClient.SubscribeChangeNotifications(
+                subscription = _notificationClient?.SubscribeChangeNotifications(
                     userId,
                     SubscriptionCapacity);
+                streamUserId = userId;
             }
             catch (ObjectDisposedException)
             {
@@ -161,7 +166,8 @@ public sealed class FrontendChangeNotificationForwarder : IAsyncDisposable
 
             if (!IsSessionActiveNoThrow() || !IsRuntimeReadyNoThrow())
             {
-                SafeUnsubscribe(subscription);
+                if (subscription is not null)
+                    SafeUnsubscribe(subscription);
                 QueueRetirementLocked(subscription, Task.CompletedTask, null);
                 return;
             }
@@ -172,8 +178,10 @@ public sealed class FrontendChangeNotificationForwarder : IAsyncDisposable
             _pumpCancellation = pumpCancellation;
             _pumpTask = Task.CompletedTask;
             _subscribedUserId = userId;
-            _currentPosition = subscription.Start;
-            if (subscription.Start.RequiresAuthoritativeRefresh)
+            // IPC obtains its first watermark asynchronously from Connected. Never invent
+            // a runtime identity or sequence before that authoritative stream event arrives.
+            _currentPosition = subscription?.Start;
+            if (subscription?.Start.RequiresAuthoritativeRefresh == true)
             {
                 startHint = new FrontendChangeStreamDelivery(
                     subscription.Start.RuntimeInstanceId,
@@ -190,10 +198,10 @@ public sealed class FrontendChangeNotificationForwarder : IAsyncDisposable
         {
             if (IsCurrentLocked(generation, subscription!, pumpCancellation!))
             {
-                _pumpTask = Task.Run(() => PumpAsync(
-                    generation,
-                    subscription!,
-                    pumpCancellation!));
+                var retirement = _retirementTask;
+                _pumpTask = subscription is not null
+                    ? Task.Run(() => PumpAsync(generation, subscription, pumpCancellation!))
+                    : Task.Run(() => PumpStreamAsync(generation, streamUserId, pumpCancellation!, retirement));
             }
         }
     }
@@ -248,9 +256,73 @@ public sealed class FrontendChangeNotificationForwarder : IAsyncDisposable
         HandleStreamEnded(generation, subscription, pumpCancellation);
     }
 
+    private async Task PumpStreamAsync(
+        long generation,
+        Guid? userId,
+        CancellationTokenSource pumpCancellation,
+        Task previousRetirement)
+    {
+        var reconciliationPending = true;
+        try
+        {
+            // The Windows control connection has one server-side subscription. Its retired
+            // producer disables that subscription in finally: finish that cleanup before
+            // enabling the next user filter, or the old producer can disable the new one.
+            await previousRetirement.WaitAsync(pumpCancellation.Token).ConfigureAwait(false);
+            lock (_gate)
+            {
+                if (!IsCurrentLocked(generation, null, pumpCancellation))
+                    return;
+            }
+            await foreach (var item in _streamClient!
+                .ReadChangeStreamAsync(userId, pumpCancellation.Token)
+                .ConfigureAwait(false))
+            {
+                lock (_gate)
+                {
+                    if (!IsCurrentLocked(generation, null, pumpCancellation))
+                        return;
+                    if (item.Kind is FrontendChangeStreamEventKind.Disconnected or FrontendChangeStreamEventKind.Connected)
+                    {
+                        reconciliationPending = true;
+                        _currentPosition = null;
+                        if (item.Kind == FrontendChangeStreamEventKind.Disconnected)
+                            continue;
+                    }
+                    reconciliationPending |= item.RequiresAuthoritativeRefresh;
+                    if (item.RuntimeInstanceId is not { } runtimeId || runtimeId == Guid.Empty)
+                        continue;
+
+                    var authoritative = reconciliationPending || item.RequiresAuthoritativeRefresh ||
+                        item.Kind is FrontendChangeStreamEventKind.Connected or
+                            FrontendChangeStreamEventKind.ResyncRequired ||
+                        (_currentPosition is { } previous && previous.RuntimeInstanceId != runtimeId);
+                    var notification = authoritative ? null : new FrontendChangeNotification(
+                        runtimeId, item.Sequence, item.Scope, UserId: null, OccurredAtUtc: DateTimeOffset.UtcNow);
+                    _currentPosition = new FrontendChangeStreamStart(runtimeId, item.Sequence, authoritative);
+                    reconciliationPending = false;
+                    PublishLocked(new FrontendChangeStreamDelivery(
+                        runtimeId, item.Sequence, notification, authoritative),
+                        generation, null, pumpCancellation);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (pumpCancellation.IsCancellationRequested)
+        {
+            return;
+        }
+        catch
+        {
+            // The transport owns reconnection. Readiness/resume/user-scope changes replace
+            // this pump; a retired session must never start another control connection.
+        }
+
+        HandleStreamEnded(generation, null, pumpCancellation);
+    }
+
     private void HandleStreamEnded(
         long generation,
-        IFrontendChangeNotificationSubscription subscription,
+        IFrontendChangeNotificationSubscription? subscription,
         CancellationTokenSource pumpCancellation)
     {
         lock (_gate)
@@ -266,7 +338,7 @@ public sealed class FrontendChangeNotificationForwarder : IAsyncDisposable
 
     private void PublishIfCurrent(
         long generation,
-        IFrontendChangeNotificationSubscription subscription,
+        IFrontendChangeNotificationSubscription? subscription,
         CancellationTokenSource pumpCancellation,
         FrontendChangeStreamDelivery delivery)
     {
@@ -280,7 +352,7 @@ public sealed class FrontendChangeNotificationForwarder : IAsyncDisposable
     private void PublishLocked(
         FrontendChangeStreamDelivery delivery,
         long generation,
-        IFrontendChangeNotificationSubscription subscription,
+        IFrontendChangeNotificationSubscription? subscription,
         CancellationTokenSource pumpCancellation)
     {
         var handlers = ChangeHintReceived;
@@ -363,7 +435,7 @@ public sealed class FrontendChangeNotificationForwarder : IAsyncDisposable
 
     private bool IsCurrentLocked(
         long generation,
-        IFrontendChangeNotificationSubscription subscription,
+        IFrontendChangeNotificationSubscription? subscription,
         CancellationTokenSource pumpCancellation) =>
         Volatile.Read(ref _disposed) == 0 &&
         generation == _generation &&

@@ -145,6 +145,87 @@ public sealed class UserSnapshotMergeCoordinatorTests
     }
 
     [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task TryMergePendingAsync_ExcludesOnlyOriginsWithCompleteCanonicalContent(bool firstOriginAlreadyHasCanonicalContent)
+    {
+        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        using var localSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        using var firstSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        using var secondSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        var localIdentity = CreateIdentity(Guid.NewGuid(), Guid.NewGuid(), localSigningKey);
+        var firstOrigin = (DeviceId: Guid.NewGuid(), InstanceId: Guid.NewGuid());
+        var secondOrigin = (DeviceId: Guid.NewGuid(), InstanceId: Guid.NewGuid());
+        var user = await AddUserAndMembershipAsync(
+            database,
+            localIdentity,
+            (firstOrigin.DeviceId, firstOrigin.InstanceId, firstSigningKey),
+            (secondOrigin.DeviceId, secondOrigin.InstanceId, secondSigningKey));
+
+        await AddPendingAsync(database, CreateEnvelope(user, firstOrigin.DeviceId, firstOrigin.InstanceId, 2, firstSigningKey, 0x21));
+        await AddPendingAsync(database, CreateEnvelope(user, secondOrigin.DeviceId, secondOrigin.InstanceId, 5, secondSigningKey, 0x52));
+        await database.UnitOfWork.SaveChangesAsync();
+
+        using var changeHub = new BackendChangeEventHub(TimeProvider.System);
+        var eventUnitOfWork = new AppUnitOfWork(database.Db, changeHub);
+        await using var changeSubscription = changeHub.Subscribe(user.UId, capacity: 8);
+
+        var lifecycle = new UserLifecycleCoordinator();
+        var bundleSync = new FakeUserDataBundleSyncService
+        {
+            Handler = (canonical, snapshots, _, _) =>
+            {
+                var now = DateTimeOffset.UtcNow.AddMinutes(1);
+                canonical.EncryptedGeneralUserDataPayload = [0xEE, 0x01];
+                canonical.GeneralUserDataLastModifiedAt = now;
+                canonical.UserDataLastModifiedAt = now;
+                canonical.LastModifiedAt = now;
+                canonical.GenerateIntegrityHash();
+                return Task.FromResult(new UserSnapshotMergeBatchResult(
+                    CanonicalChanged: true,
+                    snapshots.Select(snapshot => new UserSnapshotMergeEntryResult(
+                        snapshot.OriginDeviceId,
+                        snapshot.OriginInstanceId,
+                        snapshot.OriginRevision,
+                        Verified: true,
+                        MatchesCanonicalContent: snapshot.OriginDeviceId == firstOrigin.DeviceId && firstOriginAlreadyHasCanonicalContent)).ToArray()));
+            }
+        };
+        var publisher = new UserSnapshotPublisherService(
+            database.UserSyncSnapshots,
+            database.UserSyncStates,
+            database.UserRevisionKnowledge,
+            localIdentity,
+            eventUnitOfWork,
+            lifecycle);
+        var queue = new FakeSyncQueueWriterService();
+        var activation = new FakeSyncQueueService();
+        var coordinator = new UserSnapshotMergeCoordinator(
+            database.Users,
+            CreateMembershipAuthorizationService(database, localIdentity),
+            database.UserSyncSnapshots,
+            database.UserRevisionKnowledge,
+            bundleSync,
+            publisher,
+            queue,
+            activation,
+            eventUnitOfWork,
+            lifecycle);
+
+        using var key = EncryptionKey.Create();
+        var merged = await coordinator.TryMergePendingAsync(user.UId, key);
+
+        MSTestAssert.AreEqual(1, queue.ExcludedDeviceIds.Count);
+        CollectionAssert.AreEquivalent(
+            firstOriginAlreadyHasCanonicalContent ? new[] { firstOrigin.DeviceId } : Array.Empty<Guid>(),
+            queue.ExcludedDeviceIds.Single().ToArray());
+        MSTestAssert.IsTrue(merged);
+        MSTestAssert.AreEqual(1, activation.ActivatePendingSyncsCalls);
+    }
+
+    [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
     public async Task TryMergePendingAsync_InvalidOriginIsIsolatedWithoutDeletingUnrelatedValidCandidate()

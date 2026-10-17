@@ -63,6 +63,11 @@ public sealed class SyncQueueWriterService : ISyncQueueWriterService
             effectiveExcludedDeviceIds,
             ct);
 
+        // Exclusions prevent new queue entries. An existing row may already belong to an
+        // in-flight sender in another scope, which still owns its acknowledgement/removal.
+        // Deleting that row here can make the sender's later SaveChanges fail and abort its
+        // anti-entropy/reconciliation pass. Preserve existing work even if one final return
+        // is redundant; a content match is not a claim on a transport worker's queue row.
         await EnqueueMissingTargetsAsync(syncItem, targetDevices, ct);
 
         await _uow.SaveChangesAsync(ct);

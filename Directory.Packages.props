@@ -6,6 +6,7 @@
   <ItemGroup>
     <!-- Avalonia -->
     <PackageVersion Include="Avalonia" Version="12.1.4" />
+    <PackageVersion Include="Avalonia.Headless" Version="12.1.4" />
     <PackageVersion Include="Avalonia.Controls.ColorPicker" Version="12.1.4" />
     <PackageVersion Include="Avalonia.Android" Version="12.1.4" />
     <PackageVersion Include="Avalonia.Win32" Version="12.1.4" />

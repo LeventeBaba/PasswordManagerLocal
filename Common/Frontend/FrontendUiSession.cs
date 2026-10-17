@@ -25,11 +25,11 @@ public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSou
         View = view ?? throw new ArgumentNullException(nameof(view));
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _ownsBackendClient = ownsBackendClient;
-        if (_context.BackendClient is IFrontendChangeNotificationClient notificationClient)
+        if (_context.BackendClient is IFrontendChangeNotificationClient or IFrontendChangeStreamClient)
         {
             _changeNotificationForwarder = new FrontendChangeNotificationForwarder(
                 _context.BackendClient,
-                notificationClient,
+                _context.BackendClient as IFrontendChangeNotificationClient,
                 GetCurrentUserId,
                 () => !IsDisposed,
                 _context.PlatformServices.LifetimeToken);

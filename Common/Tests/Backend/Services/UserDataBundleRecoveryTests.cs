@@ -210,6 +210,75 @@ public sealed class UserDataBundleRecoveryTests
         }
     }
 
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    [TestCategory("Backend")]
+    public async Task SnapshotMerge_ProvesOriginAlreadyHasResultOnlyWhenNoConcurrentContentIsMissing(bool concurrentLocalPassword)
+    {
+        using var material = new RecoveryTestMaterial();
+        using var key = EncryptionKey.Create();
+        using var signing = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        var origin = RecoveryTestMaterial.CreateIdentity(DeviceA, InstanceA, signing);
+        var generalVersion = RecoveryTestMaterial.Version(1_000, DeviceA, InstanceA);
+        var passwordId = Guid.Parse("AB000000-0000-0000-0000-000000000001");
+        using var localBundle = material.CreateBundle("sync-user", generalVersion,
+            concurrentLocalPassword ? [RecoveryTestMaterial.CreatePassword(
+                passwordId, "local-concurrent", RecoveryTestMaterial.Version(1_500, DeviceB, InstanceB), 0x11)] : []);
+        using var remoteBundle = material.CreateBundle("sync-user", generalVersion,
+            [RecoveryTestMaterial.CreatePassword(Guid.Parse("AB000000-0000-0000-0000-000000000002"),
+                "remote-change", RecoveryTestMaterial.Version(2_000, DeviceA, InstanceA), 0x22)]);
+        var canonical = await material.EncryptUserAsync(localBundle, key);
+        var envelope = await material.CreateEnvelopeAsync(remoteBundle, key, origin, revision: 3);
+        var service = CreateService(new InMemoryUserRepository());
+        var result = await service.TryVerifyAndMergeManyAsync(canonical, [envelope], key);
+        MSTestAssert.IsTrue(result.CanonicalChanged);
+        MSTestAssert.IsTrue(result.Entries.Single().Verified);
+        MSTestAssert.AreEqual(!concurrentLocalPassword, result.Entries.Single().MatchesCanonicalContent,
+            "A must still receive B's concurrent edit; a pure incoming change needs no queued echo to A.");
+        using var verified = await new UserDataBundleVerificationService(new UserDataBundleIntegrityService())
+            .VerifyCanonicalAsync(canonical, key, UserSyncKeyConfidence.ExplicitlyTrusted);
+        MSTestAssert.AreEqual(concurrentLocalPassword ? 2 : 1,
+            verified.VerifiedBundle!.UserPasswordsData.Passwords.Count);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    [TestCategory("Backend")]
+    public async Task SnapshotMerge_LoginOnlyChangeNeedsNoReturnButConcurrentDeviceRenameDoes(bool concurrentRename)
+    {
+        using var material = new RecoveryTestMaterial();
+        using var key = EncryptionKey.Create();
+        using var signing = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        var origin = RecoveryTestMaterial.CreateIdentity(DeviceA, InstanceA, signing);
+        var generalVersion = RecoveryTestMaterial.Version(1_000, DeviceA, InstanceA);
+        var localDevice = RecoveryTestMaterial.CreateDevice(DeviceA, concurrentRename ? "Renamed on B" : "Device A", generalVersion);
+        if (concurrentRename)
+        {
+            var renameVersion = RecoveryTestMaterial.Version(1_500, DeviceB, InstanceB);
+            localDevice.Version = renameVersion;
+            localDevice.NameVersion = renameVersion;
+            localDevice.LastUpdatedAt = DateTimeOffset.FromUnixTimeMilliseconds(1_500);
+        }
+        var remoteDevice = RecoveryTestMaterial.CreateDevice(DeviceA, "Device A",
+            RecoveryTestMaterial.Version(2_000, DeviceA, InstanceA));
+        remoteDevice.NameVersion = generalVersion;
+        using var localBundle = material.CreateBundle("sync-user", generalVersion, devices: [localDevice]);
+        using var remoteBundle = material.CreateBundle("sync-user", generalVersion, devices: [remoteDevice]);
+        var canonical = await material.EncryptUserAsync(localBundle, key);
+        var envelope = await material.CreateEnvelopeAsync(remoteBundle, key, origin, revision: 3);
+        var result = await CreateService(new InMemoryUserRepository())
+            .TryVerifyAndMergeManyAsync(canonical, [envelope], key);
+        MSTestAssert.IsTrue(result.CanonicalChanged);
+        MSTestAssert.AreEqual(!concurrentRename, result.Entries.Single().MatchesCanonicalContent);
+        using var verified = await new UserDataBundleVerificationService(new UserDataBundleIntegrityService())
+            .VerifyCanonicalAsync(canonical, key, UserSyncKeyConfidence.ExplicitlyTrusted);
+        var merged = verified.VerifiedBundle!.UserDevicesData.Devices.Single();
+        MSTestAssert.AreEqual(DateTimeOffset.FromUnixTimeMilliseconds(2_000).UtcDateTime, merged.LastLoginDate);
+        MSTestAssert.AreEqual(concurrentRename ? "Renamed on B" : "Device A", merged.Name);
+    }
+
     private static UserDataBundleSyncService CreateService(
         InMemoryUserRepository users,
         IUserCanonicalCheckpointRepository? checkpoints = null,

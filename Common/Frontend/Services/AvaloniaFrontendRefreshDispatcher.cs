@@ -13,6 +13,8 @@ public sealed class AvaloniaFrontendRefreshDispatcher : IFrontendRefreshDispatch
             return operation();
 
         var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        // Refresh projection is foreground UI work: background/idle dispatch can wait for
+        // another native input wake-up on mobile even while the Activity remains visible.
         Dispatcher.UIThread.Post(async () =>
         {
             if (cancellationToken.IsCancellationRequested)
@@ -33,7 +35,7 @@ public sealed class AvaloniaFrontendRefreshDispatcher : IFrontendRefreshDispatch
             {
                 completion.TrySetException(exception);
             }
-        }, DispatcherPriority.Background);
+        }, DispatcherPriority.Normal);
 
         return completion.Task.WaitAsync(cancellationToken);
     }

@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Services;
+using PasswordManagerLocal.Common.Backend.Persistence;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Tests.Fakes;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
@@ -15,6 +17,51 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 [TestClass]
 public sealed class SyncQueueServiceIntegrationTests
 {
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task IncomingExclusionPreservesInFlightSenderAcknowledgementAndThirdDeviceWork(bool newerLocalWork)
+    {
+        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 2, disabledRemoteCount: 0);
+        var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
+        await service.EnqueueAsync(new SyncItem
+        {
+            ModelId = seeded.User.UId, ModelType = SyncModelType.User, ChangeType = SyncChangeType.Updated
+        });
+        var pendingItem = await database.Db.SyncItems.SingleAsync();
+        var source = seeded.EnabledRemotes[0];
+        var thirdDevice = seeded.EnabledRemotes[1];
+        // The sender has already read the row in a different EF scope, before incoming
+        // propagation runs. These operations are deliberately sequenced, without sleeps.
+        var senderOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(database.Db.Database.GetDbConnection()).Options;
+        await using var senderDb = new AppDbContext(senderOptions);
+        var senderQueue = new SyncQueueRepository(senderDb);
+        var inFlight = await senderQueue.GetNextPendingForDeviceAsync(source.Id);
+        MSTestAssert.IsNotNull(inFlight);
+        var incomingTimestamp = pendingItem.ChangedAtTs + (newerLocalWork ? -1 : 1);
+        await service.EnqueuePropagationAsync(new SyncItem
+        {
+            ModelId = seeded.User.UId, ModelType = SyncModelType.User, ChangeType = SyncChangeType.Updated
+        }, source.Id, incomingTimestamp);
+        var rows = await database.Db.SyncQueueItems.Where(row => row.ProcessedAt == null).ToListAsync();
+        MSTestAssert.AreEqual(2, rows.Count);
+        MSTestAssert.IsTrue(rows.Any(row => row.DeviceId == thirdDevice.Id), "B must still forward to C.");
+        MSTestAssert.IsTrue(rows.Any(row => row.Id == inFlight.Id),
+            "An exclusion must not delete a row already owned by an outgoing sender.");
+        // This is the acknowledgement/removal sequence used by DeviceSyncTaskService.
+        // With the former pruning, the DELETE targets a missing row and EF throws a
+        // concurrency exception; the worker cannot proceed to its anti-entropy pass.
+        senderQueue.Delete(inFlight);
+        await new AppUnitOfWork(senderDb).SaveChangesAsync();
+        var remaining = await database.Db.SyncQueueItems.AsNoTracking().ToListAsync();
+        MSTestAssert.AreEqual(1, remaining.Count);
+        MSTestAssert.AreEqual(thirdDevice.Id, remaining.Single().DeviceId);
+    }
+
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]

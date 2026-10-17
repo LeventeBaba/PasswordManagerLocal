@@ -745,7 +745,7 @@ public sealed class RegularSyncEndToEndTests
                     string.Join("; ", host.PeerPenaltyAttempts.Select(x => $"{x.PeerId}: {x.Reason}")));
             }
             return true;
-        });
+        }, failureDiagnostics: () => DescribeAutomaticConvergenceAsync(setup));
         // Passwords and device names can converge before A and C learn each other's
         // addresses through B's authenticated endpoint hints. Unlike the adjacent peers,
         // A and C cannot exchange multicast announcements in this scenario. Wait for
@@ -770,7 +770,10 @@ public sealed class RegularSyncEndToEndTests
         }
     }
 
-    private static async Task WaitForAutomaticAsync(Func<Task<bool>> condition, string? failureMessage = null)
+    private static async Task WaitForAutomaticAsync(
+        Func<Task<bool>> condition,
+        string? failureMessage = null,
+        Func<Task<string>>? failureDiagnostics = null)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(70));
         while (!await condition())
@@ -781,9 +784,50 @@ public sealed class RegularSyncEndToEndTests
             }
             catch (OperationCanceledException) when (timeout.IsCancellationRequested)
             {
-                Assert.Fail(failureMessage ?? "Automatic synchronization did not converge within 70 seconds.");
+                var message = failureMessage ?? "Automatic synchronization did not converge within 70 seconds.";
+                if (failureDiagnostics is not null)
+                {
+                    try { message += Environment.NewLine + await failureDiagnostics(); }
+                    catch (Exception exception) { message += $" Diagnostics failed: {exception.GetType().Name}."; }
+                }
+                Assert.Fail(message);
             }
         }
+    }
+
+    private static async Task<string> DescribeAutomaticConvergenceAsync(ThreeDeviceSetup setup)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var lines = new List<string>();
+        foreach (var host in setup.Hosts)
+        {
+            var prefix = $"Device={host.Identity.LocalDeviceId:N}";
+            try
+            {
+                var token = setup.TokenFor(host);
+                var saved = await host.Endpoints.GetSavedPasswordsAsync(token, timeout.Token);
+                var devices = await host.Endpoints.GetUserDevicesAsync(token, timeout.Token);
+                var pendingTargets = new List<string>();
+                using var scope = host.Services.CreateScope();
+                var queue = scope.ServiceProvider.GetRequiredService<ISyncQueueRepository>();
+                foreach (var peer in setup.Hosts.Where(peer => !ReferenceEquals(peer, host)))
+                {
+                    if (await queue.HasPendingForDeviceAsync(peer.Identity.LocalDeviceId, timeout.Token))
+                        pendingTargets.Add(peer.Identity.LocalDeviceId.ToString("N"));
+                }
+                lines.Add($"{prefix}; HasBEdit2={saved.Passwords.Any(item => item.Name == "B edit 2")}; " +
+                    $"HasCEdit2={saved.Passwords.Any(item => item.Name == "C edit 2")}; " +
+                    $"HasThirdName2={devices.Any(item => item.DeviceId == setup.NewDevice.Identity.LocalDeviceId && item.Name == "Third PC 2")}; " +
+                    $"PendingTargets=[{string.Join(",", pendingTargets)}]; " +
+                    $"PenalizedPeers={devices.Count(item => item.IsBlocked || item.InvalidSyncAttemptCount != 0)}; " +
+                    $"PenaltyAttempts={host.PeerPenaltyAttempts.Count}.");
+            }
+            catch (Exception exception)
+            {
+                lines.Add($"{prefix}; DiagnosticReadFailure={exception.GetType().Name}.");
+            }
+        }
+        return string.Join(Environment.NewLine, lines);
     }
 
     private async Task<ThreeDeviceSetup> CreateThreeDeviceSetupAsync(bool automaticDiscovery = false)

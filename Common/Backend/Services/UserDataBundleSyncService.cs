@@ -126,6 +126,7 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
         var results = new List<UserSnapshotMergeEntryResult>(ordered.Length);
         var changedBlobs = UserDataBlobKind.None;
         var anyVerified = false;
+        var verifiedBundles = new Dictionary<(Guid, Guid, long), (UserSnapshotEnvelope Envelope, UserDataBundle Bundle)>();
 
         try
         {
@@ -169,6 +170,8 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
                 var incomingBundle = incomingVerification.VerifiedBundle!;
                 _versionClock.Observe(SyncVersionStampTraversal.Enumerate(incomingBundle));
                 anyVerified = true;
+                verifiedBundles[(snapshot.OriginDeviceId, snapshot.OriginInstanceId, snapshot.OriginRevision)] =
+                    (snapshot, incomingBundle);
                 var snapshotChangedBlobs = UserDataBlobKind.None;
 
                 try
@@ -240,6 +243,40 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
             _users.Update(existing);
             if (_canonicalHealth is not null)
                 await _canonicalHealth.UpdateCheckpointAsync(existing, ct);
+            // Compare verified plaintext content after the entire batch, including all field
+            // versions and tombstones. Ciphertext equality is invalid because merges reencrypt.
+            // An origin may be skipped only if it already authored the complete resulting state;
+            // concurrent local/other-origin changes must still travel back to it.
+            var canonicalGroups = existing.Groups.Select(group => group.Id).ToHashSet();
+            var canonicalDevices = existing.UserDevices.Where(link => !link.IsDeleted)
+                .Select(link => link.DeviceId).Where(id => id != Guid.Empty).ToHashSet();
+            if (_identity is not null)
+                canonicalDevices.Add(_identity.LocalDeviceId);
+            var generalHash = canonicalBundle.GeneralUserData.CalculateIntegrityHash();
+            var passwordsHash = canonicalBundle.UserPasswordsData.CalculateIntegrityHash();
+            var devicesHash = canonicalBundle.UserDevicesData.CalculateIntegrityHash();
+            for (var index = 0; index < results.Count; index++)
+            {
+                var result = results[index];
+                if (!result.Verified || !verifiedBundles.TryGetValue(
+                    (result.OriginDeviceId, result.OriginInstanceId, result.OriginRevision), out var candidate))
+                    continue;
+                var envelope = candidate.Envelope;
+                var incoming = candidate.Bundle;
+                var matches = envelope.UserKeyEpoch == existing.KeyEpoch &&
+                    envelope.MembershipEpoch == existing.MembershipEpoch &&
+                    envelope.User.UsernameHash.AsSpan().SequenceEqual(existing.UsernameHash) &&
+                    envelope.User.UsernameSalt.AsSpan().SequenceEqual(existing.UsernameSalt) &&
+                    canonicalGroups.SetEquals(envelope.User.GroupIds) &&
+                    canonicalDevices.SetEquals(envelope.User.DeviceIds) &&
+                    generalHash.AsSpan()
+                        .SequenceEqual(incoming.GeneralUserData.CalculateIntegrityHash()) &&
+                    passwordsHash.AsSpan()
+                        .SequenceEqual(incoming.UserPasswordsData.CalculateIntegrityHash()) &&
+                    devicesHash.AsSpan()
+                        .SequenceEqual(incoming.UserDevicesData.CalculateIntegrityHash());
+                results[index] = result with { MatchesCanonicalContent = matches };
+            }
             return new UserSnapshotMergeBatchResult(changedBlobs != UserDataBlobKind.None, results);
         }
         finally

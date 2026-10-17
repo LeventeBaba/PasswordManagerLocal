@@ -93,6 +93,9 @@ public sealed class FrontendRefreshCoordinator : IAsyncDisposable
     {
         while (true)
         {
+            // A completed task can make WaitAsync complete synchronously even after its
+            // token is canceled. Keep cancellation observable on every idle-state recheck.
+            cancellationToken.ThrowIfCancellationRequested();
             Task? pending;
             lock (_gate)
                 pending = _runner ?? _debounceTask;
@@ -414,7 +417,7 @@ public sealed class FrontendRefreshCoordinator : IAsyncDisposable
 
         lock (_gate)
         {
-            if (_disposed || !ReferenceEquals(_debounceCancellation, cancellation))
+            if (!ReferenceEquals(_debounceCancellation, cancellation))
             {
                 cancellation.Dispose();
                 return;
@@ -422,6 +425,12 @@ public sealed class FrontendRefreshCoordinator : IAsyncDisposable
             _debounceCancellation = null;
             _debounceTask = null;
             cancellation.Dispose();
+
+            // Disposal may win after the delay completes but before this continuation
+            // acquires the gate. Retire our task reference before returning; otherwise
+            // WaitForIdleAsync can repeatedly observe the same completed debounce task.
+            if (_disposed)
+                return;
 
             if (_runner is not null)
             {

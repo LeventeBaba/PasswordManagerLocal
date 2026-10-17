@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 using System.Collections.Concurrent;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
@@ -191,6 +193,146 @@ public sealed class FrontendChangeNotificationForwarderTests
         await forwarder.DisposeAsync();
         await forwarder.DisposeAsync();
         Assert.AreEqual(0, source.ActiveSubscriptionCount);
+    }
+
+    [TestMethod]
+    public async Task StreamOnlyClientForwardsRealWatermarksChangesAndRuntimeReplacement()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var runtime = new StreamOnlyRuntime();
+        var userId = Guid.NewGuid();
+        await using var forwarder = new FrontendChangeNotificationForwarder(
+            runtime, null, () => userId, () => true, timeout.Token);
+        var hints = Channel.CreateUnbounded<FrontendChangeStreamDelivery>();
+        forwarder.ChangeHintReceived += hint => hints.Writer.TryWrite(hint);
+        runtime.SetReady(true);
+        var subscription = await runtime.Registrations.Reader.ReadAsync(timeout.Token);
+        Assert.AreEqual(userId, subscription.UserId);
+        Assert.IsNull(forwarder.CurrentPosition, "IPC has no authoritative watermark until Connected.");
+        subscription.Events.Writer.TryWrite(new(FrontendChangeStreamEventKind.Connected,
+            null, 0, FrontendChangeScope.Everything, true));
+        var firstRuntime = Guid.NewGuid();
+        subscription.Events.Writer.TryWrite(new(FrontendChangeStreamEventKind.Change,
+            firstRuntime, 10, FrontendChangeScope.Passwords, false));
+        var connected = await hints.Reader.ReadAsync(timeout.Token);
+        Assert.IsTrue(connected.RequiresAuthoritativeRefresh);
+        Assert.AreEqual(firstRuntime, connected.RuntimeInstanceId);
+        Assert.AreEqual(10L, connected.Sequence);
+        subscription.Events.Writer.TryWrite(new(FrontendChangeStreamEventKind.Change,
+            firstRuntime, 11, FrontendChangeScope.Passwords, false));
+        var changed = await hints.Reader.ReadAsync(timeout.Token);
+        Assert.IsFalse(changed.RequiresAuthoritativeRefresh);
+        Assert.AreEqual(FrontendChangeScope.Passwords, changed.Notification!.Scope);
+        subscription.Events.Writer.TryWrite(new(FrontendChangeStreamEventKind.Disconnected,
+            null, 0, FrontendChangeScope.Everything, true));
+        var replacementRuntime = Guid.NewGuid();
+        subscription.Events.Writer.TryWrite(new(FrontendChangeStreamEventKind.Connected,
+            replacementRuntime, 0, FrontendChangeScope.Everything, false));
+        var replacement = await hints.Reader.ReadAsync(timeout.Token);
+        Assert.AreEqual(replacementRuntime, replacement.RuntimeInstanceId);
+        Assert.IsTrue(replacement.RequiresAuthoritativeRefresh);
+        Assert.IsFalse(hints.Reader.TryRead(out _));
+    }
+
+    [TestMethod]
+    public async Task StreamOnlyProfileSwitchCancelsOldFilterAndDeactivationRevokesDelivery()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var runtime = new StreamOnlyRuntime();
+        Guid? userId = Guid.NewGuid();
+        await using var forwarder = new FrontendChangeNotificationForwarder(
+            runtime, null, () => userId, () => true, timeout.Token);
+        var hints = Channel.CreateUnbounded<FrontendChangeStreamDelivery>();
+        forwarder.ChangeHintReceived += hint => hints.Writer.TryWrite(hint);
+        runtime.SetReady(true);
+        var old = await runtime.Registrations.Reader.ReadAsync(timeout.Token);
+        userId = Guid.NewGuid();
+        forwarder.ReconcileUserScope();
+        var current = await runtime.Registrations.Reader.ReadAsync(timeout.Token);
+        await old.Cancelled.Task.WaitAsync(timeout.Token);
+        Assert.AreEqual(userId, current.UserId);
+        old.Events.Writer.TryWrite(new(FrontendChangeStreamEventKind.Change,
+            Guid.NewGuid(), 999, FrontendChangeScope.Passwords, false));
+        var runtimeId = Guid.NewGuid();
+        current.Events.Writer.TryWrite(new(FrontendChangeStreamEventKind.Connected,
+            runtimeId, 20, FrontendChangeScope.Everything, true));
+        var connected = await hints.Reader.ReadAsync(timeout.Token);
+        Assert.AreEqual(runtimeId, connected.RuntimeInstanceId);
+        Assert.IsFalse(hints.Reader.TryRead(out _));
+        forwarder.Deactivate();
+        await forwarder.DisposeAsync();
+        await current.Cancelled.Task.WaitAsync(timeout.Token);
+        current.Events.Writer.TryWrite(new(FrontendChangeStreamEventKind.Change,
+            runtimeId, 21, FrontendChangeScope.Passwords, false));
+        forwarder.ReconcileOnResume();
+        Assert.IsFalse(hints.Reader.TryRead(out _));
+        Assert.IsFalse(runtime.Registrations.Reader.TryRead(out _));
+    }
+
+    [TestMethod]
+    public async Task StreamReplacementWaitsForOldServerSubscriptionCleanup()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var runtime = new StreamOnlyRuntime();
+        Guid? userId = Guid.NewGuid();
+        await using var forwarder = new FrontendChangeNotificationForwarder(
+            runtime, null, () => userId, () => true, timeout.Token);
+        runtime.SetReady(true);
+        var old = await runtime.Registrations.Reader.ReadAsync(timeout.Token);
+        var cleanupRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        old.CleanupRelease = cleanupRelease;
+        try
+        {
+            userId = Guid.NewGuid();
+            forwarder.ReconcileUserScope();
+            await old.CleanupEntered.Task.WaitAsync(timeout.Token);
+            Assert.IsFalse(runtime.Registrations.Reader.TryRead(out _),
+                "The old Windows producer could still disable the shared server subscription.");
+        }
+        finally { cleanupRelease.TrySetResult(); }
+        var replacement = await runtime.Registrations.Reader.ReadAsync(timeout.Token);
+        Assert.IsTrue(old.Cancelled.Task.IsCompleted);
+        Assert.AreEqual(userId, replacement.UserId);
+    }
+
+    private sealed record StreamRegistration(Guid? UserId)
+    {
+        public Channel<FrontendChangeStreamEvent> Events { get; } = Channel.CreateBounded<FrontendChangeStreamEvent>(64);
+        public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource CleanupEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource? CleanupRelease { get; set; }
+    }
+
+    private sealed class StreamOnlyRuntime : IBackendRuntimeClient, IFrontendChangeStreamClient
+    {
+        private readonly FakeFrontendRuntimeClient _inner = new();
+        public Channel<StreamRegistration> Registrations { get; } = Channel.CreateUnbounded<StreamRegistration>();
+        public BackendRuntimeSnapshot Snapshot => _inner.Snapshot;
+        public event EventHandler<BackendRuntimeStateChangedEventArgs>? StateChanged
+        { add => _inner.StateChanged += value; remove => _inner.StateChanged -= value; }
+        public void SetReady(bool ready) => _inner.SetReady(ready);
+        public Task ConnectAsync(CancellationToken token = default) => _inner.ConnectAsync(token);
+        public Task WaitUntilReadyAsync(CancellationToken token = default) => _inner.WaitUntilReadyAsync(token);
+        public Task ResetDatabaseAndRestartAsync(CancellationToken token = default) => _inner.ResetDatabaseAndRestartAsync(token);
+        public ValueTask DisposeAsync() => _inner.DisposeAsync();
+        public async IAsyncEnumerable<FrontendChangeStreamEvent> ReadChangeStreamAsync(Guid? userId = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            var registration = new StreamRegistration(userId);
+            Registrations.Writer.TryWrite(registration);
+            try
+            {
+                await foreach (var item in registration.Events.Reader.ReadAllAsync(cancellationToken))
+                    yield return item;
+            }
+            finally
+            {
+                registration.CleanupEntered.TrySetResult();
+                if (registration.CleanupRelease is { } release)
+                    await release.Task;
+                registration.Cancelled.TrySetResult();
+            }
+        }
     }
 
     private static TaskCompletionSource<FrontendChangeStreamDelivery> CaptureStart(
