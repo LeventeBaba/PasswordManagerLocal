@@ -13,6 +13,7 @@ public sealed class ChangeProfileViewModel : ViewModelBase
 {
     private readonly IEndpoints _endpoints;
     private readonly IAuthSessionRegistry _authSessionRegistry;
+    private readonly Action<Guid, DateTimeOffset?>? _sessionExpiryUpdated;
     private readonly Func<Task> _navigateBackAsync;
     private readonly Action _navigateToLoginAnotherProfile;
     private readonly Func<Guid, Task> _selectProfileAsync;
@@ -26,11 +27,13 @@ public sealed class ChangeProfileViewModel : ViewModelBase
         IAuthSessionRegistry authSessionRegistry,
         Func<Task> navigateBackAsync,
         Action navigateToLoginAnotherProfile,
-        Func<Guid, Task> selectProfileAsync)
+        Func<Guid, Task> selectProfileAsync,
+        Action<Guid, DateTimeOffset?>? sessionExpiryUpdated = null)
         : base(uiPreferences)
     {
         _endpoints = endpoints;
         _authSessionRegistry = authSessionRegistry;
+        _sessionExpiryUpdated = sessionExpiryUpdated;
         _navigateBackAsync = navigateBackAsync;
         _navigateToLoginAnotherProfile = navigateToLoginAnotherProfile;
         _selectProfileAsync = selectProfileAsync;
@@ -251,14 +254,25 @@ public sealed class ChangeProfileViewModel : ViewModelBase
     {
         var status = await _endpoints.GetAuthSessionStatusAsync(originalToken);
         if (status.IsAuthenticated)
+        {
+            StoreSessionExpiry(originalToken, status.ExpiresAtUtc);
             return originalToken;
+        }
+
+        StoreSessionExpiry(originalToken, null);
 
         var restoredToken = await TryRestoreRememberedSessionAsync(originalToken);
         if (restoredToken is not null)
         {
             status = await _endpoints.GetAuthSessionStatusAsync(restoredToken.Value);
             if (status.IsAuthenticated)
+            {
+                StoreSessionExpiry(restoredToken.Value, status.ExpiresAtUtc);
                 return restoredToken;
+            }
+
+            StoreSessionExpiry(restoredToken.Value, null);
+            _authSessionRegistry.TryRemove(restoredToken.Value);
         }
 
         _authSessionRegistry.TryRemove(originalToken);
@@ -271,14 +285,25 @@ public sealed class ChangeProfileViewModel : ViewModelBase
     {
         var status = await _endpoints.GetAuthSessionStatusAsync(originalToken, cancellationToken);
         if (status.IsAuthenticated)
+        {
+            StoreSessionExpiry(originalToken, status.ExpiresAtUtc);
             return originalToken;
+        }
+
+        StoreSessionExpiry(originalToken, null);
 
         var restoredToken = await TryRestoreRememberedSessionAsync(originalToken, cancellationToken);
         if (restoredToken is not null)
         {
             status = await _endpoints.GetAuthSessionStatusAsync(restoredToken.Value, cancellationToken);
             if (status.IsAuthenticated)
+            {
+                StoreSessionExpiry(restoredToken.Value, status.ExpiresAtUtc);
                 return restoredToken;
+            }
+
+            StoreSessionExpiry(restoredToken.Value, null);
+            _authSessionRegistry.TryRemove(restoredToken.Value);
         }
 
         _authSessionRegistry.TryRemove(originalToken);
@@ -351,6 +376,14 @@ public sealed class ChangeProfileViewModel : ViewModelBase
             profile.Username,
             profile.Email,
             profile.IsRememberMeEnabled);
+        var session = _authSessionRegistry.GetSession(token);
+        _sessionExpiryUpdated?.Invoke(token, session?.ExpiresAtUtc);
+    }
+
+    private void StoreSessionExpiry(Guid token, DateTimeOffset? expiresAtUtc)
+    {
+        if (_authSessionRegistry.TrySetExpiresAtUtc(token, expiresAtUtc))
+            _sessionExpiryUpdated?.Invoke(token, expiresAtUtc);
     }
 
     public void RefreshCurrentSelection()

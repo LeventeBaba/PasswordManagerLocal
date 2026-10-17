@@ -145,6 +145,8 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
         var operationToken = operationCancellation.Token;
         await _syncRuntime.BeginEnrollmentOnlyAsync(operationToken);
         EnrollmentSession? session = null;
+        var enrollmentCode = string.Empty;
+        var enrollmentExpiresAt = DateTimeOffset.MinValue;
 
         try
         {
@@ -165,6 +167,8 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
                     ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
                     State = DeviceEnrollmentState.Waiting
                 };
+                enrollmentCode = session.Code;
+                enrollmentExpiresAt = session.ExpiresAt;
                 _currentSession = session;
                 _localDiscovery.ActivateEnrollmentSession(session.SessionId, session.Secret, session.ExpiresAt);
                 StartEnrollmentExpirationCountdownLocked(session);
@@ -172,7 +176,30 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
 
             await _endpointService.VerifyLocalEnrollmentListenerAsync(session.SessionId, session.Secret, directEndpointInfo, operationToken);
             PublishEnrollmentChange();
-            return new DeviceEnrollmentCodeResponse { Code = session.Code, ExpiresAt = session.ExpiresAt };
+            DeviceEnrollmentStatusResponse initialStatus;
+            lock (_lock)
+            {
+                initialStatus = new DeviceEnrollmentStatusResponse
+                {
+                    State = ReferenceEquals(_currentSession, session)
+                        ? session.State
+                        : DeviceEnrollmentState.Cancelled,
+                    ErrorCode = ReferenceEquals(_currentSession, session)
+                        ? session.ErrorCode
+                        : DeviceEnrollmentErrorCode.Unknown,
+                    ErrorMessage = ReferenceEquals(_currentSession, session)
+                        ? session.ErrorMessage
+                        : null,
+                    ExpiresAt = enrollmentExpiresAt
+                };
+            }
+
+            return new DeviceEnrollmentCodeResponse
+            {
+                Code = enrollmentCode,
+                ExpiresAt = enrollmentExpiresAt,
+                InitialStatus = initialStatus
+            };
         }
         catch
         {
@@ -211,7 +238,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
                 ErrorCode = _currentSession.ErrorCode,
                 ExpiresAt = _currentSession.ExpiresAt
             };
-            endTemporaryMode = _currentSession.State is DeviceEnrollmentState.Expired or DeviceEnrollmentState.Failed or DeviceEnrollmentState.Completed;
+            endTemporaryMode = _currentSession.State is DeviceEnrollmentState.Expired or DeviceEnrollmentState.Failed or DeviceEnrollmentState.Completed or DeviceEnrollmentState.Cancelled;
         }
         if (endTemporaryMode)
             await _syncRuntime.EndEnrollmentOnlyAsync(ct);
@@ -765,7 +792,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
 
             if (session is null || session.State != DeviceEnrollmentState.Waiting)
             {
-                endTemporaryMode = session?.State is DeviceEnrollmentState.Expired or DeviceEnrollmentState.Failed or DeviceEnrollmentState.Completed;
+                endTemporaryMode = session?.State is DeviceEnrollmentState.Expired or DeviceEnrollmentState.Failed or DeviceEnrollmentState.Completed or DeviceEnrollmentState.Cancelled;
                 response = new DeviceEnrollmentInfoResponse
                 {
                     Ok = false,
@@ -906,7 +933,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
                 earlyFailure = (
                     session?.ErrorCode ?? DeviceEnrollmentErrorCode.NewDeviceRejected,
                     session?.ErrorMessage ?? "No active enrollment session was found.");
-                endTemporaryMode = session?.State is DeviceEnrollmentState.Expired or DeviceEnrollmentState.Failed or DeviceEnrollmentState.Completed;
+                endTemporaryMode = session?.State is DeviceEnrollmentState.Expired or DeviceEnrollmentState.Failed or DeviceEnrollmentState.Completed or DeviceEnrollmentState.Cancelled;
             }
             else if (!string.Equals(session.SessionId, sessionId, StringComparison.Ordinal))
             {
@@ -1124,12 +1151,21 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
     {
         lock (_lock)
         {
-            var hadSession = _currentSession is not null;
+            var session = _currentSession;
+            var changed = session is not null && session.State == DeviceEnrollmentState.Waiting;
             CancelEnrollmentExpirationLocked();
             DeactivateEnrollmentDiscoveryLocked();
-            _currentSession?.ClearSensitiveData();
-            _currentSession = null;
-            if (hadSession)
+            if (session is not null)
+            {
+                if (changed)
+                {
+                    session.State = DeviceEnrollmentState.Cancelled;
+                    session.ErrorCode = DeviceEnrollmentErrorCode.Unknown;
+                    session.ErrorMessage = null;
+                }
+                session.ClearSensitiveData();
+            }
+            if (changed)
                 PublishEnrollmentChange();
         }
 
@@ -1222,7 +1258,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
         if (_currentSession is null || _currentSession.State != DeviceEnrollmentState.Waiting)
             return;
 
-        if (DateTimeOffset.UtcNow <= _currentSession.ExpiresAt)
+        if (DateTimeOffset.UtcNow < _currentSession.ExpiresAt)
             return;
 
         _currentSession.State = DeviceEnrollmentState.Expired;

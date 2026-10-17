@@ -12,6 +12,26 @@ public sealed class FrontendRefreshCoordinatorTests
     private static readonly Guid RuntimeId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
     [TestMethod]
+    public async Task IdleFrontendMakesNoRecurringAuthenticationOrEnrollmentStatusCalls()
+    {
+        var source = new FakeChangeHintSource();
+        var delay = new FakeRefreshDelay();
+        var endpoints = new FakeFrontendRefreshEndpointClient();
+        var target = new FakeFrontendRefreshTarget(endpoints)
+        {
+            VisiblePages = [FrontendRefreshPage.AuthenticationSessions, FrontendRefreshPage.Enrollment]
+        };
+        await using var coordinator = CreateCoordinator(source, target, delay);
+        coordinator.Start(target.VisiblePages, new FrontendChangeStreamStart(RuntimeId, 0, false));
+
+        await coordinator.WaitForIdleAsync();
+
+        Assert.AreEqual(0, target.RevalidationCount);
+        Assert.AreEqual(0, endpoints.Calls.Count);
+        Assert.AreEqual(0, delay.ScheduledCount);
+    }
+
+    [TestMethod]
     public async Task BurstMergesScopesAndUsesOneCachedDeviceRead()
     {
         var source = new FakeChangeHintSource();
@@ -355,13 +375,22 @@ public sealed class FrontendRefreshCoordinatorTests
         var delay = new FakeRefreshDelay();
         var endpoints = new FakeFrontendRefreshEndpointClient();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var oldRequestCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         endpoints.BeforeResult = async (call, cancellationToken) =>
         {
             if (call.Index == 1)
             {
                 entered.TrySetResult();
-                await release.Task.WaitAsync(cancellationToken);
+                try
+                {
+                    await release.Task.WaitAsync(cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    oldRequestCancelled.TrySetResult();
+                    throw;
+                }
             }
         };
         var target = new FakeFrontendRefreshTarget(endpoints)
@@ -380,10 +409,13 @@ public sealed class FrontendRefreshCoordinatorTests
         source.PublishMarker(0, replacementRuntime);
         await delay.WaitForScheduledCountAsync(2);
         delay.AdvanceAll();
-        await endpoints.WaitForCallCountAsync(8);
-        await coordinator.WaitForIdleAsync();
+        await oldRequestCancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        // Wait for the coordinator to drain the replacement generation before checking its calls.
+        await coordinator.WaitForIdleAsync().WaitAsync(TimeSpan.FromSeconds(5));
 
+        Assert.AreEqual(8, endpoints.Calls.Count, "The cancelled request must be followed by all seven visible page refreshes.");
         Assert.AreEqual(7, endpoints.CommittedCount);
+        Assert.AreEqual(1, target.RevalidationCount, "A replacement runtime marker must revalidate session state once.");
         Assert.AreEqual(1, endpoints.MaximumConcurrentCalls);
         Assert.AreEqual(
             Enum.GetValues<FrontendRefreshPage>().Length,
@@ -517,6 +549,11 @@ public sealed class FrontendRefreshCoordinatorTests
         private readonly List<TaskCompletionSource> _pending = [];
         private readonly SemaphoreSlim _scheduled = new(0);
         private int _scheduledCount;
+
+        public int ScheduledCount
+        {
+            get { lock (_gate) return _scheduledCount; }
+        }
 
         public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
         {

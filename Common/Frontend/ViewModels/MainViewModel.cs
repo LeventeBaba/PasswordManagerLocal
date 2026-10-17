@@ -47,8 +47,9 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     private bool _isBackendInitialized;
     private string _currentUserDisplayName = string.Empty;
     private string _currentUserSubtitle = string.Empty;
-    private DispatcherTimer? _sessionMonitorTimer;
-    private bool _isCheckingSession;
+    private readonly IFrontendDeadlineScheduler _deadlineScheduler;
+    private readonly Dictionary<Guid, IDisposable> _sessionDeadlineTimers = new();
+    private readonly Dictionary<Guid, DateTimeOffset> _failedRememberedRenewalExpiries = new();
     private bool _isSessionRenewalDialogOpen;
     private bool _isRenewingSession;
     private bool _isAddingProfile;
@@ -81,13 +82,15 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         IApplicationPreferencesChangeNotifier? applicationPreferencesChangeNotifier = null,
         IAuthSessionRegistry? authSessionRegistry = null,
         FrontendPlatformServices? platformServices = null,
-        ApplicationPreferences? initialPreferences = null)
+        ApplicationPreferences? initialPreferences = null,
+        IFrontendDeadlineScheduler? deadlineScheduler = null)
         : this(
             endpoints,
             backendClient,
             authSessionRegistry ?? new AuthSessionRegistry(),
             new UiPreferencesService(applicationPreferencesStore, applicationPreferencesChangeNotifier, platformServices, initialPreferences),
-            new DeviceAppPreferencesService(backgroundSyncSettingsClient, platformServices?.LifetimeToken ?? default))
+            new DeviceAppPreferencesService(backgroundSyncSettingsClient, platformServices?.LifetimeToken ?? default),
+            deadlineScheduler ?? new AvaloniaFrontendDeadlineScheduler())
     {
     }
 
@@ -96,15 +99,22 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         IBackendRuntimeClient backendClient,
         IAuthSessionRegistry authSessionRegistry,
         UiPreferencesService uiPreferences,
-        DeviceAppPreferencesService deviceAppPreferences)
+        DeviceAppPreferencesService deviceAppPreferences,
+        IFrontendDeadlineScheduler deadlineScheduler)
         : base(uiPreferences)
     {
         _endpoints = endpoints ?? throw new ArgumentNullException(nameof(endpoints));
         _backendClient = backendClient ?? throw new ArgumentNullException(nameof(backendClient));
         _authSessionRegistry = authSessionRegistry;
         _deviceAppPreferences = deviceAppPreferences ?? throw new ArgumentNullException(nameof(deviceAppPreferences));
+        _deadlineScheduler = deadlineScheduler ?? throw new ArgumentNullException(nameof(deadlineScheduler));
 
-        LoginViewModel = new LoginViewModel(uiPreferences, _endpoints, NavigateToRegistration, OnAuthenticationSucceededAsync);
+        LoginViewModel = new LoginViewModel(
+            uiPreferences,
+            _endpoints,
+            NavigateToRegistration,
+            OnAuthenticationSucceededAsync,
+            _deadlineScheduler);
         LoginViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
 
         _currentPageViewModel = LoginViewModel;
@@ -143,7 +153,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     {
         _backendClient.StateChanged -= HandleBackendRuntimeStateChanged;
         PlatformServices.SensitiveData.HideVisibleSecretsRequested -= HandleHideVisibleSecretsRequested;
-        StopSessionMonitor();
+        StopSessionDeadlineTimers();
         StopObservingPageStatus();
         _settingsReturnPageViewModel = null;
         LoginViewModel.Dispose();
@@ -247,7 +257,8 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
                     _authSessionRegistry,
                     NavigateBackFromChangeProfileAsync,
                     NavigateToLoginAnotherProfile,
-                    SwitchToProfileAsync);
+                SwitchToProfileAsync,
+                SetSessionExpiry);
                 _changeProfileViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
             }
             return _changeProfileViewModel;
@@ -813,7 +824,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         if (loadedRememberedTokens.Count > 1)
         {
             await ShowStartupProfileSelectionAsync(GetTranslation("Shell_ChooseRememberedProfile"));
-            EnsureSessionMonitor();
             return;
         }
 
@@ -1396,6 +1406,17 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
 
     private async Task SwitchToProfileAsync(Guid token)
     {
+        if (!_authSessionRegistry.ListTokens().Contains(token))
+            return;
+
+        var status = await _endpoints.GetAuthSessionStatusAsync(token);
+        if (!status.IsAuthenticated)
+        {
+            await HandleInvalidatedSessionAsync(token, status.InvalidationReason);
+            return;
+        }
+        SetSessionExpiry(token, status.ExpiresAtUtc);
+
         var wasStartupSelection = _isStartupProfileSelection;
         _isStartupProfileSelection = false;
         if (!await LoadAuthenticatedStateAsync(token))
@@ -1617,6 +1638,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
 
             _authSessionRegistry.TryAdd(token, select);
             SetSessionProfile(token, profile);
+            SetSessionExpiry(token, status.ExpiresAtUtc);
             return true;
         }
         catch
@@ -1658,6 +1680,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             IsSettingRememberMe = true;
             await _endpoints.SetRememberMeAsync(token, isEnabled);
             _authSessionRegistry.TrySetRememberMe(token, isEnabled);
+            ScheduleSessionExpiryWarning(token);
             ShowSuccessMessage(isEnabled
                 ? GetTranslation("Shell_RememberMeEnabled")
                 : GetTranslation("Shell_RememberMeDisabled"));
@@ -1678,7 +1701,13 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     {
         if (IsDisposed)
             return;
-        var profile = await _endpoints.GetUserProfileInfoAsync(token);
+        var profileTask = _endpoints.GetUserProfileInfoAsync(token);
+        var statusTask = _endpoints.GetAuthSessionStatusAsync(token);
+        await Task.WhenAll(profileTask, statusTask);
+        var profile = await profileTask;
+        var status = await statusTask;
+        if (!status.IsAuthenticated)
+            throw new InvalidTokenException();
         var wasAddingProfile = _isAddingProfile;
         var wasStartupProfileSelection = _isStartupProfileSelection;
 
@@ -1690,6 +1719,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
 
         _authSessionRegistry.TryAdd(token);
         SetSessionProfile(token, profile);
+        SetSessionExpiry(token, status.ExpiresAtUtc);
         _isAddingProfile = false;
         _isStartupProfileSelection = false;
         ConfigureAuthBackNavigation();
@@ -1761,7 +1791,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             ShowShellMessage(message, messageKind);
         }
 
-        EnsureSessionMonitor();
         return passwordsLoaded && profileLoaded;
     }
 
@@ -1859,6 +1888,9 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
 
     private async Task RefreshAuthenticatedStateAsync()
     {
+        var token = _authSessionRegistry.CurrentUserToken;
+        if (token != Guid.Empty)
+            await RevalidateSessionTokenAsync(token, LifetimeToken);
         await RefreshAllLoadedDataAsync();
     }
 
@@ -1881,6 +1913,8 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         finally
         {
             _authSessionRegistry.TryRemove(token);
+            RemoveSessionDeadlineTimer(token);
+            _failedRememberedRenewalExpiries.Remove(token);
             await LoadNextAvailableSessionOrLoginAsync(GetTranslation("Shell_LoggedOut"));
         }
     }
@@ -1889,14 +1923,18 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     {
         var token = _authSessionRegistry.CurrentUserToken;
         if (token != Guid.Empty)
+        {
             _authSessionRegistry.TryRemove(token);
+            RemoveSessionDeadlineTimer(token);
+            _failedRememberedRenewalExpiries.Remove(token);
+        }
 
         await LoadNextAvailableSessionOrLoginAsync(GetTranslation("Profile_Delete_Success"));
     }
 
     private Task HandleLoggedOutStateAsync(string? message = null, OperationMessageKind messageKind = OperationMessageKind.Success)
     {
-        StopSessionMonitor();
+        StopSessionDeadlineTimers();
         IsSessionRenewalDialogOpen = false;
         IsRenewingSession = false;
         _sessionRenewalDialogToken = Guid.Empty;
@@ -1920,100 +1958,159 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         return Task.CompletedTask;
     }
 
-    private void EnsureSessionMonitor()
+    private void SetSessionExpiry(Guid token, DateTimeOffset? expiresAtUtc)
     {
-        if (IsDisposed || LifetimeToken.IsCancellationRequested || _sessionMonitorTimer is not null)
+        if (!_authSessionRegistry.TrySetExpiresAtUtc(token, expiresAtUtc))
             return;
 
-        var timer = new DispatcherTimer
+        if (expiresAtUtc is null)
         {
-            Interval = TimeSpan.FromSeconds(3)
-        };
-
-        timer.Tick += HandleSessionMonitorTick;
-        _sessionMonitorTimer = timer;
-        timer.Start();
-    }
-
-
-    private void StopSessionMonitor()
-    {
-        if (_sessionMonitorTimer is null)
-            return;
-
-        _sessionMonitorTimer.Stop();
-        _sessionMonitorTimer.Tick -= HandleSessionMonitorTick;
-        _sessionMonitorTimer = null;
-        _isCheckingSession = false;
-    }
-
-
-    private async void HandleSessionMonitorTick(object? sender, EventArgs args)
-    {
-        if (!IsDisposed)
-            await CheckAllSessionsAsync();
-    }
-
-    private async Task CheckAllSessionsAsync()
-    {
-        if (IsDisposed)
-            return;
-        if (_isCheckingSession)
-            return;
-
-        var tokens = _authSessionRegistry.ListTokens();
-        if (tokens.Count == 0)
-        {
-            if (IsAuthenticated)
-                await HandleLoggedOutStateAsync();
-
+            RemoveSessionDeadlineTimer(token);
+            _failedRememberedRenewalExpiries.Remove(token);
             return;
         }
 
-        try
+        if (_failedRememberedRenewalExpiries.TryGetValue(token, out var attemptedExpiry) &&
+            attemptedExpiry != expiresAtUtc.Value)
         {
-            _isCheckingSession = true;
-
-            foreach (var token in tokens.ToList())
-            {
-                if (_authSessionRegistry.GetSession(token) is null)
-                    continue;
-
-                AuthSessionStatusResponse status;
-                try
-                {
-                    status = await _endpoints.GetAuthSessionStatusAsync(token);
-                }
-                catch
-                {
-                    continue;
-                }
-
-                if (!status.IsAuthenticated)
-                {
-                    await HandleInvalidatedSessionAsync(token, status.InvalidationReason);
-                    continue;
-                }
-
-                if (status.ExpiresAtUtc is { } expiresAtUtc)
-                    await HandleSessionExpirationWarningAsync(token, expiresAtUtc);
-            }
+            _failedRememberedRenewalExpiries.Remove(token);
         }
-        finally
+
+        ScheduleSessionExpiryWarning(token);
+    }
+
+    private void ScheduleSessionExpiryWarning(Guid token)
+    {
+        RemoveSessionDeadlineTimer(token);
+        if (IsDisposed || LifetimeToken.IsCancellationRequested ||
+            _authSessionRegistry.GetSession(token)?.ExpiresAtUtc is not { } expiresAtUtc)
         {
-            _isCheckingSession = false;
+            return;
         }
+
+        // A past expiry is already an advisory deadline. A status read that still
+        // reports this session as authenticated must not create an immediate loop.
+        if (expiresAtUtc <= DateTimeOffset.UtcNow)
+            return;
+
+        var deadline = SessionExpiryWarningPolicy.GetWarningDeadline(expiresAtUtc, SessionRenewalWarningLeadTime);
+        if (deadline < DateTimeOffset.UtcNow)
+            deadline = DateTimeOffset.UtcNow;
+
+        IDisposable? scheduled = null;
+        scheduled = _deadlineScheduler.Schedule(deadline, () =>
+        {
+            if (!_sessionDeadlineTimers.TryGetValue(token, out var active) || !ReferenceEquals(active, scheduled))
+                return;
+
+            _sessionDeadlineTimers.Remove(token);
+            _ = HandleSessionExpiryDeadlineAsync(token, expiresAtUtc);
+        });
+        _sessionDeadlineTimers[token] = scheduled;
+    }
+
+    private void ScheduleSessionExpiryBoundaryCheck(Guid token, DateTimeOffset expiresAtUtc)
+    {
+        RemoveSessionDeadlineTimer(token);
+        if (IsDisposed || LifetimeToken.IsCancellationRequested)
+            return;
+
+        IDisposable? scheduled = null;
+        scheduled = _deadlineScheduler.Schedule(expiresAtUtc, () =>
+        {
+            if (!_sessionDeadlineTimers.TryGetValue(token, out var active) || !ReferenceEquals(active, scheduled))
+                return;
+
+            _sessionDeadlineTimers.Remove(token);
+            _ = RevalidateSessionAtBoundaryAsync(token);
+        });
+        _sessionDeadlineTimers[token] = scheduled;
+    }
+
+    private async Task RevalidateSessionAtBoundaryAsync(Guid token)
+    {
+        try { await RevalidateSessionTokenAsync(token, LifetimeToken); }
+        catch { }
+    }
+
+    private async Task HandleSessionExpiryDeadlineAsync(Guid token, DateTimeOffset expectedExpiry)
+    {
+        if (IsDisposed || _authSessionRegistry.GetSession(token)?.ExpiresAtUtc != expectedExpiry)
+            return;
+
+        if (!SessionExpiryWarningPolicy.IsWarningDue(
+                DateTimeOffset.UtcNow,
+                expectedExpiry,
+                SessionRenewalWarningLeadTime))
+        {
+            ScheduleSessionExpiryWarning(token);
+            return;
+        }
+
+        if (DateTimeOffset.UtcNow >= expectedExpiry)
+        {
+            try { await RevalidateSessionTokenAsync(token, LifetimeToken); }
+            catch { }
+            return;
+        }
+
+        await HandleSessionExpirationWarningAsync(token, expectedExpiry);
+    }
+
+    private async Task RevalidateSessionTokenAsync(Guid token, CancellationToken cancellationToken)
+    {
+        if (IsDisposed || _authSessionRegistry.GetSession(token) is null)
+            return;
+
+        var status = await _endpoints.GetAuthSessionStatusAsync(token, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (IsDisposed || _authSessionRegistry.GetSession(token) is null)
+            return;
+
+        if (!status.IsAuthenticated)
+        {
+            if (!_autoRenewingSessionTokens.Contains(token))
+                await HandleInvalidatedSessionAsync(token, status.InvalidationReason);
+            return;
+        }
+
+        SetSessionExpiry(token, status.ExpiresAtUtc);
+    }
+
+    private void RemoveSessionDeadlineTimer(Guid token)
+    {
+        if (_sessionDeadlineTimers.Remove(token, out var timer))
+            timer.Dispose();
+    }
+
+    private void StopSessionDeadlineTimers()
+    {
+        foreach (var timer in _sessionDeadlineTimers.Values)
+            timer.Dispose();
+        _sessionDeadlineTimers.Clear();
+        _failedRememberedRenewalExpiries.Clear();
     }
 
 
     private async Task HandleSessionExpirationWarningAsync(Guid token, DateTimeOffset expiresAtUtc)
     {
-        if (expiresAtUtc - DateTimeOffset.UtcNow > SessionRenewalWarningLeadTime)
+        if (!SessionExpiryWarningPolicy.IsWarningDue(
+                DateTimeOffset.UtcNow,
+                expiresAtUtc,
+                SessionRenewalWarningLeadTime))
             return;
 
         var session = _authSessionRegistry.GetSession(token);
         if (session?.IsRememberMeEnabled == true)
         {
+            if (_failedRememberedRenewalExpiries.TryGetValue(token, out var attemptedExpiry) &&
+                attemptedExpiry == expiresAtUtc)
+            {
+                ScheduleSessionExpiryBoundaryCheck(token, expiresAtUtc);
+                return;
+            }
+
+            _failedRememberedRenewalExpiries[token] = expiresAtUtc;
             await AutoRenewRememberedSessionAsync(token);
             return;
         }
@@ -2040,16 +2137,24 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         if (!_autoRenewingSessionTokens.Add(token))
             return;
 
+        var renewalFailed = false;
         try
         {
             await RenewSessionTokenAsync(token);
         }
         catch
         {
+            renewalFailed = true;
         }
         finally
         {
             _autoRenewingSessionTokens.Remove(token);
+        }
+
+        if (renewalFailed)
+        {
+            try { await RevalidateSessionTokenAsync(token, LifetimeToken); }
+            catch { }
         }
     }
 
@@ -2067,23 +2172,33 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         }
 
         ClearStatusMessage();
+        if (!_autoRenewingSessionTokens.Add(oldToken))
+            return;
 
+        var renewalFailed = false;
         try
         {
             IsRenewingSession = true;
             await RenewSessionTokenAsync(oldToken);
             CloseSessionRenewalDialog(true);
             ShowSuccessMessage(GetTranslation("Shell_SessionRenewed"));
-            EnsureSessionMonitor();
         }
         catch
         {
+            renewalFailed = true;
             CloseSessionRenewalDialog();
             ShowErrorMessage(GetTranslation("Shell_SessionRenewalFailed"));
         }
         finally
         {
+            _autoRenewingSessionTokens.Remove(oldToken);
             IsRenewingSession = false;
+        }
+
+        if (renewalFailed)
+        {
+            try { await RevalidateSessionTokenAsync(oldToken, LifetimeToken); }
+            catch { }
         }
     }
 
@@ -2092,6 +2207,8 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     {
         var wasCurrent = oldToken == _authSessionRegistry.CurrentUserToken;
         var newToken = await _endpoints.RenewAuthSessionAsync(oldToken);
+        RemoveSessionDeadlineTimer(oldToken);
+        _failedRememberedRenewalExpiries.Remove(oldToken);
 
         if (!_authSessionRegistry.TryReplaceToken(oldToken, newToken))
         {
@@ -2110,6 +2227,9 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         if (_sessionRenewalPromptShownForToken == oldToken)
             _sessionRenewalPromptShownForToken = Guid.Empty;
 
+        try { await RevalidateSessionTokenAsync(newToken, LifetimeToken); }
+        catch { }
+
         if (_changeProfileViewModel is not null && ReferenceEquals(CurrentPageViewModel, _changeProfileViewModel))
             await _changeProfileViewModel.LoadAsync();
     }
@@ -2127,6 +2247,8 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
 
     private async Task HandleInvalidatedSessionAsync(Guid token, AuthSessionInvalidationReason reason)
     {
+        RemoveSessionDeadlineTimer(token);
+        _failedRememberedRenewalExpiries.Remove(token);
         var wasCurrent = token == _authSessionRegistry.CurrentUserToken;
         var message = GetSessionInvalidationMessage(reason);
         var session = _authSessionRegistry.GetSession(token);
@@ -2167,6 +2289,11 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         try
         {
             var newToken = await _endpoints.InitializeRememberMeSessionAsync(session.UserId);
+            var status = await _endpoints.GetAuthSessionStatusAsync(newToken);
+            if (!status.IsAuthenticated)
+                return false;
+
+            var profile = await _endpoints.GetUserProfileInfoAsync(newToken);
 
             if (!_authSessionRegistry.TryReplaceToken(oldToken, newToken))
             {
@@ -2174,8 +2301,8 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
                 _authSessionRegistry.TryRemove(oldToken);
             }
 
-            var profile = await _endpoints.GetUserProfileInfoAsync(newToken);
             SetSessionProfile(newToken, profile);
+            SetSessionExpiry(newToken, status.ExpiresAtUtc);
 
             if (_sessionRenewalDialogToken == oldToken)
                 CloseSessionRenewalDialog(true);
@@ -2257,6 +2384,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             profile.Username,
             profile.Email,
             profile.IsRememberMeEnabled);
+        ScheduleSessionExpiryWarning(token);
         var currentUserId = isSelectedToken
             ? _authSessionRegistry.GetSession(token)?.UserId
             : null;
@@ -2579,23 +2707,15 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         Func<bool> isCurrent,
         CancellationToken cancellationToken)
     {
-        var token = _authSessionRegistry.CurrentUserToken;
-        if (token == Guid.Empty || !IsAuthenticated)
-            return true;
-
-        var status = await _endpoints.GetAuthSessionStatusAsync(token, cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
-        if (!isCurrent())
-            return false;
-
-        if (!status.IsAuthenticated)
+        foreach (var token in _authSessionRegistry.ListTokens().ToList())
         {
-            await HandleInvalidatedSessionAsync(token, status.InvalidationReason);
-            return true;
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!isCurrent())
+                return false;
+            await RevalidateSessionTokenAsync(token, cancellationToken);
+            if (!isCurrent())
+                return false;
         }
-
-        if (status.ExpiresAtUtc is { } expiresAtUtc)
-            await HandleSessionExpirationWarningAsync(token, expiresAtUtc);
         return true;
     }
 

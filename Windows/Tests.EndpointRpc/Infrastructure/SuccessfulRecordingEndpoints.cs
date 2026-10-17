@@ -49,7 +49,21 @@ public sealed class SuccessfulRecordingEndpoints : IEndpoints
     public Task SetUserDeviceSyncOnAsync(Guid token, Guid deviceId, bool isSyncOn, CancellationToken ct = default) { Record(nameof(SetUserDeviceSyncOnAsync)); return Task.CompletedTask; }
     public Task UnblockUserDeviceAsync(Guid token, Guid deviceId, CancellationToken ct = default) { Record(nameof(UnblockUserDeviceAsync)); return Task.CompletedTask; }
     public Task<DeviceRemovalResultResponse> DisconnectUserDeviceAsync(Guid token, Guid deviceId, byte[] masterPassword, CancellationToken ct = default) { Record(nameof(DisconnectUserDeviceAsync)); return Task.FromResult(new DeviceRemovalResultResponse { Removed = true, Message = "Removed", ResultingMembershipEpoch = 1 }); }
-    public Task<DeviceEnrollmentCodeResponse> StartDeviceEnrollmentAsync(CancellationToken ct = default) { Record(nameof(StartDeviceEnrollmentAsync)); return Task.FromResult(new DeviceEnrollmentCodeResponse { Code = "ABCD2345", ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5) }); }
+    public Task<DeviceEnrollmentCodeResponse> StartDeviceEnrollmentAsync(CancellationToken ct = default)
+    {
+        Record(nameof(StartDeviceEnrollmentAsync));
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        return Task.FromResult(new DeviceEnrollmentCodeResponse
+        {
+            Code = "ABCD2345",
+            ExpiresAt = expiresAt,
+            InitialStatus = new DeviceEnrollmentStatusResponse
+            {
+                State = PasswordManagerLocal.Common.Contracts.Enrollment.DeviceEnrollmentState.Waiting,
+                ExpiresAt = expiresAt
+            }
+        });
+    }
     public Task<DeviceEnrollmentStatusResponse> GetDeviceEnrollmentStatusAsync(CancellationToken ct = default) { Record(nameof(GetDeviceEnrollmentStatusAsync)); return Task.FromResult(new DeviceEnrollmentStatusResponse()); }
     public Task CancelDeviceEnrollmentAsync(CancellationToken ct = default) { Record(nameof(CancelDeviceEnrollmentAsync)); return Task.CompletedTask; }
     public Task AddDeviceByCodeAsync(Guid token, string code, CancellationToken ct = default) { Record(nameof(AddDeviceByCodeAsync)); return Task.CompletedTask; }

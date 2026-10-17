@@ -7,5 +7,6 @@ public enum DeviceEnrollmentState
     Waiting,
     Completed,
     Failed,
-    Expired
+    Expired,
+    Cancelled
 }

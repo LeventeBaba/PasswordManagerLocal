@@ -17,6 +17,7 @@ public sealed class LoginViewModel : ViewModelBase
     private readonly IEndpoints _endpoints;
     private readonly Action _navigateToRegistration;
     private readonly Func<Guid, Task> _onAuthenticationSucceededAsync;
+    private readonly IFrontendDeadlineScheduler _deadlineScheduler;
     private Func<Task>? _navigateBackAsync;
 
     private string _username = string.Empty;
@@ -33,19 +34,22 @@ public sealed class LoginViewModel : ViewModelBase
     private string _deviceTransferCode = string.Empty;
     private Bitmap? _deviceTransferQrCode;
     private bool _isDeviceTransferCodeCopied;
-    private CancellationTokenSource? _deviceTransferPolling;
+    private DateTimeOffset? _enrollmentExpirationQueriedAt;
+    private IDisposable? _deviceTransferExpirationTimer;
     private IDisposable? _deviceTransferCopyFeedbackTimer;
 
     public LoginViewModel(
         UiPreferencesService uiPreferences,
         IEndpoints endpoints,
         Action navigateToRegistration,
-        Func<Guid, Task> onAuthenticationSucceededAsync)
+        Func<Guid, Task> onAuthenticationSucceededAsync,
+        IFrontendDeadlineScheduler? deadlineScheduler = null)
         : base(uiPreferences)
     {
         _endpoints = endpoints;
         _navigateToRegistration = navigateToRegistration;
         _onAuthenticationSucceededAsync = onAuthenticationSucceededAsync;
+        _deadlineScheduler = deadlineScheduler ?? new AvaloniaFrontendDeadlineScheduler();
 
         LoginCommand = Own(ReactiveCommand.CreateFromTask(LoginAsync));
         ExecutePrimaryActionCommand = Own(ReactiveCommand.CreateFromTask(ExecutePrimaryActionAsync));
@@ -346,11 +350,13 @@ public sealed class LoginViewModel : ViewModelBase
     public override void OnNavigatedFrom()
     {
         base.OnNavigatedFrom();
+        AbandonActiveDeviceTransfer();
         ResetDeviceTransferState(true);
     }
 
     public void Reset()
     {
+        AbandonActiveDeviceTransfer();
         Username = string.Empty;
         Password = string.Empty;
         RememberMe = false;
@@ -498,6 +504,8 @@ public sealed class LoginViewModel : ViewModelBase
             return;
 
         DeviceTransferStatus.Clear();
+        DateTimeOffset? expirationToSchedule = null;
+        _enrollmentExpirationQueriedAt = null;
 
         try
         {
@@ -509,11 +517,19 @@ public sealed class LoginViewModel : ViewModelBase
             }
 
             var response = await _endpoints.StartDeviceEnrollmentAsync();
+            expirationToSchedule = response.ExpiresAt;
             DeviceTransferCode = response.Code;
             IsDeviceTransferIntroVisible = false;
             IsDeviceTransferCodeVisible = true;
             IsDeviceTransferFinished = false;
-            StartStatusPolling();
+            var initialStatus = response.InitialStatus ?? new DeviceEnrollmentStatusResponse
+            {
+                State = DeviceEnrollmentState.Waiting,
+                ExpiresAt = response.ExpiresAt
+            };
+            if (!initialStatus.ExpiresAt.HasValue)
+                initialStatus.ExpiresAt = response.ExpiresAt;
+            ApplyDeviceTransferStatus(initialStatus);
         }
         catch (Exception ex)
         {
@@ -530,6 +546,8 @@ public sealed class LoginViewModel : ViewModelBase
         finally
         {
             IsBusy = false;
+            if (IsDeviceTransferCodeVisible && expirationToSchedule is { } expiresAt)
+                ScheduleEnrollmentExpiration(expiresAt);
         }
     }
 
@@ -577,58 +595,72 @@ public sealed class LoginViewModel : ViewModelBase
 
     private async Task CancelDeviceTransferAsync()
     {
-        _deviceTransferPolling?.Cancel();
-        _deviceTransferPolling?.Dispose();
-        _deviceTransferPolling = null;
+        var shouldCancel = IsDeviceTransferCodeVisible;
+        ResetDeviceTransferState(true);
+
+        if (shouldCancel)
+        {
+            try { await _endpoints.CancelDeviceEnrollmentAsync(); }
+            catch { }
+        }
+    }
+
+    private void FinishDeviceTransfer() => ResetDeviceTransferState(true);
+
+    private void AbandonActiveDeviceTransfer()
+    {
+        if (!IsDeviceTransferCodeVisible)
+            return;
+        ResetDeviceTransferState(true);
+        _ = CancelEnrollmentBestEffortAsync();
+    }
+
+    private async Task CancelEnrollmentBestEffortAsync()
+    {
+        try { await _endpoints.CancelDeviceEnrollmentAsync(); }
+        catch { }
+    }
+
+    private void ScheduleEnrollmentExpiration(DateTimeOffset expiresAt)
+    {
+        _deviceTransferExpirationTimer?.Dispose();
+        _deviceTransferExpirationTimer = null;
+        if (!CanAutomaticallyRefreshEnrollment)
+            return;
+        if (expiresAt <= DateTimeOffset.UtcNow && _enrollmentExpirationQueriedAt == expiresAt)
+            return;
+
+        IDisposable? scheduled = null;
+        scheduled = _deadlineScheduler.Schedule(expiresAt, () =>
+        {
+            if (!ReferenceEquals(_deviceTransferExpirationTimer, scheduled))
+                return;
+
+            _deviceTransferExpirationTimer = null;
+            _enrollmentExpirationQueriedAt = expiresAt;
+            _ = RefreshEnrollmentAtExpirationAsync();
+        });
+        _deviceTransferExpirationTimer = scheduled;
+    }
+
+    private async Task RefreshEnrollmentAtExpirationAsync()
+    {
+        if (!CanAutomaticallyRefreshEnrollment || IsDisposed)
+            return;
 
         try
         {
-            await _endpoints.CancelDeviceEnrollmentAsync();
+            var status = await _endpoints.GetDeviceEnrollmentStatusAsync(LifetimeToken);
+            LifetimeToken.ThrowIfCancellationRequested();
+            ApplyDeviceTransferStatus(status);
         }
-        catch
+        catch (OperationCanceledException) when (LifetimeToken.IsCancellationRequested)
         {
         }
-
-        ResetDeviceTransferState(true);
-    }
-
-    private void FinishDeviceTransfer() =>
-        ResetDeviceTransferState(true);
-
-    private void StartStatusPolling()
-    {
-        if (IsDisposed)
-            return;
-        _deviceTransferPolling?.Cancel();
-        _deviceTransferPolling?.Dispose();
-        _deviceTransferPolling = CancellationTokenSource.CreateLinkedTokenSource(LifetimeToken);
-        var ct = _deviceTransferPolling.Token;
-
-        _ = Task.Run(async () =>
+        catch (Exception ex)
         {
-            try
-            {
-                while (!ct.IsCancellationRequested)
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(2), ct);
-                    if (ct.IsCancellationRequested)
-                        return;
-
-                    var status = await _endpoints.GetDeviceEnrollmentStatusAsync(ct);
-                    await Dispatcher.UIThread.InvokeAsync(() => ApplyDeviceTransferStatus(status));
-
-                    if (status.IsFinished)
-                        return;
-                }
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (Exception ex)
-            {
-                await Dispatcher.UIThread.InvokeAsync(() => DeviceTransferStatus.ShowError(GetSafeErrorMessage(ex)));
-            }
-        }, ct);
+            DeviceTransferStatus.ShowError(GetSafeErrorMessage(ex));
+        }
     }
 
     public bool CanAutomaticallyRefreshEnrollment =>
@@ -655,11 +687,17 @@ public sealed class LoginViewModel : ViewModelBase
         if (IsDisposed)
             return;
         if (status.State == DeviceEnrollmentState.Waiting)
+        {
+            if (status.ExpiresAt is { } expiresAt)
+            {
+                ScheduleEnrollmentExpiration(expiresAt);
+            }
             return;
+        }
 
         if (status.State == DeviceEnrollmentState.Completed)
         {
-            _deviceTransferPolling?.Cancel();
+            StopEnrollmentExpirationTimer();
             IsDeviceTransferSuccess = true;
             DeviceTransferStatus.ShowSuccess(GetTranslation("Login_DeviceTransfer_SuccessMessage"));
             IsDeviceTransferCodeVisible = false;
@@ -668,9 +706,10 @@ public sealed class LoginViewModel : ViewModelBase
             return;
         }
 
-        if (status.State == DeviceEnrollmentState.Failed || status.State == DeviceEnrollmentState.Expired)
+        if (status.State is DeviceEnrollmentState.Failed or DeviceEnrollmentState.Expired or
+            DeviceEnrollmentState.Cancelled or DeviceEnrollmentState.None)
         {
-            _deviceTransferPolling?.Cancel();
+            StopEnrollmentExpirationTimer();
             IsDeviceTransferSuccess = false;
             DeviceTransferStatus.ShowError(status.ErrorCode == PasswordManagerLocal.Common.Contracts.Enrollment.DeviceEnrollmentErrorCode.Unknown
                 ? GetTranslation("Login_DeviceTransfer_ErrorMessage")
@@ -684,17 +723,22 @@ public sealed class LoginViewModel : ViewModelBase
     private void ResetDeviceTransferState(bool clearCode)
     {
         ResetDeviceTransferCodeCopiedFeedback();
-        _deviceTransferPolling?.Cancel();
-        _deviceTransferPolling?.Dispose();
-        _deviceTransferPolling = null;
+        StopEnrollmentExpirationTimer();
         IsDeviceTransferIntroVisible = false;
         IsDeviceTransferCodeVisible = false;
         IsDeviceTransferFinished = false;
         IsDeviceTransferSuccess = false;
         DeviceTransferStatus.Clear();
+        _enrollmentExpirationQueriedAt = null;
 
         if (clearCode)
             DeviceTransferCode = string.Empty;
+    }
+
+    private void StopEnrollmentExpirationTimer()
+    {
+        _deviceTransferExpirationTimer?.Dispose();
+        _deviceTransferExpirationTimer = null;
     }
 
     private void RaiseDeviceTransferViewStateChanged()

@@ -514,7 +514,9 @@ public sealed class EndpointRpcContractValidator
 
     private static bool ValidEnrollmentCode(DeviceEnrollmentCodeResponse? value) =>
         value is not null && ValidString(value.Code, 1, EndpointRpcLimits.MaximumEnrollmentCodeLength) &&
-        value.ExpiresAt.Offset == TimeSpan.Zero;
+        value.ExpiresAt.Offset == TimeSpan.Zero &&
+        ValidEnrollmentStatus(value.InitialStatus) &&
+        value.InitialStatus.ExpiresAt == value.ExpiresAt;
 
     private static bool ValidEnrollmentStatus(DeviceEnrollmentStatusResponse? value) =>
         value is not null && Enum.IsDefined(value.State) && Enum.IsDefined(value.ErrorCode) &&
