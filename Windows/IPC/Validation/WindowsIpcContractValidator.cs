@@ -1,6 +1,7 @@
 using PasswordManagerLocal.Windows.Ipc.Contracts;
 using PasswordManagerLocal.Windows.Ipc.Protocol;
 using PasswordManagerLocal.Windows.Ipc.Serialization;
+using PasswordManagerLocal.Common.Contracts.Notifications;
 
 namespace PasswordManagerLocal.Windows.Ipc.Validation;
 
@@ -59,8 +60,15 @@ public sealed class WindowsIpcContractValidator
                 Validate(item);
                 break;
             case SetBackgroundSyncEnabledRequestDto:
+                break;
+            case SetChangeNotificationUserRequestDto item:
+                Validate(item);
+                break;
             case RequestAcceptedDto:
             case UiConnectionRegistrationResponseDto:
+                break;
+            case IpcChangeNotificationDto item:
+                Validate(item);
                 break;
             case DatabaseResetResultDto item:
                 Validate(item);
@@ -142,6 +150,30 @@ public sealed class WindowsIpcContractValidator
             Validate(response.Error);
             if (response.Error.CorrelationId != response.CorrelationId)
                 throw new IpcPayloadException("The IPC response error correlation ID is invalid.");
+        }
+    }
+
+    public void Validate(SetChangeNotificationUserRequestDto request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.UserId == Guid.Empty || (!request.Enabled && request.UserId is not null))
+            throw new IpcPayloadException("The change-notification user identity is invalid.");
+    }
+
+    public void Validate(IpcChangeNotificationDto notification)
+    {
+        ArgumentNullException.ThrowIfNull(notification);
+        if (notification.RuntimeInstanceId == Guid.Empty ||
+            notification.Sequence < 0 ||
+            notification.Scope == FrontendChangeScope.None ||
+            (notification.Scope & ~FrontendChangeScope.Everything) != 0 ||
+            (notification.RequiresAuthoritativeRefresh &&
+                notification.Scope != FrontendChangeScope.Everything) ||
+            notification.OccurredAtUtc == default ||
+            notification.OccurredAtUtc.Offset != TimeSpan.Zero ||
+            (notification.Sequence == 0 && !notification.RequiresAuthoritativeRefresh))
+        {
+            throw new IpcPayloadException("The IPC change notification is invalid.");
         }
     }
 
@@ -562,7 +594,8 @@ public sealed class WindowsIpcContractValidator
             IpcCapabilities.Control |
             IpcCapabilities.UiActivation |
             IpcCapabilities.Status |
-            IpcCapabilities.EndpointRpc;
+            IpcCapabilities.EndpointRpc |
+            IpcCapabilities.ChangeNotifications;
         return (capabilities & ~known) != 0;
     }
 }

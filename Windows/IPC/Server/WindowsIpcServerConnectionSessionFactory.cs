@@ -14,6 +14,7 @@ public sealed class WindowsIpcServerConnectionSessionFactory : IWindowsIpcServer
     private readonly IUiConnectionCoordinator? _uiCoordinator;
     private readonly WindowsIpcContractValidator _contractValidator;
     private readonly IWindowsIpcHandshakeAuthorizer? _handshakeAuthorizer;
+    private readonly IWindowsIpcNotificationSessionRegistry? _notificationSessionRegistry;
 
     public WindowsIpcServerConnectionSessionFactory(
         WindowsIpcSerializer serializer,
@@ -22,7 +23,8 @@ public sealed class WindowsIpcServerConnectionSessionFactory : IWindowsIpcServer
         IEnumerable<IWindowsIpcConnectionLifecycleObserver>? observers = null,
         IUiConnectionCoordinator? uiCoordinator = null,
         WindowsIpcContractValidator? contractValidator = null,
-        IWindowsIpcHandshakeAuthorizer? handshakeAuthorizer = null)
+        IWindowsIpcHandshakeAuthorizer? handshakeAuthorizer = null,
+        IWindowsIpcNotificationSessionRegistry? notificationSessionRegistry = null)
     {
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
@@ -31,6 +33,7 @@ public sealed class WindowsIpcServerConnectionSessionFactory : IWindowsIpcServer
         _uiCoordinator = uiCoordinator;
         _contractValidator = contractValidator ?? new WindowsIpcContractValidator();
         _handshakeAuthorizer = handshakeAuthorizer;
+        _notificationSessionRegistry = notificationSessionRegistry;
     }
 
     public IWindowsIpcServerSession Create(IWindowsIpcConnection connection) =>
@@ -42,5 +45,6 @@ public sealed class WindowsIpcServerConnectionSessionFactory : IWindowsIpcServer
             _observers,
             _uiCoordinator,
             _contractValidator,
-            _handshakeAuthorizer);
+            _handshakeAuthorizer,
+            _notificationSessionRegistry);
 }

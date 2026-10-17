@@ -145,11 +145,12 @@ public sealed class IpcFrameCodec
                 "The IPC frame contains unsupported flags.");
         }
 
-        if (header.CorrelationId <= 0)
+        if ((header.MessageKind == IpcMessageKind.Notification && header.CorrelationId != 0) ||
+            (header.MessageKind != IpcMessageKind.Notification && header.CorrelationId <= 0))
         {
             throw new IpcProtocolException(
                 IpcProtocolErrorCode.InvalidCorrelationId,
-                "The IPC correlation ID must be positive.");
+                "The IPC correlation ID is invalid for this message kind.");
         }
 
         if (header.PayloadLength < 0 || header.PayloadLength > _maximumPayloadSize)

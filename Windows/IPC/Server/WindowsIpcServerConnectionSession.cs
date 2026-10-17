@@ -22,6 +22,8 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
     private readonly IReadOnlyList<IWindowsIpcConnectionLifecycleObserver> _observers;
     private readonly IUiConnectionCoordinator? _uiConnectionCoordinator;
     private readonly IWindowsIpcHandshakeAuthorizer? _handshakeAuthorizer;
+    private readonly IWindowsIpcNotificationSessionRegistry? _notificationSessionRegistry;
+    private readonly IpcChangeNotificationQueue _notificationQueue;
     private readonly SemaphoreSlim _activeRequestCapacity;
     private readonly CancellationTokenSource _shutdownSource = new();
     private readonly ConcurrentDictionary<long, ServerIpcRequestExecution> _activeRequests = new();
@@ -30,13 +32,16 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
     private readonly object _runGate = new();
     private readonly object _disposeGate = new();
     private readonly object _connectionDisposalGate = new();
+    private readonly object _notificationWriterGate = new();
     private readonly object _failureGate = new();
     private Task? _runTask;
     private Task? _disposeTask;
     private Task? _connectionDisposalTask;
+    private Task? _notificationWriterTask;
     private Exception? _terminationFailure;
     private Exception? _cleanupFailure;
     private int _connectionEnding;
+    private int _notificationTargetRegistered;
     private int _stopKind;
     private int _disposeStarted;
 
@@ -48,12 +53,14 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
         IEnumerable<IWindowsIpcConnectionLifecycleObserver>? observers = null,
         IUiConnectionCoordinator? uiConnectionCoordinator = null,
         WindowsIpcContractValidator? contractValidator = null,
-        IWindowsIpcHandshakeAuthorizer? handshakeAuthorizer = null)
+        IWindowsIpcHandshakeAuthorizer? handshakeAuthorizer = null,
+        IWindowsIpcNotificationSessionRegistry? notificationSessionRegistry = null)
     {
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _notificationQueue = new IpcChangeNotificationQueue(options.ChangeNotificationQueueCapacity);
         _contractValidator = contractValidator ?? new WindowsIpcContractValidator();
         _observers = observers?.ToArray()
             ?? Array.Empty<IWindowsIpcConnectionLifecycleObserver>();
@@ -68,6 +75,7 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
 
         _uiConnectionCoordinator = uiConnectionCoordinator;
         _handshakeAuthorizer = handshakeAuthorizer;
+        _notificationSessionRegistry = notificationSessionRegistry;
         _activeRequestCapacity = new SemaphoreSlim(
             options.MaximumActiveRequestsPerConnection,
             options.MaximumActiveRequestsPerConnection);
@@ -252,6 +260,15 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
             }
 
             AddFailure(cleanupFailures, await connectionDisposalTask);
+
+            _notificationSessionRegistry?.Unregister(_connection.ConnectionId);
+            Interlocked.Exchange(ref _notificationTargetRegistered, 0);
+            await _notificationQueue.DisposeAsync();
+            if (_notificationWriterTask is not null)
+            {
+                try { await _notificationWriterTask; }
+                catch (Exception exception) { cleanupFailures.Add(exception); }
+            }
 
             while (_backgroundFailures.TryDequeue(out var backgroundFailure))
                 primaryFailure = CombineFailures(primaryFailure, backgroundFailure);
@@ -619,6 +636,33 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
                 context,
                 execution.CancellationSource.Token);
 
+            if (response.IsSuccess && request.OperationId == IpcOperationId.RegisterUiConnection &&
+                connectionContext.PeerRole == IpcPeerRole.Ui &&
+                (connectionContext.PeerCapabilities & IpcCapabilities.ChangeNotifications) != 0 &&
+                (_options.Capabilities & IpcCapabilities.ChangeNotifications) != 0 &&
+                _uiConnectionCoordinator?.RegisteredConnectionId == connectionContext.ConnectionId &&
+                _notificationSessionRegistry?.TryRegister(connectionContext.ConnectionId, _notificationQueue) == true)
+            {
+                Interlocked.Exchange(ref _notificationTargetRegistered, 1);
+                EnsureNotificationWriterStarted(connectionCancellationToken);
+            }
+            else if (response.IsSuccess && request.OperationId == IpcOperationId.SetChangeNotificationUser &&
+                connectionContext.PeerRole == IpcPeerRole.Ui &&
+                (connectionContext.PeerCapabilities & IpcCapabilities.ChangeNotifications) != 0 &&
+                (_options.Capabilities & IpcCapabilities.ChangeNotifications) != 0 &&
+                _uiConnectionCoordinator?.RegisteredConnectionId == connectionContext.ConnectionId &&
+                _notificationSessionRegistry?.HasTarget(connectionContext.ConnectionId) == true)
+            {
+                Interlocked.Exchange(ref _notificationTargetRegistered, 1);
+                EnsureNotificationWriterStarted(connectionCancellationToken);
+            }
+            else if (response.IsSuccess && request.OperationId == IpcOperationId.UnregisterUiConnection)
+            {
+                Interlocked.Exchange(ref _notificationTargetRegistered, 0);
+                _notificationSessionRegistry?.Unregister(connectionContext.ConnectionId);
+                _notificationQueue.ClearPending();
+            }
+
             if (Volatile.Read(ref _connectionEnding) == 0)
                 await SendResponseAsync(response, connectionCancellationToken);
         }
@@ -832,6 +876,65 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
                     payload.Length),
                 payload),
             cancellationToken);
+    }
+
+    private async Task RunNotificationWriterAsync(CancellationToken connectionCancellationToken)
+    {
+        try
+        {
+            await foreach (var notification in _notificationQueue.ReadAllAsync(connectionCancellationToken))
+            {
+                _contractValidator.Validate(notification);
+                var payload = _serializer.Serialize(
+                    notification,
+                    WindowsIpcJsonContext.Default.IpcChangeNotificationDto);
+                var frame = new IpcFrame(
+                    new IpcFrameHeader(
+                        WindowsIpcProtocol.CurrentVersion,
+                        IpcMessageKind.Notification,
+                        IpcFrameFlags.None,
+                        CorrelationId: 0,
+                        PayloadLength: payload.Length),
+                    payload);
+                var result = await _connection.TryWriteFrameAsync(
+                    frame,
+                    () => Volatile.Read(ref _connectionEnding) == 0 &&
+                        Volatile.Read(ref _notificationTargetRegistered) != 0 &&
+                        _notificationSessionRegistry?.IsEnabled(_connection.ConnectionId) == true,
+                    CancellationToken.None,
+                    connectionCancellationToken);
+                if (result == IpcFrameWriteResult.SkippedBeforeTransmission)
+                {
+                    if (Volatile.Read(ref _connectionEnding) != 0 ||
+                        Volatile.Read(ref _notificationTargetRegistered) == 0)
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) when (connectionCancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            // Do not log or include notification contents in transport failure diagnostics.
+            _backgroundFailures.Enqueue(new InvalidOperationException(
+                "The IPC change notification could not be delivered.",
+                exception));
+            Interlocked.CompareExchange(ref _stopKind, StopKindRequestFailure, StopKindNone);
+            _ = CaptureCancellationFailure(_shutdownSource);
+            _ = ObserveConnectionDisposalFailureAsync();
+        }
+    }
+
+    private void EnsureNotificationWriterStarted(CancellationToken connectionCancellationToken)
+    {
+        lock (_notificationWriterGate)
+        {
+            if (_notificationWriterTask is null || _notificationWriterTask.IsCompleted)
+                _notificationWriterTask = RunNotificationWriterAsync(connectionCancellationToken);
+        }
     }
 
     private IpcResponseEnvelope CreateTransportResponse(IpcResponseEnvelope response)

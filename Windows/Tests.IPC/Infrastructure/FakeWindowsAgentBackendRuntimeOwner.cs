@@ -1,4 +1,5 @@
 using PasswordManagerLocal.Common.Backend.Hosting;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
@@ -9,6 +10,7 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Infrastructure;
 internal sealed class FakeWindowsAgentBackendRuntimeOwner : IWindowsAgentBackendRuntimeOwner
 {
     public WindowsAgentBackendOwnerSnapshot Snapshot { get; set; } = CreateSnapshot();
+    public IBackendChangeSource? ChangeSource { get; private set; }
     public Exception? StartFailure { get; set; }
     public Exception? StopFailure { get; set; }
     public Exception? ResetFailure { get; set; }
@@ -127,6 +129,12 @@ internal sealed class FakeWindowsAgentBackendRuntimeOwner : IWindowsAgentBackend
     public void PublishSnapshot(WindowsAgentBackendOwnerSnapshot snapshot)
     {
         Snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void SetChangeSource(IBackendChangeSource? source)
+    {
+        ChangeSource = source;
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 

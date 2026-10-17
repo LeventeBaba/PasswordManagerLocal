@@ -1,4 +1,5 @@
 using PasswordManagerLocal.Windows.Ipc.Protocol;
+using PasswordManagerLocal.Windows.Ipc.Transport;
 
 namespace PasswordManagerLocal.Windows.Ipc.Server;
 
@@ -13,7 +14,8 @@ public sealed class WindowsIpcServerOptions
         IpcCapabilities capabilities,
         int maximumActiveRequestsPerConnection = DefaultMaximumActiveRequestsPerConnection,
         bool managesUiRegistration = true,
-        IpcCapabilities requiredClientCapabilities = IpcCapabilities.None)
+        IpcCapabilities requiredClientCapabilities = IpcCapabilities.None,
+        int changeNotificationQueueCapacity = IpcChangeNotificationQueue.DefaultCapacity)
     {
         if (!Enum.IsDefined(serverRole) || serverRole == IpcPeerRole.TestClient)
             throw new ArgumentOutOfRangeException(nameof(serverRole));
@@ -32,6 +34,8 @@ public sealed class WindowsIpcServerOptions
                 maximumActiveRequestsPerConnection,
                 $"The IPC active-request limit must be between 1 and {MaximumConfigurableActiveRequestsPerConnection}.");
         }
+        if (changeNotificationQueueCapacity <= 0 || changeNotificationQueueCapacity > 4096)
+            throw new ArgumentOutOfRangeException(nameof(changeNotificationQueueCapacity));
 
         ArgumentNullException.ThrowIfNull(acceptedClientRoles);
         var roles = acceptedClientRoles.ToHashSet();
@@ -44,6 +48,7 @@ public sealed class WindowsIpcServerOptions
         MaximumActiveRequestsPerConnection = maximumActiveRequestsPerConnection;
         ManagesUiRegistration = managesUiRegistration;
         RequiredClientCapabilities = requiredClientCapabilities;
+        ChangeNotificationQueueCapacity = changeNotificationQueueCapacity;
     }
 
     public IpcPeerRole ServerRole { get; }
@@ -52,6 +57,7 @@ public sealed class WindowsIpcServerOptions
     public int MaximumActiveRequestsPerConnection { get; }
     public bool ManagesUiRegistration { get; }
     public IpcCapabilities RequiredClientCapabilities { get; }
+    public int ChangeNotificationQueueCapacity { get; }
 
     private static bool HasUnknownCapabilities(IpcCapabilities capabilities)
     {
@@ -59,7 +65,8 @@ public sealed class WindowsIpcServerOptions
             IpcCapabilities.Control |
             IpcCapabilities.UiActivation |
             IpcCapabilities.Status |
-            IpcCapabilities.EndpointRpc;
+            IpcCapabilities.EndpointRpc |
+            IpcCapabilities.ChangeNotifications;
         return (capabilities & ~known) != 0;
     }
 }

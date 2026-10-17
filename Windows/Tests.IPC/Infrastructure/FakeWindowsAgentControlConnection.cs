@@ -1,5 +1,7 @@
 using PasswordManagerLocal.Windows.Frontend.AgentConnection;
 using PasswordManagerLocal.Windows.Ipc.Contracts;
+using PasswordManagerLocal.Common.Contracts.Runtime;
+using System.Runtime.CompilerServices;
 
 namespace PasswordManagerLocal.Windows.Tests.IPC.Infrastructure;
 
@@ -26,6 +28,15 @@ internal sealed class FakeWindowsAgentControlConnection : IWindowsAgentControlCo
     public int ReloadApplicationPreferencesCount { get; private set; }
     public bool ReloadApplicationPreferencesResult { get; set; } = true;
     public Exception? ReloadApplicationPreferencesFailure { get; set; }
+
+    public async IAsyncEnumerable<FrontendChangeStreamEvent> ReadChangeStreamAsync(
+        Guid? userId = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await Task.Yield();
+        yield break;
+    }
 
     public Task<bool> EnsureConnectedAsync(CancellationToken cancellationToken = default)
     {

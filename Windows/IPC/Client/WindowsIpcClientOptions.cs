@@ -68,7 +68,8 @@ public sealed class WindowsIpcClientOptions
             IpcCapabilities.Control |
             IpcCapabilities.UiActivation |
             IpcCapabilities.Status |
-            IpcCapabilities.EndpointRpc;
+            IpcCapabilities.EndpointRpc |
+            IpcCapabilities.ChangeNotifications;
         return (capabilities & ~known) != 0;
     }
 }

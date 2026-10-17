@@ -1,4 +1,5 @@
 using PasswordManagerLocal.Windows.Ipc.Contracts;
+using PasswordManagerLocal.Common.Contracts.Runtime;
 
 namespace PasswordManagerLocal.Windows.Frontend.AgentConnection;
 
@@ -16,4 +17,10 @@ public interface IWindowsAgentRegisteredConnection : IAsyncDisposable
         CancellationToken cancellationToken = default);
     Task<DatabaseResetResultDto> ResetDatabaseAsync(CancellationToken cancellationToken = default);
     Task<RequestAcceptedDto> ReloadApplicationPreferencesAsync(CancellationToken cancellationToken = default);
+    Task<RequestAcceptedDto> SetChangeNotificationUserAsync(
+        Guid? userId,
+        bool enabled,
+        CancellationToken cancellationToken = default);
+    IAsyncEnumerable<IpcChangeNotificationDto> ReadChangeNotificationsAsync(
+        CancellationToken cancellationToken = default);
 }

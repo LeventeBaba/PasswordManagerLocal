@@ -23,6 +23,7 @@ public sealed class WindowsIpcClient : IAsyncDisposable
     private readonly CancellationToken _shutdownToken;
     private readonly ConcurrentDictionary<long, PendingIpcRequest> _pendingRequests = new();
     private readonly ConcurrentDictionary<Task, byte> _backgroundWrites = new();
+    private readonly IpcChangeNotificationQueue _changeNotifications = new();
     private readonly object _pendingRegistrationGate = new();
     private readonly object _connectionDisposalGate = new();
     private readonly object _disposeGate = new();
@@ -84,6 +85,12 @@ public sealed class WindowsIpcClient : IAsyncDisposable
     public int PendingRequestCount => _pendingRequests.Count;
     public Task Completion => Volatile.Read(ref _readLoopTask) ?? Task.CompletedTask;
     public int? VerifiedServerProcessId => _connection.VerifiedPeerProcessId;
+
+    public IAsyncEnumerable<IpcChangeNotificationDto> ReadChangeNotificationsAsync(
+        CancellationToken cancellationToken = default) =>
+        _changeNotifications.ReadAllAsync(cancellationToken);
+
+    public void ClearPendingChangeNotifications() => _changeNotifications.ClearPending();
 
     public Exception? TerminationFailure
     {
@@ -377,6 +384,8 @@ public sealed class WindowsIpcClient : IAsyncDisposable
         if (disposalFailure is not null)
             RecordCleanupFailure(disposalFailure);
 
+        await _changeNotifications.DisposeAsync();
+
         _shutdownSource.Dispose();
         GC.SuppressFinalize(this);
 
@@ -400,6 +409,34 @@ public sealed class WindowsIpcClient : IAsyncDisposable
                 }
 
                 ValidateFrame(frame);
+                if (frame.Header.MessageKind == IpcMessageKind.Notification)
+                {
+                    if ((ServerCapabilities & IpcCapabilities.ChangeNotifications) == 0)
+                    {
+                        throw new IpcProtocolException(
+                            IpcProtocolErrorCode.UnexpectedMessageKind,
+                            "The IPC server sent an unsupported notification frame.");
+                    }
+
+                    IpcChangeNotificationDto notification;
+                    try
+                    {
+                        notification = _serializer.Deserialize(
+                            frame.Payload,
+                            WindowsIpcJsonContext.Default.IpcChangeNotificationDto);
+                        _contractValidator.Validate(notification);
+                    }
+                    catch (IpcPayloadException)
+                    {
+                        throw new IpcProtocolException(
+                            IpcProtocolErrorCode.InvalidEnvelope,
+                            "The IPC notification frame is invalid.");
+                    }
+
+                    _changeNotifications.TryEnqueue(notification);
+                    continue;
+                }
+
                 if (frame.Header.MessageKind != IpcMessageKind.Response)
                 {
                     throw new IpcProtocolException(
@@ -441,6 +478,7 @@ public sealed class WindowsIpcClient : IAsyncDisposable
         if (disposalFailure is not null)
             RecordCleanupFailure(disposalFailure);
         await AwaitBackgroundWritesAsync();
+        await _changeNotifications.DisposeAsync();
 
         var terminalFailure = CombineFailures(failure, cancellationFailure);
         terminalFailure = CombineFailures(terminalFailure, disposalFailure);
@@ -653,7 +691,9 @@ public sealed class WindowsIpcClient : IAsyncDisposable
         if (frame.Header.ProtocolVersion != WindowsIpcProtocol.CurrentVersion ||
             !Enum.IsDefined(frame.Header.MessageKind) ||
             frame.Header.Flags != IpcFrameFlags.None ||
-            frame.Header.CorrelationId <= 0 ||
+            (frame.Header.MessageKind == IpcMessageKind.Notification
+                ? frame.Header.CorrelationId != 0
+                : frame.Header.CorrelationId <= 0) ||
             frame.Header.PayloadLength != frame.Payload.Length ||
             frame.Payload.Length > WindowsIpcProtocol.MaximumPayloadSize)
         {

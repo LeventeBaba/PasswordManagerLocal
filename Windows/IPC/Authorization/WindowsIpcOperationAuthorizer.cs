@@ -33,6 +33,7 @@ public sealed class WindowsIpcOperationAuthorizer : IWindowsIpcOperationAuthoriz
             IpcOperationId.ResetDatabase or
             IpcOperationId.SetBackgroundSyncEnabled or
             IpcOperationId.ReloadApplicationPreferences => AuthorizeRegisteredUi(context),
+            IpcOperationId.SetChangeNotificationUser => AuthorizeChangeNotificationUser(context),
             _ => IpcAuthorizationDecision.Denied(
                 IpcErrorCode.UnauthorizedOperation,
                 IpcErrorCategory.Validation,
@@ -61,5 +62,18 @@ public sealed class WindowsIpcOperationAuthorizer : IWindowsIpcOperationAuthoriz
         }
 
         return IpcAuthorizationDecision.Allowed;
+    }
+
+    private IpcAuthorizationDecision AuthorizeChangeNotificationUser(IpcRequestContext context)
+    {
+        if ((context.Connection.PeerCapabilities & IpcCapabilities.ChangeNotifications) == 0)
+        {
+            return IpcAuthorizationDecision.Denied(
+                IpcErrorCode.UnauthorizedOperation,
+                IpcErrorCategory.Validation,
+                "The IPC connection did not negotiate change notifications.");
+        }
+
+        return AuthorizeRegisteredUi(context);
     }
 }

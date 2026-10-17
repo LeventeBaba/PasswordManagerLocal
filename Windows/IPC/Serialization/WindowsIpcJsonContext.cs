@@ -29,6 +29,8 @@ namespace PasswordManagerLocal.Windows.Ipc.Serialization;
 [JsonSerializable(typeof(AgentExitRequestDto))]
 [JsonSerializable(typeof(RequestAcceptedDto))]
 [JsonSerializable(typeof(DatabaseResetResultDto))]
+[JsonSerializable(typeof(IpcChangeNotificationDto))]
+[JsonSerializable(typeof(SetChangeNotificationUserRequestDto))]
 public partial class WindowsIpcJsonContext : JsonSerializerContext
 {
 }

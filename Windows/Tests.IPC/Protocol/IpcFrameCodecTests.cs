@@ -13,16 +13,18 @@ public sealed class IpcFrameCodecTests
             ?? throw new InvalidOperationException($"Missing IPC protocol constant: {fieldName}."));
 
     [TestMethod]
-    public void ProtocolIdentifiersRemainStableForVersionThree()
+    public void ProtocolIdentifiersRemainStableForVersionFour()
     {
-        Assert.AreEqual(3, ReadPublishedProtocolConstant(nameof(WindowsIpcProtocol.CurrentVersion)));
+        Assert.AreEqual(4, ReadPublishedProtocolConstant(nameof(WindowsIpcProtocol.CurrentVersion)));
         Assert.AreEqual(28, ReadPublishedProtocolConstant(nameof(WindowsIpcProtocol.HeaderSize)));
         Assert.AreEqual(1, (int)IpcMessageKind.HandshakeRequest);
         Assert.AreEqual(5, (int)IpcMessageKind.RequestCancellation);
+        Assert.AreEqual(6, (int)IpcMessageKind.Notification);
         Assert.AreEqual(1, (int)IpcOperationId.Ping);
         Assert.AreEqual(24, (int)IpcOperationId.RequestAgentExit);
         Assert.AreEqual(31, (int)IpcOperationId.SetBackgroundSyncEnabled);
         Assert.AreEqual(32, (int)IpcOperationId.ReloadApplicationPreferences);
+        Assert.AreEqual(42, (int)IpcOperationId.SetChangeNotificationUser);
     }
 
     [TestMethod]
@@ -86,6 +88,56 @@ public sealed class IpcFrameCodecTests
         });
 
         Assert.AreEqual(IpcProtocolErrorCode.UnsupportedVersion, exception.ErrorCode);
+    }
+
+    [TestMethod]
+    public async Task PreviousProtocolVersionIsRejected()
+    {
+        var bytes = CreateHeaderBytes(
+            WindowsIpcProtocol.CurrentVersion - 1,
+            IpcMessageKind.Request,
+            IpcFrameFlags.None,
+            1,
+            0);
+
+        var exception = await Assert.ThrowsAsync<IpcProtocolException>(async () =>
+        {
+            await using var stream = new MemoryStream(bytes);
+            await new IpcFrameCodec().ReadAsync(stream);
+        });
+
+        Assert.AreEqual(IpcProtocolErrorCode.UnsupportedVersion, exception.ErrorCode);
+    }
+
+    [TestMethod]
+    public async Task NotificationFrameAllowsOnlyTheReservedZeroCorrelationId()
+    {
+        var codec = new IpcFrameCodec();
+        var payload = new byte[] { 0x7b, 0x7d };
+        var frame = new IpcFrame(
+            new IpcFrameHeader(
+                WindowsIpcProtocol.CurrentVersion,
+                IpcMessageKind.Notification,
+                IpcFrameFlags.None,
+                0,
+                payload.Length),
+            payload);
+        await using var stream = new MemoryStream();
+
+        await codec.WriteAsync(stream, frame);
+        stream.Position = 0;
+        var restored = await codec.ReadAsync(stream);
+
+        Assert.AreEqual(frame.Header, restored?.Header);
+        CollectionAssert.AreEqual(payload, restored?.Payload);
+        await AssertHeaderFailureAsync(
+            CreateHeaderBytes(
+                WindowsIpcProtocol.CurrentVersion,
+                IpcMessageKind.Notification,
+                IpcFrameFlags.None,
+                1,
+                0),
+            IpcProtocolErrorCode.InvalidCorrelationId);
     }
 
     [TestMethod]

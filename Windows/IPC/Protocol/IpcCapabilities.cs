@@ -7,5 +7,6 @@ public enum IpcCapabilities
     Control = 1,
     UiActivation = 2,
     Status = 4,
-    EndpointRpc = 8
+    EndpointRpc = 8,
+    ChangeNotifications = 16
 }

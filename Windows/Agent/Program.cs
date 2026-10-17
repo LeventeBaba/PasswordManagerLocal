@@ -3,6 +3,7 @@ using PasswordManagerLocal.Windows.Agent.Background;
 using PasswordManagerLocal.Windows.Agent.Lifecycle;
 using PasswordManagerLocal.Windows.Agent.Localization;
 using PasswordManagerLocal.Windows.Agent.Native;
+using PasswordManagerLocal.Windows.Agent.Notifications;
 using PasswordManagerLocal.Windows.Agent.Preferences;
 using PasswordManagerLocal.Common.Backend.Hosting;
 using PasswordManagerLocal.Common.Contracts.Preferences;
@@ -108,6 +109,7 @@ internal sealed class Program
         WindowsAgentHost? host = null;
         WindowsNativeApplicationLoop? applicationLoop = null;
         AgentApplicationPreferencesReloadCoordinator? preferencesReloadCoordinator = null;
+        WindowsAgentChangeNotificationAdapter? changeNotificationAdapter = null;
         var exitCode = WindowsAgentExitCode.ShellFailure;
 
         void ShowShutdownFailure()
@@ -129,6 +131,7 @@ internal sealed class Program
             var stateStore = new WindowsAgentStateStore();
             var admissionGate = new WindowsAgentAdmissionGate();
             var uiCoordinator = new SingleUiConnectionCoordinator();
+            var notificationSessions = new WindowsIpcNotificationSessionRegistry();
             var shutdownCoordinator = new WindowsAgentShutdownCoordinator();
             var activationClient = new WindowsUiActivationClient(
                 names.UiActivationPipeName,
@@ -145,6 +148,10 @@ internal sealed class Program
                 localizer!);
 
             var backendOwner = new WindowsAgentBackendRuntimeOwner();
+            changeNotificationAdapter = new WindowsAgentChangeNotificationAdapter(
+                backendOwner,
+                uiCoordinator,
+                notificationSessions);
             var lifecycleTransitions = new WindowsAgentLifecycleTransitionCoordinator();
             var settingsStore = new FileBackgroundSyncSettingsStore(applicationDataDirectory);
             var processPath = Environment.ProcessPath;
@@ -258,6 +265,11 @@ internal sealed class Program
                     admissionGate,
                     new ReloadApplicationPreferencesWindowsIpcRequestHandler(
                         preferencesReloadCoordinator),
+                    localizer!),
+                new WindowsAgentAdmissionRequestHandler(
+                    admissionGate,
+                    new SetChangeNotificationUserWindowsIpcRequestHandler(
+                        changeNotificationAdapter),
                     localizer!)
             };
             var dispatcher = new WindowsIpcRequestDispatcher(
@@ -272,13 +284,17 @@ internal sealed class Program
             var serverOptions = new WindowsIpcServerOptions(
                 IpcPeerRole.Agent,
                 new[] { IpcPeerRole.Ui, IpcPeerRole.TestClient },
-                IpcCapabilities.Control | IpcCapabilities.Status | IpcCapabilities.UiActivation);
+                IpcCapabilities.Control |
+                IpcCapabilities.Status |
+                IpcCapabilities.UiActivation |
+                IpcCapabilities.ChangeNotifications);
             var sessionFactory = new WindowsIpcServerConnectionSessionFactory(
                 serializer,
                 dispatcher,
                 serverOptions,
                 uiCoordinator: uiCoordinator,
-                contractValidator: validator);
+                contractValidator: validator,
+                notificationSessionRegistry: notificationSessions);
             var controlServer = new WindowsIpcServerHost(
                 new WindowsNamedPipeServer(names.ControlPipeName, new IpcFrameCodec()),
                 sessionFactory,
@@ -361,6 +377,19 @@ internal sealed class Program
                 catch (Exception exception)
                 {
                     Trace.TraceError($"The Agent process lock could not be released: {exception.GetType().Name}");
+                    exitCode = WindowsAgentExitCode.ShellFailure;
+                }
+            }
+
+            if (changeNotificationAdapter is not null)
+            {
+                try
+                {
+                    changeNotificationAdapter.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                }
+                catch (Exception exception)
+                {
+                    Trace.TraceError($"The Agent change notification adapter could not stop: {exception.GetType().Name}");
                     exitCode = WindowsAgentExitCode.ShellFailure;
                 }
             }
