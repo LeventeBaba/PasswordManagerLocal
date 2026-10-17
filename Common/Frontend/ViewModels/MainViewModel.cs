@@ -1,3 +1,4 @@
+using PasswordManagerLocal.Common.Contracts.Notifications;
 using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 using Avalonia.Media;
@@ -22,7 +23,7 @@ using ReactiveUI.Primitives;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels;
 
-public sealed class MainViewModel : ViewModelBase
+public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 {
     private static readonly TimeSpan SessionRenewalWarningLeadTime = TimeSpan.FromMinutes(1);
     private static readonly IBrush LightNavigationFrameBrush = Brush.Parse("#FF1F5FBF");
@@ -104,6 +105,7 @@ public sealed class MainViewModel : ViewModelBase
         _deviceAppPreferences = deviceAppPreferences ?? throw new ArgumentNullException(nameof(deviceAppPreferences));
 
         LoginViewModel = new LoginViewModel(uiPreferences, _endpoints, NavigateToRegistration, OnAuthenticationSucceededAsync);
+        LoginViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
 
         _currentPageViewModel = LoginViewModel;
         _currentPageContentViewModel = new MainPageContentViewModel(LoginViewModel);
@@ -113,6 +115,7 @@ public sealed class MainViewModel : ViewModelBase
             uiPreferences,
             _deviceAppPreferences,
             NavigateBackFromSettings);
+        SettingsViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
 
         ShowSettingsCommand = Own(ReactiveCommand.Create(NavigateToSettings));
         ShowPasswordsCommand = Own(ReactiveCommand.Create(NavigateToPasswords));
@@ -149,6 +152,16 @@ public sealed class MainViewModel : ViewModelBase
         _passwordsViewModel?.Dispose();
         _profileViewModel?.Dispose();
         _changeProfileViewModel?.Dispose();
+        LoginViewModel.PropertyChanged -= HandleRefreshPageViewModelPropertyChanged;
+        SettingsViewModel.PropertyChanged -= HandleRefreshPageViewModelPropertyChanged;
+        if (_registrationViewModel is not null)
+            _registrationViewModel.PropertyChanged -= HandleRefreshPageViewModelPropertyChanged;
+        if (_passwordsViewModel is not null)
+            _passwordsViewModel.PropertyChanged -= HandleRefreshPageViewModelPropertyChanged;
+        if (_profileViewModel is not null)
+            _profileViewModel.PropertyChanged -= HandleRefreshPageViewModelPropertyChanged;
+        if (_changeProfileViewModel is not null)
+            _changeProfileViewModel.PropertyChanged -= HandleRefreshPageViewModelPropertyChanged;
         _registrationViewModel = null;
         _passwordsViewModel = null;
         _profileViewModel = null;
@@ -167,6 +180,10 @@ public sealed class MainViewModel : ViewModelBase
 
     public LoginViewModel LoginViewModel { get; }
 
+    public event EventHandler? RefreshNavigationChanged;
+    public event EventHandler? RefreshPageStateChanged;
+    public event EventHandler? RefreshAuthenticationChanged;
+
     public SettingsViewModel SettingsViewModel { get; }
 
     public RegistrationViewModel RegistrationViewModel
@@ -180,6 +197,7 @@ public sealed class MainViewModel : ViewModelBase
                     _endpoints,
                     NavigateToLogin,
                     OnAuthenticationSucceededAsync);
+                _registrationViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
                 _registrationViewModel.SetBackendInitialized(_isBackendInitialized);
             }
 
@@ -187,24 +205,54 @@ public sealed class MainViewModel : ViewModelBase
         }
     }
 
-    public PasswordsViewModel PasswordsViewModel =>
-        _passwordsViewModel ??= new PasswordsViewModel(UiPreferences, _endpoints, _authSessionRegistry);
+    public PasswordsViewModel PasswordsViewModel
+    {
+        get
+        {
+            if (_passwordsViewModel is null)
+            {
+                _passwordsViewModel = new PasswordsViewModel(UiPreferences, _endpoints, _authSessionRegistry);
+                _passwordsViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
+            }
+            return _passwordsViewModel;
+        }
+    }
 
-    public ProfileViewModel ProfileViewModel =>
-        _profileViewModel ??= new ProfileViewModel(
-            UiPreferences,
-            _endpoints,
-            RefreshProfileDataAsync,
-            HandleAccountDeletedAsync);
+    public ProfileViewModel ProfileViewModel
+    {
+        get
+        {
+            if (_profileViewModel is null)
+            {
+                _profileViewModel = new ProfileViewModel(
+                    UiPreferences,
+                    _endpoints,
+                    RefreshProfileDataAsync,
+                    HandleAccountDeletedAsync);
+                _profileViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
+            }
+            return _profileViewModel;
+        }
+    }
 
-    public ChangeProfileViewModel ChangeProfileViewModel =>
-        _changeProfileViewModel ??= new ChangeProfileViewModel(
-            UiPreferences,
-            _endpoints,
-            _authSessionRegistry,
-            NavigateBackFromChangeProfileAsync,
-            NavigateToLoginAnotherProfile,
-            SwitchToProfileAsync);
+    public ChangeProfileViewModel ChangeProfileViewModel
+    {
+        get
+        {
+            if (_changeProfileViewModel is null)
+            {
+                _changeProfileViewModel = new ChangeProfileViewModel(
+                    UiPreferences,
+                    _endpoints,
+                    _authSessionRegistry,
+                    NavigateBackFromChangeProfileAsync,
+                    NavigateToLoginAnotherProfile,
+                    SwitchToProfileAsync);
+                _changeProfileViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
+            }
+            return _changeProfileViewModel;
+        }
+    }
 
     public ViewModelBase CurrentPageViewModel
     {
@@ -225,6 +273,7 @@ public sealed class MainViewModel : ViewModelBase
             CurrentPageContentViewModel = new MainPageContentViewModel(value);
             RaiseNavigationStateProperties();
             RaiseHeaderSubtitleProperties();
+            RefreshNavigationChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
@@ -236,7 +285,10 @@ public sealed class MainViewModel : ViewModelBase
             var changed = _isAuthenticated != value;
             this.RaiseAndSetIfChanged(ref _isAuthenticated, value);
             if (changed)
+            {
                 this.RaisePropertyChanged(nameof(CurrentUserId));
+                RefreshAuthenticationChanged?.Invoke(this, EventArgs.Empty);
+            }
             this.RaisePropertyChanged(nameof(IsAnonymous));
             RaiseHeaderSubtitleProperties();
             this.RaisePropertyChanged(nameof(IsDesktopContentVisible));
@@ -1665,8 +1717,11 @@ public sealed class MainViewModel : ViewModelBase
         string? message = null,
         OperationMessageKind messageKind = OperationMessageKind.Success)
     {
+        var previousToken = _authSessionRegistry.CurrentUserToken;
         var previousUserId = CurrentUserId;
         _authSessionRegistry.CurrentUserToken = token;
+        if (previousToken != token)
+            NotifyRefreshAuthenticationChanged();
         SetSessionProfile(token, profile);
         if (IsAuthenticated && previousUserId != CurrentUserId)
             this.RaisePropertyChanged(nameof(CurrentUserId));
@@ -1851,6 +1906,7 @@ public sealed class MainViewModel : ViewModelBase
         _isStartupProfileSelection = false;
         ConfigureAuthBackNavigation();
         IsAuthenticated = false;
+        NotifyRefreshAuthenticationChanged();
         CurrentUserDisplayName = string.Empty;
         CurrentUserSubtitle = string.Empty;
         ApplyRememberMeFromSession(false);
@@ -2048,6 +2104,7 @@ public sealed class MainViewModel : ViewModelBase
             _authSessionRegistry.CurrentUserToken = newToken;
             PasswordsViewModel.SetSessionToken(newToken);
             ProfileViewModel.SetSessionToken(newToken);
+            NotifyRefreshAuthenticationChanged();
         }
 
         if (_sessionRenewalPromptShownForToken == oldToken)
@@ -2204,7 +2261,10 @@ public sealed class MainViewModel : ViewModelBase
             ? _authSessionRegistry.GetSession(token)?.UserId
             : null;
         if (isSelectedToken && IsAuthenticated && previousUserId != currentUserId)
+        {
             this.RaisePropertyChanged(nameof(CurrentUserId));
+            NotifyRefreshAuthenticationChanged();
+        }
     }
 
 
@@ -2367,4 +2427,204 @@ public sealed class MainViewModel : ViewModelBase
         return profile.Email;
     }
 
+    bool IFrontendRefreshTarget.IsActive => !IsDisposed && !PlatformServices.LifetimeToken.IsCancellationRequested;
+
+    Guid IFrontendRefreshTarget.CurrentAuthenticationToken => _authSessionRegistry.CurrentUserToken;
+
+    Guid? IFrontendRefreshTarget.CurrentUserId => CurrentUserId;
+
+    IReadOnlyCollection<FrontendRefreshPage> IFrontendRefreshTarget.GetVisiblePages() => GetVisiblePages();
+
+    public IReadOnlyCollection<FrontendRefreshPage> GetVisiblePages()
+    {
+        if (IsDisposed)
+            return Array.Empty<FrontendRefreshPage>();
+
+        if (ReferenceEquals(CurrentPageViewModel, SettingsViewModel))
+            return [FrontendRefreshPage.BackgroundSync];
+
+        if (_changeProfileViewModel is not null && ReferenceEquals(CurrentPageViewModel, _changeProfileViewModel))
+            return [FrontendRefreshPage.AuthenticationSessions];
+
+        if (ReferenceEquals(CurrentPageViewModel, LoginViewModel))
+        {
+            return LoginViewModel.CanAutomaticallyRefreshEnrollment
+                ? [FrontendRefreshPage.Enrollment]
+                : Array.Empty<FrontendRefreshPage>();
+        }
+
+        if (_passwordsViewModel is not null && ReferenceEquals(CurrentPageViewModel, _passwordsViewModel))
+            return [FrontendRefreshPage.Passwords];
+
+        if (_profileViewModel is not null && ReferenceEquals(CurrentPageViewModel, _profileViewModel))
+        {
+            return ProfileViewModel.IsDevicesMainPage
+                ? [FrontendRefreshPage.Devices, FrontendRefreshPage.LocalDevice]
+                : [FrontendRefreshPage.UserProfile];
+        }
+
+        return Array.Empty<FrontendRefreshPage>();
+    }
+
+    bool IFrontendRefreshTarget.CanRefreshPage(FrontendRefreshPage page) => CanRefreshPage(page);
+
+    public bool CanRefreshPage(FrontendRefreshPage page) => page switch
+    {
+        FrontendRefreshPage.Passwords =>
+            IsAuthenticated && _passwordsViewModel is not null && _passwordsViewModel.CanAutomaticallyRefresh,
+        FrontendRefreshPage.UserProfile =>
+            IsAuthenticated && _profileViewModel is not null &&
+            _profileViewModel.CanAutomaticallyRefreshUserProfile && !_isSettingRememberMe,
+        FrontendRefreshPage.Devices =>
+            IsAuthenticated && _profileViewModel is not null && _profileViewModel.CanAutomaticallyRefreshDevices,
+        FrontendRefreshPage.LocalDevice =>
+            IsAuthenticated && _profileViewModel is not null && _profileViewModel.CanAutomaticallyRefreshDevices,
+        FrontendRefreshPage.Enrollment =>
+            ReferenceEquals(CurrentPageViewModel, LoginViewModel) && LoginViewModel.CanAutomaticallyRefreshEnrollment,
+        FrontendRefreshPage.AuthenticationSessions =>
+            _changeProfileViewModel is not null &&
+            ReferenceEquals(CurrentPageViewModel, _changeProfileViewModel) &&
+            !_changeProfileViewModel.IsStartupSelection && !_changeProfileViewModel.IsBusy,
+        FrontendRefreshPage.BackgroundSync =>
+            ReferenceEquals(CurrentPageViewModel, SettingsViewModel) &&
+            SettingsViewModel.CanAutomaticallyRefreshBackgroundSync,
+        _ => false
+    };
+
+    Task<bool> IFrontendRefreshTarget.RefreshPageAsync(
+        FrontendRefreshPage page,
+        FrontendChangeScope scopes,
+        Func<bool> isCurrent,
+        CancellationToken cancellationToken) =>
+        RefreshPageAutomaticallyAsync(page, scopes, isCurrent, cancellationToken);
+
+    Task<bool> IFrontendRefreshTarget.RevalidateCurrentSessionAsync(
+        Func<bool> isCurrent,
+        CancellationToken cancellationToken) =>
+        RevalidateCurrentSessionAutomaticallyAsync(isCurrent, cancellationToken);
+
+    private async Task<bool> RefreshPageAutomaticallyAsync(
+        FrontendRefreshPage page,
+        FrontendChangeScope scopes,
+        Func<bool> isCurrent,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!isCurrent() || !CanRefreshPage(page))
+            return false;
+
+        switch (page)
+        {
+            case FrontendRefreshPage.Passwords:
+                return await PasswordsViewModel.RefreshAutomaticallyAsync(isCurrent, cancellationToken);
+
+            case FrontendRefreshPage.UserProfile:
+                return await RefreshUserProfileAutomaticallyAsync(isCurrent, cancellationToken);
+
+            case FrontendRefreshPage.Devices:
+                // Both scopes use the Phase 13 cached endpoint; neither starts network probes.
+                return await ProfileViewModel.RefreshDevicesAutomaticallyAsync(isCurrent, cancellationToken);
+
+            case FrontendRefreshPage.LocalDevice:
+            {
+                var localDevice = await _endpoints.GetLocalDeviceInfoAsync(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!isCurrent() || !CanRefreshPage(page))
+                    return false;
+                ProfileViewModel.ApplyLocalDeviceProjection(localDevice);
+                return true;
+            }
+
+            case FrontendRefreshPage.Enrollment:
+                return await LoginViewModel.RefreshEnrollmentAutomaticallyAsync(isCurrent, cancellationToken);
+
+            case FrontendRefreshPage.AuthenticationSessions:
+                return _changeProfileViewModel is not null &&
+                       await _changeProfileViewModel.RefreshAutomaticallyAsync(isCurrent, cancellationToken);
+
+            case FrontendRefreshPage.BackgroundSync:
+                return await SettingsViewModel.RefreshBackgroundSyncAutomaticallyAsync(isCurrent, cancellationToken);
+
+            default:
+                return false;
+        }
+    }
+
+    private async Task<bool> RefreshUserProfileAutomaticallyAsync(
+        Func<bool> isCurrent,
+        CancellationToken cancellationToken)
+    {
+        var token = _authSessionRegistry.CurrentUserToken;
+        if (token == Guid.Empty)
+            return false;
+
+        var expectedUserId = CurrentUserId;
+        var profile = await _endpoints.GetUserProfileInfoAsync(token, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!isCurrent() || !CanRefreshPage(FrontendRefreshPage.UserProfile) ||
+            (expectedUserId is { } userId && profile.UId != userId))
+        {
+            return false;
+        }
+
+        ProfileViewModel.ApplyAutomaticProfileProjection(profile);
+        SetSessionProfile(token, profile);
+        CurrentUserDisplayName = BuildDisplayName(profile);
+        CurrentUserSubtitle = BuildSubtitle(profile);
+        ApplyRememberMeFromSession(profile.IsRememberMeEnabled);
+        return true;
+    }
+
+    private async Task<bool> RevalidateCurrentSessionAutomaticallyAsync(
+        Func<bool> isCurrent,
+        CancellationToken cancellationToken)
+    {
+        var token = _authSessionRegistry.CurrentUserToken;
+        if (token == Guid.Empty || !IsAuthenticated)
+            return true;
+
+        var status = await _endpoints.GetAuthSessionStatusAsync(token, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!isCurrent())
+            return false;
+
+        if (!status.IsAuthenticated)
+        {
+            await HandleInvalidatedSessionAsync(token, status.InvalidationReason);
+            return true;
+        }
+
+        if (status.ExpiresAtUtc is { } expiresAtUtc)
+            await HandleSessionExpirationWarningAsync(token, expiresAtUtc);
+        return true;
+    }
+
+    private void HandleRefreshPageViewModelPropertyChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        var property = args.PropertyName;
+        if ((sender is PasswordsViewModel && property == "CurrentPane") ||
+            (sender is ProfileViewModel && property is ("CurrentMainPage" or "CurrentProfilePane" or "CurrentDevicePane")) ||
+            (sender is LoginViewModel && property is ("IsDeviceTransferCodeVisible" or "IsDeviceTransferFinished")))
+        {
+            RefreshNavigationChanged?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        if ((sender is PasswordsViewModel && property is
+                "IsPasswordMultiSelectionActive" or "IsCustomColorMultiSelectionActive" or
+                "IsPasswordTagMultiSelectionActive" or "IsDeleteConfirmationOpen" or
+                "IsCustomColorDeleteConfirmationOpen" or "IsPasswordTagDeleteConfirmationOpen" or
+                "IsExportConfirmationOpen") ||
+            (sender is ProfileViewModel && property is
+                "IsDeviceDisconnectDialogOpen" or "IsLocalSyncDialogOpen" or "IsAddDeviceDialogOpen" or
+                "IsAddingDevice" or "IsRefreshingDevices" or "AreDevicesLoaded") ||
+            (sender is ChangeProfileViewModel && property == "IsBusy") ||
+            (sender is SettingsViewModel && property == nameof(SettingsViewModel.CanAutomaticallyRefreshBackgroundSync)))
+        {
+            RefreshPageStateChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private void NotifyRefreshAuthenticationChanged() =>
+        RefreshAuthenticationChanged?.Invoke(this, EventArgs.Empty);
 }

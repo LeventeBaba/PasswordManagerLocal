@@ -631,6 +631,25 @@ public sealed class LoginViewModel : ViewModelBase
         }, ct);
     }
 
+    public bool CanAutomaticallyRefreshEnrollment =>
+        IsDeviceTransferCodeVisible && !IsBusy && !IsDeviceTransferFinished;
+
+    public async Task<bool> RefreshEnrollmentAutomaticallyAsync(
+        Func<bool> isCurrent,
+        CancellationToken cancellationToken)
+    {
+        if (!CanAutomaticallyRefreshEnrollment)
+            return false;
+
+        var status = await _endpoints.GetDeviceEnrollmentStatusAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!CanAutomaticallyRefreshEnrollment || !isCurrent())
+            return false;
+
+        ApplyDeviceTransferStatus(status);
+        return true;
+    }
+
     private void ApplyDeviceTransferStatus(DeviceEnrollmentStatusResponse status)
     {
         if (IsDisposed)

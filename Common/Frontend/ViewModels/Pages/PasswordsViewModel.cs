@@ -1447,6 +1447,24 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     public async Task<bool> RefreshCurrentDataAsync(bool showSuccessMessage = true) => await RefreshAsync(showSuccessMessage);
 
+    public bool CanAutomaticallyRefresh =>
+        _token != Guid.Empty &&
+        IsListPaneVisible &&
+        !IsMultiSelectionToolbarVisible &&
+        !IsDeleteConfirmationOpen &&
+        !IsCustomColorDeleteConfirmationOpen &&
+        !IsPasswordTagDeleteConfirmationOpen &&
+        !IsExportConfirmationOpen;
+
+    public Task<bool> RefreshAutomaticallyAsync(
+        Func<bool> isCurrent,
+        CancellationToken cancellationToken) =>
+        RefreshAsync(
+            showSuccessMessage: false,
+            preserveUiState: true,
+            isCurrent: isCurrent,
+            cancellationToken: cancellationToken);
+
     public void RequestListScrollToTop() => ListScrollToTopRequested?.Invoke(this, EventArgs.Empty);
 
     public void SelectFirstEditorTagSuggestion()
@@ -2241,22 +2259,37 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     }
 
 
-    private async Task<bool> RefreshAsync(bool showSuccessMessage)
+    private async Task<bool> RefreshAsync(
+        bool showSuccessMessage,
+        bool preserveUiState = false,
+        Func<bool>? isCurrent = null,
+        CancellationToken cancellationToken = default)
     {
-        if (_token == Guid.Empty)
+        if (_token == Guid.Empty || (preserveUiState && !CanAutomaticallyRefresh))
         {
             return false;
         }
 
-        ClearStatusMessage();
-        ExitPasswordMultiSelection();
-        ExitCustomColorMultiSelection();
-        ExitPasswordTagMultiSelection();
+        var token = _token;
+        if (!preserveUiState)
+        {
+            ClearStatusMessage();
+            ExitPasswordMultiSelection();
+            ExitCustomColorMultiSelection();
+            ExitPasswordTagMultiSelection();
+        }
         var selectedId = SelectedPassword?.Id;
 
         try
         {
-            var response = await _endpoints.GetSavedPasswordsAsync(_token);
+            var response = await _endpoints.GetSavedPasswordsAsync(token, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_token != token ||
+                (preserveUiState && (!CanAutomaticallyRefresh || isCurrent?.Invoke() == false)))
+            {
+                return false;
+            }
+
             var selectedEditorTagIds = EditorSelectedTags.Select(tag => tag.Id).ToArray();
             RebuildPasswordTagItems(response.Tags, selectedEditorTagIds);
             RebuildManagedPasswordTagItems(response.Tags);
@@ -2305,9 +2338,14 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
             return true;
         }
+        catch (OperationCanceledException) when (preserveUiState && cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            if (!preserveUiState)
+                ShowErrorMessage(GetSafeErrorMessage(ex));
             return false;
         }
     }

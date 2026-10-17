@@ -9,7 +9,7 @@ namespace PasswordManagerLocal.Common.Frontend;
 /// Owns one frontend graph. Construct, initialize and begin disposal on the UI thread.
 /// The Android host transfers its interactive client here; the service retains background ownership.
 /// </summary>
-public sealed class FrontendUiSession : IAsyncDisposable
+public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSource
 {
     private readonly FrontendApplicationContext _context;
     private readonly bool _ownsBackendClient;
@@ -17,6 +17,7 @@ public sealed class FrontendUiSession : IAsyncDisposable
     private Task? _initialization;
     private Task? _disposal;
     private readonly FrontendChangeNotificationForwarder? _changeNotificationForwarder;
+    private FrontendRefreshCoordinator? _refreshCoordinator;
     private int _disposed;
 
     public FrontendUiSession(MainView view, FrontendApplicationContext context, bool ownsBackendClient)
@@ -44,6 +45,8 @@ public sealed class FrontendUiSession : IAsyncDisposable
     public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
     public FrontendChangeStreamStart? CurrentChangePosition =>
         _changeNotificationForwarder?.CurrentPosition;
+
+    public FrontendRefreshCoordinator? RefreshCoordinator => _refreshCoordinator;
 
     /// <summary>Metadata-only change hints delivered only during this UI session.</summary>
     public event Action<FrontendChangeStreamDelivery>? ChangeHintReceived;
@@ -74,9 +77,19 @@ public sealed class FrontendUiSession : IAsyncDisposable
                 PlatformServices,
                 preferences);
             View.DataContext = ViewModel;
-            ViewModel.PropertyChanged += HandleViewModelPropertyChanged;
+            ViewModel.RefreshNavigationChanged += HandleRefreshNavigationChanged;
+            ViewModel.RefreshPageStateChanged += HandleRefreshPageStateChanged;
+            ViewModel.RefreshAuthenticationChanged += HandleRefreshAuthenticationChanged;
+            _refreshCoordinator = new FrontendRefreshCoordinator(
+                this,
+                ViewModel,
+                new AvaloniaFrontendRefreshDispatcher(),
+                sessionLifetime: token);
+            // Register after the coordinator is listening so even a change arriving during
+            // authoritative startup is covered by a fresh watermark/refresh marker.
+            _changeNotificationForwarder?.ReconcileOnResume();
             await ViewModel.InitializeAsync();
-            _changeNotificationForwarder?.ReconcileCurrentScope();
+            _refreshCoordinator.Start(ViewModel.GetVisiblePages(), _changeNotificationForwarder?.CurrentPosition);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
     }
@@ -93,7 +106,10 @@ public sealed class FrontendUiSession : IAsyncDisposable
             await model.InitializeAsync();
 
         if (!IsDisposed)
+        {
             _changeNotificationForwarder?.ReconcileOnResume();
+            _refreshCoordinator?.RequestAuthoritativeRefresh();
+        }
     }
 
     public ValueTask DisposeAsync()
@@ -107,10 +123,15 @@ public sealed class FrontendUiSession : IAsyncDisposable
 
             // Revoke UI admission and detach native/view references synchronously, before
             // awaiting service cleanup. A replacement Activity never shares these adapters.
+            _refreshCoordinator?.Deactivate();
             _changeNotificationForwarder?.Deactivate();
             ChangeHintReceived = null;
             if (ViewModel is { } model)
-                model.PropertyChanged -= HandleViewModelPropertyChanged;
+            {
+                model.RefreshNavigationChanged -= HandleRefreshNavigationChanged;
+                model.RefreshPageStateChanged -= HandleRefreshPageStateChanged;
+                model.RefreshAuthenticationChanged -= HandleRefreshAuthenticationChanged;
+            }
             PlatformServices.Deactivate();
             View.Dispose();
             ViewModel?.Dispose();
@@ -124,6 +145,8 @@ public sealed class FrontendUiSession : IAsyncDisposable
     {
         try
         {
+            if (_refreshCoordinator is not null)
+                await _refreshCoordinator.DisposeAsync();
             if (_changeNotificationForwarder is not null)
                 await Task.Run(async () => await _changeNotificationForwarder.DisposeAsync());
             if (_ownsBackendClient)
@@ -154,12 +177,6 @@ public sealed class FrontendUiSession : IAsyncDisposable
         return userId is { } value && value != Guid.Empty ? value : null;
     }
 
-    private void HandleViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
-    {
-        if (args.PropertyName is nameof(MainViewModel.IsAuthenticated) or nameof(MainViewModel.CurrentUserId))
-            _changeNotificationForwarder?.ReconcileUserScope();
-    }
-
     private void HandleChangeHintReceived(FrontendChangeStreamDelivery delivery)
     {
         var handlers = ChangeHintReceived;
@@ -176,5 +193,19 @@ public sealed class FrontendUiSession : IAsyncDisposable
                 // Observers cannot disrupt UI-session ownership or backend notifications.
             }
         }
+    }
+
+    private void HandleRefreshNavigationChanged(object? sender, EventArgs args) =>
+        _refreshCoordinator?.OnNavigationChanged(ViewModel?.GetVisiblePages() ?? []);
+
+    private void HandleRefreshPageStateChanged(object? sender, EventArgs args) =>
+        _refreshCoordinator?.OnPageStateChanged();
+
+    private void HandleRefreshAuthenticationChanged(object? sender, EventArgs args)
+    {
+        if (ViewModel is not { } model)
+            return;
+        _refreshCoordinator?.OnAuthenticationChanged(Authentication.CurrentUserToken, model.CurrentUserId);
+        _changeNotificationForwarder?.ReconcileUserScope();
     }
 }

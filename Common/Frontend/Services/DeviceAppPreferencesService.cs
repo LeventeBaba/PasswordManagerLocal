@@ -21,12 +21,21 @@ public sealed class DeviceAppPreferencesService
     public async Task<BackgroundSyncClientState> RefreshBackgroundSyncAsync(
         CancellationToken cancellationToken = default)
     {
+        var state = await ReadBackgroundSyncStateAsync(cancellationToken);
+        Apply(state, false);
+        return state;
+    }
+
+    /// <summary>Reads without publishing, so automatic refresh can discard a stale result safely.</summary>
+    public async Task<BackgroundSyncClientState> ReadBackgroundSyncStateAsync(
+        CancellationToken cancellationToken = default)
+    {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime);
         cancellationToken = linked.Token;
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            Apply(await _backgroundSyncClient.GetStateAsync(cancellationToken), false);
+            return await _backgroundSyncClient.GetStateAsync(cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -34,11 +43,11 @@ public sealed class DeviceAppPreferencesService
         }
         catch
         {
-            Apply(CreateUnavailableState(), false);
+            return CreateUnavailableState();
         }
-
-        return _backgroundSyncState;
     }
+
+    public void ApplyBackgroundSyncState(BackgroundSyncClientState state) => Apply(state, false);
 
     public async Task<BackgroundSyncChangeResult> SetBackgroundSyncEnabledAsync(
         bool isEnabled,

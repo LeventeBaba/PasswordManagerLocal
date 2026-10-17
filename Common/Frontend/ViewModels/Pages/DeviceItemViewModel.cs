@@ -106,6 +106,12 @@ public sealed class DeviceItemViewModel : ReactiveObject
         }
     }
 
+    internal void ApplyLocalDeviceSyncState(bool isSyncOn)
+    {
+        if (IsCurrentDevice)
+            IsSyncOn = isSyncOn;
+    }
+
     public bool IsOnline { get; }
 
     public bool IsOffline => !IsOnline;

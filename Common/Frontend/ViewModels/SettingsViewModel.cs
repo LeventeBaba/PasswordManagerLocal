@@ -144,6 +144,11 @@ public sealed class SettingsViewModel : ViewModelBase
         _isLoadingBackgroundSync || _isChangingBackgroundSync ||
         _isExternalBackgroundSyncTransition;
 
+    public bool CanAutomaticallyRefreshBackgroundSync =>
+        !_isLoadingBackgroundSync &&
+        !_isChangingBackgroundSync &&
+        !_isExternalBackgroundSyncTransition;
+
     public string BackgroundSyncStatus
     {
         get
@@ -206,6 +211,23 @@ public sealed class SettingsViewModel : ViewModelBase
             _isLoadingBackgroundSync = false;
             RaiseBackgroundOperationProperties();
         }
+    }
+
+    public async Task<bool> RefreshBackgroundSyncAutomaticallyAsync(
+        Func<bool> isCurrent,
+        CancellationToken cancellationToken)
+    {
+        if (!CanAutomaticallyRefreshBackgroundSync)
+            return false;
+
+        var state = await _deviceAppPreferences.ReadBackgroundSyncStateAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!state.IsAvailable || !CanAutomaticallyRefreshBackgroundSync || !isCurrent())
+            return false;
+
+        _deviceAppPreferences.ApplyBackgroundSyncState(state);
+        ApplyBackgroundState(state);
+        return true;
     }
 
     protected override void OnLanguageChanged()
@@ -319,6 +341,7 @@ public sealed class SettingsViewModel : ViewModelBase
             nameof(IsBackgroundSyncControlVisible),
             nameof(IsBackgroundSyncToggleEnabled),
             nameof(IsBackgroundSyncProgressVisible),
+            nameof(CanAutomaticallyRefreshBackgroundSync),
             nameof(BackgroundSyncStatus)
         ]);
     }

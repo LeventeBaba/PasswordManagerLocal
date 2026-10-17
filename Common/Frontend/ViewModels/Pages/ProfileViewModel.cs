@@ -1104,6 +1104,71 @@ public sealed class ProfileViewModel : ViewModelBase
 
     public bool AreDevicesLoaded => _areDevicesLoaded;
 
+    public bool CanAutomaticallyRefreshUserProfile =>
+        _token != Guid.Empty && IsProfileMainPage && IsProfileTabsPaneVisible;
+
+    public bool CanAutomaticallyRefreshDevices =>
+        _token != Guid.Empty &&
+        _areDevicesLoaded &&
+        IsDevicesMainPage &&
+        IsDeviceListPaneVisible &&
+        !IsDeviceDisconnectDialogOpen &&
+        !IsLocalSyncDialogOpen &&
+        !IsAddDeviceDialogOpen &&
+        !IsAddingDevice &&
+        !IsRefreshingDevices &&
+        !_isRunningSelfDiagnostics;
+
+    /// <summary>Updates only authoritative profile labels; all edit drafts remain untouched.</summary>
+    public void ApplyAutomaticProfileProjection(UserProfileInfoResponse profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        Username = profile.Username;
+        FirstName = profile.FirstName;
+        LastName = profile.LastName;
+        Email = profile.Email;
+        RegistrationDate = profile.RegistrationDate;
+        RegistrationTimeZoneId = profile.RegistrationTimeZoneId;
+        RegistrationDeviceType = profile.RegistrationDeviceType;
+    }
+
+    public async Task<bool> RefreshDevicesAutomaticallyAsync(
+        Func<bool> isCurrent,
+        CancellationToken cancellationToken)
+    {
+        if (!CanAutomaticallyRefreshDevices)
+            return false;
+
+        var token = _token;
+        var selectedId = SelectedDevice?.DeviceId;
+        try
+        {
+            // Automatic refresh is a cached read. Presence probes remain explicit user actions.
+            var devices = await _endpoints.GetUserDevicesAsync(token, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_token != token || !CanAutomaticallyRefreshDevices || !isCurrent())
+                return false;
+
+            ApplyLoadedDevices(devices, selectedId);
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public void ApplyLocalDeviceProjection(LocalDeviceInfoResponse localDevice)
+    {
+        ArgumentNullException.ThrowIfNull(localDevice);
+        var current = _allDevices.FirstOrDefault(device => device.DeviceId == localDevice.DeviceId);
+        current?.ApplyLocalDeviceSyncState(localDevice.IsSyncOn);
+    }
+
     public void RequestDeviceListScrollToTop() => DeviceListScrollToTopRequested?.Invoke(this, EventArgs.Empty);
 
     public void DiscardTransientNavigationState()
@@ -1560,7 +1625,10 @@ public sealed class ProfileViewModel : ViewModelBase
         foreach (var device in devices)
             _allDevices.Add(CreateDeviceItem(device));
 
+        var wasLoaded = _areDevicesLoaded;
         _areDevicesLoaded = true;
+        if (!wasLoaded)
+            this.RaisePropertyChanged(nameof(AreDevicesLoaded));
         ApplyDeviceFiltersAndSorting(selectedId, preserveSelection: selectedId.HasValue);
     }
 
