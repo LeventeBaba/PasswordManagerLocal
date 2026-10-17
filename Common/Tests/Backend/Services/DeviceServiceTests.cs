@@ -110,7 +110,74 @@ public sealed class DeviceServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
-    public async Task GetUserDevices_RequiresAuthenticatedProbeAndSyncEligibilityForRemoteOnline()
+    public async Task GetUserDevices_UsesCachedPresence_AndExplicitRefreshRequiresSyncEligibility()
+    {
+        using var host = new BackendTestHost();
+        var auth = host.Services.GetRequiredService<IAuthService>();
+        var users = host.Services.GetRequiredService<IUserService>();
+        var service = host.Services.GetRequiredService<IDeviceService>();
+        var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
+        var devices = (FakeDeviceRepository)host.Services.GetRequiredService<IDeviceRepository>();
+        var endpoints = host.Services.GetRequiredService<IDiscoveredDeviceEndpointRegistry>();
+        var presence = host.Services.GetRequiredService<PasswordManagerLocal.Common.Backend.Abstractions.Sync.Presence.IDevicePresenceRegistry>();
+        var transport = host.Services.GetRequiredService<FakeSyncTransportClientService>();
+        var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("device_online_status"));
+        var userId = users.GetUidFromToken(token);
+        var remote = CreateRemoteDevice();
+        devices.Seed(remote);
+        await userDevices.AddAsync(CreateLink(userId, remote, true, false));
+
+        endpoints.AddOrUpdate(new DiscoveredDeviceEndpoint
+        {
+            Host = "192.168.1.25",
+            Port = 26688,
+            TlsCertFingerprint = remote.TlsCertFingerprint
+        });
+
+        var beforeProbe = await service.GetUserDevicesAsync(token);
+        MSTestAssert.IsFalse(beforeProbe.Single(item => item.DeviceId == remote.Id).IsOnline);
+        MSTestAssert.AreEqual(0, transport.ProbeCalls);
+
+        presence.RefreshAuthenticated(
+            remote.TlsCertFingerprint,
+            new DiscoveredDeviceEndpoint
+            {
+                Host = "192.168.1.25",
+                Port = 26688,
+                TlsCertFingerprint = remote.TlsCertFingerprint
+            },
+            PasswordManagerLocal.Common.Backend.Sync.Presence.DevicePresenceObservationSource.DirectProbe);
+        var cachedOnline = await service.GetUserDevicesAsync(token);
+        MSTestAssert.IsTrue(cachedOnline.Single(item => item.DeviceId == remote.Id).IsOnline);
+        MSTestAssert.AreEqual(0, transport.ProbeCalls);
+
+        presence.InvalidateAll("Arrange explicit-refresh test.");
+        var cachedOffline = await service.GetUserDevicesAsync(token);
+        MSTestAssert.IsFalse(cachedOffline.Single(item => item.DeviceId == remote.Id).IsOnline);
+        MSTestAssert.AreEqual(0, transport.ProbeCalls);
+
+        transport.ProbeResult = PasswordManagerLocal.Common.Backend.Sync.Presence.DevicePresenceProbeResult.Failed(
+            PasswordManagerLocal.Common.Backend.Sync.Presence.DevicePresenceFailureKind.TlsOrFingerprintMismatch);
+        var failedRefresh = await service.RefreshUserDevicePresenceAsync(token);
+        MSTestAssert.IsFalse(failedRefresh.Single(item => item.DeviceId == remote.Id).IsOnline);
+        MSTestAssert.AreEqual(1, transport.ProbeCalls);
+
+        transport.ProbeResult = PasswordManagerLocal.Common.Backend.Sync.Presence.DevicePresenceProbeResult.Success;
+        var authenticated = await service.RefreshUserDevicePresenceAsync(token);
+        MSTestAssert.IsTrue(authenticated.Single(item => item.DeviceId == remote.Id).IsOnline);
+        MSTestAssert.AreEqual(2, transport.ProbeCalls);
+
+        await service.SetUserDeviceSyncOnAsync(token, remote.Id, false);
+
+        var syncDisabled = await service.GetUserDevicesAsync(token);
+        MSTestAssert.IsFalse(syncDisabled.Single(item => item.DeviceId == remote.Id).IsOnline);
+        MSTestAssert.AreEqual(2, transport.ProbeCalls);
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task RefreshUserDevicePresence_RequiresValidTokenAndProbesOnlyEligibleLinkedDevices()
     {
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
@@ -120,15 +187,78 @@ public sealed class DeviceServiceTests
         var devices = (FakeDeviceRepository)host.Services.GetRequiredService<IDeviceRepository>();
         var endpoints = host.Services.GetRequiredService<IDiscoveredDeviceEndpointRegistry>();
         var transport = host.Services.GetRequiredService<FakeSyncTransportClientService>();
-        var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("device_online_status"));
+        var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("presence_refresh_eligibility"));
         var userId = users.GetUidFromToken(token);
+
+        await ExpectThrowsAsync<PasswordManagerLocal.Common.Contracts.Errors.InvalidTokenException>(() =>
+            service.RefreshUserDevicePresenceAsync(Guid.NewGuid()));
+        MSTestAssert.AreEqual(0, transport.ProbeCalls);
+
+        var eligible = CreateRemoteDevice();
+        var syncDisabled = CreateRemoteDevice();
+        var deleted = CreateRemoteDevice();
+        var blocked = CreateRemoteDevice();
+        blocked.IsBlocked = true;
+        blocked.GenerateIntegrityHash();
+        var untrusted = CreateRemoteDevice();
+        untrusted.IsTrusted = false;
+        untrusted.GenerateIntegrityHash();
+        var missingKey = CreateRemoteDevice();
+        missingKey.PublicKey = [];
+        missingKey.GenerateIntegrityHash();
+        var missingFingerprint = CreateRemoteDevice();
+        missingFingerprint.TlsCertFingerprint = string.Empty;
+        missingFingerprint.GenerateIntegrityHash();
+
+        foreach (var device in new[] { eligible, syncDisabled, deleted, blocked, untrusted, missingKey, missingFingerprint })
+        {
+            devices.Seed(device);
+            endpoints.AddOrUpdate(new DiscoveredDeviceEndpoint
+            {
+                Host = "192.168.1.25",
+                Port = 26688,
+                TlsCertFingerprint = device.TlsCertFingerprint
+            });
+        }
+
+        await userDevices.AddAsync(CreateLink(userId, eligible, true, false));
+        await userDevices.AddAsync(CreateLink(userId, syncDisabled, false, false));
+        await userDevices.AddAsync(CreateLink(userId, deleted, true, true));
+        await userDevices.AddAsync(CreateLink(userId, blocked, true, false));
+        await userDevices.AddAsync(CreateLink(userId, untrusted, true, false));
+        await userDevices.AddAsync(CreateLink(userId, missingKey, true, false));
+        await userDevices.AddAsync(CreateLink(userId, missingFingerprint, true, false));
+
+        var refreshed = await service.RefreshUserDevicePresenceAsync(token);
+
+        MSTestAssert.AreEqual(1, transport.ProbeCalls);
+        MSTestAssert.IsTrue(refreshed.Any(device => device.DeviceId == eligible.Id));
+        MSTestAssert.IsFalse(refreshed.Any(device => device.DeviceId == deleted.Id));
+
+        await service.SetLocalUserSyncOnAsync(token, false);
+        await service.RefreshUserDevicePresenceAsync(token);
+        MSTestAssert.AreEqual(1, transport.ProbeCalls);
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task RefreshUserDevicePresence_HonorsCancellationDuringTransportProbe()
+    {
+        using var host = new BackendTestHost();
+        var auth = host.Services.GetRequiredService<IAuthService>();
+        var users = host.Services.GetRequiredService<IUserService>();
+        var service = host.Services.GetRequiredService<IDeviceService>();
+        var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
+        var devices = (FakeDeviceRepository)host.Services.GetRequiredService<IDeviceRepository>();
+        var endpoints = host.Services.GetRequiredService<IDiscoveredDeviceEndpointRegistry>();
+        var transport = host.Services.GetRequiredService<FakeSyncTransportClientService>();
+        transport.ProbeEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        transport.ProbeGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+        var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("presence_refresh_cancel"));
         var remote = CreateRemoteDevice();
         devices.Seed(remote);
-        await userDevices.AddAsync(CreateLink(userId, remote, true, false));
-
-        var beforeDiscovery = await service.GetUserDevicesAsync(token);
-        MSTestAssert.IsFalse(beforeDiscovery.Single(item => item.DeviceId == remote.Id).IsOnline);
-
+        await userDevices.AddAsync(CreateLink(users.GetUidFromToken(token), remote, true, false));
         endpoints.AddOrUpdate(new DiscoveredDeviceEndpoint
         {
             Host = "192.168.1.25",
@@ -136,19 +266,13 @@ public sealed class DeviceServiceTests
             TlsCertFingerprint = remote.TlsCertFingerprint
         });
 
-        transport.ProbeResult = PasswordManagerLocal.Common.Backend.Sync.Presence.DevicePresenceProbeResult.Failed(
-            PasswordManagerLocal.Common.Backend.Sync.Presence.DevicePresenceFailureKind.TlsOrFingerprintMismatch);
-        var discoveryOnly = await service.GetUserDevicesAsync(token);
-        MSTestAssert.IsFalse(discoveryOnly.Single(item => item.DeviceId == remote.Id).IsOnline);
+        using var cancellation = new CancellationTokenSource();
+        var refresh = service.RefreshUserDevicePresenceAsync(token, cancellation.Token);
+        await transport.ProbeEntered.Task;
+        cancellation.Cancel();
 
-        transport.ProbeResult = PasswordManagerLocal.Common.Backend.Sync.Presence.DevicePresenceProbeResult.Success;
-        var authenticated = await service.GetUserDevicesAsync(token);
-        MSTestAssert.IsTrue(authenticated.Single(item => item.DeviceId == remote.Id).IsOnline);
-
-        await service.SetUserDeviceSyncOnAsync(token, remote.Id, false);
-
-        var syncDisabled = await service.GetUserDevicesAsync(token);
-        MSTestAssert.IsFalse(syncDisabled.Single(item => item.DeviceId == remote.Id).IsOnline);
+        await ExpectThrowsAsync<OperationCanceledException>(() => refresh);
+        MSTestAssert.AreEqual(1, transport.ProbeCalls);
     }
 
     [TestMethod]

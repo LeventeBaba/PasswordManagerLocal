@@ -192,6 +192,8 @@ public sealed class ProfileViewModel : ViewModelBase
     private bool _pendingLocalSyncEnabled;
     private bool _isAddingDevice;
     private bool _isRunningSelfDiagnostics;
+    private bool _isRefreshingDevices;
+    private CancellationTokenSource? _deviceRefreshCancellation;
     private SelfDiagnosticsResultResponse? _selfDiagnosticsResult;
     private string _deviceEnrollmentCodeInput = string.Empty;
     private string _deviceSearchQuery = string.Empty;
@@ -232,6 +234,7 @@ public sealed class ProfileViewModel : ViewModelBase
         UnblockDeviceCommand = Own(ReactiveCommand.CreateFromTask<DeviceItemViewModel>(UnblockDeviceAsync));
         DisconnectDeviceCommand = Own(ReactiveCommand.Create<DeviceItemViewModel>(BeginDisconnectDevice));
         RefreshDevicesCommand = Own(ReactiveCommand.CreateFromTask(RefreshDevicesAsync));
+        CancelDeviceRefreshCommand = Own(ReactiveCommand.Create(CancelDeviceRefresh));
         RunSelfDiagnosticsCommand = Own(ReactiveCommand.CreateFromTask(RunSelfDiagnosticsAsync));
         SearchDevicesCommand = Own(ReactiveCommand.Create(ApplyCurrentDeviceSearch));
         SelectDeviceSortOptionCommand = Own(ReactiveCommand.Create<string>(SelectDeviceSortOptionByKey));
@@ -727,6 +730,8 @@ public sealed class ProfileViewModel : ViewModelBase
 
     public ReactiveCommand<RxVoid, RxVoid> RefreshDevicesCommand { get; }
 
+    public ReactiveCommand<RxVoid, RxVoid> CancelDeviceRefreshCommand { get; }
+
     public ReactiveCommand<RxVoid, RxVoid> RunSelfDiagnosticsCommand { get; }
 
     public ReactiveCommand<RxVoid, RxVoid> SearchDevicesCommand { get; }
@@ -955,6 +960,24 @@ public sealed class ProfileViewModel : ViewModelBase
 
     public bool CanRunSelfDiagnostics => !IsRunningSelfDiagnostics;
 
+    public bool IsRefreshingDevices
+    {
+        get => _isRefreshingDevices;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _isRefreshingDevices, value);
+            this.RaisePropertyChanged(nameof(IsDevicesRefreshEnabled));
+            this.RaisePropertyChanged(nameof(IsDeviceRefreshButtonVisible));
+            this.RaisePropertyChanged(nameof(IsDeviceRefreshCancelVisible));
+        }
+    }
+
+    public bool IsDevicesRefreshEnabled => !IsRefreshingDevices;
+
+    public bool IsDeviceRefreshButtonVisible => !IsRefreshingDevices;
+
+    public bool IsDeviceRefreshCancelVisible => IsRefreshingDevices;
+
     public bool HasSelfDiagnosticsResult => _selfDiagnosticsResult is not null;
 
     public string SelfDiagnosticsSummary
@@ -1061,6 +1084,7 @@ public sealed class ProfileViewModel : ViewModelBase
 
     public void ShowProfileMainPage()
     {
+        CancelDeviceRefresh();
         DiscardTransientNavigationState();
         CurrentMainPage = MainProfilePage;
     }
@@ -1171,8 +1195,7 @@ public sealed class ProfileViewModel : ViewModelBase
             return;
 
         ClearStatusMessage();
-        if (await LoadDevicesAsync())
-            ShowSuccessMessage(GetTranslation("Shell_DataRefreshed"));
+        await RefreshDevicePresenceAsync(showSuccessMessage: true);
     }
 
     public async Task RefreshCurrentDataAsync()
@@ -1227,6 +1250,7 @@ public sealed class ProfileViewModel : ViewModelBase
 
     public void Reset()
     {
+        CancelDeviceRefresh();
         _token = Guid.Empty;
         _deviceSearchDebounce.Cancel();
         Username = string.Empty;
@@ -1462,9 +1486,7 @@ public sealed class ProfileViewModel : ViewModelBase
 
     private async Task RefreshDevicesAsync()
     {
-        ClearStatusMessage();
-        if (await LoadDevicesAsync())
-            ShowSuccessMessage(GetTranslation("Shell_DataRefreshed"));
+        await RefreshDevicesOnlyAsync();
     }
 
     private async Task<bool> LoadDevicesAsync()
@@ -1477,13 +1499,7 @@ public sealed class ProfileViewModel : ViewModelBase
         try
         {
             var devices = await _endpoints.GetUserDevicesAsync(_token);
-            _allDevices.Clear();
-
-            foreach (var device in devices)
-                _allDevices.Add(CreateDeviceItem(device));
-
-            _areDevicesLoaded = true;
-            ApplyDeviceFiltersAndSorting(selectedId, preserveSelection: selectedId.HasValue);
+            ApplyLoadedDevices(devices, selectedId);
             return true;
         }
         catch (Exception ex)
@@ -1491,6 +1507,61 @@ public sealed class ProfileViewModel : ViewModelBase
             ShowErrorMessage(GetSafeErrorMessage(ex));
             return false;
         }
+    }
+
+    private async Task RefreshDevicePresenceAsync(bool showSuccessMessage)
+    {
+        if (_token == Guid.Empty || IsRefreshingDevices)
+            return;
+
+        var selectedId = SelectedDevice?.DeviceId;
+        using var refreshCancellation = CancellationTokenSource.CreateLinkedTokenSource(LifetimeToken);
+        using var timeoutCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            refreshCancellation.Token,
+            timeoutCancellation.Token);
+        _deviceRefreshCancellation = refreshCancellation;
+        IsRefreshingDevices = true;
+
+        try
+        {
+            var devices = await _endpoints.RefreshUserDevicePresenceAsync(_token, operationCancellation.Token);
+            ApplyLoadedDevices(devices, selectedId);
+            if (showSuccessMessage)
+                ShowSuccessMessage(GetTranslation("Shell_DataRefreshed"));
+        }
+        catch (OperationCanceledException) when (refreshCancellation.IsCancellationRequested)
+        {
+            if (!LifetimeToken.IsCancellationRequested && _token != Guid.Empty)
+                await LoadDevicesAsync();
+        }
+        catch (OperationCanceledException) when (timeoutCancellation.IsCancellationRequested)
+        {
+            if (!LifetimeToken.IsCancellationRequested && _token != Guid.Empty)
+                await LoadDevicesAsync();
+            ShowErrorMessage(GetTranslation("Error_Generic"));
+        }
+        catch (Exception ex)
+        {
+            ShowErrorMessage(GetSafeErrorMessage(ex));
+        }
+        finally
+        {
+            _deviceRefreshCancellation = null;
+            IsRefreshingDevices = false;
+        }
+    }
+
+    private void CancelDeviceRefresh() => _deviceRefreshCancellation?.Cancel();
+
+    private void ApplyLoadedDevices(IReadOnlyList<UserDeviceInfoResponse> devices, Guid? selectedId)
+    {
+        _allDevices.Clear();
+        foreach (var device in devices)
+            _allDevices.Add(CreateDeviceItem(device));
+
+        _areDevicesLoaded = true;
+        ApplyDeviceFiltersAndSorting(selectedId, preserveSelection: selectedId.HasValue);
     }
 
     private DeviceItemViewModel CreateDeviceItem(UserDeviceInfoResponse device) =>

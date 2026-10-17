@@ -23,7 +23,10 @@ public interface IEndpoints
     Task<bool> GetLocalUserSyncOnAsync(Guid token, CancellationToken ct = default);
     Task SetLocalUserSyncOnAsync(Guid token, bool isSyncOn, CancellationToken ct = default);
     Task SetLocalDeviceNameAsync(Guid token, string name, CancellationToken ct = default);
+    /// <summary>Reads device metadata and cached presence without starting remote probes.</summary>
     Task<IReadOnlyList<UserDeviceInfoResponse>> GetUserDevicesAsync(Guid token, CancellationToken ct = default);
+    /// <summary>Explicitly refreshes eligible linked-device presence and returns the resulting device list.</summary>
+    Task<IReadOnlyList<UserDeviceInfoResponse>> RefreshUserDevicePresenceAsync(Guid token, CancellationToken ct = default);
     Task<SelfDiagnosticsResultResponse> RunSelfDiagnosticsAndRepairAsync(Guid token, CancellationToken ct = default);
     Task SetUserDeviceNameAsync(Guid token, Guid deviceId, string name, CancellationToken ct = default);
     Task SetUserDeviceSyncOnAsync(Guid token, Guid deviceId, bool isSyncOn, CancellationToken ct = default);

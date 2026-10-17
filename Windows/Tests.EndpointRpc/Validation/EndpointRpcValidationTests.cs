@@ -26,6 +26,28 @@ public sealed class EndpointRpcValidationTests
     }
 
     [TestMethod]
+    public void PresenceRefreshRequiresTokenAndRejectsDuplicateDeviceIds()
+    {
+        Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
+            _validator.ValidateRequest(
+                EndpointOperationId.RefreshUserDevicePresence,
+                new RefreshUserDevicePresenceEndpointRequest()));
+
+        var device = new UserDeviceInfoResponse
+        {
+            DeviceId = EndpointRpcTestData.ItemId,
+            Name = "Desktop",
+            DeviceType = PasswordManagerLocal.Common.Contracts.Devices.DeviceType.WindowsPc,
+            TlsCertFingerprint = "fingerprint",
+            LinkedAt = DateTimeOffset.UtcNow
+        };
+        Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
+            _validator.ValidateResponse(
+                EndpointOperationId.RefreshUserDevicePresence,
+                new RefreshUserDevicePresenceEndpointResponse { Devices = [device, device] }));
+    }
+
+    [TestMethod]
     public void OversizedSensitiveBinaryValueIsRejectedWithoutEchoingIt()
     {
         var secret = Enumerable.Repeat((byte)0x53, EndpointRpcLimits.MaximumSensitiveBinaryFieldSize + 1).ToArray();

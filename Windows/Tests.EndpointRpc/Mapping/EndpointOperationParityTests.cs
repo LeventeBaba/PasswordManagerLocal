@@ -13,13 +13,13 @@ public sealed class EndpointOperationParityTests
     [TestMethod]
     public void EveryEndpointMethodHasExactlyOneCompleteMapping()
     {
-        Assert.AreEqual(41, EndpointOperationManifest.All.Count);
+        Assert.AreEqual(42, EndpointOperationManifest.All.Count);
         var methods = typeof(IEndpoints).GetMethods();
         var descriptors = EndpointOperationManifest.All;
         var operationIds = Enum.GetValues<EndpointOperationId>();
         var validator = new EndpointRpcContractValidator();
 
-        Assert.HasCount(41, methods);
+        Assert.HasCount(42, methods);
         Assert.HasCount(methods.Length, descriptors);
         Assert.HasCount(methods.Length, operationIds);
         Assert.HasCount(operationIds.Length, operationIds.Distinct());
@@ -71,7 +71,7 @@ public sealed class EndpointOperationParityTests
         var readOnly = descriptors.Where(descriptor => !descriptor.MutatesState).ToArray();
         var mutations = descriptors.Where(descriptor => descriptor.MutatesState).ToArray();
 
-        Assert.HasCount(8, readOnly);
+        Assert.HasCount(9, readOnly);
         Assert.HasCount(33, mutations);
         Assert.IsTrue(readOnly.All(descriptor =>
             descriptor.CommitModel == EndpointMutationCommitModel.NoDurableMutation &&
@@ -163,6 +163,19 @@ public sealed class EndpointOperationParityTests
             EndpointMutationReplaySafety.AuthoritativeReadBackRequired,
             EndpointOperationId.GetSavedPasswords,
             EndpointMutationRecoveryAction.InspectAuthoritativeState);
+    }
+
+    [TestMethod]
+    public void ExplicitDevicePresenceRefreshIsAuthenticatedCancellableAndUsesBoundedCollectionResponse()
+    {
+        var descriptor = EndpointOperationManifest.Get(EndpointOperationId.RefreshUserDevicePresence);
+
+        Assert.AreEqual(nameof(IEndpoints.RefreshUserDevicePresenceAsync), descriptor.MethodName);
+        Assert.IsFalse(descriptor.MutatesState);
+        Assert.AreEqual(EndpointOperationCancellationClassification.ReadOnlySafelyCancellable, descriptor.CancellationClassification);
+        Assert.AreEqual(EndpointMutationCommitModel.NoDurableMutation, descriptor.CommitModel);
+        Assert.AreEqual(EndpointMutationReplaySafety.NotApplicable, descriptor.ReplaySafety);
+        Assert.AreEqual(EndpointRpcLimits.MaximumCollectionResponsePayloadSize, descriptor.MaximumResponsePayloadSize);
     }
     [TestMethod]
     public void OnlySavedPasswordsUsesTheBoundedLargeResponseProtocol()

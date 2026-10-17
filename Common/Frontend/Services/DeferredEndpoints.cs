@@ -105,6 +105,11 @@ public sealed class DeferredEndpoints : IEndpoints
         return await InvokeAsync((endpoints, operationToken) => endpoints.GetUserDevicesAsync(token, operationToken), ct);
     }
 
+    public async Task<IReadOnlyList<UserDeviceInfoResponse>> RefreshUserDevicePresenceAsync(Guid token, CancellationToken ct = default)
+    {
+        return await InvokeAsync((endpoints, operationToken) => endpoints.RefreshUserDevicePresenceAsync(token, operationToken), ct);
+    }
+
     public Task<SelfDiagnosticsResultResponse> RunSelfDiagnosticsAndRepairAsync(Guid token, CancellationToken ct = default) =>
         InvokeAsync((endpoints, operationToken) => endpoints.RunSelfDiagnosticsAndRepairAsync(token, operationToken), ct);
 

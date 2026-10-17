@@ -39,6 +39,7 @@ public sealed class EndpointRpcInMemoryEndToEndTests
         });
         var profile = await proxy.GetUserProfileInfoAsync(loginToken);
         var devices = await proxy.GetUserDevicesAsync(loginToken);
+        var refreshedDevices = await proxy.RefreshUserDevicePresenceAsync(loginToken);
         var saved = await proxy.GetSavedPasswordsAsync(loginToken);
         await proxy.AddPasswordTagAsync(loginToken, new NewPasswordTagRequest { Name = "Work", Color = "#FF14B8A6" });
         var restored = await proxy.RestoreRememberedSessionsAsync();
@@ -47,10 +48,14 @@ public sealed class EndpointRpcInMemoryEndToEndTests
         Assert.AreEqual(EndpointRpcTestData.Token, loginToken);
         Assert.AreEqual("ValidUser1", profile.Username);
         Assert.IsEmpty(devices);
+        Assert.AreEqual(1, refreshedDevices.Count);
+        Assert.AreEqual(EndpointRpcTestData.ItemId, refreshedDevices[0].DeviceId);
+        Assert.AreEqual(loginToken, endpoints.LastPresenceRefreshToken);
         Assert.IsEmpty(saved.Passwords);
         CollectionAssert.Contains(endpoints.Calls, nameof(endpoints.LoginAsync));
         CollectionAssert.Contains(endpoints.Calls, nameof(endpoints.GetUserProfileInfoAsync));
         CollectionAssert.Contains(endpoints.Calls, nameof(endpoints.GetUserDevicesAsync));
+        CollectionAssert.Contains(endpoints.Calls, nameof(endpoints.RefreshUserDevicePresenceAsync));
         CollectionAssert.Contains(endpoints.Calls, nameof(endpoints.GetSavedPasswordsAsync));
         CollectionAssert.Contains(endpoints.Calls, nameof(endpoints.AddPasswordTagAsync));
         CollectionAssert.AreEqual(new[] { EndpointRpcTestData.Token }, restored.ToArray());

@@ -126,7 +126,7 @@ public sealed class MainViewModel : ViewModelBase
         ShowChangeProfileCommand = Own(ReactiveCommand.CreateFromTask(ShowChangeProfileAsync));
         LogoutCommand = Own(ReactiveCommand.CreateFromTask(LogoutAsync));
         RefreshCommand = Own(ReactiveCommand.CreateFromTask(RefreshAuthenticatedStateAsync));
-        RefreshVisiblePageCommand = Own(ReactiveCommand.CreateFromTask(RefreshAllLoadedDataAsync));
+        RefreshVisiblePageCommand = Own(ReactiveCommand.CreateFromTask(RefreshVisiblePageAsync));
         ConfirmSessionRenewalCommand = Own(ReactiveCommand.CreateFromTask(ConfirmSessionRenewalAsync));
         DeclineSessionRenewalCommand = Own(ReactiveCommand.Create(DeclineSessionRenewal));
         DatabaseRecoveryPrimaryCommand = Own(ReactiveCommand.CreateFromTask(HandleDatabaseRecoveryPrimaryActionAsync));
@@ -480,7 +480,7 @@ public sealed class MainViewModel : ViewModelBase
     public ReactiveCommand<RxVoid, RxVoid> RefreshVisiblePageCommand { get; }
 
     public async Task RequestRefreshVisiblePageAsync() =>
-        await RefreshAllLoadedDataAsync();
+        await RefreshVisiblePageAsync();
 
     public ReactiveCommand<RxVoid, RxVoid> ConfirmSessionRenewalCommand { get; }
 

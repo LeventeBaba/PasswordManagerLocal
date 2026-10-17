@@ -43,4 +43,5 @@ public enum EndpointOperationId
     ExportPasswordTagsToUser = 39,
     UpdatePasswordTag = 40,
     RunSelfDiagnosticsAndRepair = 41,
+    RefreshUserDevicePresence = 42,
 }

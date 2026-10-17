@@ -39,6 +39,11 @@ public sealed class DeviceService : IDeviceService
         CancellationToken ct = default) =>
         _queries.GetUserDevicesAsync(token, ct);
 
+    public Task<IReadOnlyList<UserDeviceInfoResponse>> RefreshUserDevicePresenceAsync(
+        Guid token,
+        CancellationToken ct = default) =>
+        _queries.RefreshUserDevicePresenceAsync(token, ct);
+
     public Task SetUserDeviceNameAsync(
         Guid token,
         Guid deviceId,
