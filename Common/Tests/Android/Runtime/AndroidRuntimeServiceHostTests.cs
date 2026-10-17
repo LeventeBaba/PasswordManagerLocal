@@ -9,6 +9,7 @@ using PasswordManagerLocal.Common.Backend.Hosting;
 using PasswordManagerLocal.Common.Contracts.Responses;
 using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
+using PasswordManagerLocal.Common.Contracts.Notifications;
 using PasswordManagerLocal.Common.Tests.Fakes;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 
@@ -17,6 +18,165 @@ namespace PasswordManagerLocal.Common.Tests.Android.Runtime;
 [TestClass]
 public sealed class AndroidRuntimeServiceHostTests
 {
+
+    [TestMethod]
+    public async Task BackgroundOnlyRuntimeDoesNotSubscribeToFrontendChangeSource()
+    {
+        using var fixture = CreateFixture(backgroundEnabled: true);
+        await using var host = fixture.Host;
+
+        await host.RestoreBackgroundStateAsync();
+
+        Assert.AreEqual(0, fixture.ChangeSource.ActiveSubscriptionCount);
+        Assert.AreEqual(0, fixture.ChangeSource.TotalSubscriptionCount);
+        Assert.AreEqual(BackendLifetimeReason.BackgroundSync, fixture.Coordinator.ActiveReasons);
+    }
+
+    [TestMethod]
+    public async Task AuthorizedAttachmentForwardsOnlySelectedUserAndPreservesAtomicWatermark()
+    {
+        using var fixture = CreateFixture(backgroundEnabled: false);
+        await using var host = fixture.Host;
+        await using var client = await host.AttachInteractiveClientAsync();
+        var selectedUser = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var otherUser = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        fixture.ChangeSource.Publish(FrontendChangeScope.Passwords, selectedUser);
+
+        var stream = client.SubscribeChangeNotifications(selectedUser, capacity: 8);
+        Assert.AreEqual(1L, stream.Start.Sequence);
+        Assert.IsTrue(stream.Start.RequiresAuthoritativeRefresh);
+        Assert.AreEqual(selectedUser, fixture.ChangeSource.SubscribedUsers.Single());
+        Assert.AreEqual(0, fixture.Platform.EnterForegroundCalls);
+
+        await using var reader = stream.ReadAllAsync().GetAsyncEnumerator();
+        fixture.ChangeSource.Publish(FrontendChangeScope.Devices, otherUser);
+        fixture.ChangeSource.Publish(FrontendChangeScope.UserProfile, selectedUser);
+        Assert.IsTrue(await reader.MoveNextAsync());
+        Assert.AreEqual(selectedUser, reader.Current.Notification?.UserId);
+        Assert.AreEqual(3L, reader.Current.Sequence);
+
+        await stream.DisposeAsync();
+        Assert.AreEqual(0, fixture.ChangeSource.ActiveSubscriptionCount);
+    }
+
+    [TestMethod]
+    public async Task ReplacementAttachmentSynchronouslyRevokesThePreviousActivityStream()
+    {
+        using var fixture = CreateFixture(backgroundEnabled: false);
+        await using var host = fixture.Host;
+        var first = await host.AttachInteractiveClientAsync();
+        var oldStream = first.SubscribeChangeNotifications(Guid.NewGuid());
+
+        var replacement = await host.AttachInteractiveClientAsync();
+
+        Assert.AreEqual(0, fixture.ChangeSource.ActiveSubscriptionCount);
+        await using var reader = oldStream.ReadAllAsync().GetAsyncEnumerator();
+        Assert.IsFalse(await reader.MoveNextAsync());
+        await oldStream.DisposeAsync();
+        await first.DisposeAsync();
+        await replacement.DisposeAsync();
+        Assert.AreEqual(0, fixture.ChangeSource.ActiveSubscriptionCount);
+    }
+
+    [TestMethod]
+    public async Task RuntimeRestartReplacesSourceAndRequiresFreshWatermark()
+    {
+        using var fixture = CreateFixture(backgroundEnabled: false);
+        await using var host = fixture.Host;
+        await using var client = await host.AttachInteractiveClientAsync();
+        var oldStream = client.SubscribeChangeNotifications(Guid.NewGuid());
+        var replacementSource = new FakeBackendChangeSource(
+            Guid.Parse("33333333-3333-3333-3333-333333333333"));
+        fixture.Runtime.AfterReset = () => fixture.Runtime.ChangeSource = replacementSource;
+        var sourceChanges = 0;
+        client.ChangeSourceChanged += (_, _) => sourceChanges++;
+
+        await client.ResetDatabaseAndRestartAsync();
+
+        Assert.AreEqual(0, fixture.ChangeSource.ActiveSubscriptionCount);
+        Assert.AreEqual(1, sourceChanges);
+        var newStream = client.SubscribeChangeNotifications(Guid.NewGuid());
+        Assert.AreEqual(replacementSource.CurrentPosition.RuntimeInstanceId, newStream.Start.RuntimeInstanceId);
+        Assert.IsTrue(newStream.Start.RequiresAuthoritativeRefresh);
+        await oldStream.DisposeAsync();
+        await newStream.DisposeAsync();
+        Assert.AreEqual(0, replacementSource.ActiveSubscriptionCount);
+    }
+
+    [TestMethod]
+    public async Task ServiceRestartRevokesOldUiStreamAndNewAttachmentStartsAtNewRuntimeWatermark()
+    {
+        using var firstFixture = CreateFixture(
+            backgroundEnabled: false,
+            changeSourceOverride: new FakeBackendChangeSource(
+                Guid.Parse("44444444-4444-4444-4444-444444444444")));
+        await using var firstHost = firstFixture.Host;
+        var firstClient = await firstHost.AttachInteractiveClientAsync();
+        var firstStream = firstClient.SubscribeChangeNotifications(Guid.NewGuid());
+        var firstRuntimeId = firstStream.Start.RuntimeInstanceId;
+
+        await firstHost.DisposeAsync();
+
+        Assert.AreEqual(0, firstFixture.ChangeSource.ActiveSubscriptionCount);
+        await using var staleReader = firstStream.ReadAllAsync().GetAsyncEnumerator();
+        Assert.IsFalse(await staleReader.MoveNextAsync());
+
+        using var replacementFixture = CreateFixture(
+            backgroundEnabled: false,
+            changeSourceOverride: new FakeBackendChangeSource(
+                Guid.Parse("55555555-5555-5555-5555-555555555555")));
+        await using var replacementHost = replacementFixture.Host;
+        await using var replacementClient = await replacementHost.AttachInteractiveClientAsync();
+        var replacementStream = replacementClient.SubscribeChangeNotifications(Guid.NewGuid());
+
+        Assert.AreNotEqual(firstRuntimeId, replacementStream.Start.RuntimeInstanceId);
+        Assert.AreEqual(0L, replacementStream.Start.Sequence);
+        Assert.IsTrue(replacementStream.Start.RequiresAuthoritativeRefresh);
+        await replacementStream.DisposeAsync();
+        await firstStream.DisposeAsync();
+        await firstClient.DisposeAsync();
+    }
+
+    [TestMethod]
+    public async Task DoubleUnsubscribeAndDetachAreIdempotent()
+    {
+        using var fixture = CreateFixture(backgroundEnabled: false);
+        await using var host = fixture.Host;
+        var client = await host.AttachInteractiveClientAsync();
+        var stream = client.SubscribeChangeNotifications(Guid.NewGuid());
+
+        stream.Unsubscribe();
+        stream.Unsubscribe();
+        await stream.DisposeAsync();
+        await stream.DisposeAsync();
+        await client.DisposeAsync();
+        await client.DisposeAsync();
+
+        Assert.AreEqual(0, fixture.ChangeSource.ActiveSubscriptionCount);
+        Assert.AreEqual(BackendLifetimeReason.None, fixture.Coordinator.ActiveReasons);
+    }
+
+    [TestMethod]
+    public async Task ConcurrentSyncChangesCollapseToLatestBoundedRefreshWatermark()
+    {
+        using var fixture = CreateFixture(backgroundEnabled: false);
+        await using var host = fixture.Host;
+        await using var client = await host.AttachInteractiveClientAsync();
+        var userId = Guid.NewGuid();
+        var stream = client.SubscribeChangeNotifications(userId, capacity: 1);
+
+        Parallel.For(0, 128, _ =>
+            fixture.ChangeSource.Publish(FrontendChangeScope.Passwords, userId));
+
+        await using var reader = stream.ReadAllAsync().GetAsyncEnumerator();
+        Assert.IsTrue(await reader.MoveNextAsync());
+        Assert.IsTrue(reader.Current.RequiresAuthoritativeRefresh);
+        Assert.IsNull(reader.Current.Notification);
+        Assert.AreEqual(fixture.ChangeSource.CurrentPosition.Sequence, reader.Current.Sequence);
+
+        await stream.DisposeAsync();
+        Assert.AreEqual(0, fixture.ChangeSource.ActiveSubscriptionCount);
+    }
 
     [TestMethod]
     public async Task DisabledRestorationStopsStartedServiceWithoutCreatingRuntime()
@@ -1228,11 +1388,14 @@ public sealed class AndroidRuntimeServiceHostTests
     private static AndroidRuntimeServiceHostFixture CreateFixture(
         bool backgroundEnabled,
         bool secureStorageAvailable = true,
-        IEndpoints? endpointOverride = null)
+        IEndpoints? endpointOverride = null,
+        FakeBackendChangeSource? changeSourceOverride = null)
     {
         var backendTestHost = new BackendTestHost();
         var endpoints = backendTestHost.Services.GetRequiredService<IEndpoints>();
         var runtime = new FakeBackendRuntime(endpointOverride ?? endpoints);
+        var changeSource = changeSourceOverride ?? new FakeBackendChangeSource();
+        runtime.ChangeSource = changeSource;
         var coordinator = new BackendRuntimeLifetimeCoordinator(runtime);
         var composition = new BackendRuntimeComposition(runtime, coordinator, "test-data");
         var factory = new FakeAndroidRuntimeCompositionFactory(() => composition);
@@ -1247,6 +1410,7 @@ public sealed class AndroidRuntimeServiceHostTests
             backendTestHost,
             host,
             runtime,
+            changeSource,
             coordinator,
             factory,
             settings,

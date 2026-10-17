@@ -1,6 +1,7 @@
 using PasswordManagerLocal.Common.Frontend.Services;
 using PasswordManagerLocal.Common.Frontend.ViewModels;
 using PasswordManagerLocal.Common.Frontend.Views;
+using PasswordManagerLocal.Common.Contracts.Runtime;
 
 namespace PasswordManagerLocal.Common.Frontend;
 
@@ -15,6 +16,7 @@ public sealed class FrontendUiSession : IAsyncDisposable
     private readonly object _disposalGate = new();
     private Task? _initialization;
     private Task? _disposal;
+    private readonly FrontendChangeNotificationForwarder? _changeNotificationForwarder;
     private int _disposed;
 
     public FrontendUiSession(MainView view, FrontendApplicationContext context, bool ownsBackendClient)
@@ -22,6 +24,16 @@ public sealed class FrontendUiSession : IAsyncDisposable
         View = view ?? throw new ArgumentNullException(nameof(view));
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _ownsBackendClient = ownsBackendClient;
+        if (_context.BackendClient is IFrontendChangeNotificationClient notificationClient)
+        {
+            _changeNotificationForwarder = new FrontendChangeNotificationForwarder(
+                _context.BackendClient,
+                notificationClient,
+                GetCurrentUserId,
+                () => !IsDisposed,
+                _context.PlatformServices.LifetimeToken);
+            _changeNotificationForwarder.ChangeHintReceived += HandleChangeHintReceived;
+        }
     }
 
     public Guid Id { get; } = Guid.NewGuid();
@@ -30,6 +42,11 @@ public sealed class FrontendUiSession : IAsyncDisposable
     public AuthSessionRegistry Authentication { get; } = new();
     public FrontendPlatformServices PlatformServices => _context.PlatformServices;
     public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
+    public FrontendChangeStreamStart? CurrentChangePosition =>
+        _changeNotificationForwarder?.CurrentPosition;
+
+    /// <summary>Metadata-only change hints delivered only during this UI session.</summary>
+    public event Action<FrontendChangeStreamDelivery>? ChangeHintReceived;
 
     public Task InitializeAsync()
     {
@@ -57,7 +74,9 @@ public sealed class FrontendUiSession : IAsyncDisposable
                 PlatformServices,
                 preferences);
             View.DataContext = ViewModel;
+            ViewModel.PropertyChanged += HandleViewModelPropertyChanged;
             await ViewModel.InitializeAsync();
+            _changeNotificationForwarder?.ReconcileCurrentScope();
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
     }
@@ -72,6 +91,9 @@ public sealed class FrontendUiSession : IAsyncDisposable
         model.RefreshPlatformAnimationAvailability();
         if (initializedBeforeResume && !model.IsAuthenticated)
             await model.InitializeAsync();
+
+        if (!IsDisposed)
+            _changeNotificationForwarder?.ReconcileOnResume();
     }
 
     public ValueTask DisposeAsync()
@@ -85,6 +107,10 @@ public sealed class FrontendUiSession : IAsyncDisposable
 
             // Revoke UI admission and detach native/view references synchronously, before
             // awaiting service cleanup. A replacement Activity never shares these adapters.
+            _changeNotificationForwarder?.Deactivate();
+            ChangeHintReceived = null;
+            if (ViewModel is { } model)
+                model.PropertyChanged -= HandleViewModelPropertyChanged;
             PlatformServices.Deactivate();
             View.Dispose();
             ViewModel?.Dispose();
@@ -98,6 +124,8 @@ public sealed class FrontendUiSession : IAsyncDisposable
     {
         try
         {
+            if (_changeNotificationForwarder is not null)
+                await Task.Run(async () => await _changeNotificationForwarder.DisposeAsync());
             if (_ownsBackendClient)
                 await Task.Run(async () => await _context.BackendClient.DisposeAsync());
         }
@@ -112,6 +140,40 @@ public sealed class FrontendUiSession : IAsyncDisposable
             {
                 ViewModel = null;
                 PlatformServices.Dispose();
+            }
+        }
+    }
+
+    private Guid? GetCurrentUserId()
+    {
+        if (ViewModel?.IsAuthenticated != true)
+            return null;
+
+        var token = Authentication.CurrentUserToken;
+        var userId = Authentication.GetSession(token)?.UserId;
+        return userId is { } value && value != Guid.Empty ? value : null;
+    }
+
+    private void HandleViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName is nameof(MainViewModel.IsAuthenticated) or nameof(MainViewModel.CurrentUserId))
+            _changeNotificationForwarder?.ReconcileUserScope();
+    }
+
+    private void HandleChangeHintReceived(FrontendChangeStreamDelivery delivery)
+    {
+        var handlers = ChangeHintReceived;
+        if (handlers is null)
+            return;
+
+        foreach (Action<FrontendChangeStreamDelivery> handler in handlers.GetInvocationList())
+        {
+            if (IsDisposed)
+                return;
+            try { handler(delivery); }
+            catch
+            {
+                // Observers cannot disrupt UI-session ownership or backend notifications.
             }
         }
     }

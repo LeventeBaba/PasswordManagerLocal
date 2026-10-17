@@ -233,7 +233,10 @@ public sealed class MainViewModel : ViewModelBase
         get => _isAuthenticated;
         private set
         {
+            var changed = _isAuthenticated != value;
             this.RaiseAndSetIfChanged(ref _isAuthenticated, value);
+            if (changed)
+                this.RaisePropertyChanged(nameof(CurrentUserId));
             this.RaisePropertyChanged(nameof(IsAnonymous));
             RaiseHeaderSubtitleProperties();
             this.RaisePropertyChanged(nameof(IsDesktopContentVisible));
@@ -255,6 +258,19 @@ public sealed class MainViewModel : ViewModelBase
     }
 
     public bool IsAnonymous => !IsAuthenticated;
+
+    /// <summary>The selected authenticated profile's stable user identity, if available.</summary>
+    public Guid? CurrentUserId
+    {
+        get
+        {
+            if (!IsAuthenticated)
+                return null;
+
+            var userId = _authSessionRegistry.GetSession(_authSessionRegistry.CurrentUserToken)?.UserId;
+            return userId is { } value && value != Guid.Empty ? value : null;
+        }
+    }
 
     public bool IsSessionRenewalDialogOpen
     {
@@ -1649,8 +1665,11 @@ public sealed class MainViewModel : ViewModelBase
         string? message = null,
         OperationMessageKind messageKind = OperationMessageKind.Success)
     {
+        var previousUserId = CurrentUserId;
         _authSessionRegistry.CurrentUserToken = token;
         SetSessionProfile(token, profile);
+        if (IsAuthenticated && previousUserId != CurrentUserId)
+            this.RaisePropertyChanged(nameof(CurrentUserId));
         IsAuthenticated = true;
         CurrentUserDisplayName = BuildDisplayName(profile);
         CurrentUserSubtitle = BuildSubtitle(profile);
@@ -2166,6 +2185,10 @@ public sealed class MainViewModel : ViewModelBase
 
     private void SetSessionProfile(Guid token, UserProfileInfoResponse profile)
     {
+        var isSelectedToken = token == _authSessionRegistry.CurrentUserToken;
+        var previousUserId = isSelectedToken
+            ? _authSessionRegistry.GetSession(token)?.UserId
+            : null;
         if (_authSessionRegistry.GetSession(token) is null)
             _authSessionRegistry.TryAdd(token);
 
@@ -2177,6 +2200,11 @@ public sealed class MainViewModel : ViewModelBase
             profile.Username,
             profile.Email,
             profile.IsRememberMeEnabled);
+        var currentUserId = isSelectedToken
+            ? _authSessionRegistry.GetSession(token)?.UserId
+            : null;
+        if (isSelectedToken && IsAuthenticated && previousUserId != currentUserId)
+            this.RaisePropertyChanged(nameof(CurrentUserId));
     }
 
 

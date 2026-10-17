@@ -2,15 +2,21 @@ using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Backend.Hosting;
 using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
+using PasswordManagerLocal.Common.Contracts.Notifications;
 
 namespace PasswordManagerLocal.Android.Runtime;
 
-public sealed class AndroidServiceFrontendBackendClient : IFrontendBackendClient<IEndpoints>
+public sealed class AndroidServiceFrontendBackendClient :
+    IFrontendBackendClient<IEndpoints>,
+    IFrontendChangeNotificationClient
 {
     private readonly AndroidRuntimeServiceHost _owner;
     private readonly IBackendRuntime _runtime;
     private readonly IBackendRuntimeLifetimeCoordinator _lifetimeCoordinator;
     private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
+    private readonly object _changeSubscriptionsGate = new();
+    private readonly HashSet<AndroidFrontendChangeNotificationSubscription> _changeSubscriptions = [];
     private readonly TaskCompletionSource _disposeCompletion = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
     private IBackendRuntimeLease? _interactiveLease;
@@ -44,6 +50,8 @@ public sealed class AndroidServiceFrontendBackendClient : IFrontendBackendClient
         AttachmentState is AndroidInteractiveAttachmentState.Active or
             AndroidInteractiveAttachmentState.DatabaseRecovery;
 
+    internal bool HasInteractiveConnection => Volatile.Read(ref _interactiveSession) is not null;
+
     public BackendRuntimeSnapshot Snapshot
     {
         get
@@ -54,6 +62,7 @@ public sealed class AndroidServiceFrontendBackendClient : IFrontendBackendClient
     }
 
     public event EventHandler<BackendRuntimeStateChangedEventArgs>? StateChanged;
+    public event EventHandler? ChangeSourceChanged;
 
     public Task ConnectAsync(CancellationToken cancellationToken = default) =>
         _owner.EnsureInteractiveConnectionAsync(this, cancellationToken);
@@ -94,6 +103,48 @@ public sealed class AndroidServiceFrontendBackendClient : IFrontendBackendClient
         {
             _lifecycleLock.Release();
         }
+    }
+
+    public IFrontendChangeNotificationSubscription SubscribeChangeNotifications(
+        Guid? userId = null,
+        int capacity = 64)
+    {
+        ThrowIfUnavailable();
+        var source = _owner.GetAuthorizedChangeSource(this, _runtime);
+        var subscription = source.Subscribe(userId, capacity);
+
+        // Runtime reset/replacement can race the atomic registration. Re-check after
+        // subscribing so a stream from a retired composition is never handed to the UI.
+        if (!_owner.IsCurrentChangeNotificationAuthority(this, _runtime, source))
+        {
+            _ = subscription.DisposeAsync();
+            throw new InvalidOperationException(
+                "The Android change notification attachment is no longer authoritative.");
+        }
+
+        var frontendSubscription = new AndroidFrontendChangeNotificationSubscription(
+            subscription,
+            () => _owner.IsCurrentChangeNotificationAuthority(this, _runtime, source),
+            RemoveChangeSubscription);
+        var registered = false;
+        lock (_changeSubscriptionsGate)
+        {
+            if (_changeSubscriptions.Count == 0 &&
+                _owner.IsCurrentChangeNotificationAuthority(this, _runtime, source))
+            {
+                _changeSubscriptions.Add(frontendSubscription);
+                registered = true;
+            }
+        }
+
+        if (!registered)
+        {
+            frontendSubscription.Unsubscribe();
+            throw new InvalidOperationException(
+                "The Android change notification attachment is no longer authoritative.");
+        }
+
+        return frontendSubscription;
     }
 
     public async ValueTask DisposeAsync()
@@ -154,6 +205,7 @@ public sealed class AndroidServiceFrontendBackendClient : IFrontendBackendClient
                     (int)AndroidInteractiveAttachmentState.Resetting,
                     (int)state) == (int)state)
             {
+                RevokeChangeSubscriptions();
                 return state;
             }
         }
@@ -180,15 +232,20 @@ public sealed class AndroidServiceFrontendBackendClient : IFrontendBackendClient
             (int)targetState,
             (int)AndroidInteractiveAttachmentState.Resetting);
         if (previous is (int)AndroidInteractiveAttachmentState.Active or
-            (int)AndroidInteractiveAttachmentState.DatabaseRecovery or
-            (int)AndroidInteractiveAttachmentState.Closing or
-            (int)AndroidInteractiveAttachmentState.Disposed)
+            (int)AndroidInteractiveAttachmentState.DatabaseRecovery)
         {
+            PublishChangeSourceChanged();
             return;
         }
 
+        if (previous is (int)AndroidInteractiveAttachmentState.Closing or
+            (int)AndroidInteractiveAttachmentState.Disposed)
+            return;
+
         if (previous != (int)AndroidInteractiveAttachmentState.Resetting)
             throw new InvalidOperationException("The Android interactive attachment cannot leave database reset.");
+
+        PublishChangeSourceChanged();
     }
 
     internal async Task<AndroidInteractiveOpenResult> OpenFromHostAsync(
@@ -369,6 +426,7 @@ public sealed class AndroidServiceFrontendBackendClient : IFrontendBackendClient
 
     internal void CompleteDisposalFromHost()
     {
+        RevokeChangeSubscriptions();
         if (Interlocked.Exchange(
                 ref _attachmentState,
                 (int)AndroidInteractiveAttachmentState.Disposed) ==
@@ -379,6 +437,7 @@ public sealed class AndroidServiceFrontendBackendClient : IFrontendBackendClient
 
         _runtime.StateChanged -= HandleRuntimeStateChanged;
         StateChanged = null;
+        ChangeSourceChanged = null;
         _disposeCompletion.TrySetResult();
         GC.SuppressFinalize(this);
     }
@@ -399,8 +458,33 @@ public sealed class AndroidServiceFrontendBackendClient : IFrontendBackendClient
                     (int)AndroidInteractiveAttachmentState.Closing,
                     (int)state) == (int)state)
             {
+                RevokeChangeSubscriptions();
                 return true;
             }
+        }
+    }
+
+    private void RemoveChangeSubscription(AndroidFrontendChangeNotificationSubscription subscription)
+    {
+        lock (_changeSubscriptionsGate)
+            _changeSubscriptions.Remove(subscription);
+    }
+
+    private void RevokeChangeSubscriptions()
+    {
+        AndroidFrontendChangeNotificationSubscription[] subscriptions;
+        lock (_changeSubscriptionsGate)
+        {
+            if (_changeSubscriptions.Count == 0)
+                return;
+            subscriptions = _changeSubscriptions.ToArray();
+            _changeSubscriptions.Clear();
+        }
+
+        foreach (var subscription in subscriptions)
+        {
+            try { subscription.Unsubscribe(); }
+            catch { }
         }
     }
 
@@ -423,6 +507,25 @@ public sealed class AndroidServiceFrontendBackendClient : IFrontendBackendClient
             }
             catch
             {
+            }
+        }
+    }
+
+    private void PublishChangeSourceChanged()
+    {
+        var handlers = ChangeSourceChanged;
+        if (handlers is null)
+            return;
+
+        foreach (EventHandler handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                handler(this, EventArgs.Empty);
+            }
+            catch
+            {
+                // Change hints must never affect backend lifecycle transitions.
             }
         }
     }
