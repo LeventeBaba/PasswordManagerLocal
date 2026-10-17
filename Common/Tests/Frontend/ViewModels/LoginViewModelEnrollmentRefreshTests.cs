@@ -89,6 +89,44 @@ public sealed class LoginViewModelEnrollmentRefreshTests
         }
     }
 
+    [TestMethod]
+    public async Task BusyStartCompletionPublishesEnrollmentRefreshEligibility()
+    {
+        var endpoints = CreateEndpoints();
+        var recording = (EnrollmentStatusEndpoints)(object)endpoints;
+        using var viewModel = CreateViewModel(
+            endpoints,
+            new PasswordManagerLocal.Common.Tests.Fakes.ManualFrontendDeadlineScheduler());
+        var changedProperties = new List<string?>();
+        viewModel.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
+
+        SetPrivateProperty(viewModel, nameof(LoginViewModel.IsBusy), true);
+        SetPrivateProperty(viewModel, nameof(LoginViewModel.IsDeviceTransferCodeVisible), true);
+        Assert.IsFalse(viewModel.CanAutomaticallyRefreshEnrollment);
+
+        changedProperties.Clear();
+        SetPrivateProperty(viewModel, nameof(LoginViewModel.IsBusy), false);
+
+        Assert.IsTrue(viewModel.CanAutomaticallyRefreshEnrollment);
+        CollectionAssert.Contains(
+            changedProperties,
+            nameof(LoginViewModel.CanAutomaticallyRefreshEnrollment));
+
+        changedProperties.Clear();
+        recording.StatusResponse = new DeviceEnrollmentStatusResponse
+        {
+            State = DeviceEnrollmentState.Completed
+        };
+        Assert.IsTrue(await viewModel.RefreshEnrollmentAutomaticallyAsync(() => true, CancellationToken.None));
+
+        Assert.IsFalse(viewModel.CanAutomaticallyRefreshEnrollment);
+        Assert.IsFalse(viewModel.IsDeviceTransferCodeVisible);
+        Assert.IsTrue(viewModel.IsDeviceTransferFinished);
+        CollectionAssert.Contains(
+            changedProperties,
+            nameof(LoginViewModel.CanAutomaticallyRefreshEnrollment));
+    }
+
     private static LoginViewModel CreateViewModel(
         IEndpoints endpoints,
         IFrontendDeadlineScheduler scheduler)
@@ -111,6 +149,15 @@ public sealed class LoginViewModelEnrollmentRefreshTests
         var field = typeof(LoginViewModel).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
             ?? throw new MissingFieldException(typeof(LoginViewModel).FullName, fieldName);
         field.SetValue(viewModel, value);
+    }
+
+    private static void SetPrivateProperty(LoginViewModel viewModel, string propertyName, object value)
+    {
+        var property = typeof(LoginViewModel).GetProperty(
+            propertyName,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            ?? throw new MissingMemberException(typeof(LoginViewModel).FullName, propertyName);
+        property.SetValue(viewModel, value);
     }
 
     private static void ScheduleEnrollmentExpiration(LoginViewModel viewModel, DateTimeOffset expiresAt)

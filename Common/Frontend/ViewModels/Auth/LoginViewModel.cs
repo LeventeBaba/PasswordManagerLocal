@@ -108,6 +108,7 @@ public sealed class LoginViewModel : ViewModelBase
             this.RaiseAndSetIfChanged(ref _isBusy, value);
             this.RaisePropertyChanged(nameof(CanLogin));
             this.RaisePropertyChanged(nameof(CanStartDeviceTransfer));
+            this.RaisePropertyChanged(nameof(CanAutomaticallyRefreshEnrollment));
         }
     }
 
@@ -747,6 +748,7 @@ public sealed class LoginViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(IsDeviceTransferFlowVisible));
         this.RaisePropertyChanged(nameof(IsDeviceTransferBackButtonVisible));
         this.RaisePropertyChanged(nameof(IsHeaderBackButtonVisible));
+        this.RaisePropertyChanged(nameof(CanAutomaticallyRefreshEnrollment));
         this.RaisePropertyChanged(nameof(Title));
         this.RaisePropertyChanged(nameof(Subtitle));
         this.RaisePropertyChanged(nameof(CanLogin));

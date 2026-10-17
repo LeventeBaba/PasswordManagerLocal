@@ -2724,7 +2724,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         var property = args.PropertyName;
         if ((sender is PasswordsViewModel && property == "CurrentPane") ||
             (sender is ProfileViewModel && property is ("CurrentMainPage" or "CurrentProfilePane" or "CurrentDevicePane")) ||
-            (sender is LoginViewModel && property is ("IsDeviceTransferCodeVisible" or "IsDeviceTransferFinished")))
+            (sender is LoginViewModel && property == nameof(LoginViewModel.CanAutomaticallyRefreshEnrollment)))
         {
             RefreshNavigationChanged?.Invoke(this, EventArgs.Empty);
             return;
