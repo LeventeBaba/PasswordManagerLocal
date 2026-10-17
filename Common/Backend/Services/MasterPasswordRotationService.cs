@@ -1,4 +1,5 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Exceptions;
@@ -7,6 +8,7 @@ using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Sync;
+using PasswordManagerLocal.Common.Contracts.Notifications;
 using System.Security.Cryptography;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
@@ -31,6 +33,7 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
     private readonly ISyncQueueWriterService _queueWriter;
     private readonly IPendingSyncActivationService _activation;
     private readonly ICredentialVerificationService _credentialVerification;
+    private readonly IBackendChangePublisher? _changePublisher;
 
     public MasterPasswordRotationService(
         IUserLookupService userLookup,
@@ -50,7 +53,8 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
         IUserSnapshotPublisherService snapshotPublisher,
         ISyncQueueWriterService queueWriter,
         IPendingSyncActivationService activation,
-        ICredentialVerificationService credentialVerification)
+        ICredentialVerificationService credentialVerification,
+        IBackendChangePublisher? changePublisher = null)
     {
         _userLookup = userLookup;
         _userDataReader = userDataReader;
@@ -70,6 +74,7 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
         _queueWriter = queueWriter;
         _activation = activation;
         _credentialVerification = credentialVerification;
+        _changePublisher = changePublisher;
     }
 
     public async Task ChangeMasterPasswordAsync(MasterPasswordChangeRequest request, CancellationToken ct = default)
@@ -163,6 +168,7 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
         }
 
         Exception? postCommitFailure = null;
+        var invalidatedAnySession = false;
         try
         {
             // In-memory key/session state cannot move ahead of the committed canonical transition.
@@ -186,7 +192,7 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
                 CryptographicOperations.ZeroMemory(user.SavedKey);
             user.SavedKey = null;
             _uow.ClearTrackedChanges();
-            InvalidateToken(request.Token, AuthSessionInvalidationReason.ProfilePasswordChanged);
+            invalidatedAnySession |= InvalidateToken(request.Token, AuthSessionInvalidationReason.ProfilePasswordChanged);
             postCommitFailure = ex;
         }
         finally
@@ -194,7 +200,7 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
             foreach (var otherToken in _tokens.ListTokensByUid(user.UId))
             {
                 if (otherToken != request.Token)
-                    InvalidateToken(otherToken, AuthSessionInvalidationReason.ProfilePasswordChanged);
+                    invalidatedAnySession |= InvalidateToken(otherToken, AuthSessionInvalidationReason.ProfilePasswordChanged);
             }
 
             try
@@ -211,6 +217,9 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
             canonicalBackup.ZeroCopies();
         }
 
+        if (invalidatedAnySession)
+            _changePublisher?.Publish(FrontendChangeScope.AuthenticationSessions, user.UId);
+
         if (postCommitFailure is not null)
         {
             throw new MutationPartiallyCommittedException(
@@ -219,10 +228,10 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
         }
     }
 
-    private void InvalidateToken(Guid token, AuthSessionInvalidationReason reason)
+    private bool InvalidateToken(Guid token, AuthSessionInvalidationReason reason)
     {
         _cache.InvalidateToken(token);
         _keys.InvalidateToken(token);
-        _tokens.Revoke(token, reason);
+        return _tokens.Revoke(token, reason);
     }
 }

@@ -3,6 +3,7 @@ using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Backend.Abstractions.Security;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Discovery;
 using PasswordManagerLocal.Common.Backend.DependencyInjection;
@@ -32,6 +33,7 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
         DateTimeOffset.UtcNow);
     private SyncRuntimeSnapshot _syncSnapshot = new(SyncRuntimeState.Disabled, null);
     private BackendServiceHost? _host;
+    private IBackendChangeSource? _changeSource;
     private ISyncRuntimeService? _syncRuntime;
     private InteractiveBackendSession? _interactiveSession;
     private Task? _startupTask;
@@ -71,6 +73,15 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
         {
             lock (_gate)
                 return _syncSnapshot;
+        }
+    }
+
+    public IBackendChangeSource? ChangeSource
+    {
+        get
+        {
+            lock (_gate)
+                return _changeSource;
         }
     }
 
@@ -715,10 +726,12 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
             }
 
             (newHost, newSyncRuntime) = await CreateAndStartHostAsync();
+            var newChangeSource = newHost.Services.GetService<IBackendChangeSource>();
 
             lock (_gate)
             {
                 _host = newHost;
+                _changeSource = newChangeSource;
                 _syncRuntime = newSyncRuntime;
                 _restartBlockedFailure = null;
                 newSyncRuntime.StateChanged += HandleSyncStateChanged;
@@ -772,6 +785,7 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
             lock (_gate)
             {
                 _host = null;
+                _changeSource = null;
                 _syncRuntime = null;
                 finalStateChange = TransitionLocked(state, failureKind, failure);
                 syncStateChange = SetSyncSnapshotLocked(
@@ -987,6 +1001,7 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
                 syncRuntime.StateChanged -= HandleSyncStateChanged;
 
             _host = null;
+            _changeSource = null;
             _syncRuntime = null;
             _hostGeneration++;
         }

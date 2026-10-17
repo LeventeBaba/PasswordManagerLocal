@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Security;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
@@ -20,6 +21,7 @@ using PasswordManagerLocal.Common.Backend.Services.Hosted;
 using PasswordManagerLocal.Common.Backend.State;
 using PasswordManagerLocal.Common.Backend.Sync.Discovery;
 using PasswordManagerLocal.Common.Backend.Sync.Presence;
+using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Backend.Sync.Tcp;
 using PasswordManagerLocal.Common.Backend.Utils;
 
@@ -61,6 +63,9 @@ public static class BackendServiceCollectionExtensions
 
         services.AddSingleton(storagePaths);
         services.AddSingleton<IBackendExecutionProfileProvider>(executionProfileProvider);
+        services.AddSingleton<BackendChangeEventHub>();
+        services.AddSingleton<IBackendChangePublisher>(sp => sp.GetRequiredService<BackendChangeEventHub>());
+        services.AddSingleton<IBackendChangeSource>(sp => sp.GetRequiredService<BackendChangeEventHub>());
         services.AddSingleton<IDeviceEnrollmentAvailability>(executionProfileProvider);
         services.AddSingleton<IKeyProtector>(keyProtector);
         services.AddSingleton<ILocalDiscoveryNetworkLease>(discoveryNetworkLease);

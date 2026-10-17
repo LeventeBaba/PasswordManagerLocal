@@ -2,11 +2,13 @@ using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Discovery;
 using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Presence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Contracts.Responses;
+using PasswordManagerLocal.Common.Contracts.Notifications;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.State;
 using PasswordManagerLocal.Common.Backend.Sync;
@@ -40,6 +42,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
     private readonly IInteractiveUserDataStateAccessor _interactiveState;
     private readonly IDeviceEnrollmentAvailability _enrollmentAvailability;
     private readonly IDevicePresenceRegistry? _presenceRegistry;
+    private readonly IBackendChangePublisher? _changePublisher;
     private readonly object _lock = new();
     private EnrollmentSession? _currentSession;
     private CancellationTokenSource? _enrollmentExpirationCancellation;
@@ -61,7 +64,8 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
         IDeviceEnrollmentSnapshotImporterService snapshotImporter,
         IInteractiveUserDataStateAccessor interactiveState,
         IDeviceEnrollmentAvailability enrollmentAvailability,
-        IDevicePresenceRegistry? presenceRegistry = null)
+        IDevicePresenceRegistry? presenceRegistry = null,
+        IBackendChangePublisher? changePublisher = null)
     {
         _scopeFactory = scopeFactory;
         _identity = identity;
@@ -77,6 +81,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
         _enrollmentAvailability = enrollmentAvailability
             ?? throw new ArgumentNullException(nameof(enrollmentAvailability));
         _presenceRegistry = presenceRegistry;
+        _changePublisher = changePublisher;
     }
 
     public void OpenInteractiveAdmission()
@@ -166,6 +171,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
             }
 
             await _endpointService.VerifyLocalEnrollmentListenerAsync(session.SessionId, session.Secret, directEndpointInfo, operationToken);
+            PublishEnrollmentChange();
             return new DeviceEnrollmentCodeResponse { Code = session.Code, ExpiresAt = session.ExpiresAt };
         }
         catch
@@ -178,6 +184,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
                     DeactivateEnrollmentDiscoveryLocked();
                     session.ClearSensitiveData();
                     _currentSession = null;
+                    PublishEnrollmentChange();
                 }
             }
 
@@ -1008,12 +1015,15 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
         {
             if (_currentSession is not null)
             {
+                var stateChanged = _currentSession.State != DeviceEnrollmentState.Completed;
                 _currentSession.State = DeviceEnrollmentState.Completed;
                 _currentSession.ErrorCode = DeviceEnrollmentErrorCode.Unknown;
                 _currentSession.ErrorMessage = null;
                 CancelEnrollmentExpirationLocked();
                 DeactivateEnrollmentDiscoveryLocked();
                 _currentSession.ClearSensitiveData();
+                if (stateChanged)
+                    PublishEnrollmentChange();
             }
         }
 
@@ -1044,6 +1054,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
             CancelEnrollmentExpirationLocked();
             DeactivateEnrollmentDiscoveryLocked();
             session.ClearSensitiveData();
+            PublishEnrollmentChange();
             return (true, session.ErrorMessage);
         }
 
@@ -1113,10 +1124,13 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
     {
         lock (_lock)
         {
+            var hadSession = _currentSession is not null;
             CancelEnrollmentExpirationLocked();
             DeactivateEnrollmentDiscoveryLocked();
             _currentSession?.ClearSensitiveData();
             _currentSession = null;
+            if (hadSession)
+                PublishEnrollmentChange();
         }
 
         await _syncRuntime.EndEnrollmentOnlyAsync(cancellationToken);
@@ -1160,7 +1174,10 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
             }
 
             if (expired)
+            {
+                PublishEnrollmentChange();
                 await _syncRuntime.EndEnrollmentOnlyAsync(CancellationToken.None);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -1214,7 +1231,11 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
         CancelEnrollmentExpirationLocked();
         DeactivateEnrollmentDiscoveryLocked();
         _currentSession.ClearSensitiveData();
+        PublishEnrollmentChange();
     }
+
+    private void PublishEnrollmentChange() =>
+        _changePublisher?.Publish(FrontendChangeScope.Enrollment);
 
 
     public void Dispose()

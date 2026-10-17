@@ -6,6 +6,9 @@ using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Sync;
+using PasswordManagerLocal.Common.Backend.Persistence;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
+using PasswordManagerLocal.Common.Contracts.Notifications;
 using PasswordManagerLocal.Common.Backend.Utils;
 using PasswordManagerLocal.Common.Tests.Fakes;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
@@ -41,6 +44,10 @@ public sealed class UserSnapshotMergeCoordinatorTests
         await AddPendingAsync(database, CreateEnvelope(user, secondOrigin.DeviceId, secondOrigin.InstanceId, 5, secondSigningKey, 0x52));
         await database.UnitOfWork.SaveChangesAsync();
 
+        using var changeHub = new BackendChangeEventHub(TimeProvider.System);
+        var eventUnitOfWork = new AppUnitOfWork(database.Db, changeHub);
+        await using var changeSubscription = changeHub.Subscribe(user.UId, capacity: 8);
+
         var lifecycle = new UserLifecycleCoordinator();
         var bundleSync = new FakeUserDataBundleSyncService
         {
@@ -66,7 +73,7 @@ public sealed class UserSnapshotMergeCoordinatorTests
             database.UserSyncStates,
             database.UserRevisionKnowledge,
             localIdentity,
-            database.UnitOfWork,
+            eventUnitOfWork,
             lifecycle);
         var queue = new FakeSyncQueueWriterService();
         var activation = new FakeSyncQueueService();
@@ -79,7 +86,7 @@ public sealed class UserSnapshotMergeCoordinatorTests
             publisher,
             queue,
             activation,
-            database.UnitOfWork,
+            eventUnitOfWork,
             lifecycle);
 
         using var key = EncryptionKey.Create();
@@ -123,6 +130,15 @@ public sealed class UserSnapshotMergeCoordinatorTests
         MSTestAssert.HasCount(1, queue.EnqueuedItems);
         MSTestAssert.AreEqual(SyncModelType.User, queue.EnqueuedItems[0].ModelType);
         MSTestAssert.AreEqual(user.UId, queue.EnqueuedItems[0].ModelId);
+        using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            await foreach (var delivery in changeSubscription.ReadAllAsync(timeout.Token))
+            {
+                MSTestAssert.AreEqual(user.UId, delivery.Notification!.UserId);
+                MSTestAssert.AreEqual(FrontendChangeScope.UserProfile, delivery.Notification.Scope);
+                break;
+            }
+        }
         MSTestAssert.AreEqual(1, activation.ActivatePendingSyncsCalls);
         MSTestAssert.IsNotNull(reloadedUser);
         CollectionAssert.AreEqual(new byte[] { 0xEE, 0x01 }, reloadedUser.EncryptedGeneralUserDataPayload);

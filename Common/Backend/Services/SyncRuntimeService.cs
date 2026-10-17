@@ -1,10 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Abstractions.State;
 using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Discovery;
 using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Presence;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Contracts.Notifications;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
 
@@ -17,6 +19,7 @@ public sealed class SyncRuntimeService : ISyncRuntimeService
     private readonly IDiscoveredDeviceEndpointRegistry _endpointRegistry;
     private readonly IDeviceSyncTaskService _deviceSyncTasks;
     private readonly IDevicePresenceRegistry? _presenceRegistry;
+    private readonly IBackendChangePublisher? _changePublisher;
     private readonly IReadOnlyList<ISyncControlledHostedService> _controlledServices;
     private readonly List<ISyncControlledHostedService> _activeServices = [];
     private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
@@ -32,7 +35,8 @@ public sealed class SyncRuntimeService : ISyncRuntimeService
         IDiscoveredDeviceEndpointRegistry endpointRegistry,
         IDeviceSyncTaskService deviceSyncTasks,
         IEnumerable<ISyncControlledHostedService> controlledServices,
-        IDevicePresenceRegistry? presenceRegistry = null)
+        IDevicePresenceRegistry? presenceRegistry = null,
+        IBackendChangePublisher? changePublisher = null)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _identity = identity ?? throw new ArgumentNullException(nameof(identity));
@@ -41,6 +45,7 @@ public sealed class SyncRuntimeService : ISyncRuntimeService
         _endpointRegistry = endpointRegistry ?? throw new ArgumentNullException(nameof(endpointRegistry));
         _deviceSyncTasks = deviceSyncTasks ?? throw new ArgumentNullException(nameof(deviceSyncTasks));
         _presenceRegistry = presenceRegistry;
+        _changePublisher = changePublisher;
         ArgumentNullException.ThrowIfNull(controlledServices);
         _controlledServices = controlledServices
             .OrderBy(service => service.StartOrder)
@@ -368,6 +373,8 @@ public sealed class SyncRuntimeService : ISyncRuntimeService
             _snapshot = next;
             stateChanges.Add(new SyncRuntimeStateChangedEventArgs(previous, next));
         }
+
+        _changePublisher?.Publish(FrontendChangeScope.BackgroundSync);
     }
 
     private void Publish(IEnumerable<SyncRuntimeStateChangedEventArgs> stateChanges)

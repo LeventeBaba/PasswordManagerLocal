@@ -3,6 +3,7 @@ using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Backend.Hosting;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 
 namespace PasswordManagerLocal.Common.Tests.Fakes;
 
@@ -27,6 +28,7 @@ public sealed class FakeBackendRuntime : IBackendRuntime
         null,
         DateTimeOffset.UtcNow);
     public SyncRuntimeSnapshot SyncSnapshot { get; private set; } = new(SyncRuntimeState.Disabled, null);
+    public IBackendChangeSource? ChangeSource => null;
     public int EnsureStartedCalls { get; private set; }
     public int WaitUntilReadyCalls { get; private set; }
     public int OpenInteractiveSessionCalls { get; private set; }

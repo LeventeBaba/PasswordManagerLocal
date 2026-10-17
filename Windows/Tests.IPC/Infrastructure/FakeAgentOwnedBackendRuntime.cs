@@ -2,6 +2,7 @@ using PasswordManagerLocal.Common.Backend.Hosting;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 
 namespace PasswordManagerLocal.Windows.Tests.IPC.Infrastructure;
 
@@ -17,6 +18,7 @@ internal sealed class FakeAgentOwnedBackendRuntime : IBackendRuntime
         null,
         DateTimeOffset.UtcNow);
     public SyncRuntimeSnapshot SyncSnapshot { get; set; } = new(SyncRuntimeState.Disabled, null);
+    public IBackendChangeSource? ChangeSource => null;
     public int EnsureStartedCount { get; private set; }
     public int ResetCount { get; private set; }
     public int StopCount { get; private set; }

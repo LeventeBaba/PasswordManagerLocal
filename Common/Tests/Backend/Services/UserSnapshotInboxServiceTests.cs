@@ -7,6 +7,8 @@ using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Backend.Utils;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
+using PasswordManagerLocal.Common.Contracts.Notifications;
 using PasswordManagerLocal.Common.Tests.Fakes;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 using System.Text.Json;
@@ -31,12 +33,14 @@ public sealed class UserSnapshotInboxServiceTests
         var originalDevices = user.EncryptedUserDevicesDataPayload.ToArray();
         var localIdentity = CreateUnsignedIdentity(Guid.NewGuid(), Guid.NewGuid());
         var recoveryScheduler = new FakeUserDataRecoveryScheduler();
+        using var changeHub = new BackendChangeEventHub(TimeProvider.System);
+        var eventUnitOfWork = new AppUnitOfWork(database.Db, changeHub);
         var service = new UserSnapshotInboxService(
             database.Users,
             database.UserSyncSnapshots,
             database.UserRevisionKnowledge,
             localIdentity,
-            database.UnitOfWork,
+            eventUnitOfWork,
             new UserLifecycleCoordinator(),
             new FakeUserMembershipAuthorizationService(),
             recoveryScheduler: recoveryScheduler);
@@ -77,6 +81,8 @@ public sealed class UserSnapshotInboxServiceTests
         MSTestAssert.AreEqual(
             (user.UId, UserDataRecoveryTrigger.HealthyCandidateReceived),
             recoveryScheduler.Calls.Single());
+        MSTestAssert.AreEqual(0, changeHub.CurrentPosition.Sequence,
+            "Staging a pending encrypted snapshot without changing canonical data or effective login identity is not a frontend data change.");
     }
 
     [TestMethod]
