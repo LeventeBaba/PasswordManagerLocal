@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using System.ComponentModel;
 using PasswordManagerLocal.Common.Frontend.ViewModels;
 using PasswordManagerLocal.Common.Frontend.Views;
 
@@ -126,10 +127,11 @@ internal sealed class MainViewKeyboardHandler
         if (viewModel.IsAuthenticated)
         {
             if (await ShowConfirmationDialogAsync(
-                    viewModel.LogoutConfirmationTitle,
-                    viewModel.LogoutConfirmationMessage,
-                    viewModel.YesLabel,
-                    viewModel.NoLabel))
+                    viewModel,
+                    () => viewModel.LogoutConfirmationTitle,
+                    () => viewModel.LogoutConfirmationMessage,
+                    () => viewModel.YesLabel,
+                    () => viewModel.NoLabel))
             {
                 await viewModel.RequestLogoutAsync();
             }
@@ -138,10 +140,11 @@ internal sealed class MainViewKeyboardHandler
         }
 
         if (await ShowConfirmationDialogAsync(
-                viewModel.ExitConfirmationTitle,
-                viewModel.ExitConfirmationMessage,
-                viewModel.YesLabel,
-                viewModel.NoLabel))
+                viewModel,
+                () => viewModel.ExitConfirmationTitle,
+                () => viewModel.ExitConfirmationMessage,
+                () => viewModel.YesLabel,
+                () => viewModel.NoLabel))
         {
             (TopLevel.GetTopLevel(_view) as Window)?.Close();
         }
@@ -149,12 +152,30 @@ internal sealed class MainViewKeyboardHandler
         return true;
     }
 
-    private async Task<bool> ShowConfirmationDialogAsync(string title, string message, string yesLabel, string noLabel)
+    private async Task<bool> ShowConfirmationDialogAsync(
+        MainViewModel viewModel,
+        Func<string> title,
+        Func<string> message,
+        Func<string> yesLabel,
+        Func<string> noLabel)
     {
         if (TopLevel.GetTopLevel(_view) is not Window owner)
             return false;
 
-        var dialog = new ConfirmationDialog(title, message, yesLabel, noLabel);
-        return await dialog.ShowDialog<bool?>(owner) == true;
+        var dialog = new ConfirmationDialog(title(), message(), yesLabel(), noLabel());
+        PropertyChangedEventHandler languageChanged = (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.CurrentLanguage))
+                dialog.UpdateContent(title(), message(), yesLabel(), noLabel());
+        };
+        viewModel.PropertyChanged += languageChanged;
+        try
+        {
+            return await dialog.ShowDialog<bool?>(owner) == true;
+        }
+        finally
+        {
+            viewModel.PropertyChanged -= languageChanged;
+        }
     }
 }

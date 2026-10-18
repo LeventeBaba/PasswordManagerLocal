@@ -15,6 +15,11 @@ public partial class ConfirmationDialog : Window
     public ConfirmationDialog(string title, string message, string yesLabel, string noLabel)
         : this()
     {
+        UpdateContent(title, message, yesLabel, noLabel);
+    }
+
+    public void UpdateContent(string title, string message, string yesLabel, string noLabel)
+    {
         Title = title;
         TitleText.Text = title;
         MessageText.Text = message;

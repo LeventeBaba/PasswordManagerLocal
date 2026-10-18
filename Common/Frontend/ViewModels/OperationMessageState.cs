@@ -9,6 +9,7 @@ public sealed class OperationMessageState : ReactiveObject, IDisposable
 
     private bool _disposed;
     private string? _message;
+    private Func<string>? _messageFactory;
     private OperationMessageKind _kind;
     private IDisposable? _autoDismissTimer;
 
@@ -26,18 +27,43 @@ public sealed class OperationMessageState : ReactiveObject, IDisposable
 
     public bool HasNonErrorMessage => HasMessage && !IsError;
 
+    public Func<string>? CaptureMessageFactory()
+    {
+        if (_messageFactory is not null)
+            return _messageFactory;
+        var captured = _message;
+        return string.IsNullOrWhiteSpace(captured) ? null : () => captured;
+    }
+
     public void ShowInformation(string message, bool autoDismiss = false) =>
         Show(message, OperationMessageKind.Information, autoDismiss ? DefaultSuccessDuration : null);
+
+    public void ShowInformation(Func<string> messageFactory, bool autoDismiss = false) =>
+        Show(messageFactory, OperationMessageKind.Information, autoDismiss ? DefaultSuccessDuration : null);
 
     public void ShowSuccess(string message) =>
         Show(message, OperationMessageKind.Success, DefaultSuccessDuration);
 
+    public void ShowSuccess(Func<string> messageFactory) =>
+        Show(messageFactory, OperationMessageKind.Success, DefaultSuccessDuration);
+
     public void ShowError(string message) =>
         Show(message, OperationMessageKind.Error, null);
+
+    public void ShowError(Func<string> messageFactory) =>
+        Show(messageFactory, OperationMessageKind.Error, null);
+
+    public void Refresh()
+    {
+        if (_disposed || _messageFactory is null)
+            return;
+        Update(Evaluate(_messageFactory), _kind);
+    }
 
     public void Clear()
     {
         CancelAutoDismiss();
+        _messageFactory = null;
         Update(null, OperationMessageKind.None);
     }
 
@@ -52,6 +78,7 @@ public sealed class OperationMessageState : ReactiveObject, IDisposable
         if (_disposed)
             return;
         CancelAutoDismiss();
+        _messageFactory = null;
 
         if (string.IsNullOrWhiteSpace(message))
         {
@@ -67,8 +94,38 @@ public sealed class OperationMessageState : ReactiveObject, IDisposable
         _autoDismissTimer = DispatcherTimer.RunOnce(() =>
         {
             _autoDismissTimer = null;
+            _messageFactory = null;
             Update(null, OperationMessageKind.None);
         }, autoDismissAfter);
+    }
+
+    private void Show(
+        Func<string> messageFactory,
+        OperationMessageKind kind,
+        TimeSpan? duration)
+    {
+        ArgumentNullException.ThrowIfNull(messageFactory);
+        if (_disposed)
+            return;
+        CancelAutoDismiss();
+        _messageFactory = messageFactory;
+        Update(Evaluate(messageFactory), kind);
+
+        if (duration is not { } autoDismissAfter)
+            return;
+
+        _autoDismissTimer = DispatcherTimer.RunOnce(() =>
+        {
+            _autoDismissTimer = null;
+            _messageFactory = null;
+            Update(null, OperationMessageKind.None);
+        }, autoDismissAfter);
+    }
+
+    private static string Evaluate(Func<string> messageFactory)
+    {
+        try { return messageFactory(); }
+        catch { return "[LocalizationError]"; }
     }
 
     private void CancelAutoDismiss()

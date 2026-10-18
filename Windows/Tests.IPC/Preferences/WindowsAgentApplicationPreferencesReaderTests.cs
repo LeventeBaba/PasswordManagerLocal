@@ -3,6 +3,7 @@ using PasswordManagerLocal.Common.Contracts.Preferences;
 using PasswordManagerLocal.Common.Frontend.Services;
 using PasswordManagerLocal.Common.Preferences;
 using PasswordManagerLocal.Windows.Agent.Preferences;
+using PasswordManagerLocal.Windows.Tests.IPC.Infrastructure;
 
 namespace PasswordManagerLocal.Windows.Tests.IPC.Preferences;
 
@@ -25,7 +26,9 @@ public sealed class WindowsAgentApplicationPreferencesReaderTests
                 Theme = AppThemeMode.Light
             });
 
-            var ui = new UiPreferencesService(new FileApplicationPreferencesStore(directory));
+            await using var ui = await UiPreferencesService.CreateAsync(
+                new FileApplicationPreferencesStore(directory),
+                localizationResourceLoader: new TestFrontendLocalizationResourceLoader());
             var agent = new WindowsAgentApplicationPreferencesReader(
                 new FileApplicationPreferencesStore(directory));
 

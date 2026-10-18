@@ -1876,7 +1876,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
                 return;
             }
 
-            ShowSuccessMessage(GetTranslation((exportKind, deleteOriginal) switch
+            ShowLocalizedSuccessMessage((exportKind, deleteOriginal) switch
             {
                 (MultiSelectionExportKind.Passwords, false) => "Passwords_Export_Copy_Passwords_Success",
                 (MultiSelectionExportKind.Passwords, true) => "Passwords_Export_Move_Passwords_Success",
@@ -1884,12 +1884,12 @@ public sealed partial class PasswordsViewModel : ViewModelBase
                 (MultiSelectionExportKind.CustomColors, true) => "Passwords_Export_Move_CustomColors_Success",
                 (MultiSelectionExportKind.PasswordTags, false) => "Passwords_Export_Copy_Tags_Success",
                 _ => "Passwords_Export_Move_Tags_Success"
-            }));
+            });
         }
         catch (Exception ex)
         {
             CancelExportConfirmation();
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {
@@ -2334,7 +2334,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
             ApplyFiltersAndSorting(selectedId, preserveSelection: selectedId.HasValue);
             if (showSuccessMessage)
-                ShowSuccessMessage(GetTranslation("Passwords_Refreshed"));
+                ShowLocalizedSuccessMessage("Passwords_Refreshed");
 
             return true;
         }
@@ -2345,7 +2345,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         catch (Exception ex)
         {
             if (!preserveUiState)
-                ShowErrorMessage(GetSafeErrorMessage(ex));
+                ShowSafeErrorMessage(ex);
             return false;
         }
     }
@@ -2656,14 +2656,14 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             if (!await RefreshAsync(false))
                 return;
 
-            ShowSuccessMessage(GetTranslation(
+            ShowLocalizedSuccessMessage(
                 passwords.Length > 1
                     ? "Passwords_Delete_MultipleSuccess"
-                    : "Passwords_Delete_Success"));
+                    : "Passwords_Delete_Success");
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {
@@ -2694,7 +2694,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
     }
 
@@ -2715,13 +2715,13 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         try
         {
             if (await TryCopyTextToClipboardAsync(RevealedPassword))
-                ShowSuccessMessage(GetTranslation("Passwords_Copy_Success"));
+                ShowLocalizedSuccessMessage("Passwords_Copy_Success");
             else
-                ShowErrorMessage(GetTranslation("Error_ClipboardUnavailable"));
+                ShowLocalizedErrorMessage("Error_ClipboardUnavailable");
         }
         catch
         {
-            ShowErrorMessage(GetTranslation("Error_ClipboardUnavailable"));
+            ShowLocalizedErrorMessage("Error_ClipboardUnavailable");
         }
     }
 
@@ -2751,7 +2751,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
     }
 
@@ -2763,19 +2763,19 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         try
         {
             _isSavingPassword = true;
-            var successMessage = await PersistPasswordEditorAsync();
-            if (successMessage is null)
+            var successKey = await PersistPasswordEditorAsync();
+            if (successKey is null)
                 return;
 
             HidePassword();
             ResetEditorFields();
             CurrentPane = ListPane;
             if (await RefreshAsync(false))
-                ShowSuccessMessage(successMessage);
+                ShowLocalizedSuccessMessage(successKey);
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {
@@ -2788,13 +2788,13 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         ClearStatusMessage();
         if (string.IsNullOrWhiteSpace(EditorName))
         {
-            ShowErrorMessage(GetTranslation("Validation_PasswordName_Required"));
+            ShowLocalizedErrorMessage("Validation_PasswordName_Required");
             return false;
         }
 
         if (IsCreateMode && string.IsNullOrWhiteSpace(EditorPassword))
         {
-            ShowErrorMessage(GetTranslation("Validation_RegisterPassword_Required"));
+            ShowLocalizedErrorMessage("Validation_RegisterPassword_Required");
             return false;
         }
 
@@ -2806,14 +2806,14 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         if (IsCreateMode)
         {
             await CreatePasswordFromEditorAsync();
-            return GetTranslation("Passwords_Save_CreateSuccess");
+            return "Passwords_Save_CreateSuccess";
         }
 
         if (SelectedPassword is null)
             return null;
 
         await UpdatePasswordFromEditorAsync(SelectedPassword.Id);
-        return GetTranslation("Passwords_Save_UpdateSuccess");
+        return "Passwords_Save_UpdateSuccess";
     }
 
     private async Task CreatePasswordFromEditorAsync()
@@ -3272,13 +3272,13 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
         if (!PasswordColorUtility.TryNormalizeHexColor(CustomColorPickerCode, out var colorCode))
         {
-            ShowErrorMessage(GetTranslation("Passwords_ColorPicker_InvalidCode"));
+            ShowLocalizedErrorMessage("Passwords_ColorPicker_InvalidCode");
             return;
         }
 
         if (string.Equals(colorCode, PasswordColorUtility.DefaultColor, StringComparison.OrdinalIgnoreCase))
         {
-            ShowErrorMessage(GetTranslation("Passwords_CustomColors_Add_DefaultColor"));
+            ShowLocalizedErrorMessage("Passwords_CustomColors_Add_DefaultColor");
             return;
         }
 
@@ -3318,15 +3318,17 @@ public sealed partial class PasswordsViewModel : ViewModelBase
                 return;
             }
 
-            var successMessage = CustomColorSaveSuccessMessage;
+            var successKey = IsEditingCustomColor
+                ? "Passwords_CustomColors_Update_Success"
+                : "Passwords_CustomColors_Add_Success";
             ResetCustomColorPickerDraft();
             SetCustomColorPickerMode(null);
             SetCurrentPane(CustomColorListPane, true);
-            ShowSuccessMessage(successMessage);
+            ShowLocalizedSuccessMessage(successKey);
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {
@@ -3462,14 +3464,14 @@ public sealed partial class PasswordsViewModel : ViewModelBase
                 return;
             }
 
-            ShowSuccessMessage(GetTranslation(
+            ShowLocalizedSuccessMessage(
                 customColors.Length > 1
                     ? "Passwords_CustomColors_Delete_MultipleSuccess"
-                    : "Passwords_CustomColors_Delete_Success"));
+                    : "Passwords_CustomColors_Delete_Success");
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {
@@ -3483,7 +3485,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
         if (!PasswordColorUtility.TryNormalizeHexColor(CustomColorCode, out var normalizedColor))
         {
-            ShowErrorMessage(GetTranslation("Passwords_ColorPicker_InvalidCode"));
+            ShowLocalizedErrorMessage("Passwords_ColorPicker_InvalidCode");
             return;
         }
 

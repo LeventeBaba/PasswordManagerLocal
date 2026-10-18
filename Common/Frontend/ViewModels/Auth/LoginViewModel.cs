@@ -320,6 +320,7 @@ public sealed class LoginViewModel : ViewModelBase
 
     protected override void OnLanguageChanged()
     {
+        DeviceTransferStatus.Refresh();
         this.RaisePropertyChanged(nameof(Title));
         this.RaisePropertyChanged(nameof(BackLabel));
         this.RaisePropertyChanged(nameof(Subtitle));
@@ -453,13 +454,13 @@ public sealed class LoginViewModel : ViewModelBase
 
         if (string.IsNullOrWhiteSpace(Username))
         {
-            ShowErrorMessage(GetTranslation("Validation_Username_Required"));
+            ShowLocalizedErrorMessage("Validation_Username_Required");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(Password))
         {
-            ShowErrorMessage(GetTranslation("Validation_Password_Required"));
+            ShowLocalizedErrorMessage("Validation_Password_Required");
             return;
         }
 
@@ -481,7 +482,7 @@ public sealed class LoginViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {
@@ -511,9 +512,9 @@ public sealed class LoginViewModel : ViewModelBase
         try
         {
             IsBusy = true;
-            if (!await FirewallPermissionStartupPrompt.EnsureConfiguredAsync(CurrentLanguage))
+            if (!await FirewallPermissionStartupPrompt.EnsureConfiguredAsync(UiPreferences))
             {
-                DeviceTransferStatus.ShowError(GetTranslation("Firewall_RequiredForLocalNetwork"));
+                DeviceTransferStatus.ShowError(() => GetTranslation("Firewall_RequiredForLocalNetwork"));
                 return;
             }
 
@@ -536,8 +537,8 @@ public sealed class LoginViewModel : ViewModelBase
         {
             await FirewallPermissionStartupPrompt.RevalidateAfterLikelyFirewallFailureAsync(
                 ex,
-                CurrentLanguage);
-            DeviceTransferStatus.ShowError(GetSafeErrorMessage(ex));
+                UiPreferences);
+            DeviceTransferStatus.ShowError(CreateSafeErrorMessageFactory(ex));
             IsDeviceTransferSuccess = false;
             IsDeviceTransferIntroVisible = false;
             IsDeviceTransferCodeVisible = false;
@@ -565,12 +566,12 @@ public sealed class LoginViewModel : ViewModelBase
             }
 
             ResetDeviceTransferCodeCopiedFeedback();
-            DeviceTransferStatus.ShowError(GetTranslation("Error_ClipboardUnavailable"));
+            DeviceTransferStatus.ShowError(() => GetTranslation("Error_ClipboardUnavailable"));
         }
         catch
         {
             ResetDeviceTransferCodeCopiedFeedback();
-            DeviceTransferStatus.ShowError(GetTranslation("Error_ClipboardUnavailable"));
+            DeviceTransferStatus.ShowError(() => GetTranslation("Error_ClipboardUnavailable"));
         }
     }
 
@@ -660,7 +661,7 @@ public sealed class LoginViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            DeviceTransferStatus.ShowError(GetSafeErrorMessage(ex));
+            DeviceTransferStatus.ShowError(CreateSafeErrorMessageFactory(ex));
         }
     }
 
@@ -700,7 +701,7 @@ public sealed class LoginViewModel : ViewModelBase
         {
             StopEnrollmentExpirationTimer();
             IsDeviceTransferSuccess = true;
-            DeviceTransferStatus.ShowSuccess(GetTranslation("Login_DeviceTransfer_SuccessMessage"));
+            DeviceTransferStatus.ShowSuccess(() => GetTranslation("Login_DeviceTransfer_SuccessMessage"));
             IsDeviceTransferCodeVisible = false;
             IsDeviceTransferFinished = true;
             this.RaisePropertyChanged(nameof(DeviceTransferFinishTitle));
@@ -712,9 +713,11 @@ public sealed class LoginViewModel : ViewModelBase
         {
             StopEnrollmentExpirationTimer();
             IsDeviceTransferSuccess = false;
-            DeviceTransferStatus.ShowError(status.ErrorCode == PasswordManagerLocal.Common.Contracts.Enrollment.DeviceEnrollmentErrorCode.Unknown
-                ? GetTranslation("Login_DeviceTransfer_ErrorMessage")
-                : GetDeviceEnrollmentErrorMessage(status.ErrorCode));
+            var errorCode = status.ErrorCode;
+            DeviceTransferStatus.ShowError(() =>
+                errorCode == PasswordManagerLocal.Common.Contracts.Enrollment.DeviceEnrollmentErrorCode.Unknown
+                    ? GetTranslation("Login_DeviceTransfer_ErrorMessage")
+                    : GetDeviceEnrollmentErrorMessage(errorCode));
             IsDeviceTransferCodeVisible = false;
             IsDeviceTransferFinished = true;
             this.RaisePropertyChanged(nameof(DeviceTransferFinishTitle));

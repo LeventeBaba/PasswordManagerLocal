@@ -18,13 +18,7 @@ public sealed class ProfileDeviceRefreshTests
     {
         var endpoints = DispatchProxy.Create<IEndpoints, RecordingDeviceEndpoints>();
         var recording = (RecordingDeviceEndpoints)(object)endpoints;
-        var uiPreferences = new UiPreferencesService(
-            new InMemoryApplicationPreferencesStore(new ApplicationPreferences
-            {
-                SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
-                Language = AppLanguage.English,
-                Theme = AppThemeMode.Dark
-            }));
+        await using var uiPreferences = await TestUiPreferencesFactory.CreateAsync();
         using var viewModel = new ProfileViewModel(uiPreferences, endpoints, () => Task.FromResult(true), () => Task.CompletedTask);
         viewModel.SetSessionToken(Guid.NewGuid());
 

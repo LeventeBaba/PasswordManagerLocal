@@ -16,7 +16,7 @@ public sealed class SettingsViewModelBackgroundSyncTests
         {
             State = FakeBackgroundSyncSettingsClient.Available(true)
         };
-        var viewModel = CreateViewModel(client);
+        var viewModel = await CreateViewModelAsync(client);
 
         await viewModel.LoadBackgroundSyncStateAsync();
 
@@ -38,7 +38,7 @@ public sealed class SettingsViewModelBackgroundSyncTests
             SetEntered = entered,
             SetRelease = release.Task
         };
-        var viewModel = CreateViewModel(client);
+        var viewModel = await CreateViewModelAsync(client);
         await viewModel.LoadBackgroundSyncStateAsync();
 
         viewModel.IsBackgroundSyncEnabled = true;
@@ -61,7 +61,7 @@ public sealed class SettingsViewModelBackgroundSyncTests
                 FakeBackgroundSyncSettingsClient.Available(false),
                 WasOutcomeUncertain: false)
         };
-        var viewModel = CreateViewModel(client);
+        var viewModel = await CreateViewModelAsync(client);
         await viewModel.LoadBackgroundSyncStateAsync();
 
         viewModel.IsBackgroundSyncEnabled = true;
@@ -80,7 +80,7 @@ public sealed class SettingsViewModelBackgroundSyncTests
                 FakeBackgroundSyncSettingsClient.Available(true),
                 WasOutcomeUncertain: true)
         };
-        var viewModel = CreateViewModel(client);
+        var viewModel = await CreateViewModelAsync(client);
         await viewModel.LoadBackgroundSyncStateAsync();
 
         viewModel.IsBackgroundSyncEnabled = true;
@@ -103,7 +103,7 @@ public sealed class SettingsViewModelBackgroundSyncTests
                 BackgroundSyncClientFailureKind.Unavailable,
                 SafeMessage: null)
         };
-        var viewModel = CreateViewModel(client);
+        var viewModel = await CreateViewModelAsync(client);
 
         await viewModel.LoadBackgroundSyncStateAsync();
 
@@ -113,15 +113,10 @@ public sealed class SettingsViewModelBackgroundSyncTests
         Assert.IsFalse(viewModel.IsBackgroundSyncProgressVisible);
     }
 
-    private static SettingsViewModel CreateViewModel(
+    private static async Task<SettingsViewModel> CreateViewModelAsync(
         FakeBackgroundSyncSettingsClient client) =>
         new(
-            new UiPreferencesService(new InMemoryApplicationPreferencesStore(new ApplicationPreferences
-            {
-                SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
-                Language = AppLanguage.English,
-                Theme = AppThemeMode.Dark
-            })),
+            await TestUiPreferencesFactory.CreateAsync(),
             new DeviceAppPreferencesService(client),
             () => { });
 

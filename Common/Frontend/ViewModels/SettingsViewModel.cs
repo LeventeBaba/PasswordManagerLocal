@@ -42,6 +42,7 @@ public sealed class SettingsViewModel : ViewModelBase
             new SettingsThemeOptionViewModel(AppThemeMode.Dark, GetTranslation("Theme_Dark"))
         ];
         _deviceAppPreferences.PreferencesChanged += HandleDeviceAppPreferencesChanged;
+        UiPreferences.PreferenceUpdateCompleted += HandlePreferenceUpdateCompleted;
         ApplyBackgroundState(_deviceAppPreferences.BackgroundSyncState);
     }
 
@@ -86,8 +87,8 @@ public sealed class SettingsViewModel : ViewModelBase
         get => LanguageOptions.FirstOrDefault(option => option.Language == CurrentLanguage);
         set
         {
-            if (value is not null && value.Language != CurrentLanguage)
-                UiPreferences.CurrentLanguage = value.Language;
+            if (value is not null)
+                UiPreferences.RequestLanguageChange(value.Language);
         }
     }
 
@@ -98,8 +99,8 @@ public sealed class SettingsViewModel : ViewModelBase
         get => ThemeOptions.FirstOrDefault(option => option.Theme == CurrentThemeMode);
         set
         {
-            if (value is not null && value.Theme != CurrentThemeMode)
-                UiPreferences.CurrentThemeMode = value.Theme;
+            if (value is not null)
+                UiPreferences.RequestThemeModeChange(value.Theme);
         }
     }
 
@@ -107,12 +108,8 @@ public sealed class SettingsViewModel : ViewModelBase
 
     public bool IsInterfaceAnimationsEnabled
     {
-        get => InterfaceAnimationsEnabled;
-        set
-        {
-            if (value != InterfaceAnimationsEnabled)
-                UiPreferences.InterfaceAnimationsEnabled = value;
-        }
+        get => UiPreferences.InterfaceAnimationsEnabled;
+        set => UiPreferences.RequestInterfaceAnimationsEnabledChange(value);
     }
 
     public bool IsBackgroundSyncEnabled
@@ -204,7 +201,7 @@ public sealed class SettingsViewModel : ViewModelBase
             var state = await _deviceAppPreferences.RefreshBackgroundSyncAsync(cancellationToken);
             ApplyBackgroundState(state);
             if (!state.IsAvailable || state.IsDegraded)
-                ShowErrorMessage(GetBackgroundSyncFailureMessage(state));
+                ShowErrorMessage(() => GetBackgroundSyncFailureMessage(state));
         }
         finally
         {
@@ -281,17 +278,17 @@ public sealed class SettingsViewModel : ViewModelBase
             ApplyBackgroundState(result.State);
             if (!result.State.IsAvailable || result.State.IsDegraded)
             {
-                ShowErrorMessage(GetBackgroundSyncFailureMessage(result.State));
+                ShowErrorMessage(() => GetBackgroundSyncFailureMessage(result.State));
             }
             else if (result.WasOutcomeUncertain)
             {
-                ShowInformationMessage(GetTranslation("Settings_BackgroundSync_ReadBackGuidance"));
+                ShowLocalizedInformationMessage("Settings_BackgroundSync_ReadBackGuidance");
             }
             else
             {
-                ShowSuccessMessage(GetTranslation(result.State.IsEnabled
+                ShowLocalizedSuccessMessage(result.State.IsEnabled
                     ? "Settings_BackgroundSync_Enabled"
-                    : "Settings_BackgroundSync_Disabled"));
+                    : "Settings_BackgroundSync_Disabled");
             }
         }
         finally
@@ -366,9 +363,33 @@ public sealed class SettingsViewModel : ViewModelBase
         object? sender,
         DeviceAppPreferencesChangedEventArgs args) =>
         ApplyBackgroundState(args.State);
+
+    private void HandlePreferenceUpdateCompleted(
+        object? sender,
+        UiPreferenceUpdateCompletedEventArgs args)
+    {
+        switch (args.Result.Kind)
+        {
+            case UiPreferenceKind.Language:
+                this.RaisePropertyChanged(nameof(SelectedLanguageOption));
+                break;
+            case UiPreferenceKind.Theme:
+                this.RaisePropertyChanged(nameof(SelectedThemeOption));
+                break;
+            case UiPreferenceKind.InterfaceAnimations:
+                this.RaisePropertyChanged(nameof(IsInterfaceAnimationsEnabled));
+                break;
+        }
+
+        if (args.Result.Status == UiPreferenceUpdateStatus.Failed ||
+            args.Result.PersistenceStateUncertain)
+            ShowLocalizedErrorMessage("Settings_Preferences_SaveFailed");
+    }
+
     protected override void DisposeManaged()
     {
         _deviceAppPreferences.PreferencesChanged -= HandleDeviceAppPreferencesChanged;
+        UiPreferences.PreferenceUpdateCompleted -= HandlePreferenceUpdateCompleted;
         base.DisposeManaged();
     }
 

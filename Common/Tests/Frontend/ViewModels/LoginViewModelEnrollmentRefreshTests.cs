@@ -26,7 +26,7 @@ public sealed class LoginViewModelEnrollmentRefreshTests
             ErrorCode = DeviceEnrollmentErrorCode.CodeExpired,
             ExpiresAt = scheduler.NowUtc.AddMinutes(10)
         };
-        using var viewModel = CreateViewModel(endpoints, scheduler);
+        using var viewModel = await CreateViewModelAsync(endpoints, scheduler);
         SetPrivateField(viewModel, "_isDeviceTransferCodeVisible", true);
         var expiresAt = scheduler.NowUtc.AddMinutes(10);
         ScheduleEnrollmentExpiration(viewModel, expiresAt);
@@ -46,7 +46,7 @@ public sealed class LoginViewModelEnrollmentRefreshTests
         var scheduler = new PasswordManagerLocal.Common.Tests.Fakes.ManualFrontendDeadlineScheduler();
         var endpoints = CreateEndpoints();
         var recording = (EnrollmentStatusEndpoints)(object)endpoints;
-        using var viewModel = CreateViewModel(endpoints, scheduler);
+        using var viewModel = await CreateViewModelAsync(endpoints, scheduler);
         SetPrivateField(viewModel, "_isDeviceTransferCodeVisible", true);
         var expiresAt = scheduler.NowUtc.AddMinutes(10);
         ScheduleEnrollmentExpiration(viewModel, expiresAt);
@@ -77,7 +77,7 @@ public sealed class LoginViewModelEnrollmentRefreshTests
             var endpoints = CreateEndpoints();
             var recording = (EnrollmentStatusEndpoints)(object)endpoints;
             recording.StatusResponse = new DeviceEnrollmentStatusResponse { State = terminalState };
-            using var viewModel = CreateViewModel(
+            using var viewModel = await CreateViewModelAsync(
                 endpoints,
                 new PasswordManagerLocal.Common.Tests.Fakes.ManualFrontendDeadlineScheduler());
             SetPrivateField(viewModel, "_isDeviceTransferCodeVisible", true);
@@ -94,7 +94,7 @@ public sealed class LoginViewModelEnrollmentRefreshTests
     {
         var endpoints = CreateEndpoints();
         var recording = (EnrollmentStatusEndpoints)(object)endpoints;
-        using var viewModel = CreateViewModel(
+        using var viewModel = await CreateViewModelAsync(
             endpoints,
             new PasswordManagerLocal.Common.Tests.Fakes.ManualFrontendDeadlineScheduler());
         var changedProperties = new List<string?>();
@@ -127,17 +127,11 @@ public sealed class LoginViewModelEnrollmentRefreshTests
             nameof(LoginViewModel.CanAutomaticallyRefreshEnrollment));
     }
 
-    private static LoginViewModel CreateViewModel(
+    private static async Task<LoginViewModel> CreateViewModelAsync(
         IEndpoints endpoints,
         IFrontendDeadlineScheduler scheduler)
     {
-        var preferences = new UiPreferencesService(
-            new InMemoryApplicationPreferencesStore(new ApplicationPreferences
-            {
-                SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
-                Language = AppLanguage.English,
-                Theme = AppThemeMode.Dark
-            }));
+        var preferences = await TestUiPreferencesFactory.CreateAsync();
         return new LoginViewModel(preferences, endpoints, () => { }, _ => Task.CompletedTask, scheduler);
     }
 

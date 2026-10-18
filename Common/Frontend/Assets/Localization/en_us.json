@@ -28,6 +28,7 @@
   "Settings_BackgroundSync_PersistenceFailure": "The background synchronization setting could not be saved safely.",
   "Settings_BackgroundSync_Degraded": "The saved setting, automatic startup, and active background runtime are not fully consistent.",
   "Settings_BackgroundSync_ReadBackGuidance": "The response was interrupted, so the setting was read back from the agent. Review the displayed state before trying again.",
+  "Settings_Preferences_SaveFailed": "The preference could not be saved. The previous setting remains active.",
   "Shell_PasswordVault": "Passwords",
   "Shell_Profile": "Profile",
   "Shell_Devices": "Devices",

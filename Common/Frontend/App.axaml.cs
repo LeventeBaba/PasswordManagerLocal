@@ -104,8 +104,12 @@ public partial class App : Application
             await context.BackendClient.WaitUntilReadyAsync(token);
             var endpoints = new DeferredEndpoints(context.BackendClient, token);
             var localDevice = await endpoints.GetLocalDeviceInfoAsync(token);
-            if (!session.IsDisposed && localDevice.IsSyncOn && session.ViewModel is { } model)
-                await FirewallPermissionStartupPrompt.TryShowAsync(window, model.CurrentLanguage);
+            if (!session.IsDisposed &&
+                localDevice.IsSyncOn &&
+                session.UiPreferences is { } preferences)
+            {
+                await FirewallPermissionStartupPrompt.TryShowAsync(window, preferences, token);
+            }
         }
         catch { }
     }

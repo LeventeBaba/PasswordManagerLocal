@@ -428,17 +428,17 @@ public sealed class RegistrationViewModel : ViewModelBase
         {
             MarkAllFieldsTouched();
             if (!ApplyBackendValidationErrors(ex))
-                ShowErrorMessage(GetSafeErrorMessage(ex));
+                ShowSafeErrorMessage(ex);
         }
         catch (Exception ex)
         {
             if (registrationCommitted)
             {
-                ShowErrorMessage(GetTranslation("Register_AccountCreated_PostSetupFailed"));
+                ShowLocalizedErrorMessage("Register_AccountCreated_PostSetupFailed");
             }
             else
             {
-                ShowErrorMessage(GetSafeErrorMessage(ex));
+                ShowSafeErrorMessage(ex);
             }
         }
         finally

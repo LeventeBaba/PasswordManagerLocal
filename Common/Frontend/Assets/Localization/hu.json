@@ -28,6 +28,7 @@
   "Settings_BackgroundSync_PersistenceFailure": "A háttérszinkronizálási beállítás nem menthető biztonságosan.",
   "Settings_BackgroundSync_Degraded": "A mentett beállítás, az automatikus indítás és az aktív háttérbeli futtatás nincs teljesen összhangban.",
   "Settings_BackgroundSync_ReadBackGuidance": "A válasz megszakadt, ezért az alkalmazás újra lekérte a beállítást az ügynöktől. Újrapróbálás előtt ellenőrizze a megjelenített állapotot.",
+  "Settings_Preferences_SaveFailed": "A beállítás nem menthető. A korábbi beállítás marad aktív.",
   "Shell_PasswordVault": "Jelszavak",
   "Shell_Profile": "Profil",
   "Shell_Devices": "Eszközök",

@@ -6,7 +6,6 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
-using PasswordManagerLocal.Common.Frontend.Localization;
 
 namespace PasswordManagerLocal.Common.Frontend.Services;
 
@@ -24,21 +23,26 @@ public static class FirewallPermissionStartupPrompt
 
 
 
-    public static async Task TryShowAsync(Window owner, AppLanguage language, CancellationToken ct = default)
+    public static async Task TryShowAsync(
+        Window owner,
+        UiPreferencesService preferences,
+        CancellationToken ct = default)
     {
-        await EnsureConfiguredAsync(owner, language, false, ct);
+        await EnsureConfiguredAsync(owner, preferences, false, ct);
     }
 
 
 
-    public static Task<bool> EnsureConfiguredAsync(AppLanguage language, CancellationToken ct = default) =>
-        EnsureConfiguredAsync(ResolveOwner(), language, false, ct);
+    public static Task<bool> EnsureConfiguredAsync(
+        UiPreferencesService preferences,
+        CancellationToken ct = default) =>
+        EnsureConfiguredAsync(ResolveOwner(), preferences, false, ct);
 
 
 
     public static async Task RevalidateAfterLikelyFirewallFailureAsync(
         Exception exception,
-        AppLanguage language,
+        UiPreferencesService preferences,
         CancellationToken ct = default)
     {
         if (!OperatingSystem.IsWindows() ||
@@ -49,7 +53,7 @@ public static class FirewallPermissionStartupPrompt
 
         try
         {
-            await EnsureConfiguredAsync(ResolveOwner(), language, true, ct);
+            await EnsureConfiguredAsync(ResolveOwner(), preferences, true, ct);
         }
         catch
         {
@@ -60,7 +64,7 @@ public static class FirewallPermissionStartupPrompt
 
     private static async Task<bool> EnsureConfiguredAsync(
         Window? owner,
-        AppLanguage language,
+        UiPreferencesService preferences,
         bool forceVerification,
         CancellationToken ct)
     {
@@ -91,7 +95,7 @@ public static class FirewallPermissionStartupPrompt
             if (!check.CanRequestPermission || owner is null)
                 return false;
 
-            var approved = await RunOnUiThreadAsync(() => ShowConfirmDialogAsync(owner, language));
+            var approved = await RunOnUiThreadAsync(() => ShowConfirmDialogAsync(owner, preferences));
             if (!approved)
                 return false;
 
@@ -99,7 +103,7 @@ public static class FirewallPermissionStartupPrompt
             WindowsFirewallConfigurationStore.SetConfigured(result.IsConfigured);
 
             if (!result.IsConfigured)
-                await RunOnUiThreadAsync(() => ShowErrorDialogAsync(owner, language, result.Details));
+                await RunOnUiThreadAsync(() => ShowErrorDialogAsync(owner, preferences, result.Details));
 
             return result.IsConfigured;
         }
@@ -208,43 +212,64 @@ public static class FirewallPermissionStartupPrompt
 
 
 
-    private static async Task<bool> ShowConfirmDialogAsync(Window owner, AppLanguage language)
+    private static async Task<bool> ShowConfirmDialogAsync(
+        Window owner,
+        UiPreferencesService preferences)
     {
         var result = false;
-        var dialog = BuildDialog(language, "Firewall_Title", "Firewall_Message", "Firewall_Allow", "Common_Cancel", close => result = close);
+        var dialog = BuildDialog(preferences, "Firewall_Title", "Firewall_Message", "Firewall_Allow", "Common_Cancel", close => result = close);
         await dialog.ShowDialog(owner);
         return result;
     }
 
 
 
-    private static async Task ShowErrorDialogAsync(Window owner, AppLanguage language, string? details)
+    private static async Task ShowErrorDialogAsync(
+        Window owner,
+        UiPreferencesService preferences,
+        string? details)
     {
-        var message = T(language, "Firewall_Failed");
-        if (!string.IsNullOrWhiteSpace(details))
-            message = $"{message}\n\n{details}";
+        string BuildMessage()
+        {
+            var message = T(preferences, "Firewall_Failed");
+            return string.IsNullOrWhiteSpace(details)
+                ? message
+                : $"{message}\n\n{details}";
+        }
 
-        var dialog = BuildDialog(language, "Firewall_Title", message, "Common_Ok", null, _ => { }, isMessageKey: false);
+        var dialog = BuildDialog(
+            preferences,
+            "Firewall_Title",
+            "Firewall_Failed",
+            "Common_Ok",
+            null,
+            _ => { },
+            messageFactory: BuildMessage);
         await dialog.ShowDialog(owner);
     }
 
 
 
     private static Window BuildDialog(
-        AppLanguage language,
+        UiPreferencesService preferences,
         string titleKey,
         string messageKeyOrText,
         string primaryButtonKey,
         string? secondaryButtonKey,
         Action<bool> setResult,
-        bool isMessageKey = true)
+        bool isMessageKey = true,
+        Func<string>? messageFactory = null)
     {
-        var dialog = CreateDialogWindow(language, titleKey);
-        var title = CreateDialogTitle(language, titleKey);
-        var message = CreateDialogMessage(language, messageKeyOrText, isMessageKey);
+        var dialog = CreateDialogWindow(preferences, titleKey);
+        var title = CreateDialogTitle(preferences, titleKey);
+        var message = CreateDialogMessage(
+            preferences,
+            messageKeyOrText,
+            isMessageKey,
+            messageFactory);
         var buttons = CreateDialogButtons(
             dialog,
-            language,
+            preferences,
             primaryButtonKey,
             secondaryButtonKey,
             setResult);
@@ -256,6 +281,25 @@ public static class FirewallPermissionStartupPrompt
         };
 
         AddDialogKeyboardShortcuts(dialog, secondaryButtonKey is not null, setResult);
+        EventHandler<UiPreferencesChangedEventArgs>? languageChanged = null;
+        languageChanged = (_, args) =>
+        {
+            if (!args.LanguageChanged)
+                return;
+            dialog.Title = T(preferences, titleKey);
+            title.Text = T(preferences, titleKey);
+            if (messageFactory is not null)
+                message.Text = messageFactory();
+            else if (isMessageKey)
+                message.Text = T(preferences, messageKeyOrText);
+            var buttonIndex = 0;
+            if (secondaryButtonKey is not null && buttons.Children[buttonIndex++] is Button secondary)
+                secondary.Content = T(preferences, secondaryButtonKey);
+            if (buttons.Children[buttonIndex] is Button primary)
+                primary.Content = T(preferences, primaryButtonKey);
+        };
+        preferences.PreferencesChanged += languageChanged;
+        dialog.Closed += (_, _) => preferences.PreferencesChanged -= languageChanged;
         return dialog;
     }
 
@@ -290,39 +334,48 @@ public static class FirewallPermissionStartupPrompt
             handledEventsToo: true);
     }
 
-    private static Window CreateDialogWindow(AppLanguage language, string titleKey) =>
+    private static Window CreateDialogWindow(
+        UiPreferencesService preferences,
+        string titleKey) =>
         new()
         {
-            Title = T(language, titleKey),
+            Title = T(preferences, titleKey),
             Width = 520,
             SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             CanResize = false
         };
 
-    private static TextBlock CreateDialogTitle(AppLanguage language, string titleKey) =>
+    private static TextBlock CreateDialogTitle(
+        UiPreferencesService preferences,
+        string titleKey) =>
         new()
         {
-            Text = T(language, titleKey),
+            Text = T(preferences, titleKey),
             FontSize = 20,
             FontWeight = FontWeight.SemiBold,
             TextWrapping = TextWrapping.Wrap
         };
 
     private static TextBlock CreateDialogMessage(
-        AppLanguage language,
+        UiPreferencesService preferences,
         string messageKeyOrText,
-        bool isMessageKey) =>
+        bool isMessageKey,
+        Func<string>? messageFactory) =>
         new()
         {
-            Text = isMessageKey ? T(language, messageKeyOrText) : messageKeyOrText,
+            Text = messageFactory is not null
+                ? messageFactory()
+                : isMessageKey
+                    ? T(preferences, messageKeyOrText)
+                    : messageKeyOrText,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 14, 0, 0)
         };
 
     private static StackPanel CreateDialogButtons(
         Window dialog,
-        AppLanguage language,
+        UiPreferencesService preferences,
         string primaryButtonKey,
         string? secondaryButtonKey,
         Action<bool> setResult)
@@ -336,22 +389,22 @@ public static class FirewallPermissionStartupPrompt
         };
 
         if (secondaryButtonKey is not null)
-            buttons.Children.Add(CreateResultButton(dialog, language, secondaryButtonKey, false, setResult));
+            buttons.Children.Add(CreateResultButton(dialog, preferences, secondaryButtonKey, false, setResult));
 
-        buttons.Children.Add(CreateResultButton(dialog, language, primaryButtonKey, true, setResult));
+        buttons.Children.Add(CreateResultButton(dialog, preferences, primaryButtonKey, true, setResult));
         return buttons;
     }
 
     private static Button CreateResultButton(
         Window dialog,
-        AppLanguage language,
+        UiPreferencesService preferences,
         string buttonKey,
         bool result,
         Action<bool> setResult)
     {
         var button = new Button
         {
-            Content = T(language, buttonKey),
+            Content = T(preferences, buttonKey),
             MinWidth = 120,
             HorizontalContentAlignment = HorizontalAlignment.Center
         };
@@ -365,6 +418,6 @@ public static class FirewallPermissionStartupPrompt
 
 
 
-    private static string T(AppLanguage language, string key) =>
-        LocalizationManager.GetString(language, key);
+    private static string T(UiPreferencesService preferences, string key) =>
+        preferences.GetString(key);
 }

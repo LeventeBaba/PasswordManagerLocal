@@ -9,7 +9,7 @@ namespace PasswordManagerLocal.Common.Tests.Frontend.Settings;
 public sealed class UiPreferencesServiceTests
 {
     [TestMethod]
-    public void LanguageAndThemeChangesPersistThroughSharedStore()
+    public async Task LanguageAndThemeChangesPersistThroughSharedStore()
     {
         var store = new InMemoryApplicationPreferencesStore(new ApplicationPreferences
         {
@@ -17,11 +17,15 @@ public sealed class UiPreferencesServiceTests
             Language = AppLanguage.English,
             Theme = AppThemeMode.Dark
         });
-        var service = new UiPreferencesService(store);
+        await using var service = await TestUiPreferencesFactory.CreateAsync(store: store);
 
-        service.CurrentLanguage = AppLanguage.Hungarian;
-        service.CurrentThemeMode = AppThemeMode.Light;
-        var reloaded = new UiPreferencesService(store);
+        Assert.AreEqual(
+            UiPreferenceUpdateStatus.Applied,
+            (await service.SetLanguageAsync(AppLanguage.Hungarian)).Status);
+        Assert.AreEqual(
+            UiPreferenceUpdateStatus.Applied,
+            (await service.SetThemeModeAsync(AppThemeMode.Light)).Status);
+        await using var reloaded = await TestUiPreferencesFactory.CreateAsync(store: store);
 
         Assert.AreEqual(AppLanguage.Hungarian, reloaded.CurrentLanguage);
         Assert.AreEqual(AppThemeMode.Light, reloaded.CurrentThemeMode);

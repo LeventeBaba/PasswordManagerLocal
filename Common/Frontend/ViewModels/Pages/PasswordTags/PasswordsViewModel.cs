@@ -321,13 +321,13 @@ public sealed partial class PasswordsViewModel
         var name = PasswordTagEditorName.Trim();
         if (string.IsNullOrWhiteSpace(name))
         {
-            ShowErrorMessage(GetTranslation("Error_InvalidInput"));
+            ShowLocalizedErrorMessage("Error_InvalidInput");
             return;
         }
 
         if (!PasswordColorUtility.TryNormalizeHexColor(PasswordTagEditorColor, out var color))
         {
-            ShowErrorMessage(GetTranslation("Passwords_ColorPicker_InvalidCode"));
+            ShowLocalizedErrorMessage("Passwords_ColorPicker_InvalidCode");
             return;
         }
 
@@ -364,11 +364,11 @@ public sealed partial class PasswordsViewModel
                 : "Passwords_Tags_Add_Success";
             ResetPasswordTagEditorDraft();
             SetCurrentPane(PasswordTagListPane, true);
-            ShowSuccessMessage(GetTranslation(successKey));
+            ShowLocalizedSuccessMessage(successKey);
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {
@@ -571,14 +571,14 @@ public sealed partial class PasswordsViewModel
                 return;
             }
 
-            ShowSuccessMessage(GetTranslation(
+            ShowLocalizedSuccessMessage(
                 tags.Length > 1
                     ? "Passwords_Tags_Delete_MultipleSuccess"
-                    : "Passwords_Tags_Delete_Success"));
+                    : "Passwords_Tags_Delete_Success");
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {

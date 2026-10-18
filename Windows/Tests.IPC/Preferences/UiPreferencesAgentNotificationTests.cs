@@ -9,7 +9,7 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Preferences;
 public sealed class UiPreferencesAgentNotificationTests
 {
     [TestMethod]
-    public void LanguageIsPersistedBeforeAgentReloadIsSent()
+    public async Task LanguageIsPersistedBeforeAgentReloadIsSent()
     {
         var operations = new List<string>();
         var store = new MutableApplicationPreferencesStore(AppLanguage.English)
@@ -20,25 +20,26 @@ public sealed class UiPreferencesAgentNotificationTests
         {
             OperationLog = operations
         };
-        var service = new UiPreferencesService(store, notifier);
+        await using var service = await CreateServiceAsync(store, notifier);
         operations.Clear();
 
-        service.CurrentLanguage = AppLanguage.Hungarian;
+        var result = await service.SetLanguageAsync(AppLanguage.Hungarian);
 
         CollectionAssert.AreEqual(new[] { "write", "notify" }, operations);
+        Assert.AreEqual(UiPreferenceUpdateStatus.Applied, result.Status);
         Assert.AreEqual(AppLanguage.Hungarian, store.Current.Language);
         Assert.AreEqual(1, notifier.NotifyCount);
     }
 
     [TestMethod]
-    public void ThemeOnlyAndSameLanguageChangesDoNotNotifyAgent()
+    public async Task ThemeOnlyAndSameLanguageChangesDoNotNotifyAgent()
     {
         var store = new MutableApplicationPreferencesStore(AppLanguage.English, AppThemeMode.Light);
         var notifier = new FakeApplicationPreferencesChangeNotifier();
-        var service = new UiPreferencesService(store, notifier);
+        await using var service = await CreateServiceAsync(store, notifier);
 
-        service.CurrentLanguage = AppLanguage.English;
-        service.CurrentThemeMode = AppThemeMode.Dark;
+        await service.SetLanguageAsync(AppLanguage.English);
+        await service.SetThemeModeAsync(AppThemeMode.Dark);
 
         Assert.AreEqual(0, notifier.NotifyCount);
         Assert.AreEqual(1, store.WriteCount);
@@ -46,36 +47,47 @@ public sealed class UiPreferencesAgentNotificationTests
     }
 
     [TestMethod]
-    public void PersistenceFailureDoesNotNotifyOrChangeInMemoryLanguage()
+    public async Task PersistenceFailureDoesNotNotifyOrChangeInMemoryLanguage()
     {
         var store = new MutableApplicationPreferencesStore(AppLanguage.English)
         {
             WriteFailure = new IOException("write failed")
         };
         var notifier = new FakeApplicationPreferencesChangeNotifier();
-        var service = new UiPreferencesService(store, notifier);
+        await using var service = await CreateServiceAsync(store, notifier);
 
-        Assert.ThrowsExactly<IOException>(() => service.CurrentLanguage = AppLanguage.Hungarian);
+        var result = await service.SetLanguageAsync(AppLanguage.Hungarian);
 
+        Assert.AreEqual(UiPreferenceUpdateStatus.Failed, result.Status);
         Assert.AreEqual(AppLanguage.English, service.CurrentLanguage);
         Assert.AreEqual(AppLanguage.English, store.Current.Language);
         Assert.AreEqual(0, notifier.NotifyCount);
     }
 
     [TestMethod]
-    public void NotificationFailureDoesNotRollbackPersistedPreference()
+    public async Task NotificationFailureDoesNotRollbackPersistedPreference()
     {
         var store = new MutableApplicationPreferencesStore(AppLanguage.English);
         var notifier = new FakeApplicationPreferencesChangeNotifier
         {
             Failure = new IOException("IPC unavailable")
         };
-        var service = new UiPreferencesService(store, notifier);
+        await using var service = await CreateServiceAsync(store, notifier);
 
-        service.CurrentLanguage = AppLanguage.Hungarian;
+        var result = await service.SetLanguageAsync(AppLanguage.Hungarian);
 
+        Assert.AreEqual(UiPreferenceUpdateStatus.Applied, result.Status);
+        Assert.IsTrue(result.AgentNotificationFailed);
         Assert.AreEqual(AppLanguage.Hungarian, service.CurrentLanguage);
         Assert.AreEqual(AppLanguage.Hungarian, store.Current.Language);
         Assert.AreEqual(1, notifier.NotifyCount);
     }
+
+    private static Task<UiPreferencesService> CreateServiceAsync(
+        MutableApplicationPreferencesStore store,
+        FakeApplicationPreferencesChangeNotifier notifier) =>
+        UiPreferencesService.CreateAsync(
+            store,
+            notifier,
+            localizationResourceLoader: new TestFrontendLocalizationResourceLoader());
 }

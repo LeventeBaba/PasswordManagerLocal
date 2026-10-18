@@ -1275,11 +1275,11 @@ public sealed class ProfileViewModel : ViewModelBase
             var profileLoaded = await LoadAsync(_token, profile);
             var devicesLoaded = !profileLoaded || await RefreshLoadedDevicesAsync();
             if (profileLoaded && devicesLoaded)
-                ShowSuccessMessage(GetTranslation("Shell_DataRefreshed"));
+                ShowLocalizedSuccessMessage("Shell_DataRefreshed");
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
     }
 
@@ -1375,11 +1375,11 @@ public sealed class ProfileViewModel : ViewModelBase
                 return;
 
             CurrentProfilePane = ProfileTabsPane;
-            ShowSuccessMessage(GetTranslation("Profile_Save_Success"));
+            ShowLocalizedSuccessMessage("Profile_Save_Success");
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
     }
 
@@ -1399,11 +1399,11 @@ public sealed class ProfileViewModel : ViewModelBase
                 return;
 
             CurrentProfilePane = ProfileTabsPane;
-            ShowSuccessMessage(GetTranslation("Profile_Username_Success"));
+            ShowLocalizedSuccessMessage("Profile_Username_Success");
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
     }
 
@@ -1431,13 +1431,13 @@ public sealed class ProfileViewModel : ViewModelBase
 
         if (!string.Equals(NewPassword, ConfirmNewPassword, StringComparison.Ordinal))
         {
-            ShowErrorMessage(GetTranslation("Validation_RegisterPassword_Mismatch"));
+            ShowLocalizedErrorMessage("Validation_RegisterPassword_Mismatch");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(CurrentPassword) || string.IsNullOrWhiteSpace(NewPassword))
         {
-            ShowErrorMessage(GetTranslation("Validation_Password_Required"));
+            ShowLocalizedErrorMessage("Validation_Password_Required");
             return;
         }
 
@@ -1457,11 +1457,11 @@ public sealed class ProfileViewModel : ViewModelBase
             NewPassword = string.Empty;
             ConfirmNewPassword = string.Empty;
             CurrentProfilePane = ProfileTabsPane;
-            ShowSuccessMessage(GetTranslation("Profile_MasterPassword_Success"));
+            ShowLocalizedSuccessMessage("Profile_MasterPassword_Success");
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {
@@ -1481,7 +1481,7 @@ public sealed class ProfileViewModel : ViewModelBase
 
         if (string.IsNullOrWhiteSpace(DeleteAccountPassword))
         {
-            ShowErrorMessage(GetTranslation("Validation_Password_Required"));
+            ShowLocalizedErrorMessage("Validation_Password_Required");
             return;
         }
 
@@ -1495,7 +1495,7 @@ public sealed class ProfileViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {
@@ -1569,7 +1569,7 @@ public sealed class ProfileViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
             return false;
         }
     }
@@ -1593,7 +1593,7 @@ public sealed class ProfileViewModel : ViewModelBase
             var devices = await _endpoints.RefreshUserDevicePresenceAsync(_token, operationCancellation.Token);
             ApplyLoadedDevices(devices, selectedId);
             if (showSuccessMessage)
-                ShowSuccessMessage(GetTranslation("Shell_DataRefreshed"));
+                ShowLocalizedSuccessMessage("Shell_DataRefreshed");
         }
         catch (OperationCanceledException) when (refreshCancellation.IsCancellationRequested)
         {
@@ -1604,11 +1604,11 @@ public sealed class ProfileViewModel : ViewModelBase
         {
             if (!LifetimeToken.IsCancellationRequested && _token != Guid.Empty)
                 await LoadDevicesAsync();
-            ShowErrorMessage(GetTranslation("Error_Generic"));
+            ShowLocalizedErrorMessage("Error_Generic");
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {
@@ -1698,7 +1698,7 @@ public sealed class ProfileViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {
@@ -1732,7 +1732,7 @@ public sealed class ProfileViewModel : ViewModelBase
         var normalizedName = device.EditableName.Trim();
         if (string.IsNullOrWhiteSpace(normalizedName))
         {
-            ShowErrorMessage(GetTranslation("Profile_Device_NameRequired"));
+            ShowLocalizedErrorMessage("Profile_Device_NameRequired");
             return;
         }
 
@@ -1747,11 +1747,11 @@ public sealed class ProfileViewModel : ViewModelBase
             if (!await LoadDevicesAsync())
                 return;
 
-            ShowSuccessMessage(GetTranslation("Profile_Device_NameSaved"));
+            ShowLocalizedSuccessMessage("Profile_Device_NameSaved");
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
     }
 
@@ -1779,13 +1779,13 @@ public sealed class ProfileViewModel : ViewModelBase
             if (!await LoadDevicesAsync())
                 return;
 
-            ShowSuccessMessage(targetState
-                ? GetTranslation("Profile_Device_SyncTurnedOn")
-                : GetTranslation("Profile_Device_SyncTurnedOff"));
+            ShowLocalizedSuccessMessage(targetState
+                ? "Profile_Device_SyncTurnedOn"
+                : "Profile_Device_SyncTurnedOff");
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
     }
 
@@ -1802,11 +1802,11 @@ public sealed class ProfileViewModel : ViewModelBase
             if (!await LoadDevicesAsync())
                 return;
 
-            ShowSuccessMessage(GetTranslation("Profile_Device_Unblocked"));
+            ShowLocalizedSuccessMessage("Profile_Device_Unblocked");
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
     }
 
@@ -1843,7 +1843,7 @@ public sealed class ProfileViewModel : ViewModelBase
 
         if (string.IsNullOrWhiteSpace(DisconnectDevicePassword))
         {
-            ShowErrorMessage(GetTranslation("Validation_Password_Required"));
+            ShowLocalizedErrorMessage("Validation_Password_Required");
             return;
         }
 
@@ -1858,11 +1858,11 @@ public sealed class ProfileViewModel : ViewModelBase
             if (!await LoadDevicesAsync())
                 return;
 
-            ShowSuccessMessage(GetTranslation("Profile_Device_Disconnected"));
+            ShowLocalizedSuccessMessage("Profile_Device_Disconnected");
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {
@@ -1889,9 +1889,9 @@ public sealed class ProfileViewModel : ViewModelBase
 
         try
         {
-            if (targetState && !await FirewallPermissionStartupPrompt.EnsureConfiguredAsync(CurrentLanguage))
+            if (targetState && !await FirewallPermissionStartupPrompt.EnsureConfiguredAsync(UiPreferences))
             {
-                ShowErrorMessage(GetTranslation("Firewall_RequiredForLocalNetwork"));
+                ShowLocalizedErrorMessage("Firewall_RequiredForLocalNetwork");
                 return;
             }
 
@@ -1901,16 +1901,16 @@ public sealed class ProfileViewModel : ViewModelBase
             if (!await LoadDevicesAsync())
                 return;
 
-            ShowSuccessMessage(targetState
-                ? GetTranslation("Profile_LocalSync_OnSuccess")
-                : GetTranslation("Profile_LocalSync_OffSuccess"));
+            ShowLocalizedSuccessMessage(targetState
+                ? "Profile_LocalSync_OnSuccess"
+                : "Profile_LocalSync_OffSuccess");
         }
         catch (Exception ex)
         {
             await FirewallPermissionStartupPrompt.RevalidateAfterLikelyFirewallFailureAsync(
                 ex,
-                CurrentLanguage);
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+                UiPreferences);
+            ShowSafeErrorMessage(ex);
         }
     }
 
@@ -1926,13 +1926,13 @@ public sealed class ProfileViewModel : ViewModelBase
             var isLocalSyncOn = await _endpoints.GetLocalUserSyncOnAsync(_token);
             if (!isLocalSyncOn)
             {
-                ShowErrorMessage(GetTranslation("Profile_Device_AddSyncDisabled"));
+                ShowLocalizedErrorMessage("Profile_Device_AddSyncDisabled");
                 return;
             }
 
-            if (!await FirewallPermissionStartupPrompt.EnsureConfiguredAsync(CurrentLanguage))
+            if (!await FirewallPermissionStartupPrompt.EnsureConfiguredAsync(UiPreferences))
             {
-                ShowErrorMessage(GetTranslation("Firewall_RequiredForLocalNetwork"));
+                ShowLocalizedErrorMessage("Firewall_RequiredForLocalNetwork");
                 return;
             }
 
@@ -1944,7 +1944,7 @@ public sealed class ProfileViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
     }
 
@@ -1968,7 +1968,7 @@ public sealed class ProfileViewModel : ViewModelBase
 
         if (!PlatformServices.CameraScanner.IsAvailable)
         {
-            ShowErrorMessage(GetTranslation("Profile_Device_Add_QrCameraUnavailable"));
+            ShowLocalizedErrorMessage("Profile_Device_Add_QrCameraUnavailable");
             return;
         }
 
@@ -1985,7 +1985,7 @@ public sealed class ProfileViewModel : ViewModelBase
         }
         catch
         {
-            ShowErrorMessage(GetTranslation("Profile_Device_Add_QrDecodeFailed"));
+            ShowLocalizedErrorMessage("Profile_Device_Add_QrDecodeFailed");
         }
     }
 
@@ -2007,7 +2007,7 @@ public sealed class ProfileViewModel : ViewModelBase
         }
         catch
         {
-            ShowErrorMessage(GetTranslation("Profile_Device_Add_QrDecodeFailed"));
+            ShowLocalizedErrorMessage("Profile_Device_Add_QrDecodeFailed");
         }
     }
 
@@ -2018,7 +2018,7 @@ public sealed class ProfileViewModel : ViewModelBase
         var code = EnrollmentQrCodeService.DecodeEnrollmentCodeFromQrImage(imageBytes);
         if (string.IsNullOrWhiteSpace(code))
         {
-            ShowErrorMessage(GetTranslation("Profile_Device_Add_QrNotFound"));
+            ShowLocalizedErrorMessage("Profile_Device_Add_QrNotFound");
             return;
         }
 
@@ -2032,7 +2032,7 @@ public sealed class ProfileViewModel : ViewModelBase
         var code = EnrollmentQrCodeService.ExtractEnrollmentCode(qrText);
         if (string.IsNullOrWhiteSpace(code))
         {
-            ShowErrorMessage(GetTranslation("Profile_Device_Add_QrNotFound"));
+            ShowLocalizedErrorMessage("Profile_Device_Add_QrNotFound");
             return;
         }
 
@@ -2052,16 +2052,16 @@ public sealed class ProfileViewModel : ViewModelBase
         var code = DeviceEnrollmentCodeInput.Trim();
         if (string.IsNullOrWhiteSpace(code))
         {
-            ShowErrorMessage(GetTranslation("Profile_Device_Add_CodeRequired"));
+            ShowLocalizedErrorMessage("Profile_Device_Add_CodeRequired");
             return;
         }
 
         try
         {
             IsAddingDevice = true;
-            if (!await FirewallPermissionStartupPrompt.EnsureConfiguredAsync(CurrentLanguage))
+            if (!await FirewallPermissionStartupPrompt.EnsureConfiguredAsync(UiPreferences))
             {
-                ShowErrorMessage(GetTranslation("Firewall_RequiredForLocalNetwork"));
+                ShowLocalizedErrorMessage("Firewall_RequiredForLocalNetwork");
                 return;
             }
 
@@ -2071,14 +2071,14 @@ public sealed class ProfileViewModel : ViewModelBase
             if (!await LoadDevicesAsync())
                 return;
 
-            ShowSuccessMessage(GetTranslation("Profile_Device_AddSuccess"));
+            ShowLocalizedSuccessMessage("Profile_Device_AddSuccess");
         }
         catch (Exception ex)
         {
             await FirewallPermissionStartupPrompt.RevalidateAfterLikelyFirewallFailureAsync(
                 ex,
-                CurrentLanguage);
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+                UiPreferences);
+            ShowSafeErrorMessage(ex);
         }
         finally
         {

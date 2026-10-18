@@ -18,6 +18,7 @@ public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSou
     private Task? _disposal;
     private readonly FrontendChangeNotificationForwarder? _changeNotificationForwarder;
     private FrontendRefreshCoordinator? _refreshCoordinator;
+    private UiPreferencesService? _uiPreferences;
     private int _disposed;
 
     public FrontendUiSession(MainView view, FrontendApplicationContext context, bool ownsBackendClient)
@@ -42,6 +43,7 @@ public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSou
     public MainViewModel? ViewModel { get; private set; }
     public AuthSessionRegistry Authentication { get; } = new();
     public FrontendPlatformServices PlatformServices => _context.PlatformServices;
+    public UiPreferencesService? UiPreferences => _uiPreferences;
     public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
     public FrontendChangeStreamStart? CurrentChangePosition =>
         _changeNotificationForwarder?.CurrentPosition;
@@ -67,15 +69,20 @@ public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSou
             // never synchronously wait for either storage or backend readiness.
             var preferences = await _context.ApplicationPreferencesStore.ReadAsync(token);
             token.ThrowIfCancellationRequested();
+            _uiPreferences = await UiPreferencesService.CreateAsync(
+                _context.ApplicationPreferencesStore,
+                _context.ApplicationPreferencesChangeNotifier,
+                PlatformServices,
+                preferences,
+                cancellationToken: token);
+            token.ThrowIfCancellationRequested();
             ViewModel = new MainViewModel(
                 new DeferredEndpoints(_context.BackendClient, token),
                 _context.BackendClient,
                 _context.BackgroundSyncSettingsClient,
-                _context.ApplicationPreferencesStore,
-                _context.ApplicationPreferencesChangeNotifier,
+                _uiPreferences,
                 Authentication,
-                PlatformServices,
-                preferences);
+                token);
             View.DataContext = ViewModel;
             ViewModel.RefreshNavigationChanged += HandleRefreshNavigationChanged;
             ViewModel.RefreshPageStateChanged += HandleRefreshPageStateChanged;
@@ -132,6 +139,7 @@ public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSou
                 model.RefreshPageStateChanged -= HandleRefreshPageStateChanged;
                 model.RefreshAuthenticationChanged -= HandleRefreshAuthenticationChanged;
             }
+            _uiPreferences?.Deactivate();
             PlatformServices.Deactivate();
             View.Dispose();
             ViewModel?.Dispose();
@@ -161,6 +169,9 @@ public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSou
             }
             finally
             {
+                if (_uiPreferences is not null)
+                    await _uiPreferences.DisposeAsync();
+                _uiPreferences = null;
                 ViewModel = null;
                 PlatformServices.Dispose();
             }

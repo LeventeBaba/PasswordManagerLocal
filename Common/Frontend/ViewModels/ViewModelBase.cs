@@ -47,48 +47,95 @@ public abstract class ViewModelBase : DisposableReactiveObject
 
     public bool HasNonErrorStatusMessage => OperationMessage.HasNonErrorMessage;
 
+    internal Func<string>? CaptureStatusMessageFactory() =>
+        OperationMessage.CaptureMessageFactory();
+
     protected string GetTranslation(string key) => UiPreferences.GetString(key);
 
     protected void ShowInformationMessage(string message, bool autoDismiss = false) =>
         OperationMessage.ShowInformation(message, autoDismiss);
 
+    protected void ShowInformationMessage(Func<string> messageFactory, bool autoDismiss = false) =>
+        OperationMessage.ShowInformation(messageFactory, autoDismiss);
+
+    protected void ShowLocalizedInformationMessage(string key, bool autoDismiss = false) =>
+        OperationMessage.ShowInformation(() => GetTranslation(key), autoDismiss);
+
     protected void ShowSuccessMessage(string message) =>
         OperationMessage.ShowSuccess(message);
 
+    protected void ShowSuccessMessage(Func<string> messageFactory) =>
+        OperationMessage.ShowSuccess(messageFactory);
+
+    protected void ShowLocalizedSuccessMessage(string key) =>
+        OperationMessage.ShowSuccess(() => GetTranslation(key));
+
     protected void ShowErrorMessage(string message) =>
         OperationMessage.ShowError(message);
+
+    protected void ShowErrorMessage(Func<string> messageFactory) =>
+        OperationMessage.ShowError(messageFactory);
+
+    protected void ShowLocalizedErrorMessage(string key) =>
+        OperationMessage.ShowError(() => GetTranslation(key));
+
+    protected void ShowSafeErrorMessage(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        var messageFactory = CreateSafeErrorMessageFactory(exception);
+        OperationMessage.ShowError(messageFactory);
+    }
 
     public void ClearStatusMessage() => OperationMessage.Clear();
 
     public virtual void OnNavigatedFrom() => ClearStatusMessage();
 
     protected string GetSafeErrorMessage(Exception exception) =>
-        exception switch
+        CreateSafeErrorMessageFactory(exception)();
+
+    protected Func<string> CreateSafeErrorMessageFactory(Exception exception)
+    {
+        var key = exception switch
         {
-            InvalidTokenException => GetTranslation("Error_InvalidSession"),
-            UserNotFoundException => GetTranslation("Error_InvalidCredentials"),
-            UnauthorizedAccessException => GetTranslation("Error_InvalidCredentials"),
-            InvalidInputException => GetTranslation("Error_InvalidInput"),
-            PasswordNotFoundException => GetTranslation("Error_NotFound"),
-            DuplicatePasswordNameException => GetTranslation("Error_DuplicatePasswordName"),
-            DuplicatePasswordTagNameException => GetTranslation("Error_DuplicatePasswordTagName"),
-            PasswordTagNotFoundException => GetTranslation("Error_NotFound"),
-            DuplicateCustomUserColorNameException => GetTranslation("Error_DuplicateCustomColorName"),
-            DuplicateCustomUserColorCodeException => GetTranslation("Error_DuplicateCustomColorCode"),
-            CustomUserColorNotFoundException => GetTranslation("Error_NotFound"),
-            LimitReachedException => GetTranslation("Error_LimitReached"),
-            InvalidDataIntegrityException => GetTranslation("Error_DataIntegrity"),
-            DeviceIdentityNotInitilaizedException => GetTranslation("Error_DeviceIdentity"),
-            DeviceEnrollmentException deviceEnrollmentException => GetDeviceEnrollmentErrorMessage(deviceEnrollmentException),
-            DuplicateActiveProfileException => GetTranslation("Error_ProfileAlreadyLoggedIn"),
-            OperationCanceledException => GetTranslation("Error_OperationCanceled"),
-            _ => GetTranslation("Error_Generic")
+            InvalidTokenException => "Error_InvalidSession",
+            UserNotFoundException => "Error_InvalidCredentials",
+            UnauthorizedAccessException => "Error_InvalidCredentials",
+            InvalidInputException => "Error_InvalidInput",
+            PasswordNotFoundException => "Error_NotFound",
+            DuplicatePasswordNameException => "Error_DuplicatePasswordName",
+            DuplicatePasswordTagNameException => "Error_DuplicatePasswordTagName",
+            PasswordTagNotFoundException => "Error_NotFound",
+            DuplicateCustomUserColorNameException => "Error_DuplicateCustomColorName",
+            DuplicateCustomUserColorCodeException => "Error_DuplicateCustomColorCode",
+            CustomUserColorNotFoundException => "Error_NotFound",
+            LimitReachedException => "Error_LimitReached",
+            InvalidDataIntegrityException => "Error_DataIntegrity",
+            DeviceIdentityNotInitilaizedException => "Error_DeviceIdentity",
+            DuplicateActiveProfileException => "Error_ProfileAlreadyLoggedIn",
+            OperationCanceledException => "Error_OperationCanceled",
+            DeviceEnrollmentException => null,
+            _ => "Error_Generic"
         };
+
+        if (key is not null)
+            return () => GetTranslation(key);
+
+        var enrollmentException = (DeviceEnrollmentException)exception;
+        var errorCode = enrollmentException.ErrorCode;
+        var detail = enrollmentException.Message?.Trim();
+        return () => GetDeviceEnrollmentErrorMessage(errorCode, detail);
+    }
 
     protected string GetDeviceEnrollmentErrorMessage(DeviceEnrollmentException exception)
     {
-        var message = GetDeviceEnrollmentErrorMessage(exception.ErrorCode);
-        var detail = exception.Message?.Trim();
+        return GetDeviceEnrollmentErrorMessage(exception.ErrorCode, exception.Message?.Trim());
+    }
+
+    private string GetDeviceEnrollmentErrorMessage(
+        DeviceEnrollmentErrorCode errorCode,
+        string? detail)
+    {
+        var message = GetDeviceEnrollmentErrorMessage(errorCode);
 
         if (string.IsNullOrWhiteSpace(detail))
             return message;
@@ -188,10 +235,17 @@ public abstract class ViewModelBase : DisposableReactiveObject
     private void HandlePreferencesChanged(object? sender, UiPreferencesChangedEventArgs e)
     {
         if (e.LanguageChanged)
+        {
+            this.RaisePropertyChanged(nameof(CurrentLanguage));
+            OperationMessage.Refresh();
             OnLanguageChanged();
+        }
 
         if (e.ThemeChanged)
+        {
+            this.RaisePropertyChanged(nameof(CurrentThemeMode));
             OnThemeChanged();
+        }
 
         if (e.InterfaceAnimationsChanged)
         {
