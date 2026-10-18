@@ -89,7 +89,11 @@ public sealed class WindowsProductValidator
         AssertManifestBoundary(frontendManifest, FrontendForbiddenDependencies, forbidden: true);
         AssertAllDllsOwnedByManifests(root, [frontendManifest], "frontend staging");
         AssertRuntimeConfigurationTrimmed(Path.Combine(root, "PasswordManagerLocal.runtimeconfig.json"), "frontend");
-        AssertBinaryContains(Path.Combine(root, "PasswordManagerLocal.Common.Frontend.dll"), "LocalizationJsonContext");
+        // Frontend JSON loading now uses a direct JsonDocument parser. Keep the publish
+        // marker aligned with the current runtime localization path rather than a retired type.
+        AssertBinaryContains(
+            Path.Combine(root, "PasswordManagerLocal.Common.Frontend.dll"),
+            "FrontendTranslationResourceParser");
         AssertExcludedRuntimeTools(root);
     }
 

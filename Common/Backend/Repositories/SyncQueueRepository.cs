@@ -7,10 +7,14 @@ namespace PasswordManagerLocal.Common.Backend.Repositories;
 
 public sealed class SyncQueueRepository : ISyncQueueRepository
 {
+    private static readonly object EnqueuedAtGenerationGate = new();
+    private static DateTimeOffset _lastEnqueuedAtGeneration = DateTimeOffset.UtcNow;
+    private readonly AppDbContext _context;
     private readonly DbSet<SyncQueueItem> _queue;
 
     public SyncQueueRepository(AppDbContext context)
     {
+        _context = context;
         _queue = context.SyncQueueItems;
     }
 
@@ -86,7 +90,8 @@ public sealed class SyncQueueRepository : ISyncQueueRepository
         if (existing is not null)
         {
             existing.ProcessedAt = null;
-            existing.EnqueuedAt = DateTimeOffset.UtcNow;
+            _context.Entry(existing).Property(item => item.ProcessedAt).IsModified = true;
+            existing.EnqueuedAt = NextEnqueuedAt(existing.EnqueuedAt);
             return;
         }
 
@@ -134,7 +139,8 @@ public sealed class SyncQueueRepository : ISyncQueueRepository
         foreach (var existingItem in existingItems)
         {
             existingItem.ProcessedAt = null;
-            existingItem.EnqueuedAt = DateTimeOffset.UtcNow;
+            _context.Entry(existingItem).Property(item => item.ProcessedAt).IsModified = true;
+            existingItem.EnqueuedAt = NextEnqueuedAt(existingItem.EnqueuedAt);
         }
 
         var newItems = itemList
@@ -143,6 +149,39 @@ public sealed class SyncQueueRepository : ISyncQueueRepository
 
         if (newItems.Count != 0)
             await _queue.AddRangeAsync(newItems, ct);
+    }
+
+
+    public async Task<bool> TryAcknowledgeAsync(
+        Guid queueItemId,
+        DateTimeOffset expectedEnqueuedAt,
+        CancellationToken ct = default)
+    {
+        DateTimeOffset? processedAt = DateTimeOffset.UtcNow;
+        return await _queue
+            .Where(item =>
+                item.Id == queueItemId &&
+                item.ProcessedAt == null &&
+                item.EnqueuedAt == expectedEnqueuedAt)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(item => item.ProcessedAt, processedAt),
+                ct) == 1;
+    }
+
+
+    private static DateTimeOffset NextEnqueuedAt(DateTimeOffset current)
+    {
+        lock (EnqueuedAtGenerationGate)
+        {
+            var next = DateTimeOffset.UtcNow;
+            if (next <= current)
+                next = current.AddTicks(1);
+            if (next <= _lastEnqueuedAtGeneration)
+                next = _lastEnqueuedAtGeneration.AddTicks(1);
+
+            _lastEnqueuedAtGeneration = next;
+            return next;
+        }
     }
 
 

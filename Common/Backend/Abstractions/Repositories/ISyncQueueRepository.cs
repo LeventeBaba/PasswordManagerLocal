@@ -15,6 +15,7 @@ public interface ISyncQueueRepository
     Task EnqueueAsync(Guid syncItemId, Guid deviceId, CancellationToken ct = default);
     Task<bool> TryEnqueueAsync(Guid syncItemId, Guid deviceId, CancellationToken ct = default);
     Task EnqueueAsync(IEnumerable<SyncQueueItem> items, CancellationToken ct = default);
+    Task<bool> TryAcknowledgeAsync(Guid queueItemId, DateTimeOffset expectedEnqueuedAt, CancellationToken ct = default);
     void Update(SyncQueueItem item);
     void Delete(SyncQueueItem item);
 }

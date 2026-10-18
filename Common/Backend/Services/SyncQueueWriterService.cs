@@ -105,13 +105,9 @@ public sealed class SyncQueueWriterService : ISyncQueueWriterService
             return;
         }
 
-        var existing = await _syncQueue.ListQueuedDeviceIdsAsync(syncItem.Id, [targetDeviceId], ct);
-        if (existing.Count == 0)
-        {
-            await _syncQueue.EnqueueAsync(
-                [new SyncQueueItem { DeviceId = targetDeviceId, SyncItemId = syncItem.Id }],
-                ct);
-        }
+        // A queue row can already be owned by an in-flight sender. Refresh its generation
+        // so that sender cannot acknowledge newly coalesced state with an older payload.
+        await _syncQueue.EnqueueAsync(syncItem.Id, targetDeviceId, ct);
 
         await _uow.SaveChangesAsync(ct);
 
@@ -143,10 +139,7 @@ public sealed class SyncQueueWriterService : ISyncQueueWriterService
         if (deviceIds.Count == 0)
             return;
 
-        var queuedDeviceIds = await _syncQueue.ListQueuedDeviceIdsAsync(syncItem.Id, deviceIds, ct);
-        var queuedDeviceIdSet = queuedDeviceIds.ToHashSet();
         var queueItems = deviceIds
-            .Where(id => !queuedDeviceIdSet.Contains(id))
             .Select(id => new SyncQueueItem
             {
                 DeviceId = id,
@@ -154,7 +147,10 @@ public sealed class SyncQueueWriterService : ISyncQueueWriterService
             })
             .ToList();
 
-        if (queueItems.Count != 0)
-            await _syncQueue.EnqueueAsync(queueItems, ct);
+        // Refresh existing rows as well as inserting missing rows. EnqueuedAt is the queue
+        // generation observed by an outgoing sender. If canonical state changes while that
+        // sender is in flight, refreshing the generation prevents its older acknowledgement
+        // from deleting the newly coalesced work.
+        await _syncQueue.EnqueueAsync(queueItems, ct);
     }
 }

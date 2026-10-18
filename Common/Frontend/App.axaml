@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:fluent="clr-namespace:Avalonia.Themes.Fluent;assembly=Avalonia.Themes.Fluent"
              xmlns:converters="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Converters"
              x:Class="PasswordManagerLocal.Common.Frontend.App">
 
@@ -11,13 +10,13 @@
       <ResourceDictionary.MergedDictionaries>
         <ResourceInclude Source="avares://PasswordManagerLocal.Common.Frontend/Assets/Icons/IconGeometries.axaml" />
         <ResourceInclude Source="avares://PasswordManagerLocal.Common.Frontend/Assets/Styles/SharedUiResources.axaml" />
+          <ResourceInclude Source="avares://PasswordManagerLocal.Common.Frontend/Assets/Styles/ControlThemes.axaml" />
+        <ResourceInclude Source="avares://PasswordManagerLocal.Common.Frontend/Assets/Styles/ColorPickerThemes.axaml" />
       </ResourceDictionary.MergedDictionaries>
     </ResourceDictionary>
   </Application.Resources>
 
   <Application.Styles>
-    <fluent:FluentTheme />
-    <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
     <StyleInclude Source="avares://PasswordManagerLocal.Common.Frontend/Assets/Styles/CommonStyles.axaml" />
   </Application.Styles>
 </Application>

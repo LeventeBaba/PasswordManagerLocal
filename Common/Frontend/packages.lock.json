@@ -32,15 +32,6 @@
           "Avalonia": "12.1.4"
         }
       },
-      "Avalonia.Themes.Fluent": {
-        "type": "Direct",
-        "requested": "[12.1.4, )",
-        "resolved": "12.1.4",
-        "contentHash": "vx7P4as07WLQqA2mhMy4iBsqhkWEGwZI7g9Rd2DlJgz3uKS2tSvY6nZqHq3sWMFDBYBT65jkTsetPrgV8oprsQ==",
-        "dependencies": {
-          "Avalonia": "12.1.4"
-        }
-      },
       "ReactiveUI.Avalonia": {
         "type": "Direct",
         "requested": "[12.1.6, )",

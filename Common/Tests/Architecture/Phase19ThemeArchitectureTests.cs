@@ -27,12 +27,9 @@ public sealed class Phase19ThemeArchitectureTests
     }
 
     [TestMethod]
-    public void FluentRemainsInstalledAndThemeResourcesAreLoadedOnDemand()
+    public void ThemeResourcesAreLoadedOnDemand()
     {
         var root = GetRepositoryRoot();
-        var appXaml = File.ReadAllText(Path.Combine(root, "Common", "Frontend", "App.axaml"));
-        StringAssert.Contains(appXaml, "<fluent:FluentTheme />");
-
         var project = XDocument.Load(Path.Combine(
             root,
             "Common",

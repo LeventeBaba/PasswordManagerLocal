@@ -40,6 +40,32 @@ public abstract class ViewModelBase : DisposableReactiveObject
 
     public string? StatusMessage => OperationMessage.Message;
 
+    public string ScrollBarScrollHereLabel => GetTranslation("ScrollBar_Context_ScrollHere");
+
+    public string ScrollBarTopLabel => GetTranslation("ScrollBar_Context_Top");
+
+    public string ScrollBarBottomLabel => GetTranslation("ScrollBar_Context_Bottom");
+
+    public string ScrollBarPageUpLabel => GetTranslation("ScrollBar_Context_PageUp");
+
+    public string ScrollBarPageDownLabel => GetTranslation("ScrollBar_Context_PageDown");
+
+    public string ScrollBarScrollUpLabel => GetTranslation("ScrollBar_Context_ScrollUp");
+
+    public string ScrollBarScrollDownLabel => GetTranslation("ScrollBar_Context_ScrollDown");
+
+    public string ScrollBarLeftEdgeLabel => GetTranslation("ScrollBar_Context_LeftEdge");
+
+    public string ScrollBarRightEdgeLabel => GetTranslation("ScrollBar_Context_RightEdge");
+
+    public string ScrollBarPageLeftLabel => GetTranslation("ScrollBar_Context_PageLeft");
+
+    public string ScrollBarPageRightLabel => GetTranslation("ScrollBar_Context_PageRight");
+
+    public string ScrollBarScrollLeftLabel => GetTranslation("ScrollBar_Context_ScrollLeft");
+
+    public string ScrollBarScrollRightLabel => GetTranslation("ScrollBar_Context_ScrollRight");
+
     public bool HasStatusMessage => OperationMessage.HasMessage;
 
     public bool IsStatusMessageError => OperationMessage.IsError;
@@ -240,6 +266,19 @@ public abstract class ViewModelBase : DisposableReactiveObject
         if (e.LanguageChanged)
         {
             this.RaisePropertyChanged(nameof(CurrentLanguage));
+            this.RaisePropertyChanged(nameof(ScrollBarScrollHereLabel));
+            this.RaisePropertyChanged(nameof(ScrollBarTopLabel));
+            this.RaisePropertyChanged(nameof(ScrollBarBottomLabel));
+            this.RaisePropertyChanged(nameof(ScrollBarPageUpLabel));
+            this.RaisePropertyChanged(nameof(ScrollBarPageDownLabel));
+            this.RaisePropertyChanged(nameof(ScrollBarScrollUpLabel));
+            this.RaisePropertyChanged(nameof(ScrollBarScrollDownLabel));
+            this.RaisePropertyChanged(nameof(ScrollBarLeftEdgeLabel));
+            this.RaisePropertyChanged(nameof(ScrollBarRightEdgeLabel));
+            this.RaisePropertyChanged(nameof(ScrollBarPageLeftLabel));
+            this.RaisePropertyChanged(nameof(ScrollBarPageRightLabel));
+            this.RaisePropertyChanged(nameof(ScrollBarScrollLeftLabel));
+            this.RaisePropertyChanged(nameof(ScrollBarScrollRightLabel));
             OperationMessage.Refresh();
             OnLanguageChanged();
         }

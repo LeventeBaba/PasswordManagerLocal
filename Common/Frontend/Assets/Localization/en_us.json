@@ -521,5 +521,18 @@
   "Passwords_Export_Copy_Tags_Success": "Selected tags copied successfully.",
   "Passwords_Export_Move_Tags_Success": "Selected tags moved successfully.",
   "Passwords_CustomColors_BackToTagEditor": "Back to tag editor",
-  "Settings_BackgroundSync_Updating": "Background synchronization is being updated by the Windows agent…"
+  "Settings_BackgroundSync_Updating": "Background synchronization is being updated by the Windows agent…",
+  "ScrollBar_Context_ScrollHere": "Scroll here",
+  "ScrollBar_Context_Top": "Top",
+  "ScrollBar_Context_Bottom": "Bottom",
+  "ScrollBar_Context_PageUp": "Page up",
+  "ScrollBar_Context_PageDown": "Page down",
+  "ScrollBar_Context_ScrollUp": "Scroll up",
+  "ScrollBar_Context_ScrollDown": "Scroll down",
+  "ScrollBar_Context_LeftEdge": "Left edge",
+  "ScrollBar_Context_RightEdge": "Right edge",
+  "ScrollBar_Context_PageLeft": "Page left",
+  "ScrollBar_Context_PageRight": "Page right",
+  "ScrollBar_Context_ScrollLeft": "Scroll left",
+  "ScrollBar_Context_ScrollRight": "Scroll right"
 }

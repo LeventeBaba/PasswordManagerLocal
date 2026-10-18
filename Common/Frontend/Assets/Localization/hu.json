@@ -521,5 +521,18 @@
   "Passwords_Export_Copy_Tags_Success": "A kijelölt címkék másolása sikerült.",
   "Passwords_Export_Move_Tags_Success": "A kijelölt címkék áthelyezése sikerült.",
   "Passwords_CustomColors_BackToTagEditor": "Vissza a címke szerkesztéséhez",
-  "Settings_BackgroundSync_Updating": "A Windows-ügynök frissíti a háttérszinkronizálás állapotát…"
+  "Settings_BackgroundSync_Updating": "A Windows-ügynök frissíti a háttérszinkronizálás állapotát…",
+  "ScrollBar_Context_ScrollHere": "Görgetés ide",
+  "ScrollBar_Context_Top": "Legfelül",
+  "ScrollBar_Context_Bottom": "Legalul",
+  "ScrollBar_Context_PageUp": "Oldal felfelé",
+  "ScrollBar_Context_PageDown": "Oldal lefelé",
+  "ScrollBar_Context_ScrollUp": "Görgetés felfelé",
+  "ScrollBar_Context_ScrollDown": "Görgetés lefelé",
+  "ScrollBar_Context_LeftEdge": "Bal szél",
+  "ScrollBar_Context_RightEdge": "Jobb szél",
+  "ScrollBar_Context_PageLeft": "Oldal balra",
+  "ScrollBar_Context_PageRight": "Oldal jobbra",
+  "ScrollBar_Context_ScrollLeft": "Görgetés balra",
+  "ScrollBar_Context_ScrollRight": "Görgetés jobbra"
 }

@@ -7,6 +7,7 @@
   <x:Double x:Key="AppMetric.TouchTarget.Standard">40</x:Double>
   <x:Double x:Key="AppMetric.TouchTarget.PrimaryButton">42</x:Double>
   <x:Double x:Key="AppMetric.TouchTarget.Icon">44</x:Double>
+  <CornerRadius x:Key="AppMetric.CornerRadius.Control">6</CornerRadius>
   <CornerRadius x:Key="AppMetric.CornerRadius.Card">18</CornerRadius>
   <x:Double x:Key="AppMetric.Icon.Action">18</x:Double>
   <x:Double x:Key="AppTypography.SectionTitle.Size">18</x:Double>
@@ -21,4 +22,7 @@
     <GradientStop Color="#FF5856D6" Offset="0.84" />
     <GradientStop Color="#FFAF52DE" Offset="1" />
   </LinearGradientBrush>
+  <!-- Neutral selector outlines keep the spectrum marker visible across every selected color. -->
+  <SolidColorBrush x:Key="ColorSpectrumSelectorLightBrush" Color="#FFFFFFFF" />
+  <SolidColorBrush x:Key="ColorSpectrumSelectorDarkBrush" Color="#E4000000" />
 </ResourceDictionary>

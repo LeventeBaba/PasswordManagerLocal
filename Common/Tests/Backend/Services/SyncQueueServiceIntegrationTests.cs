@@ -22,7 +22,7 @@ public sealed class SyncQueueServiceIntegrationTests
     [DataRow(true)]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
-    public async Task IncomingExclusionPreservesInFlightSenderAcknowledgementAndThirdDeviceWork(bool newerLocalWork)
+    public async Task IncomingPropagationRefreshesOnlyQueueGenerationsThatContainNewWork(bool newerLocalWork)
     {
         await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
         var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 2, disabledRemoteCount: 0);
@@ -52,14 +52,65 @@ public sealed class SyncQueueServiceIntegrationTests
         MSTestAssert.IsTrue(rows.Any(row => row.DeviceId == thirdDevice.Id), "B must still forward to C.");
         MSTestAssert.IsTrue(rows.Any(row => row.Id == inFlight.Id),
             "An exclusion must not delete a row already owned by an outgoing sender.");
-        // This is the acknowledgement/removal sequence used by DeviceSyncTaskService.
-        // With the former pruning, the DELETE targets a missing row and EF throws a
-        // concurrency exception; the worker cannot proceed to its anti-entropy pass.
-        senderQueue.Delete(inFlight);
-        await new AppUnitOfWork(senderDb).SaveChangesAsync();
-        var remaining = await database.Db.SyncQueueItems.AsNoTracking().ToListAsync();
-        MSTestAssert.AreEqual(1, remaining.Count);
-        MSTestAssert.AreEqual(thirdDevice.Id, remaining.Single().DeviceId);
+        // This is the generation-aware acknowledgement used by DeviceSyncTaskService.
+        // Newer local work refreshes the source row too, so an older in-flight payload
+        // cannot delete it. A newer incoming value excludes the source, which leaves
+        // that row's generation unchanged and permits its original acknowledgement.
+        var acknowledged = await senderQueue.TryAcknowledgeAsync(inFlight.Id, inFlight.EnqueuedAt);
+        MSTestAssert.AreEqual(!newerLocalWork, acknowledged);
+        var remaining = await database.Db.SyncQueueItems.AsNoTracking()
+            .Where(row => row.ProcessedAt == null)
+            .ToListAsync();
+        if (newerLocalWork)
+        {
+            MSTestAssert.HasCount(2, remaining);
+            MSTestAssert.IsTrue(remaining.Any(row => row.DeviceId == source.Id));
+            MSTestAssert.IsTrue(remaining.Any(row => row.DeviceId == thirdDevice.Id));
+        }
+        else
+        {
+            MSTestAssert.HasCount(1, remaining);
+            MSTestAssert.AreEqual(thirdDevice.Id, remaining.Single().DeviceId);
+        }
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task ReenqueueThatStartedBeforeAcknowledgement_ReactivatesTheProcessedRow()
+    {
+        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 1, disabledRemoteCount: 0);
+        var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
+        await service.EnqueueAsync(new SyncItem
+        {
+            ModelId = seeded.User.UId,
+            ModelType = SyncModelType.User,
+            ChangeType = SyncChangeType.Updated
+        });
+
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(database.Db.Database.GetDbConnection()).Options;
+        await using var senderDb = new AppDbContext(options);
+        await using var writerDb = new AppDbContext(options);
+        var senderQueue = new SyncQueueRepository(senderDb);
+        var writerQueue = new SyncQueueRepository(writerDb);
+        var target = seeded.EnabledRemotes.Single();
+        var inFlight = await senderQueue.GetNextPendingForDeviceAsync(target.Id);
+        MSTestAssert.IsNotNull(inFlight);
+
+        // The writer observes the old pending row but has not committed its refreshed
+        // generation yet. The older sender wins the first commit and marks it processed.
+        await writerQueue.EnqueueAsync(inFlight.SyncItemId, target.Id);
+        MSTestAssert.IsTrue(await senderQueue.TryAcknowledgeAsync(inFlight.Id, inFlight.EnqueuedAt));
+
+        // Saving the enqueue must explicitly reactivate ProcessedAt even though the writer's
+        // tracked value was already null when it began. The row remains pending at its new generation.
+        await new AppUnitOfWork(writerDb).SaveChangesAsync();
+        var pending = await database.Db.SyncQueueItems.AsNoTracking()
+            .SingleAsync(row => row.DeviceId == target.Id);
+        MSTestAssert.IsNull(pending.ProcessedAt);
+        MSTestAssert.IsTrue(pending.EnqueuedAt > inFlight.EnqueuedAt);
     }
 
     [TestMethod]

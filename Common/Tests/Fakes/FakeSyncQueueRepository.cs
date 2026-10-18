@@ -94,7 +94,7 @@ public sealed class FakeSyncQueueRepository : ISyncQueueRepository
     public Task EnqueueAsync(Guid syncItemId, Guid deviceId, CancellationToken ct = default)
     {
         lock (_gate)
-            AddUnsafe(new SyncQueueItem { SyncItemId = syncItemId, DeviceId = deviceId });
+            EnqueueUnsafe(new SyncQueueItem { SyncItemId = syncItemId, DeviceId = deviceId });
         return Task.CompletedTask;
     }
 
@@ -115,9 +115,28 @@ public sealed class FakeSyncQueueRepository : ISyncQueueRepository
         lock (_gate)
         {
             foreach (var item in items)
-                AddUnsafe(item);
+                EnqueueUnsafe(item);
         }
         return Task.CompletedTask;
+    }
+
+    public Task<bool> TryAcknowledgeAsync(
+        Guid queueItemId,
+        DateTimeOffset expectedEnqueuedAt,
+        CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            var index = _items.FindIndex(item =>
+                item.Id == queueItemId &&
+                item.ProcessedAt is null &&
+                item.EnqueuedAt == expectedEnqueuedAt);
+            if (index < 0)
+                return Task.FromResult(false);
+
+            _items[index].ProcessedAt = DateTimeOffset.UtcNow;
+            return Task.FromResult(true);
+        }
     }
 
     public void Update(SyncQueueItem item)
@@ -153,5 +172,22 @@ public sealed class FakeSyncQueueRepository : ISyncQueueRepository
         if (item.QueueId == 0)
             item.QueueId = _items.Count == 0 ? 1 : _items.Max(existing => existing.QueueId) + 1;
         _items.Add(item);
+    }
+
+    private void EnqueueUnsafe(SyncQueueItem item)
+    {
+        var existing = _items.FirstOrDefault(candidate =>
+            candidate.SyncItemId == item.SyncItemId && candidate.DeviceId == item.DeviceId);
+        if (existing is null)
+        {
+            AddUnsafe(item);
+            return;
+        }
+
+        existing.ProcessedAt = null;
+        var now = DateTimeOffset.UtcNow;
+        existing.EnqueuedAt = now > existing.EnqueuedAt
+            ? now
+            : existing.EnqueuedAt.AddTicks(1);
     }
 }

@@ -296,7 +296,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         {
             if (queueItem.SyncItem is null || !await authorization.CanSendAsync(queueItem.SyncItem, targetDevice.Id, ct))
             {
-                queue.Delete(queueItem);
+                await queue.TryAcknowledgeAsync(queueItem.Id, queueItem.EnqueuedAt, ct);
                 continue;
             }
 
@@ -312,7 +312,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         if (!await RefreshAndValidateTargetDeviceAsync(scope.ServiceProvider, targetDevice, endpoint, ct))
             return false;
 
-        var sendItems = new List<(SyncQueueItem QueueItem, SyncItem SyncItem, NetworkDelta Delta)>();
+        var sendItems = new List<(SyncQueueItem QueueItem, SyncItem SyncItem, DateTimeOffset EnqueuedAt, NetworkDelta Delta)>();
         long totalPayloadBytes = 0;
         foreach (var item in validItems)
         {
@@ -323,21 +323,21 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
                     break;
 
                 totalPayloadBytes += delta.Payload.Length;
-                sendItems.Add((item.QueueItem, item.SyncItem, delta));
+                sendItems.Add((item.QueueItem, item.SyncItem, item.QueueItem.EnqueuedAt, delta));
             }
             catch (InvalidOperationException ex)
             {
                 BackendDebugLog.Error(
                     $"Discarding invalid outgoing sync item {item.SyncItem.Id:N} ({item.SyncItem.ModelType}/{item.SyncItem.ChangeType}) for device {targetDevice.Id:N}: {ex.Message}",
                     ex);
-                queue.Delete(item.QueueItem);
+                await queue.TryAcknowledgeAsync(item.QueueItem.Id, item.QueueItem.EnqueuedAt, ct);
             }
             catch (InvalidDataException ex)
             {
                 BackendDebugLog.Error(
                     $"Discarding malformed outgoing sync item {item.SyncItem.Id:N} ({item.SyncItem.ModelType}/{item.SyncItem.ChangeType}) for device {targetDevice.Id:N}: {ex.Message}",
                     ex);
-                queue.Delete(item.QueueItem);
+                await queue.TryAcknowledgeAsync(item.QueueItem.Id, item.QueueItem.EnqueuedAt, ct);
             }
         }
 
@@ -356,7 +356,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             if (await authorization.CanSendAsync(item.SyncItem, targetDevice.Id, ct))
                 continue;
 
-            queue.Delete(item.QueueItem);
+            await queue.TryAcknowledgeAsync(item.QueueItem.Id, item.EnqueuedAt, ct);
             sendItems.RemoveAt(i);
         }
 
@@ -379,8 +379,12 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             return false;
         }
 
+        var acknowledgedCount = 0;
         foreach (var item in sendItems)
-            queue.Delete(item.QueueItem);
+        {
+            if (await queue.TryAcknowledgeAsync(item.QueueItem.Id, item.EnqueuedAt, ct))
+                acknowledgedCount++;
+        }
 
         await uow.SaveChangesAsync(ct);
 
@@ -389,7 +393,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
 
         BackendDebugLog.Info(
             $"Outgoing synchronization delta batch completed successfully. TargetDeviceId={targetDevice.Id:N}, " +
-            $"DeltaCount={sendItems.Count}, PayloadBytes={totalPayloadBytes}.",
+            $"DeltaCount={sendItems.Count}, AcknowledgedCount={acknowledgedCount}, PayloadBytes={totalPayloadBytes}.",
             "Synchronization");
 
         return true;

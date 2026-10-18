@@ -51,7 +51,7 @@ public sealed class DeviceSyncTaskServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
-    public async Task TryStart_WhenSendSucceeds_RemovesQueueItemAndPersists()
+    public async Task TryStart_WhenSendSucceeds_MarksQueueItemProcessedAndPersists()
     {
         using var setup = CreateSetup(sendResult: true);
         setup.Queue.Seed(CreateQueueItem(setup.Device.Id));
@@ -60,7 +60,7 @@ public sealed class DeviceSyncTaskServiceTests
         await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
 
         MSTestAssert.AreEqual(1, setup.Transport.SendCalls);
-        MSTestAssert.AreEqual(0, setup.Queue.Items.Count);
+        MSTestAssert.AreEqual(0, setup.Queue.Items.Count(item => item.ProcessedAt is null));
         MSTestAssert.AreEqual("192.168.1.25", setup.Transport.LastHost);
         MSTestAssert.AreEqual(26688, setup.Transport.LastPort);
         MSTestAssert.AreEqual("AABBCC", setup.Transport.LastFingerprint);
@@ -83,7 +83,7 @@ public sealed class DeviceSyncTaskServiceTests
         MSTestAssert.AreEqual(1, setup.Transport.SendCalls);
         MSTestAssert.IsFalse(
             setup.EndpointRegistry.TryGetByFingerprint(setup.Endpoint.TlsCertFingerprint, out _));
-        MSTestAssert.AreEqual(1, setup.Queue.Items.Count);
+        MSTestAssert.AreEqual(1, setup.Queue.Items.Count(item => item.ProcessedAt is null));
         MSTestAssert.AreEqual(0, setup.UnitOfWork.SaveCalls);
     }
 
@@ -102,7 +102,7 @@ public sealed class DeviceSyncTaskServiceTests
 
         gate.SetResult(true);
         await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
-        MSTestAssert.AreEqual(0, setup.Queue.Items.Count);
+        MSTestAssert.AreEqual(0, setup.Queue.Items.Count(item => item.ProcessedAt is null));
     }
 
     [TestMethod]
@@ -124,7 +124,29 @@ public sealed class DeviceSyncTaskServiceTests
 
         await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
         MSTestAssert.AreEqual(2, setup.Transport.SendCalls);
-        MSTestAssert.AreEqual(0, setup.Queue.Items.Count);
+        MSTestAssert.AreEqual(0, setup.Queue.Items.Count(item => item.ProcessedAt is null));
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task TryStart_WhenWorkIsRefreshedDuringSend_DoesNotAcknowledgeTheNewGeneration()
+    {
+        var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var setup = CreateSetup(sendResult: true, sendGate: gate);
+        var queueItem = CreateQueueItem(setup.Device.Id);
+        setup.Queue.Seed(queueItem);
+
+        MSTestAssert.IsTrue(setup.Service.TryStart(setup.Endpoint, setup.Device));
+        await WaitUntilAsync(() => setup.Transport.SendCalls == 1);
+
+        await setup.Queue.EnqueueAsync(queueItem.SyncItemId, setup.Device.Id);
+        gate.SetResult(true);
+
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(2, setup.Transport.SendCalls,
+            "The refreshed queue generation must be sent after the older in-flight payload completes.");
+        MSTestAssert.AreEqual(0, setup.Queue.Items.Count(item => item.ProcessedAt is null));
     }
 
     private static DeviceSyncTaskSetup CreateSetup(bool sendResult = true, TaskCompletionSource<bool>? sendGate = null)

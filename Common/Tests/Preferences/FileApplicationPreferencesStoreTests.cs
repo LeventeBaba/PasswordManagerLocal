@@ -118,7 +118,7 @@ public sealed class FileApplicationPreferencesStoreTests
     [TestMethod]
     [DataRow("Klingon", "Dark")]
     [DataRow("99", "Dark")]
-    [DataRow("English", "FluentCustom")]
+    [DataRow("English", "Custom")]
     [DataRow("English", "99")]
     public async Task InvalidEnumValuesResetSafely(string language, string theme)
     {

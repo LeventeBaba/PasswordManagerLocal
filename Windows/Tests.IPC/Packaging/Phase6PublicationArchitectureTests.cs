@@ -101,6 +101,20 @@ public sealed class Phase6PublicationArchitectureTests
     }
 
     [TestMethod]
+    public void FrontendPublishValidatorTracksCurrentLocalizationParser()
+    {
+        var root = GetRepositoryRoot();
+        var validator = File.ReadAllText(Path.Combine(
+            root, "Windows", "Packaging", "WindowsProductValidator.cs"));
+        var parser = File.ReadAllText(Path.Combine(
+            root, "Common", "Frontend", "Localization", "FrontendTranslationResourceParser.cs"));
+
+        StringAssert.Contains(validator, "FrontendTranslationResourceParser");
+        StringAssert.Contains(parser, "class FrontendTranslationResourceParser");
+        Assert.IsFalse(validator.Contains("LocalizationJsonContext", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public void PublicationPrunesAndRejectsDllsNotOwnedByDependencyManifests()
     {
         var root = GetRepositoryRoot();
