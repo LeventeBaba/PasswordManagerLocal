@@ -153,6 +153,14 @@ public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSou
     {
         try
         {
+            // Release localization/theme ownership before potentially slower backend-client
+            // teardown. Android's process Application can outlive every Activity, so the
+            // selected dictionary must not remain rooted after the last UI session closes.
+            if (_uiPreferences is { } preferences)
+            {
+                await preferences.DisposeAsync();
+                _uiPreferences = null;
+            }
             if (_refreshCoordinator is not null)
                 await _refreshCoordinator.DisposeAsync();
             if (_changeNotificationForwarder is not null)
@@ -169,6 +177,8 @@ public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSou
             }
             finally
             {
+                // Initialization may have published preferences after the early check but
+                // before observing the canceled platform lifetime.
                 if (_uiPreferences is not null)
                     await _uiPreferences.DisposeAsync();
                 _uiPreferences = null;

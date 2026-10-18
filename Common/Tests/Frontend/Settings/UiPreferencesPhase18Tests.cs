@@ -31,7 +31,7 @@ public sealed class UiPreferencesPhase18Tests
         };
         await using var service = await CreateServiceAsync(store);
 
-        var themeChange = service.SetThemeModeAsync(AppThemeMode.Light);
+        var themeChange = service.SetThemeAsync(AppThemeId.Light);
         await firstWriteEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
         var animationChange = service.SetInterfaceAnimationsEnabledAsync(false);
         releaseFirstWrite.TrySetResult();
@@ -39,11 +39,11 @@ public sealed class UiPreferencesPhase18Tests
         Assert.AreEqual(UiPreferenceUpdateStatus.Applied, (await themeChange).Status);
         Assert.AreEqual(UiPreferenceUpdateStatus.Applied, (await animationChange).Status);
         Assert.AreEqual(2, store.Writes.Count);
-        Assert.AreEqual(AppThemeMode.Light, store.Writes[0].Theme);
+        Assert.AreEqual(AppThemeId.Light, store.Writes[0].Theme);
         Assert.IsTrue(store.Writes[0].InterfaceAnimationsEnabled);
-        Assert.AreEqual(AppThemeMode.Light, store.Writes[1].Theme);
+        Assert.AreEqual(AppThemeId.Light, store.Writes[1].Theme);
         Assert.IsFalse(store.Writes[1].InterfaceAnimationsEnabled);
-        Assert.AreEqual(AppThemeMode.Light, service.CurrentThemeMode);
+        Assert.AreEqual(AppThemeId.Light, service.CurrentThemeId);
         Assert.IsFalse(service.InterfaceAnimationsEnabled);
     }
 
@@ -63,15 +63,15 @@ public sealed class UiPreferencesPhase18Tests
         };
         await using var service = await CreateServiceAsync(store);
 
-        var result = await service.SetThemeModeAsync(AppThemeMode.Light, cancellation.Token);
+        var result = await service.SetThemeAsync(AppThemeId.Light, cancellation.Token);
 
         Assert.AreEqual(UiPreferenceUpdateStatus.Canceled, result.Status);
         Assert.IsFalse(result.PersistenceStateUncertain);
         Assert.AreEqual(2, store.Writes.Count);
-        Assert.AreEqual(AppThemeMode.Light, store.Writes[0].Theme);
-        Assert.AreEqual(AppThemeMode.Dark, store.Writes[1].Theme);
-        Assert.AreEqual(AppThemeMode.Dark, service.CurrentThemeMode);
-        Assert.AreEqual(AppThemeMode.Dark, store.Current.Theme);
+        Assert.AreEqual(AppThemeId.Light, store.Writes[0].Theme);
+        Assert.AreEqual(AppThemeId.Dark, store.Writes[1].Theme);
+        Assert.AreEqual(AppThemeId.Dark, service.CurrentThemeId);
+        Assert.AreEqual(AppThemeId.Dark, store.Current.Theme);
     }
 
     [TestMethod]
@@ -240,14 +240,15 @@ public sealed class UiPreferencesPhase18Tests
         UiPreferencesService.CreateAsync(
             store,
             notifier,
-            localizationResourceLoader: new TestResourceLoader());
+            localizationResourceLoader: new TestResourceLoader(),
+            themeManager: TestAppThemeFactory.CreateManager());
 
     private static ApplicationPreferences DefaultPreferences() =>
         new()
         {
             SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
             Language = AppLanguage.English,
-            Theme = AppThemeMode.Dark,
+            Theme = AppThemeId.Dark,
             InterfaceAnimationsEnabled = true
         };
 

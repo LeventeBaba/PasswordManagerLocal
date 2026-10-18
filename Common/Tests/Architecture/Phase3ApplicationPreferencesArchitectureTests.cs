@@ -215,7 +215,7 @@ public sealed class Phase3ApplicationPreferencesArchitectureTests
         Assert.IsTrue(combined.Contains("WindowsAgentApplicationPreferencesReader", StringComparison.Ordinal));
         Assert.IsTrue(combined.Contains("preferences.Language", StringComparison.Ordinal));
         Assert.IsFalse(combined.Contains("preferences.Theme", StringComparison.Ordinal));
-        Assert.IsFalse(combined.Contains("AppThemeMode", StringComparison.Ordinal));
+        Assert.IsFalse(combined.Contains("AppThemeId", StringComparison.Ordinal));
     }
 
     [TestMethod]

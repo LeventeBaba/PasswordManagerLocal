@@ -535,7 +535,7 @@ public sealed class WindowsAutomaticUiRefreshTests
     private sealed class MemoryPreferences : IApplicationPreferencesStore
     {
         private ApplicationPreferences _value = new()
-        { Language = AppLanguage.English, Theme = AppThemeMode.Dark, InterfaceAnimationsEnabled = false };
+        { Language = AppLanguage.English, Theme = AppThemeId.Dark, InterfaceAnimationsEnabled = false };
         public Task<ApplicationPreferences> ReadAsync(CancellationToken token = default) => Task.FromResult(_value);
         public Task WriteAsync(ApplicationPreferences value, CancellationToken token = default)
         { _value = value; return Task.CompletedTask; }

@@ -23,17 +23,18 @@ public sealed class WindowsAgentApplicationPreferencesReaderTests
             {
                 SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
                 Language = AppLanguage.Hungarian,
-                Theme = AppThemeMode.Light
+                Theme = AppThemeId.Light
             });
 
             await using var ui = await UiPreferencesService.CreateAsync(
                 new FileApplicationPreferencesStore(directory),
-                localizationResourceLoader: new TestFrontendLocalizationResourceLoader());
+                localizationResourceLoader: new TestFrontendLocalizationResourceLoader(),
+                themeManager: TestAppThemeManagerFactory.Create());
             var agent = new WindowsAgentApplicationPreferencesReader(
                 new FileApplicationPreferencesStore(directory));
 
             Assert.AreEqual(ui.CurrentLanguage, await agent.ReadLanguageAsync());
-            Assert.AreEqual(AppThemeMode.Light, ui.CurrentThemeMode);
+            Assert.AreEqual(AppThemeId.Light, ui.CurrentThemeId);
         }
         finally
         {

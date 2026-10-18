@@ -229,7 +229,7 @@ public sealed class FileApplicationPreferencesStore : IApplicationPreferencesSto
                 return true;
             }
 
-            if (schemaVersion is not (2 or ApplicationPreferences.CurrentSchemaVersion) ||
+            if (schemaVersion is not (2 or 3 or ApplicationPreferences.CurrentSchemaVersion) ||
                 root.EnumerateObject().Count() != 4 ||
                 !root.TryGetProperty(schemaVersion == 2 ? "animateMobileMainPageTransitions" : "interfaceAnimationsEnabled", out var animationElement) ||
                 animationElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
@@ -271,17 +271,17 @@ public sealed class FileApplicationPreferencesStore : IApplicationPreferencesSto
         return false;
     }
 
-    private static bool TryParseTheme(string? value, out AppThemeMode theme)
+    private static bool TryParseTheme(string? value, out AppThemeId theme)
     {
-        if (string.Equals(value, nameof(AppThemeMode.Light), StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(value, nameof(AppThemeId.Light), StringComparison.OrdinalIgnoreCase))
         {
-            theme = AppThemeMode.Light;
+            theme = AppThemeId.Light;
             return true;
         }
 
-        if (string.Equals(value, nameof(AppThemeMode.Dark), StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(value, nameof(AppThemeId.Dark), StringComparison.OrdinalIgnoreCase))
         {
-            theme = AppThemeMode.Dark;
+            theme = AppThemeId.Dark;
             return true;
         }
 
@@ -295,7 +295,7 @@ public sealed class FileApplicationPreferencesStore : IApplicationPreferencesSto
             throw new ArgumentOutOfRangeException(nameof(preferences), "The application-preference schema version is unsupported.");
         if (preferences.Language is not AppLanguage.English and not AppLanguage.Hungarian)
             throw new ArgumentOutOfRangeException(nameof(preferences), "The application language is invalid.");
-        if (preferences.Theme is not AppThemeMode.Light and not AppThemeMode.Dark)
+        if (preferences.Theme is not AppThemeId.Light and not AppThemeId.Dark)
             throw new ArgumentOutOfRangeException(nameof(preferences), "The application theme is invalid.");
     }
 

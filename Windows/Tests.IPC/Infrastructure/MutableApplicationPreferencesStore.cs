@@ -8,7 +8,7 @@ internal sealed class MutableApplicationPreferencesStore : IApplicationPreferenc
     private readonly object _gate = new();
     private ApplicationPreferences _current;
 
-    public MutableApplicationPreferencesStore(AppLanguage language, AppThemeMode theme = AppThemeMode.Light) =>
+    public MutableApplicationPreferencesStore(AppLanguage language, AppThemeId theme = AppThemeId.Light) =>
         _current = new ApplicationPreferences { Language = language, Theme = theme };
 
     public int ReadCount { get; private set; }

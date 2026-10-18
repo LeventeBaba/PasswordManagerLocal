@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    x:Class="PasswordManagerLocal.Common.Frontend.Theming.LightThemeResources">
+  <SolidColorBrush x:Key="AppBrush.Background.Primary" Color="#FFF8FAFC" />
+  <SolidColorBrush x:Key="AppBrush.Background.Secondary" Color="#FFF1F5F9" />
+  <SolidColorBrush x:Key="AppBrush.Surface.Card" Color="#FFFFFFFF" />
+  <SolidColorBrush x:Key="AppBrush.Surface.Elevated" Color="#FFF8FAFC" />
+  <SolidColorBrush x:Key="AppBrush.Border.Default" Color="#FFCBD5E1" />
+  <SolidColorBrush x:Key="AppBrush.Divider" Color="#FFE2E8F0" />
+  <SolidColorBrush x:Key="AppBrush.Text.Primary" Color="#FF0F172A" />
+  <SolidColorBrush x:Key="AppBrush.Text.Secondary" Color="#FF475569" />
+  <SolidColorBrush x:Key="AppBrush.Text.Disabled" Color="#FF94A3B8" />
+  <SolidColorBrush x:Key="AppBrush.Action.Primary" Color="#FF2D6AE3" />
+  <SolidColorBrush x:Key="AppBrush.Action.PrimaryForeground" Color="#FFFFFFFF" />
+  <SolidColorBrush x:Key="AppBrush.Action.Secondary" Color="#FF1F5FBF" />
+  <SolidColorBrush x:Key="AppBrush.Focus" Color="#FF1D4ED8" />
+  <SolidColorBrush x:Key="AppBrush.Selection.Background" Color="#332D6AE3" />
+  <SolidColorBrush x:Key="AppBrush.Selection.Border" Color="#FF1D4ED8" />
+  <SolidColorBrush x:Key="AppBrush.Status.Information" Color="#FF1D4ED8" />
+  <SolidColorBrush x:Key="AppBrush.Status.Success" Color="#FF047857" />
+  <SolidColorBrush x:Key="AppBrush.Status.Warning" Color="#FFB45309" />
+  <SolidColorBrush x:Key="AppBrush.Status.Danger" Color="#FFB91C1C" />
+  <SolidColorBrush x:Key="AppBrush.Device.Online" Color="#FF2E7D32" />
+  <SolidColorBrush x:Key="AppBrush.Device.Offline" Color="#FFB45309" />
+  <SolidColorBrush x:Key="AppBrush.Device.Blocked" Color="#FFD13438" />
+  <SolidColorBrush x:Key="AppBrush.Dialog.Overlay" Color="#99000000" />
+  <SolidColorBrush x:Key="AppBrush.Navigation.Selected" Color="#182D6AE3" />
+  <SolidColorBrush x:Key="AppBrush.Navigation.SelectedBorder" Color="#FF1D4ED8" />
+</ResourceDictionary>

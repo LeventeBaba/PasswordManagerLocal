@@ -28,7 +28,8 @@ public sealed class ApplicationPreferencesDefaultsTests
 
             Assert.AreEqual(ApplicationPreferences.CurrentSchemaVersion, defaults.SchemaVersion);
             Assert.AreEqual(expectedLanguage, defaults.Language);
-            Assert.AreEqual(AppThemeMode.Dark, defaults.Theme);
+            Assert.AreEqual(AppThemeId.Dark, defaults.Theme);
+            Assert.IsTrue(defaults.InterfaceAnimationsEnabled);
         }
         finally
         {

@@ -69,7 +69,7 @@ public sealed class AgentApplicationPreferencesReloadCoordinatorTests
         store.Current = new ApplicationPreferences
         {
             Language = AppLanguage.English,
-            Theme = AppThemeMode.Dark
+            Theme = AppThemeId.Dark
         };
         var second = coordinator.ReloadAsync();
         releaseFirstRead.TrySetResult();
@@ -88,7 +88,7 @@ public sealed class AgentApplicationPreferencesReloadCoordinatorTests
     {
         var store = new MutableApplicationPreferencesStore(
             AppLanguage.English,
-            AppThemeMode.Dark);
+            AppThemeId.Dark);
         var loader = CreateLoader();
         var localizer = await AgentLocalizer.CreateAsync(AppLanguage.English, loader);
         var tray = new FakeTrayIconController();

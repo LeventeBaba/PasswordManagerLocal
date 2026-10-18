@@ -1,7 +1,6 @@
-using Avalonia;
-using Avalonia.Styling;
 using PasswordManagerLocal.Common.Contracts.Preferences;
 using PasswordManagerLocal.Common.Frontend.Localization;
+using PasswordManagerLocal.Common.Frontend.Theming;
 using PasswordManagerLocal.Common.Preferences;
 
 namespace PasswordManagerLocal.Common.Frontend.Services;
@@ -17,6 +16,7 @@ public sealed class UiPreferencesService : IAsyncDisposable
     private readonly IApplicationPreferencesChangeNotifier? _changeNotifier;
     private readonly IUiPreferencesDiagnostics _diagnostics;
     private readonly FrontendLocalizationService _localization;
+    private readonly AppThemeManager _themeManager;
     private readonly bool _ownsPlatformServices;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
@@ -33,6 +33,7 @@ public sealed class UiPreferencesService : IAsyncDisposable
         bool ownsPlatformServices,
         ApplicationPreferences initialPreferences,
         FrontendLocalizationService localization,
+        AppThemeManager themeManager,
         IUiPreferencesDiagnostics diagnostics)
     {
         _store = store;
@@ -41,9 +42,9 @@ public sealed class UiPreferencesService : IAsyncDisposable
         _ownsPlatformServices = ownsPlatformServices;
         _current = initialPreferences;
         _localization = localization;
+        _themeManager = themeManager;
         _diagnostics = diagnostics;
         MotionPolicy = new InterfaceMotionPolicy(PlatformServices, _current.InterfaceAnimationsEnabled);
-        ApplyTheme(_current.Theme);
     }
 
     public static async Task<UiPreferencesService> CreateAsync(
@@ -53,6 +54,7 @@ public sealed class UiPreferencesService : IAsyncDisposable
         ApplicationPreferences? initialPreferences = null,
         IFrontendLocalizationResourceLoader? localizationResourceLoader = null,
         IFrontendLocalizationDiagnostics? localizationDiagnostics = null,
+        AppThemeManager? themeManager = null,
         IUiPreferencesDiagnostics? diagnostics = null,
         CancellationToken cancellationToken = default)
     {
@@ -72,6 +74,19 @@ public sealed class UiPreferencesService : IAsyncDisposable
                 "The selected frontend localization resource could not be initialized.");
         }
 
+        var resolvedThemeManager = themeManager ?? AppThemeManager.CreateDefault();
+        var themeResult = await resolvedThemeManager.SetThemeAsync(
+            preferences.Theme,
+            cancellationToken);
+        if (!themeResult.IsSuccess || resolvedThemeManager.ActiveThemeId != preferences.Theme)
+        {
+            await localization.DisposeAsync();
+            await resolvedThemeManager.DisposeAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new InvalidDataException(
+                "The selected frontend theme resource could not be initialized.");
+        }
+
         var resolvedPlatformServices = platformServices ?? new FrontendPlatformServices();
         return new UiPreferencesService(
             store,
@@ -80,6 +95,7 @@ public sealed class UiPreferencesService : IAsyncDisposable
             platformServices is null,
             preferences,
             localization,
+            resolvedThemeManager,
             diagnostics ?? new TraceUiPreferencesDiagnostics());
     }
 
@@ -93,7 +109,13 @@ public sealed class UiPreferencesService : IAsyncDisposable
 
     public AppLanguage CurrentLanguage => Volatile.Read(ref _current).Language;
 
-    public AppThemeMode CurrentThemeMode => Volatile.Read(ref _current).Theme;
+    public AppThemeId CurrentThemeId => Volatile.Read(ref _current).Theme;
+
+    public ThemeBrightness CurrentThemeBrightness =>
+        _themeManager.ActiveBrightness ??
+        _themeManager.Catalog.GetRequired(CurrentThemeId).Brightness;
+
+    public IReadOnlyList<AppThemeDescriptor> AvailableThemes => _themeManager.Catalog.Descriptors;
 
     public bool InterfaceAnimationsEnabled =>
         Volatile.Read(ref _current).InterfaceAnimationsEnabled;
@@ -109,12 +131,12 @@ public sealed class UiPreferencesService : IAsyncDisposable
             UiPreferenceKind.Language,
             () => SetLanguageCoreAsync(language, cancellationToken));
 
-    public Task<UiPreferenceUpdateResult> SetThemeModeAsync(
-        AppThemeMode theme,
+    public Task<UiPreferenceUpdateResult> SetThemeAsync(
+        AppThemeId theme,
         CancellationToken cancellationToken = default) =>
         StartTracked(
             UiPreferenceKind.Theme,
-            () => SetThemeModeCoreAsync(theme, cancellationToken));
+            () => SetThemeCoreAsync(theme, cancellationToken));
 
     public Task<UiPreferenceUpdateResult> SetInterfaceAnimationsEnabledAsync(
         bool enabled,
@@ -128,10 +150,10 @@ public sealed class UiPreferencesService : IAsyncDisposable
             UiPreferenceKind.Language,
             () => SetLanguageCoreAsync(language, CancellationToken.None));
 
-    public void RequestThemeModeChange(AppThemeMode theme) =>
+    public void RequestThemeChange(AppThemeId theme) =>
         StartTracked(
             UiPreferenceKind.Theme,
-            () => SetThemeModeCoreAsync(theme, CancellationToken.None));
+            () => SetThemeCoreAsync(theme, CancellationToken.None));
 
     public void RequestInterfaceAnimationsEnabledChange(bool enabled) =>
         StartTracked(
@@ -153,6 +175,7 @@ public sealed class UiPreferencesService : IAsyncDisposable
             // A cancellation callback cannot prevent synchronous session retirement.
         }
         _localization.Deactivate();
+        _themeManager.Deactivate();
     }
 
     public async ValueTask DisposeAsync()
@@ -175,6 +198,7 @@ public sealed class UiPreferencesService : IAsyncDisposable
         }
 
         await _localization.DisposeAsync();
+        await _themeManager.DisposeAsync();
         if (_ownsPlatformServices)
             PlatformServices.Dispose();
         _writeGate.Dispose();
@@ -334,32 +358,103 @@ public sealed class UiPreferencesService : IAsyncDisposable
         }
     }
 
-    private async Task<UiPreferenceUpdateResult> SetThemeModeCoreAsync(
-        AppThemeMode theme,
+    private async Task<UiPreferenceUpdateResult> SetThemeCoreAsync(
+        AppThemeId theme,
         CancellationToken callerToken)
     {
-        if (!Enum.IsDefined(theme))
+        if (IsDeactivated)
         {
             return Complete(new UiPreferenceUpdateResult(
                 UiPreferenceKind.Theme,
-                UiPreferenceUpdateStatus.Failed));
+                UiPreferenceUpdateStatus.Disposed));
         }
 
-        return await SetSimplePreferenceAsync(
-            UiPreferenceKind.Theme,
-            current => current.Theme == theme,
-            current => current with { Theme = theme },
-            updated =>
+        var preparation = await _themeManager.PrepareThemeChangeAsync(theme, callerToken);
+        if (preparation.Candidate is not { } candidate)
+        {
+            return Complete(new UiPreferenceUpdateResult(
+                UiPreferenceKind.Theme,
+                Map(preparation.Status)));
+        }
+
+        using (candidate)
+        using (var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                   callerToken,
+                   _lifetime.Token,
+                   candidate.CancellationToken))
+        {
+            var token = operationCancellation.Token;
+            var enteredGate = false;
+            try
             {
-                ApplyTheme(updated.Theme);
+                await _writeGate.WaitAsync(token);
+                enteredGate = true;
+                if (!_themeManager.IsCurrent(candidate))
+                {
+                    return Complete(new UiPreferenceUpdateResult(
+                        UiPreferenceKind.Theme,
+                        IsDeactivated
+                            ? UiPreferenceUpdateStatus.Disposed
+                            : UiPreferenceUpdateStatus.Superseded));
+                }
+
+                var previous = Volatile.Read(ref _current);
+                var updated = previous with { Theme = theme };
+                try
+                {
+                    await _store.WriteAsync(updated, token);
+                }
+                catch (OperationCanceledException)
+                {
+                    var rollbackFailed = !await TryRollbackAsync(UiPreferenceKind.Theme, previous);
+                    return Complete(new UiPreferenceUpdateResult(
+                        UiPreferenceKind.Theme,
+                        GetThemeCancellationStatus(callerToken, candidate),
+                        PersistenceStateUncertain: rollbackFailed));
+                }
+                catch (Exception exception)
+                {
+                    ReportFailure(UiPreferenceKind.Theme, UiPreferenceFailureStage.Persist, exception.GetType());
+                    var rollbackFailed = !await TryRollbackAsync(UiPreferenceKind.Theme, previous);
+                    return Complete(new UiPreferenceUpdateResult(
+                        UiPreferenceKind.Theme,
+                        UiPreferenceUpdateStatus.Failed,
+                        PersistenceStateUncertain: rollbackFailed));
+                }
+
+                var activationStatus = await _themeManager.TryActivateAsync(candidate, token);
+                if (activationStatus != AppThemeChangeStatus.Applied)
+                {
+                    var rollbackFailed = !await TryRollbackAsync(UiPreferenceKind.Theme, previous);
+                    return Complete(new UiPreferenceUpdateResult(
+                        UiPreferenceKind.Theme,
+                        Map(activationStatus),
+                        PersistenceStateUncertain: rollbackFailed));
+                }
+
+                Volatile.Write(ref _current, updated);
                 RaisePreferencesChanged(new UiPreferencesChangedEventArgs(
                     false,
                     true,
                     false,
                     updated.Language,
                     updated.Theme));
-            },
-            callerToken);
+                return Complete(new UiPreferenceUpdateResult(
+                    UiPreferenceKind.Theme,
+                    UiPreferenceUpdateStatus.Applied));
+            }
+            catch (OperationCanceledException)
+            {
+                return Complete(new UiPreferenceUpdateResult(
+                    UiPreferenceKind.Theme,
+                    GetThemeCancellationStatus(callerToken, candidate)));
+            }
+            finally
+            {
+                if (enteredGate)
+                    _writeGate.Release();
+            }
+        }
     }
 
     private Task<UiPreferenceUpdateResult> SetInterfaceAnimationsEnabledCoreAsync(
@@ -642,6 +737,30 @@ public sealed class UiPreferencesService : IAsyncDisposable
             _ => UiPreferenceUpdateStatus.Failed
         };
 
+    private static UiPreferenceUpdateStatus Map(AppThemeChangeStatus status) =>
+        status switch
+        {
+            AppThemeChangeStatus.Applied => UiPreferenceUpdateStatus.Applied,
+            AppThemeChangeStatus.Unchanged => UiPreferenceUpdateStatus.Unchanged,
+            AppThemeChangeStatus.Superseded => UiPreferenceUpdateStatus.Superseded,
+            AppThemeChangeStatus.Canceled => UiPreferenceUpdateStatus.Canceled,
+            AppThemeChangeStatus.Disposed => UiPreferenceUpdateStatus.Disposed,
+            _ => UiPreferenceUpdateStatus.Failed
+        };
+
+    private UiPreferenceUpdateStatus GetThemeCancellationStatus(
+        CancellationToken callerToken,
+        AppThemeCandidate candidate)
+    {
+        if (IsDeactivated)
+            return UiPreferenceUpdateStatus.Disposed;
+        if (!_themeManager.IsCurrent(candidate))
+            return UiPreferenceUpdateStatus.Superseded;
+        return callerToken.IsCancellationRequested
+            ? UiPreferenceUpdateStatus.Canceled
+            : UiPreferenceUpdateStatus.Superseded;
+    }
+
     private bool IsDeactivated => Volatile.Read(ref _deactivated) != 0;
 
     private void ReportFailure(
@@ -656,16 +775,4 @@ public sealed class UiPreferencesService : IAsyncDisposable
         }
     }
 
-    private static void ApplyTheme(AppThemeMode mode)
-    {
-        if (Application.Current is not Application app)
-            return;
-
-        app.RequestedThemeVariant = mode switch
-        {
-            AppThemeMode.Light => ThemeVariant.Light,
-            AppThemeMode.Dark => ThemeVariant.Dark,
-            _ => ThemeVariant.Default
-        };
-    }
 }

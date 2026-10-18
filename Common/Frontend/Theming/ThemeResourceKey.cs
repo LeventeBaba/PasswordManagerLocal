@@ -1,0 +1,31 @@
+namespace PasswordManagerLocal.Common.Frontend.Theming;
+
+/// <summary>Semantic visual roles that every selectable theme must provide.</summary>
+public enum ThemeResourceKey
+{
+    BackgroundPrimary,
+    BackgroundSecondary,
+    SurfaceCard,
+    SurfaceElevated,
+    BorderDefault,
+    Divider,
+    TextPrimary,
+    TextSecondary,
+    TextDisabled,
+    ActionPrimary,
+    ActionPrimaryForeground,
+    ActionSecondary,
+    Focus,
+    SelectionBackground,
+    SelectionBorder,
+    StatusInformation,
+    StatusSuccess,
+    StatusWarning,
+    StatusDanger,
+    DeviceOnline,
+    DeviceOffline,
+    DeviceBlocked,
+    DialogOverlay,
+    NavigationSelected,
+    NavigationSelectedBorder
+}

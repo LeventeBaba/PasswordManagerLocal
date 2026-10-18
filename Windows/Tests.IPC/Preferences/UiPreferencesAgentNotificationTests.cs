@@ -34,16 +34,16 @@ public sealed class UiPreferencesAgentNotificationTests
     [TestMethod]
     public async Task ThemeOnlyAndSameLanguageChangesDoNotNotifyAgent()
     {
-        var store = new MutableApplicationPreferencesStore(AppLanguage.English, AppThemeMode.Light);
+        var store = new MutableApplicationPreferencesStore(AppLanguage.English, AppThemeId.Light);
         var notifier = new FakeApplicationPreferencesChangeNotifier();
         await using var service = await CreateServiceAsync(store, notifier);
 
         await service.SetLanguageAsync(AppLanguage.English);
-        await service.SetThemeModeAsync(AppThemeMode.Dark);
+        await service.SetThemeAsync(AppThemeId.Dark);
 
         Assert.AreEqual(0, notifier.NotifyCount);
         Assert.AreEqual(1, store.WriteCount);
-        Assert.AreEqual(AppThemeMode.Dark, store.Current.Theme);
+        Assert.AreEqual(AppThemeId.Dark, store.Current.Theme);
     }
 
     [TestMethod]
@@ -89,5 +89,6 @@ public sealed class UiPreferencesAgentNotificationTests
         UiPreferencesService.CreateAsync(
             store,
             notifier,
-            localizationResourceLoader: new TestFrontendLocalizationResourceLoader());
+            localizationResourceLoader: new TestFrontendLocalizationResourceLoader(),
+            themeManager: TestAppThemeManagerFactory.Create());
 }

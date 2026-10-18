@@ -15,7 +15,7 @@ public sealed class UiPreferencesServiceTests
         {
             SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
             Language = AppLanguage.English,
-            Theme = AppThemeMode.Dark
+            Theme = AppThemeId.Dark
         });
         await using var service = await TestUiPreferencesFactory.CreateAsync(store: store);
 
@@ -24,11 +24,11 @@ public sealed class UiPreferencesServiceTests
             (await service.SetLanguageAsync(AppLanguage.Hungarian)).Status);
         Assert.AreEqual(
             UiPreferenceUpdateStatus.Applied,
-            (await service.SetThemeModeAsync(AppThemeMode.Light)).Status);
+            (await service.SetThemeAsync(AppThemeId.Light)).Status);
         await using var reloaded = await TestUiPreferencesFactory.CreateAsync(store: store);
 
         Assert.AreEqual(AppLanguage.Hungarian, reloaded.CurrentLanguage);
-        Assert.AreEqual(AppThemeMode.Light, reloaded.CurrentThemeMode);
+        Assert.AreEqual(AppThemeId.Light, reloaded.CurrentThemeId);
         Assert.AreEqual(2, store.WriteCount);
     }
 }

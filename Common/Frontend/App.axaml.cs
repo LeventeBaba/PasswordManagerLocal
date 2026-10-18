@@ -4,6 +4,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using PasswordManagerLocal.Common.Frontend.Services;
+using PasswordManagerLocal.Common.Frontend.Theming;
 using PasswordManagerLocal.Common.Frontend.Views;
 
 namespace PasswordManagerLocal.Common.Frontend;
@@ -14,14 +15,20 @@ public partial class App : Application
 
     // Android's process Application and the XAML designer use this constructor.
     // Activity-bound state is composed only after MainViewFactory creates its view.
-    public App() { }
+    public App()
+    {
+        ThemeResourceHost = new AvaloniaAppThemeResourceHost(this);
+    }
 
     public App(FrontendApplicationContext context)
+        : this()
     {
         _desktopContext = context ?? throw new ArgumentNullException(nameof(context));
         if (OperatingSystem.IsWindows())
             WindowsFirewallConfigurationStore.Initialize(context.ApplicationDataDirectory);
     }
+
+    internal AvaloniaAppThemeResourceHost ThemeResourceHost { get; }
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 

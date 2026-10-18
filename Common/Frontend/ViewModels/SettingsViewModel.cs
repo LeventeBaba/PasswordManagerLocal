@@ -36,11 +36,12 @@ public sealed class SettingsViewModel : ViewModelBase
             new SettingsLanguageOptionViewModel(AppLanguage.English, GetTranslation("Language_English")),
             new SettingsLanguageOptionViewModel(AppLanguage.Hungarian, GetTranslation("Language_Hungarian"))
         ];
-        ThemeOptions =
-        [
-            new SettingsThemeOptionViewModel(AppThemeMode.Light, GetTranslation("Theme_Light")),
-            new SettingsThemeOptionViewModel(AppThemeMode.Dark, GetTranslation("Theme_Dark"))
-        ];
+        ThemeOptions = UiPreferences.AvailableThemes
+            .Select(descriptor => new SettingsThemeOptionViewModel(
+                descriptor.Id,
+                descriptor.DisplayNameResourceKey,
+                GetTranslation(descriptor.DisplayNameResourceKey)))
+            .ToArray();
         _deviceAppPreferences.PreferencesChanged += HandleDeviceAppPreferencesChanged;
         UiPreferences.PreferenceUpdateCompleted += HandlePreferenceUpdateCompleted;
         ApplyBackgroundState(_deviceAppPreferences.BackgroundSyncState);
@@ -96,11 +97,11 @@ public sealed class SettingsViewModel : ViewModelBase
 
     public SettingsThemeOptionViewModel? SelectedThemeOption
     {
-        get => ThemeOptions.FirstOrDefault(option => option.Theme == CurrentThemeMode);
+        get => ThemeOptions.FirstOrDefault(option => option.Theme == CurrentThemeId);
         set
         {
             if (value is not null)
-                UiPreferences.RequestThemeModeChange(value.Theme);
+                UiPreferences.RequestThemeChange(value.Theme);
         }
     }
 
@@ -231,8 +232,8 @@ public sealed class SettingsViewModel : ViewModelBase
     {
         LanguageOptions[0].UpdateDisplayName(GetTranslation("Language_English"));
         LanguageOptions[1].UpdateDisplayName(GetTranslation("Language_Hungarian"));
-        ThemeOptions[0].UpdateDisplayName(GetTranslation("Theme_Light"));
-        ThemeOptions[1].UpdateDisplayName(GetTranslation("Theme_Dark"));
+        foreach (var option in ThemeOptions)
+            option.UpdateDisplayName(GetTranslation(option.DisplayNameResourceKey));
 
         RaisePropertiesChanged(
         [

@@ -5,13 +5,13 @@ namespace PasswordManagerLocal.Common.Contracts.Preferences;
 /// </summary>
 public sealed record ApplicationPreferences
 {
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
 
     public required AppLanguage Language { get; init; }
 
-    public required AppThemeMode Theme { get; init; }
+    public required AppThemeId Theme { get; init; }
 
     public bool InterfaceAnimationsEnabled { get; init; } = true;
 }

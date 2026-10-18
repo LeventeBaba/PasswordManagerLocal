@@ -6,6 +6,7 @@ using Avalonia.Threading;
 using PasswordManagerLocal.Common.Frontend.Abstractions.Services;
 using PasswordManagerLocal.Common.Frontend.Exceptions;
 using PasswordManagerLocal.Common.Frontend.Services;
+using PasswordManagerLocal.Common.Frontend.Theming;
 using PasswordManagerLocal.Common.Frontend.ViewModels.Auth;
 using PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
@@ -428,7 +429,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         ? SelectedNavigationFrameBrush
         : Brushes.Transparent;
 
-    private IBrush SelectedNavigationFrameBrush => CurrentThemeMode == AppThemeMode.Light
+    private IBrush SelectedNavigationFrameBrush => CurrentThemeBrightness == ThemeBrightness.Light
         ? LightNavigationFrameBrush
         : DarkNavigationFrameBrush;
 
@@ -691,11 +692,11 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
 
     public bool HasNonErrorHeaderSubtitle => HasHeaderSubtitle && !IsHeaderSubtitleError;
 
-    public IBrush HeaderInformationSubtitleBrush => CurrentThemeMode == AppThemeMode.Light
+    public IBrush HeaderInformationSubtitleBrush => CurrentThemeBrightness == ThemeBrightness.Light
         ? LightHeaderInformationBrush
         : DarkHeaderInformationBrush;
 
-    public IBrush HeaderSuccessSubtitleBrush => CurrentThemeMode == AppThemeMode.Light
+    public IBrush HeaderSuccessSubtitleBrush => CurrentThemeBrightness == ThemeBrightness.Light
         ? LightHeaderSuccessBrush
         : DarkHeaderSuccessBrush;
 

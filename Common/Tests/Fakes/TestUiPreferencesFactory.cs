@@ -2,6 +2,7 @@ using System.Text;
 using PasswordManagerLocal.Common.Contracts.Preferences;
 using PasswordManagerLocal.Common.Frontend.Localization;
 using PasswordManagerLocal.Common.Frontend.Services;
+using PasswordManagerLocal.Common.Frontend.Theming;
 using PasswordManagerLocal.Common.Preferences;
 
 namespace PasswordManagerLocal.Common.Tests.Fakes;
@@ -12,7 +13,8 @@ public static class TestUiPreferencesFactory
         ApplicationPreferences? preferences = null,
         IApplicationPreferencesStore? store = null,
         IApplicationPreferencesChangeNotifier? notifier = null,
-        IFrontendLocalizationResourceLoader? resourceLoader = null)
+        IFrontendLocalizationResourceLoader? resourceLoader = null,
+        AppThemeManager? themeManager = null)
     {
         var initial = preferences ?? (store is null
             ? CreateDefaultPreferences()
@@ -22,7 +24,8 @@ public static class TestUiPreferencesFactory
             resolvedStore,
             notifier,
             initialPreferences: initial,
-            localizationResourceLoader: resourceLoader ?? new MinimalLocalizationResourceLoader());
+            localizationResourceLoader: resourceLoader ?? new MinimalLocalizationResourceLoader(),
+            themeManager: themeManager ?? TestAppThemeFactory.CreateManager());
     }
 
     public static ApplicationPreferences CreateDefaultPreferences() =>
@@ -30,7 +33,7 @@ public static class TestUiPreferencesFactory
         {
             SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
             Language = AppLanguage.English,
-            Theme = AppThemeMode.Dark,
+            Theme = AppThemeId.Dark,
             InterfaceAnimationsEnabled = true
         };
 

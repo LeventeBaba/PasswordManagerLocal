@@ -10,7 +10,7 @@ namespace PasswordManagerLocal.Common.Preferences;
 /// </summary>
 public static class ApplicationPreferencesDefaults
 {
-    public const AppThemeMode DefaultTheme = AppThemeMode.Dark;
+    public const AppThemeId DefaultTheme = AppThemeId.Dark;
     public const bool DefaultInterfaceAnimationsEnabled = true;
 
     public static ApplicationPreferences Create() =>

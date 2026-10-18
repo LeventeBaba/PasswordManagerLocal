@@ -75,7 +75,7 @@ public sealed class Phase5AgentLocalizationArchitectureTests
         var agentDirectory = Path.Combine(GetRepositoryRoot(), "Windows", "Agent");
         var source = ReadSources(agentDirectory);
 
-        Assert.IsFalse(source.Contains("AppThemeMode", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("AppThemeId", StringComparison.Ordinal));
         Assert.IsFalse(source.Contains("preferences.Theme", StringComparison.Ordinal));
         Assert.IsFalse(source.Contains("LocalizationManager", StringComparison.Ordinal));
         Assert.IsFalse(source.Contains("Common.Frontend", StringComparison.Ordinal));
@@ -192,11 +192,11 @@ public sealed class Phase5AgentLocalizationArchitectureTests
 
         StringAssert.Contains(handler, "EnsureNoPayload");
         Assert.IsFalse(handler.Contains("AppLanguage", StringComparison.Ordinal));
-        Assert.IsFalse(handler.Contains("AppThemeMode", StringComparison.Ordinal));
+        Assert.IsFalse(handler.Contains("AppThemeId", StringComparison.Ordinal));
         StringAssert.Contains(coordinator, "ReadLanguageAsync");
         StringAssert.Contains(notifier, "ReloadApplicationPreferencesAsync");
         Assert.IsFalse(notifier.Contains("AppLanguage", StringComparison.Ordinal));
-        Assert.IsFalse(notifier.Contains("AppThemeMode", StringComparison.Ordinal));
+        Assert.IsFalse(notifier.Contains("AppThemeId", StringComparison.Ordinal));
     }
 
     [TestMethod]

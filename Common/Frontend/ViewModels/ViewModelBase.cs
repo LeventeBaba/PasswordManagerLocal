@@ -1,6 +1,7 @@
 using PasswordManagerLocal.Common.Frontend.Exceptions;
 using PasswordManagerLocal.Common.Frontend.Localization;
 using PasswordManagerLocal.Common.Frontend.Services;
+using PasswordManagerLocal.Common.Frontend.Theming;
 using PasswordManagerLocal.Common.Contracts.Errors;
 using ReactiveUI;
 using System.ComponentModel;
@@ -27,7 +28,9 @@ public abstract class ViewModelBase : DisposableReactiveObject
 
     public AppLanguage CurrentLanguage => UiPreferences.CurrentLanguage;
 
-    public AppThemeMode CurrentThemeMode => UiPreferences.CurrentThemeMode;
+    public AppThemeId CurrentThemeId => UiPreferences.CurrentThemeId;
+
+    public ThemeBrightness CurrentThemeBrightness => UiPreferences.CurrentThemeBrightness;
 
     public bool InterfaceAnimationsEnabled => UiPreferences.InterfaceAnimationsEnabled;
 
@@ -243,7 +246,8 @@ public abstract class ViewModelBase : DisposableReactiveObject
 
         if (e.ThemeChanged)
         {
-            this.RaisePropertyChanged(nameof(CurrentThemeMode));
+            this.RaisePropertyChanged(nameof(CurrentThemeId));
+            this.RaisePropertyChanged(nameof(CurrentThemeBrightness));
             OnThemeChanged();
         }
 

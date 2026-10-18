@@ -8,7 +8,7 @@ public sealed class UiPreferencesChangedEventArgs : EventArgs
         bool languageChanged,
         bool themeChanged,
         AppLanguage language,
-        AppThemeMode theme)
+        AppThemeId theme)
         : this(languageChanged, themeChanged, false, language, theme)
     {
     }
@@ -18,7 +18,7 @@ public sealed class UiPreferencesChangedEventArgs : EventArgs
         bool themeChanged,
         bool interfaceAnimationsChanged,
         AppLanguage language,
-        AppThemeMode theme)
+        AppThemeId theme)
     {
         LanguageChanged = languageChanged;
         ThemeChanged = themeChanged;
@@ -35,5 +35,5 @@ public sealed class UiPreferencesChangedEventArgs : EventArgs
 
     public AppLanguage Language { get; }
 
-    public AppThemeMode Theme { get; }
+    public AppThemeId Theme { get; }
 }
