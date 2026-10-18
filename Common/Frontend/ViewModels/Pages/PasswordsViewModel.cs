@@ -697,7 +697,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         private set
         {
             this.RaiseAndSetIfChanged(ref _editorColor, value);
-            this.RaisePropertyChanged(nameof(EditorColorBrush));
             this.RaisePropertyChanged(nameof(EditorColorCode));
         }
     }
@@ -726,8 +725,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             }
         }
     }
-
-    public IBrush EditorColorBrush => PasswordColorUtility.ParseBrush(EditorColor);
 
     public string EditorColorCode => EditorColor;
 

@@ -1,4 +1,3 @@
-using Avalonia.Media;
 using PasswordManagerLocal.Common.Contracts.Responses;
 using ReactiveUI;
 
@@ -17,7 +16,6 @@ public sealed class PasswordTagItemViewModel : ReactiveObject
         Id = tag.Id;
         Name = tag.Name;
         Color = tag.Color;
-        ColorBrush = PasswordColorUtility.ParseBrush(tag.Color);
         _removeLabel = removeLabel;
 
     }
@@ -29,8 +27,6 @@ public sealed class PasswordTagItemViewModel : ReactiveObject
     public string Name { get; }
 
     public string Color { get; }
-
-    public IBrush ColorBrush { get; }
 
     public string RemoveLabel
     {

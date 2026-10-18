@@ -1,4 +1,3 @@
-using Avalonia.Media;
 using PasswordManagerLocal.Common.Contracts.Responses;
 using ReactiveUI;
 
@@ -17,7 +16,6 @@ public sealed class PasswordTagManagementItemViewModel : MultiSelectableListItem
         Id = tag.Id;
         Name = tag.Name;
         Color = PasswordColorUtility.NormalizeKnownColor(tag.Color);
-        ColorBrush = PasswordColorUtility.ParseBrush(Color);
         _deleteLabel = deleteLabel;
 
     }
@@ -31,8 +29,6 @@ public sealed class PasswordTagManagementItemViewModel : MultiSelectableListItem
     public string Name { get; }
 
     public string Color { get; }
-
-    public IBrush ColorBrush { get; }
 
     public string DeleteLabel
     {

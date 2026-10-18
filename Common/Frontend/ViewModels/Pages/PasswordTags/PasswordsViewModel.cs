@@ -1,5 +1,4 @@
 using PasswordManagerLocal.Common.Frontend.Services;
-using Avalonia.Media;
 using PasswordManagerLocal.Common.Contracts.Constants;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Contracts.Responses;
@@ -76,11 +75,8 @@ public sealed partial class PasswordsViewModel
         private set
         {
             this.RaiseAndSetIfChanged(ref _passwordTagEditorColor, value);
-            this.RaisePropertyChanged(nameof(PasswordTagEditorColorBrush));
         }
     }
-
-    public IBrush PasswordTagEditorColorBrush => PasswordColorUtility.ParseBrush(PasswordTagEditorColor);
 
     public PasswordColorOptionViewModel? SelectedPasswordTagColorOption
     {

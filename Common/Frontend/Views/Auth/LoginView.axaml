@@ -182,9 +182,9 @@
             <StackPanel Spacing="6" HorizontalAlignment="Center" IsVisible="{Binding HasDeviceTransferQrCode}">
               <Border Padding="12"
                       CornerRadius="12"
-                      Background="White"
+                      Background="{DynamicResource AppBrush.Surface.Card}"
                       BorderThickness="1"
-                      BorderBrush="#33808080">
+                      BorderBrush="{DynamicResource AppBrush.Border.Subtle}">
                 <Image Source="{Binding DeviceTransferQrCode}"
                        Width="240"
                        Height="240"
@@ -194,7 +194,7 @@
             <Border Padding="12,10"
                     CornerRadius="12"
                     BorderThickness="1"
-                    BorderBrush="#33808080">
+                    BorderBrush="{DynamicResource AppBrush.Border.Subtle}">
               <TextBlock Text="{Binding ReadableDeviceTransferCode}"
                          Classes="readableCode"
                          FontSize="22"

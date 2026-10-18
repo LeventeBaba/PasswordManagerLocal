@@ -236,7 +236,7 @@
                       FontWeight="SemiBold"
                       FontSize="16"
                       TextWrapping="Wrap"
-                      Foreground="#FFD13438" />
+                      Foreground="{DynamicResource AppBrush.Status.Danger}" />
                   <TextBlock Text="{Binding DeleteAccountDescription}" Classes="subtleText" TextWrapping="Wrap" />
                 </StackPanel>
                 <PathIcon
@@ -246,7 +246,7 @@
                     Width="44"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
-                    Foreground="#FFD13438" />
+                    Foreground="{DynamicResource AppBrush.Status.Danger}" />
               </Grid>
             </Button>
           </StackPanel>

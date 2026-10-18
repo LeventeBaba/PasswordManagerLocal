@@ -27,4 +27,36 @@
   <SolidColorBrush x:Key="AppBrush.Dialog.Overlay" Color="#99000000" />
   <SolidColorBrush x:Key="AppBrush.Navigation.Selected" Color="#182D6AE3" />
   <SolidColorBrush x:Key="AppBrush.Navigation.SelectedBorder" Color="#FF1D4ED8" />
+  <SolidColorBrush x:Key="AppBrush.Surface.Subtle" Color="#08808080" />
+  <SolidColorBrush x:Key="AppBrush.Surface.Input" Color="#0C808080" />
+  <SolidColorBrush x:Key="AppBrush.Surface.SubtleEmphasis" Color="#14808080" />
+  <SolidColorBrush x:Key="AppBrush.Surface.Pressed" Color="#20808080" />
+  <SolidColorBrush x:Key="AppBrush.Surface.Badge" Color="#22808080" />
+  <SolidColorBrush x:Key="AppBrush.Surface.Hover" Color="#40808080" />
+  <SolidColorBrush x:Key="AppBrush.Border.Subtle" Color="#33808080" />
+  <SolidColorBrush x:Key="AppBrush.Border.SubtleStrong" Color="#44808080" />
+  <SolidColorBrush x:Key="AppBrush.Border.Muted" Color="#55808080" />
+  <SolidColorBrush x:Key="AppBrush.Border.Emphasis" Color="#B0808080" />
+  <SolidColorBrush x:Key="AppBrush.Action.Danger" Color="#FFD13438" />
+  <SolidColorBrush x:Key="AppBrush.Action.DangerForeground" Color="#FFFFFFFF" />
+  <SolidColorBrush x:Key="AppBrush.Navigation.Hover" Color="#4068A9FF" />
+  <SolidColorBrush x:Key="AppBrush.Navigation.HoverBorder" Color="#FF68A9FF" />
+  <SolidColorBrush x:Key="AppBrush.Selection.HoverBackground" Color="#302D6AE3" />
+  <SolidColorBrush x:Key="AppBrush.Selection.HoverBorder" Color="#DD2D6AE3" />
+  <SolidColorBrush x:Key="AppBrush.Status.Danger.Surface" Color="#14D13438" />
+  <SolidColorBrush x:Key="AppBrush.Status.Danger.Border" Color="#66D13438" />
+  <SolidColorBrush x:Key="AppBrush.Device.Online.Surface" Color="#222E7D32" />
+  <SolidColorBrush x:Key="AppBrush.Device.Offline.Surface" Color="#22F59E0B" />
+  <SolidColorBrush x:Key="AppBrush.Device.Blocked.Surface" Color="#22D13438" />
+  <SolidColorBrush x:Key="AppBrush.Scrollbar.Track" Color="#08808080" />
+  <SolidColorBrush x:Key="AppBrush.Scrollbar.Thumb" Color="#66808080" />
+  <SolidColorBrush x:Key="AppBrush.Scrollbar.ThumbHover" Color="#8A808080" />
+  <SolidColorBrush x:Key="AppBrush.Scrollbar.ThumbPressed" Color="#B0808080" />
+  <SolidColorBrush x:Key="AppBrush.PasswordStrength.Inactive" Color="#33808080" />
+  <SolidColorBrush x:Key="AppBrush.PasswordStrength.Weak" Color="#FFB91C1C" />
+  <SolidColorBrush x:Key="AppBrush.PasswordStrength.Moderate" Color="#FFB45309" />
+  <SolidColorBrush x:Key="AppBrush.PasswordStrength.Good" Color="#FF4D7C0F" />
+  <SolidColorBrush x:Key="AppBrush.PasswordStrength.Strong" Color="#FF047857" />
+  <SolidColorBrush x:Key="AppBrush.PasswordStrength.Excellent" Color="#FF1D4ED8" />
+  <SolidColorBrush x:Key="AppBrush.Surface.CardOverlay" Color="#11808080" />
 </ResourceDictionary>

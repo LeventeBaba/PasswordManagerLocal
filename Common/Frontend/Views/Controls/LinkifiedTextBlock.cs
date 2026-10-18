@@ -14,13 +14,15 @@ public sealed class LinkifiedTextBlock : TextBlock
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
         TimeSpan.FromMilliseconds(100));
 
-    private static readonly IBrush LinkForeground = Brush.Parse("#FF2D6AE3");
     private static readonly Cursor LinkCursor = new(StandardCursorType.Hand);
 
     private readonly List<LinkTextRange> _links = [];
 
     public static readonly StyledProperty<string?> SourceTextProperty =
         AvaloniaProperty.Register<LinkifiedTextBlock, string?>(nameof(SourceText));
+
+    public static readonly StyledProperty<IBrush?> LinkForegroundProperty =
+        AvaloniaProperty.Register<LinkifiedTextBlock, IBrush?>(nameof(LinkForeground));
 
     public LinkifiedTextBlock()
     {
@@ -35,11 +37,17 @@ public sealed class LinkifiedTextBlock : TextBlock
         set => SetValue(SourceTextProperty, value);
     }
 
+    public IBrush? LinkForeground
+    {
+        get => GetValue(LinkForegroundProperty);
+        set => SetValue(LinkForegroundProperty, value);
+    }
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
 
-        if (change.Property == SourceTextProperty)
+        if (change.Property == SourceTextProperty || change.Property == LinkForegroundProperty)
         {
             RebuildInlines();
         }
@@ -102,11 +110,13 @@ public sealed class LinkifiedTextBlock : TextBlock
 
     private void AddLinkInline(string displayedUrl, int startIndex, Uri uri)
     {
-        (Inlines ??= new InlineCollection()).Add(new Run(displayedUrl)
+        var linkRun = new Run(displayedUrl)
         {
-            Foreground = LinkForeground,
             TextDecorations = Avalonia.Media.TextDecorations.Underline
-        });
+        };
+        if (LinkForeground is { } linkForeground)
+            linkRun.Foreground = linkForeground;
+        (Inlines ??= new InlineCollection()).Add(linkRun);
 
         _links.Add(new LinkTextRange(startIndex, startIndex + displayedUrl.Length, uri));
     }

@@ -1,4 +1,3 @@
-using Avalonia.Media;
 using PasswordManagerLocal.Common.Contracts.Responses;
 using ReactiveUI;
 
@@ -17,7 +16,6 @@ public sealed class CustomColorItemViewModel : MultiSelectableListItemViewModel
         Id = color.Id;
         Name = color.ColorName;
         ColorCode = PasswordColorUtility.NormalizeKnownColor(color.ColorCode);
-        ColorBrush = PasswordColorUtility.ParseBrush(ColorCode);
         _deleteLabel = deleteLabel;
 
     }
@@ -33,8 +31,6 @@ public sealed class CustomColorItemViewModel : MultiSelectableListItemViewModel
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? ColorCode : Name;
 
     public string ColorCode { get; }
-
-    public IBrush ColorBrush { get; }
 
     public string DeleteLabel
     {

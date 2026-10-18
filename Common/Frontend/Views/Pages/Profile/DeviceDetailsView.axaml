@@ -24,14 +24,14 @@
               TextWrapping="Wrap" />
         </StackPanel>
         <WrapPanel>
-          <Border Padding="8,3" CornerRadius="10" Background="#22808080" Margin="0,0,6,6">
+          <Border Padding="8,3" CornerRadius="10" Background="{DynamicResource AppBrush.Surface.Badge}" Margin="0,0,6,6">
             <TextBlock Text="{Binding SelectedDevice.DeviceTypeText}" FontSize="12" FontWeight="SemiBold" />
           </Border>
           <Border
               Padding="10,4"
               CornerRadius="10"
-              Background="#332D6AE3"
-              BorderBrush="#FF2D6AE3"
+              Background="{DynamicResource AppBrush.Selection.Background}"
+              BorderBrush="{DynamicResource AppBrush.Action.Primary}"
               BorderThickness="1"
               IsVisible="{Binding SelectedDevice.IsCurrentDevice}"
               Margin="0,0,6,6">
@@ -39,23 +39,23 @@
                 Text="{Binding CurrentDeviceLabel}"
                 FontSize="12"
                 FontWeight="Bold"
-                Foreground="#FF68A9FF" />
+                Foreground="{DynamicResource AppBrush.Action.Secondary}" />
           </Border>
           <Border
               Padding="8,3"
               CornerRadius="10"
-              Background="#22D13438"
+              Background="{DynamicResource AppBrush.Device.Blocked.Surface}"
               IsVisible="{Binding SelectedDevice.IsBlocked}"
               Margin="0,0,6,6">
-            <TextBlock Text="{Binding BlockedLabel}" FontSize="12" FontWeight="SemiBold" Foreground="#FFD13438" />
+            <TextBlock Text="{Binding BlockedLabel}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource AppBrush.Device.Blocked}" />
           </Border>
-          <Border Padding="8,3" CornerRadius="10" Background="#22808080" Margin="0,0,6,6">
+          <Border Padding="8,3" CornerRadius="10" Background="{DynamicResource AppBrush.Surface.Badge}" Margin="0,0,6,6">
             <TextBlock Text="{Binding SelectedDevice.SyncStateText}" FontSize="12" />
           </Border>
           <Border
               Padding="8,3"
               CornerRadius="10"
-              Background="#22808080"
+              Background="{DynamicResource AppBrush.Surface.Badge}"
               IsVisible="{Binding SelectedDevice.IsRemoteDevice}"
               Margin="0,0,6,6">
             <TextBlock Text="{Binding SelectedDevice.TrustStateText}" FontSize="12" />
@@ -63,26 +63,26 @@
           <Border
               Padding="8,3"
               CornerRadius="10"
-              Background="#222E7D32"
+              Background="{DynamicResource AppBrush.Device.Online.Surface}"
               IsVisible="{Binding SelectedDevice.ShowOnlineStatus}"
               Margin="0,0,6,6">
             <TextBlock
                 Text="{Binding SelectedDevice.OnlineStateText}"
                 FontSize="12"
                 FontWeight="SemiBold"
-                Foreground="#FF2E7D32" />
+                Foreground="{DynamicResource AppBrush.Device.Online}" />
           </Border>
           <Border
               Padding="8,3"
               CornerRadius="10"
-              Background="#22F59E0B"
+              Background="{DynamicResource AppBrush.Device.Offline.Surface}"
               IsVisible="{Binding SelectedDevice.ShowOfflineStatus}"
               Margin="0,0,6,6">
             <TextBlock
                 Text="{Binding SelectedDevice.OnlineStateText}"
                 FontSize="12"
                 FontWeight="SemiBold"
-                Foreground="#FFF59E0B" />
+                Foreground="{DynamicResource AppBrush.Device.Offline}" />
           </Border>
         </WrapPanel>
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">

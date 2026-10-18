@@ -50,7 +50,7 @@
                         HorizontalContentAlignment="Stretch"
                         Padding="0"
                         Margin="0,0,0,8">
-                  <Border Padding="14" CornerRadius="16" BorderThickness="1" BorderBrush="#33808080" Background="#08808080">
+                  <Border Padding="14" CornerRadius="16" BorderThickness="1" BorderBrush="{DynamicResource AppBrush.Border.Subtle}" Background="{DynamicResource AppBrush.Surface.Subtle}">
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                       <StackPanel Spacing="4">
                         <TextBlock Text="{Binding DisplayName}" Classes="sectionTitle" TextWrapping="Wrap" />

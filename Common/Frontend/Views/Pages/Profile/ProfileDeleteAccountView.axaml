@@ -23,13 +23,13 @@
               Classes="sectionTitle"
               VerticalAlignment="Center"
               TextWrapping="Wrap"
-              Foreground="#FFD13438" />
+              Foreground="{DynamicResource AppBrush.Status.Danger}" />
         </StackPanel>
         <StackPanel Spacing="8">
           <TextBlock
               Text="{Binding DeleteAccountWarningTitle}"
               FontWeight="SemiBold"
-              Foreground="#FFD13438"
+              Foreground="{DynamicResource AppBrush.Status.Danger}"
               TextWrapping="Wrap" />
           <TextBlock Text="{Binding DeleteAccountFinalWarning}" TextWrapping="Wrap" />
         </StackPanel>

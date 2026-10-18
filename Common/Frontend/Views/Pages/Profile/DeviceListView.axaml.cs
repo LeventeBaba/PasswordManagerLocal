@@ -7,7 +7,6 @@ using Avalonia.Controls;
 using Avalonia.Threading;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
-using Avalonia.Media;
 using Avalonia.VisualTree;
 using PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
 
@@ -18,11 +17,6 @@ public partial class DeviceListView : UserControl
     private const string HoveredClass = "hovered";
     private const string InteractiveListItemClass = "interactiveListItem";
     private const double MaximumTapMovement = 10;
-
-    private static readonly IBrush NormalBackground = new SolidColorBrush(Color.FromArgb(0x08, 0x80, 0x80, 0x80));
-    private static readonly IBrush NormalBorderBrush = new SolidColorBrush(Color.FromArgb(0x33, 0x80, 0x80, 0x80));
-    private static readonly IBrush HoverBackground = new SolidColorBrush(Color.FromArgb(0x40, 0x80, 0x80, 0x80));
-    private static readonly IBrush HoverBorderBrush = new SolidColorBrush(Color.FromArgb(0xDD, 0x2D, 0x6A, 0xE3));
 
     private Border? _pressedItem;
     private DeviceItemViewModel? _pressedViewModel;
@@ -184,14 +178,10 @@ public partial class DeviceListView : UserControl
                 item.Classes.Add(HoveredClass);
             }
 
-            item.Background = HoverBackground;
-            item.BorderBrush = HoverBorderBrush;
             return;
         }
 
         item.Classes.Remove(HoveredClass);
-        item.Background = NormalBackground;
-        item.BorderBrush = NormalBorderBrush;
     }
 
     private static Border? FindInteractiveListItem(object? sender)

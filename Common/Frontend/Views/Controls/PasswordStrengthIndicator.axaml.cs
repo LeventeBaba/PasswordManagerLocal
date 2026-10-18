@@ -1,17 +1,11 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Media;
 
 namespace PasswordManagerLocal.Common.Frontend.Views.Controls;
 
 public partial class PasswordStrengthIndicator : UserControl
 {
-    private static readonly IBrush InactiveBrush = new SolidColorBrush(Color.Parse("#33808080"));
-    private static readonly IBrush WeakBrush = new SolidColorBrush(Color.Parse("#FFE5484D"));
-    private static readonly IBrush ModerateBrush = new SolidColorBrush(Color.Parse("#FFF59E0B"));
-    private static readonly IBrush GoodBrush = new SolidColorBrush(Color.Parse("#FF84CC16"));
-    private static readonly IBrush StrongBrush = new SolidColorBrush(Color.Parse("#FF10B981"));
-    private static readonly IBrush ExcellentBrush = new SolidColorBrush(Color.Parse("#FF2D6AE3"));
+    private static readonly string[] StrengthClasses = ["weak", "moderate", "good", "strong", "excellent"];
 
     public static readonly StyledProperty<int> StrengthProperty =
         AvaloniaProperty.Register<PasswordStrengthIndicator, int>(nameof(Strength));
@@ -80,20 +74,31 @@ public partial class PasswordStrengthIndicator : UserControl
             return;
 
         var strength = Math.Clamp(Strength, 0, 10);
-        var activeBrush = GetActiveBrush(strength);
+        var activeClass = GetActiveClass(strength);
 
         _strengthScoreText.Text = $"{strength}/10";
 
         for (var index = 0; index < _segments.Length; index++)
-            _segments[index].Background = index < strength ? activeBrush : InactiveBrush;
+        {
+            var segment = _segments[index];
+            foreach (var className in StrengthClasses)
+            {
+                segment.Classes.Remove(className);
+            }
+
+            if (index < strength)
+            {
+                segment.Classes.Add(activeClass);
+            }
+        }
     }
 
-    private static IBrush GetActiveBrush(int strength) => strength switch
+    private static string GetActiveClass(int strength) => strength switch
     {
-        <= 3 => WeakBrush,
-        <= 5 => ModerateBrush,
-        <= 7 => GoodBrush,
-        <= 9 => StrongBrush,
-        _ => ExcellentBrush
+        <= 3 => "weak",
+        <= 5 => "moderate",
+        <= 7 => "good",
+        <= 9 => "strong",
+        _ => "excellent"
     };
 }

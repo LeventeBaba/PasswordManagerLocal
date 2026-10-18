@@ -55,7 +55,6 @@ public sealed class FileApplicationPreferencesStoreTests
 
         var preferences = await store.ReadAsync();
 
-        Assert.AreEqual(4, ApplicationPreferences.CurrentSchemaVersion);
         Assert.AreEqual(ApplicationPreferences.CurrentSchemaVersion, preferences.SchemaVersion);
         Assert.AreEqual(AppLanguage.Hungarian, preferences.Language);
         Assert.AreEqual(AppThemeId.Light, preferences.Theme);

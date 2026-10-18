@@ -58,7 +58,9 @@
             <Grid ColumnDefinitions="8,*,Auto" ColumnSpacing="12" HorizontalAlignment="Stretch" PointerEntered="InteractiveListItem_PointerEntered">
               <Border
                   Grid.Column="0"
-                  Background="{Binding StatusIndicatorBrush}"
+                  Classes="deviceStatusIndicator"
+                  Classes.online="{Binding IsOnline}"
+                  Classes.blocked="{Binding IsBlocked}"
                   CornerRadius="6"
                   MinHeight="52" />
               <Button
@@ -73,8 +75,8 @@
                     <Border
                         Padding="10,4"
                         CornerRadius="10"
-                        Background="#332D6AE3"
-                        BorderBrush="#FF2D6AE3"
+                        Background="{DynamicResource AppBrush.Selection.Background}"
+                        BorderBrush="{DynamicResource AppBrush.Action.Primary}"
                         BorderThickness="1"
                         IsVisible="{Binding IsCurrentDevice}"
                         Margin="10,0,0,0"
@@ -83,53 +85,53 @@
                           Text="{Binding CurrentDeviceLabel}"
                           FontSize="12"
                           FontWeight="Bold"
-                          Foreground="#FF68A9FF" />
+                          Foreground="{DynamicResource AppBrush.Action.Secondary}" />
                     </Border>
                     <TextBlock Text="  •  " Classes="subtleText" IsVisible="{Binding ShowNotTrustedStatus}" VerticalAlignment="Center" />
                     <TextBlock Text="{Binding NotTrustedLabel}" Classes="subtleText" IsVisible="{Binding ShowNotTrustedStatus}" VerticalAlignment="Center" />
                   </WrapPanel>
                   <WrapPanel>
-                    <Border Padding="8,3" CornerRadius="10" Background="#22808080" Margin="0,0,6,6">
+                    <Border Padding="8,3" CornerRadius="10" Background="{DynamicResource AppBrush.Surface.Badge}" Margin="0,0,6,6">
                       <TextBlock Text="{Binding DeviceTypeText}" FontSize="12" FontWeight="SemiBold" />
                     </Border>
                     <Border
                         Padding="8,3"
                         CornerRadius="10"
-                        Background="#22D13438"
+                        Background="{DynamicResource AppBrush.Device.Blocked.Surface}"
                         IsVisible="{Binding IsBlocked}"
                         Margin="0,0,6,6">
                       <TextBlock
                           Text="{Binding BlockedLabel}"
                           FontSize="12"
                           FontWeight="SemiBold"
-                          Foreground="#FFD13438" />
+                          Foreground="{DynamicResource AppBrush.Device.Blocked}" />
                     </Border>
-                    <Border Padding="8,3" CornerRadius="10" Background="#22808080" Margin="0,0,6,6">
+                    <Border Padding="8,3" CornerRadius="10" Background="{DynamicResource AppBrush.Surface.Badge}" Margin="0,0,6,6">
                       <TextBlock Text="{Binding SyncStateText}" FontSize="12" />
                     </Border>
                     <Border
                         Padding="8,3"
                         CornerRadius="10"
-                        Background="#222E7D32"
+                        Background="{DynamicResource AppBrush.Device.Online.Surface}"
                         IsVisible="{Binding ShowOnlineStatus}"
                         Margin="0,0,6,6">
                       <TextBlock
                           Text="{Binding OnlineStateText}"
                           FontSize="12"
                           FontWeight="SemiBold"
-                          Foreground="#FF2E7D32" />
+                          Foreground="{DynamicResource AppBrush.Device.Online}" />
                     </Border>
                     <Border
                         Padding="8,3"
                         CornerRadius="10"
-                        Background="#22F59E0B"
+                        Background="{DynamicResource AppBrush.Device.Offline.Surface}"
                         IsVisible="{Binding ShowOfflineStatus}"
                         Margin="0,0,6,6">
                       <TextBlock
                           Text="{Binding OnlineStateText}"
                           FontSize="12"
                           FontWeight="SemiBold"
-                          Foreground="#FFF59E0B" />
+                          Foreground="{DynamicResource AppBrush.Device.Offline}" />
                     </Border>
                   </WrapPanel>
                 </StackPanel>

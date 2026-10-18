@@ -1,7 +1,6 @@
 using PasswordManagerLocal.Common.Contracts.Notifications;
 using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
-using Avalonia.Media;
 using Avalonia.Threading;
 using PasswordManagerLocal.Common.Frontend.Abstractions.Services;
 using PasswordManagerLocal.Common.Frontend.Exceptions;
@@ -26,13 +25,6 @@ namespace PasswordManagerLocal.Common.Frontend.ViewModels;
 public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 {
     private static readonly TimeSpan SessionRenewalWarningLeadTime = TimeSpan.FromMinutes(1);
-    private static readonly IBrush LightNavigationFrameBrush = Brush.Parse("#FF1F5FBF");
-    private static readonly IBrush DarkNavigationFrameBrush = Brush.Parse("#FF7DB3FF");
-    private static readonly IBrush LightHeaderInformationBrush = Brush.Parse("#FF1D4ED8");
-    private static readonly IBrush DarkHeaderInformationBrush = Brush.Parse("#FF7DB3FF");
-    private static readonly IBrush LightHeaderSuccessBrush = Brush.Parse("#FF047857");
-    private static readonly IBrush DarkHeaderSuccessBrush = Brush.Parse("#FF34D399");
-
     private readonly IEndpoints _endpoints;
     private readonly IBackendRuntimeClient _backendClient;
     private readonly IAuthSessionRegistry _authSessionRegistry;
@@ -306,9 +298,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             this.RaisePropertyChanged(nameof(IsPasswordsMainPageSelected));
             this.RaisePropertyChanged(nameof(IsDevicesMainPageSelected));
             this.RaisePropertyChanged(nameof(IsProfileMainPageSelected));
-            this.RaisePropertyChanged(nameof(PasswordsNavigationFrameBrush));
-            this.RaisePropertyChanged(nameof(DevicesNavigationFrameBrush));
-            this.RaisePropertyChanged(nameof(ProfileNavigationFrameBrush));
             this.RaisePropertyChanged(nameof(CanChangeRememberMe));
             this.RaisePropertyChanged(nameof(IsMobileMainContentVisible));
             this.RaisePropertyChanged(nameof(IsMobileStandaloneContentVisible));
@@ -416,22 +405,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     public bool IsProfileMainPageSelected => IsAuthenticated && CurrentMainPageIndex == 2;
 
     public bool IsSettingsPageVisible => ReferenceEquals(CurrentPageViewModel, SettingsViewModel);
-
-    public IBrush PasswordsNavigationFrameBrush => IsPasswordsMainPageSelected
-        ? SelectedNavigationFrameBrush
-        : Brushes.Transparent;
-
-    public IBrush DevicesNavigationFrameBrush => IsDevicesMainPageSelected
-        ? SelectedNavigationFrameBrush
-        : Brushes.Transparent;
-
-    public IBrush ProfileNavigationFrameBrush => IsProfileMainPageSelected
-        ? SelectedNavigationFrameBrush
-        : Brushes.Transparent;
-
-    private IBrush SelectedNavigationFrameBrush => CurrentThemeBrightness == ThemeBrightness.Light
-        ? LightNavigationFrameBrush
-        : DarkNavigationFrameBrush;
 
     private bool IsMainContentPageVisible =>
         ReferenceEquals(CurrentPageViewModel, _passwordsViewModel) ||
@@ -691,14 +664,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     public bool IsHeaderSubtitleError => HeaderSubtitleKind == OperationMessageKind.Error;
 
     public bool HasNonErrorHeaderSubtitle => HasHeaderSubtitle && !IsHeaderSubtitleError;
-
-    public IBrush HeaderInformationSubtitleBrush => CurrentThemeBrightness == ThemeBrightness.Light
-        ? LightHeaderInformationBrush
-        : DarkHeaderInformationBrush;
-
-    public IBrush HeaderSuccessSubtitleBrush => CurrentThemeBrightness == ThemeBrightness.Light
-        ? LightHeaderSuccessBrush
-        : DarkHeaderSuccessBrush;
 
     public Task InitializeAsync()
     {
@@ -1091,15 +1056,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         RaiseDatabaseRecoveryProperties();
         RaiseHeaderSubtitleProperties();
         this.RaisePropertyChanged(nameof(MobileCurrentPageLabel));
-    }
-
-    protected override void OnThemeChanged()
-    {
-        this.RaisePropertyChanged(nameof(PasswordsNavigationFrameBrush));
-        this.RaisePropertyChanged(nameof(DevicesNavigationFrameBrush));
-        this.RaisePropertyChanged(nameof(ProfileNavigationFrameBrush));
-        this.RaisePropertyChanged(nameof(HeaderInformationSubtitleBrush));
-        this.RaisePropertyChanged(nameof(HeaderSuccessSubtitleBrush));
     }
 
     protected override void OnStatusMessageChanged()
@@ -2484,9 +2440,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         this.RaisePropertyChanged(nameof(IsDevicesMainPageSelected));
         this.RaisePropertyChanged(nameof(IsProfileMainPageSelected));
         this.RaisePropertyChanged(nameof(IsSettingsPageVisible));
-        this.RaisePropertyChanged(nameof(PasswordsNavigationFrameBrush));
-        this.RaisePropertyChanged(nameof(DevicesNavigationFrameBrush));
-        this.RaisePropertyChanged(nameof(ProfileNavigationFrameBrush));
         this.RaisePropertyChanged(nameof(IsDesktopNavigationVisible));
         this.RaisePropertyChanged(nameof(IsMobilePageIndicatorVisible));
         this.RaisePropertyChanged(nameof(IsMobileMainContentVisible));

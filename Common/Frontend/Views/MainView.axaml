@@ -45,7 +45,7 @@
     </DataTemplate>
   </UserControl.DataTemplates>
 
-  <Grid>
+  <Grid Background="{DynamicResource AppBrush.Background.Primary}">
   <Grid RowDefinitions="Auto,Auto,*"
         IsEnabled="{Binding IsApplicationInteractionEnabled}">
     <Grid>
@@ -63,12 +63,10 @@
               <TextBlock Text="{Binding HeaderSubtitle}"
                          IsVisible="{Binding IsHeaderSubtitleInformation}"
                          Classes="statusInfoText"
-                         Foreground="{Binding HeaderInformationSubtitleBrush}"
                          TextWrapping="Wrap" />
               <TextBlock Text="{Binding HeaderSubtitle}"
                          IsVisible="{Binding IsHeaderSubtitleSuccess}"
                          Classes="statusSuccessText"
-                         Foreground="{Binding HeaderSuccessSubtitleBrush}"
                          TextWrapping="Wrap" />
               <TextBlock Text="{Binding HeaderSubtitle}"
                          IsVisible="{Binding IsHeaderSubtitleError}"
@@ -173,14 +171,12 @@
               <TextBlock Text="{Binding HeaderSubtitle}"
                          IsVisible="{Binding IsHeaderSubtitleInformation}"
                          Classes="statusInfoText"
-                         Foreground="{Binding HeaderInformationSubtitleBrush}"
                          FontSize="12"
                          TextTrimming="CharacterEllipsis"
                          TextWrapping="NoWrap" />
               <TextBlock Text="{Binding HeaderSubtitle}"
                          IsVisible="{Binding IsHeaderSubtitleSuccess}"
                          Classes="statusSuccessText"
-                         Foreground="{Binding HeaderSuccessSubtitleBrush}"
                          FontSize="12"
                          TextTrimming="CharacterEllipsis"
                          TextWrapping="NoWrap" />
@@ -368,7 +364,7 @@
     </Grid>
   </Grid>
 
-    <Border Background="#99000000" IsVisible="{Binding IsSessionRenewalDialogOpen}" Padding="24">
+    <Border Background="{DynamicResource AppBrush.Dialog.Overlay}" IsVisible="{Binding IsSessionRenewalDialogOpen}" Padding="24">
       <Border Classes="card"
               Padding="20"
               MaxWidth="460"
@@ -391,7 +387,7 @@
     </Border>
 
 
-    <Border Background="#CC000000"
+    <Border Background="{DynamicResource AppBrush.Dialog.Overlay}"
             IsVisible="{Binding IsDatabaseRecoveryDialogOpen}"
             Padding="24">
       <Border Classes="card"

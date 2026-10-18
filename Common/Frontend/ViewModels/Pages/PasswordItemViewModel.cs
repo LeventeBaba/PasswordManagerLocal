@@ -1,4 +1,3 @@
-using Avalonia.Media;
 using PasswordManagerLocal.Common.Contracts.Responses;
 using PasswordManagerLocal.Common.Frontend.Services;
 using ReactiveUI;
@@ -29,7 +28,6 @@ public sealed class PasswordItemViewModel : MultiSelectableListItemViewModel
         _colorName = colorName?.Trim() ?? string.Empty;
         CreatedAt = password.CreatedAt;
         LastUpdatedAt = password.LastUpdatedAt;
-        ColorBrush = ParseBrush(password.Color);
         _editLabel = editLabel;
         _deleteLabel = deleteLabel;
 
@@ -64,8 +62,6 @@ public sealed class PasswordItemViewModel : MultiSelectableListItemViewModel
     public DateTime CreatedAt { get; }
 
     public DateTime LastUpdatedAt { get; }
-
-    public IBrush ColorBrush { get; }
 
     public string EditLabel
     {
@@ -137,6 +133,4 @@ public sealed class PasswordItemViewModel : MultiSelectableListItemViewModel
         PasswordsViewModel owner) =>
         new(password, tagNames, colorName, editLabel, deleteLabel, owner);
 
-    private static IBrush ParseBrush(string color) =>
-        PasswordColorUtility.ParseBrush(color);
 }

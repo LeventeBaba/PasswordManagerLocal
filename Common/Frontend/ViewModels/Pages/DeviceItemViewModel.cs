@@ -1,4 +1,3 @@
-using Avalonia.Media;
 using PasswordManagerLocal.Common.Contracts.Devices;
 using PasswordManagerLocal.Common.Contracts.Authentication;
 using PasswordManagerLocal.Common.Contracts.Security;
@@ -10,10 +9,6 @@ namespace PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
 
 public sealed class DeviceItemViewModel : ReactiveObject
 {
-    private static readonly IBrush OnlineStatusBrush = new SolidColorBrush(Color.Parse("#FF2E7D32"));
-    private static readonly IBrush BlockedStatusBrush = new SolidColorBrush(Color.Parse("#FFD13438"));
-    private static readonly IBrush OfflineStatusBrush = new SolidColorBrush(Color.Parse("#FFF59E0B"));
-
     private string _editableName = string.Empty;
     private bool _isSyncOn;
     private string _currentDeviceLabel = string.Empty;
@@ -145,12 +140,6 @@ public sealed class DeviceItemViewModel : ReactiveObject
     public bool ShowOnlineStatus => !IsBlocked && IsOnline;
 
     public bool ShowOfflineStatus => !IsBlocked && IsOffline;
-
-    public IBrush StatusIndicatorBrush => IsBlocked
-        ? BlockedStatusBrush
-        : IsOnline
-            ? OnlineStatusBrush
-            : OfflineStatusBrush;
 
     public string CurrentDeviceLabel => _currentDeviceLabel;
 

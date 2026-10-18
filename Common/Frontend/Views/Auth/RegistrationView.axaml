@@ -9,7 +9,7 @@
 
   <UserControl.Styles>
     <Style Selector="TextBox.registrationInvalid">
-      <Setter Property="BorderBrush" Value="#FFD13438" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBrush.Status.Danger}" />
       <Setter Property="BorderThickness" Value="2" />
     </Style>
   </UserControl.Styles>

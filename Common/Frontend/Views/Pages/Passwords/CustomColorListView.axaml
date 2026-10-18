@@ -89,12 +89,12 @@
                   IsChecked="{Binding IsSelected, Mode=TwoWay}"
                   VerticalAlignment="Center"
                   Margin="0,0,12,0" />
-              <Border Grid.Column="1" Background="{Binding ColorBrush}" CornerRadius="6" />
+              <Border Grid.Column="1" Background="{Binding ColorCode, Converter={StaticResource UserColorBrushConverter}}" CornerRadius="6" />
               <StackPanel Grid.Column="2" Spacing="4" Margin="12,0,0,0" VerticalAlignment="Center">
                 <TextBlock
                     Text="{Binding DisplayName}"
                     FontWeight="SemiBold"
-                    Foreground="{Binding ColorBrush}"
+                    Foreground="{Binding ColorCode, Converter={StaticResource UserColorBrushConverter}}"
                     TextWrapping="Wrap" />
                 <TextBlock
                     Text="{Binding ColorCode}"

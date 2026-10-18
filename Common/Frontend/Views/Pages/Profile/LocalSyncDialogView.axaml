@@ -6,7 +6,7 @@
     x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Profile.LocalSyncDialogView"
     x:DataType="vm:ProfileViewModel"
     IsVisible="{Binding IsLocalSyncDialogOpen}">
-  <Border Background="#99000000" IsVisible="{Binding IsLocalSyncDialogOpen}" Padding="24">
+  <Border Background="{DynamicResource AppBrush.Dialog.Overlay}" IsVisible="{Binding IsLocalSyncDialogOpen}" Padding="24">
     <Border Classes="card" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="560">
       <StackPanel Spacing="14">
         <TextBlock Text="{Binding LocalSyncDialogTitle}" Classes="sectionTitle" />
