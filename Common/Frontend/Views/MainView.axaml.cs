@@ -30,6 +30,7 @@ public partial class MainView : UserControl, IDisposable
     public MainView()
     {
         InitializeComponent();
+        ConfigureWindowsMainNavigationVisualStates();
         _mobileMainPageTransition = new PageSlide(
             TimeSpan.FromMilliseconds(280),
             PageSlide.SlideAxis.Horizontal)
@@ -44,6 +45,15 @@ public partial class MainView : UserControl, IDisposable
         RegisterLocalInputHandlers();
         RegisterLifecycleHandlers();
         HandleDataContextChanged(this, EventArgs.Empty);
+    }
+
+    private void ConfigureWindowsMainNavigationVisualStates()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        foreach (var button in DesktopMainNavigationButtons.Children.OfType<Button>())
+            button.Classes.Add("windowsMainNavigation");
     }
 
     private void RegisterLocalInputHandlers()

@@ -281,7 +281,9 @@
               Margin="16,0,16,4"
               Padding="10,6"
               IsVisible="{Binding IsDesktopNavigationVisible}">
-        <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center">
+        <WrapPanel x:Name="DesktopMainNavigationButtons"
+                   Orientation="Horizontal"
+                   HorizontalAlignment="Center">
           <Button Classes="ghost mainNavigation"
                   Classes.selected="{Binding IsPasswordsMainPageSelected}"
                   Command="{Binding ShowPasswordsCommand}"

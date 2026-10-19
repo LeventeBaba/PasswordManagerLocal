@@ -975,6 +975,112 @@ public sealed class Phase21ControlThemeArchitectureTests
     }
 
     [TestMethod]
+    public void WindowsMainNavigationHasDistinctSelectedAndHoverStates()
+    {
+        var root = GetRepositoryRoot();
+        XNamespace avalonia = "https://github.com/avaloniaui";
+        XNamespace xaml = "http://schemas.microsoft.com/winfx/2006/xaml";
+        var viewPath = Path.Combine(root, "Common", "Frontend", "Views", "MainView.axaml");
+        var view = XDocument.Load(viewPath);
+        var navigationPanel = view.Descendants(avalonia + "WrapPanel")
+            .Single(panel => (string?)panel.Attribute(xaml + "Name") == "DesktopMainNavigationButtons");
+        var navigationButtons = navigationPanel.Elements(avalonia + "Button")
+            .Where(button => ((string?)button.Attribute("Classes"))?.Split(' ')
+                .Contains("mainNavigation", StringComparer.Ordinal) == true)
+            .ToArray();
+        Assert.AreEqual(3, navigationButtons.Length);
+        Assert.IsTrue(navigationButtons.All(button =>
+            ((string?)button.Attribute("Classes"))?.Split(' ')
+                .Contains("ghost", StringComparer.Ordinal) == true));
+
+        var codeBehind = File.ReadAllText(Path.Combine(
+            root, "Common", "Frontend", "Views", "MainView.axaml.cs"));
+        StringAssert.Contains(codeBehind, "ConfigureWindowsMainNavigationVisualStates();");
+        StringAssert.Contains(codeBehind, "if (!OperatingSystem.IsWindows())");
+        StringAssert.Contains(codeBehind,
+            "DesktopMainNavigationButtons.Children.OfType<Button>()");
+        StringAssert.Contains(codeBehind, "button.Classes.Add(\"windowsMainNavigation\")");
+
+        var stylesPath = Path.Combine(
+            root, "Common", "Frontend", "Assets", "Styles", "CommonStyles.axaml");
+        var styles = XDocument.Load(stylesPath);
+        var baseNavigationStyle = styles.Descendants(avalonia + "Style")
+            .Single(style => (string?)style.Attribute("Selector") == "Button.mainNavigation");
+        Assert.IsTrue(HasSetter(baseNavigationStyle, avalonia, "BorderThickness", "2"));
+        Assert.IsTrue(HasSetter(baseNavigationStyle, avalonia, "Background", "Transparent"));
+        Assert.IsTrue(HasSetter(baseNavigationStyle, avalonia, "BorderBrush", "Transparent"));
+        var navigationStyles = styles.Descendants(avalonia + "Style")
+            .Where(style => ((string?)style.Attribute("Selector"))?.Contains(
+                "windowsMainNavigation", StringComparison.Ordinal) == true)
+            .ToDictionary(style => (string)style.Attribute("Selector")!, StringComparer.Ordinal);
+        AssertNavigationStyle(navigationStyles,
+            "Button.mainNavigation.windowsMainNavigation",
+            "BorderThickness", "1");
+        AssertNavigationStyle(navigationStyles,
+            "Button.mainNavigation.windowsMainNavigation:pointerover",
+            "BorderThickness", "1");
+        AssertNavigationStyle(navigationStyles,
+            "Button.mainNavigation.windowsMainNavigation:pointerover",
+            "Background", "{DynamicResource AppBrush.Surface.Hover}");
+        AssertNavigationStyle(navigationStyles,
+            "Button.mainNavigation.windowsMainNavigation:pointerover",
+            "BorderBrush", "{DynamicResource AppBrush.Border.Muted}");
+        AssertNavigationStyle(navigationStyles,
+            "Button.mainNavigation.windowsMainNavigation.selected",
+            "BorderThickness", "1");
+        AssertNavigationStyle(navigationStyles,
+            "Button.mainNavigation.windowsMainNavigation.selected",
+            "Background", "{DynamicResource AppBrush.Selection.Background}");
+        AssertNavigationStyle(navigationStyles,
+            "Button.mainNavigation.windowsMainNavigation.selected",
+            "BorderBrush", "{DynamicResource AppBrush.Navigation.SelectedBorder}");
+        AssertNavigationStyle(navigationStyles,
+            "Button.mainNavigation.windowsMainNavigation.selected:pointerover",
+            "BorderThickness", "1");
+        AssertNavigationStyle(navigationStyles,
+            "Button.mainNavigation.windowsMainNavigation.selected:pointerover",
+            "Background", "{DynamicResource AppBrush.Navigation.Hover}");
+        AssertNavigationStyle(navigationStyles,
+            "Button.mainNavigation.windowsMainNavigation.selected:pointerover",
+            "BorderBrush", "{DynamicResource AppBrush.Selection.Border}");
+
+        foreach (var themeName in new[] { "Dark", "Light" })
+        {
+            var themeDictionary = XDocument.Load(Path.Combine(
+                root, "Common", "Frontend", "Assets", "Themes", themeName, "Theme.axaml"));
+            var resourceKeys = themeDictionary.Descendants()
+                .Attributes(xaml + "Key")
+                .Select(attribute => attribute.Value)
+                .ToHashSet(StringComparer.Ordinal);
+            foreach (var resource in new[]
+                     {
+                         "AppBrush.Surface.Hover",
+                         "AppBrush.Border.Muted",
+                         "AppBrush.Selection.Background",
+                         "AppBrush.Navigation.SelectedBorder",
+                         "AppBrush.Navigation.Hover",
+                         "AppBrush.Selection.Border"
+                     })
+            {
+                Assert.IsTrue(resourceKeys.Contains(resource),
+                    $"{themeName} is missing Windows main-navigation resource {resource}.");
+            }
+        }
+    }
+
+    private static void AssertNavigationStyle(
+        IReadOnlyDictionary<string, XElement> styles,
+        string selector,
+        string property,
+        string value)
+    {
+        Assert.IsTrue(styles.TryGetValue(selector, out var style),
+            $"CommonStyles.axaml is missing Windows navigation state {selector}.");
+        Assert.IsTrue(HasSetter(style!, XNamespace.Get("https://github.com/avaloniaui"), property, value),
+            $"Windows navigation state {selector} must set {property} to {value}.");
+    }
+
+    [TestMethod]
     public void ProgressBarUsesAnApplicationOwnedThemeForDeterminateAndIndeterminateStates()
     {
         var root = GetRepositoryRoot();

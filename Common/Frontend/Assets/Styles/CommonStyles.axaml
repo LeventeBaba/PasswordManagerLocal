@@ -164,6 +164,28 @@
       <Setter Property="BorderBrush" Value="{DynamicResource AppBrush.Navigation.HoverBorder}" />
     </Style>
 
+    <Style Selector="Button.mainNavigation.windowsMainNavigation">
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <Style Selector="Button.mainNavigation.windowsMainNavigation:pointerover">
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Background" Value="{DynamicResource AppBrush.Surface.Hover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBrush.Border.Muted}" />
+    </Style>
+
+    <Style Selector="Button.mainNavigation.windowsMainNavigation.selected">
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Background" Value="{DynamicResource AppBrush.Selection.Background}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBrush.Navigation.SelectedBorder}" />
+    </Style>
+
+    <Style Selector="Button.mainNavigation.windowsMainNavigation.selected:pointerover">
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Background" Value="{DynamicResource AppBrush.Navigation.Hover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBrush.Selection.Border}" />
+    </Style>
+
     <Style Selector="Button.settingsNavigation">
       <Setter Property="BorderThickness" Value="2" />
       <Setter Property="CornerRadius" Value="12" />
