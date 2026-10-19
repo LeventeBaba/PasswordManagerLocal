@@ -12,7 +12,7 @@
   <Border Classes="card searchToolbarCard"
           Classes.compactSearchCard="{Binding IsAndroidUi}"
           IsVisible="{Binding IsDeviceToolbarVisible}">
-    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" MaxWidth="600" HorizontalAlignment="Center">
+    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" MaxWidth="600" HorizontalAlignment="Center">
       <Border Classes="toolbarGroup searchToolbarGroup"
               Classes.compactSearchGroup="{Binding IsAndroidUi}"
               Grid.Column="0"
@@ -116,34 +116,10 @@
           </MenuFlyout>
         </Button.Flyout>
       </Button>
-      <Grid Grid.Column="2">
-        <Button
-            Classes="ghost iconButton searchToolbarButton"
-            Classes.compactSearchButton="{Binding IsAndroidUi}"
-            Command="{Binding RefreshDevicesCommand}"
-            IsEnabled="{Binding IsDevicesRefreshEnabled}"
-            IsVisible="{Binding IsDeviceRefreshButtonVisible}"
-            ToolTip.Tip="{Binding RefreshDevicesLabel}"
-            AutomationProperties.Name="{Binding RefreshDevicesLabel}">
-          <PathIcon Classes="actionButtonIcon" Data="{StaticResource RefreshIconGeometry}" />
-        </Button>
-        <Button
-            Classes="ghost searchToolbarButton"
-            Classes.compactSearchButton="{Binding IsAndroidUi}"
-            Command="{Binding CancelDeviceRefreshCommand}"
-            IsVisible="{Binding IsDeviceRefreshCancelVisible}"
-            ToolTip.Tip="{Binding CancelLabel}"
-            AutomationProperties.Name="{Binding CancelLabel}">
-          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-            <ProgressBar Width="24" Height="4" IsIndeterminate="True" />
-            <TextBlock Text="{Binding CancelLabel}" />
-          </StackPanel>
-        </Button>
-      </Grid>
       <Button
           Classes="primary iconButton searchToolbarButton"
           Classes.compactSearchButton="{Binding IsAndroidUi}"
-          Grid.Column="3"
+          Grid.Column="2"
           Command="{Binding BeginAddDeviceCommand}"
           ToolTip.Tip="{Binding AddDeviceLabel}">
         <PathIcon Classes="actionButtonIcon" Data="{StaticResource AddIconGeometry}" />

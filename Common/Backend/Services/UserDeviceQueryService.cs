@@ -1,4 +1,3 @@
-using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Presence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Internal.Devices;
@@ -12,14 +11,12 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 
 public sealed class UserDeviceQueryService : IUserDeviceQueryService
 {
-    private const int MaximumConcurrentPresenceRefreshProbes = 4;
     private readonly IUserLookupService _userLookup;
     private readonly IUserDataReaderService _userDataReader;
     private readonly IDeviceIdentityService _identity;
     private readonly IUserDeviceRepository _userDevices;
     private readonly IUserMembershipAuthorizationRepository _membershipAuthorizations;
     private readonly DeviceOnlineStatusEvaluator _onlineStatusEvaluator;
-    private readonly IDevicePresenceProbeService _presenceProbeService;
     private readonly LocalUserDeviceLinkManager _localLinkManager;
     private readonly UserDeviceMetadataEditor _metadataEditor;
 
@@ -30,7 +27,6 @@ public sealed class UserDeviceQueryService : IUserDeviceQueryService
         IUserDeviceRepository userDevices,
         IUserMembershipAuthorizationRepository membershipAuthorizations,
         DeviceOnlineStatusEvaluator onlineStatusEvaluator,
-        IDevicePresenceProbeService presenceProbeService,
         LocalUserDeviceLinkManager localLinkManager,
         UserDeviceMetadataEditor metadataEditor)
     {
@@ -40,22 +36,15 @@ public sealed class UserDeviceQueryService : IUserDeviceQueryService
         _userDevices = userDevices;
         _membershipAuthorizations = membershipAuthorizations;
         _onlineStatusEvaluator = onlineStatusEvaluator;
-        _presenceProbeService = presenceProbeService;
         _localLinkManager = localLinkManager;
         _metadataEditor = metadataEditor;
     }
 
     public Task<IReadOnlyList<UserDeviceInfoResponse>> GetUserDevicesAsync(Guid token, CancellationToken ct = default) =>
-        GetUserDevicesCoreAsync(token, refreshPresence: false, ct: ct);
-
-    public Task<IReadOnlyList<UserDeviceInfoResponse>> RefreshUserDevicePresenceAsync(
-        Guid token,
-        CancellationToken ct = default) =>
-        GetUserDevicesCoreAsync(token, refreshPresence: true, ct: ct);
+        GetUserDevicesCoreAsync(token, ct);
 
     private async Task<IReadOnlyList<UserDeviceInfoResponse>> GetUserDevicesCoreAsync(
         Guid token,
-        bool refreshPresence,
         CancellationToken ct)
     {
         var user = await _userLookup.GetAndVerifyUserAsync(token, ct);
@@ -90,25 +79,6 @@ public sealed class UserDeviceQueryService : IUserDeviceQueryService
             visibleDeviceIds.Except(userDevicesData.Devices.Select(device => device.Id)));
         var result = new List<UserDeviceInfoResponse>();
         var localCanSync = localLink.IsSyncOn && _identity.IsSyncOn;
-        if (refreshPresence && localCanSync)
-        {
-            var probeTargets = links
-                .Where(link => IsEligibleRemoteDevice(link, link.Device))
-                .Select(link => link.Device!)
-                .GroupBy(device => device.Id)
-                .Select(group => group.First())
-                .ToArray();
-
-            for (var offset = 0; offset < probeTargets.Length; offset += MaximumConcurrentPresenceRefreshProbes)
-            {
-                ct.ThrowIfCancellationRequested();
-                var batch = probeTargets
-                    .Skip(offset)
-                    .Take(MaximumConcurrentPresenceRefreshProbes);
-                await Task.WhenAll(batch.Select(device =>
-                    _presenceProbeService.ProbeAsync(device, force: true, cancellationToken: ct)));
-            }
-        }
         if (encryptedDevices.TryGetValue(_identity.LocalDeviceId, out var localDeviceData))
             result.Add(BuildLocalResponse(
                 localLink,

@@ -77,7 +77,6 @@ public sealed class WindowsAutomaticUiRefreshTests
             await fixture.DeliverAsync(FrontendChangeScope.UserProfile, token);
             Assert.IsTrue(fixture.HasVisibleText("SyncedFirstName"),
                 "Profile XAML must display the new authoritative first name.");
-            Assert.AreEqual(0, fixture.State.ForcedPresenceReads);
         });
 
     [TestMethod]
@@ -104,8 +103,6 @@ public sealed class WindowsAutomaticUiRefreshTests
             device = fixture.Session.ViewModel.ProfileViewModel.Devices.Single();
             Assert.IsTrue(device.ShowOfflineStatus);
             Assert.IsTrue(fixture.HasVisibleText(device.OnlineStateText));
-            Assert.AreEqual(0, fixture.State.ForcedPresenceReads,
-                "Automatic presence updates must remain cached reads.");
         });
 
     [TestMethod]
@@ -395,7 +392,6 @@ public sealed class WindowsAutomaticUiRefreshTests
         public string FirstName { get; set; } = "InitialFirstName";
         public string DeviceName { get; set; } = "Initial remote device";
         public bool IsOnline { get; set; }
-        public int ForcedPresenceReads { get; private set; }
 
         public Task<byte[]> RespondAsync(EndpointOperationId operation, byte[] _, CancellationToken token)
         {
@@ -430,7 +426,6 @@ public sealed class WindowsAutomaticUiRefreshTests
                     }
                 },
                 EndpointOperationId.GetUserDevices => new GetUserDevicesEndpointResponse { Devices = Devices() },
-                EndpointOperationId.RefreshUserDevicePresence => ForcedPresenceResponse(),
                 EndpointOperationId.GetLocalDeviceInfo => new GetLocalDeviceInfoEndpointResponse
                 {
                     Device = new LocalDeviceInfoResponse { DeviceId = Guid.Parse("50000000-0000-0000-0000-000000000005"),
@@ -458,11 +453,6 @@ public sealed class WindowsAutomaticUiRefreshTests
             IsSyncOn = true, DeviceType = DeviceType.WindowsPc, TlsCertFingerprint = "ABCD", LinkedAt = DateTimeOffset.UnixEpoch
         }];
 
-        private RefreshUserDevicePresenceEndpointResponse ForcedPresenceResponse()
-        {
-            ForcedPresenceReads++;
-            return new() { Devices = Devices() };
-        }
     }
 
     private sealed class StreamAgent : IEndpointRpcAgentConnection, IFrontendChangeStreamClient

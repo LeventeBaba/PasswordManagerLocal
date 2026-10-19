@@ -1,12 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using System.Reflection;
 using PasswordManagerLocal.Android.Runtime;
-using PasswordManagerLocal.Common.Contracts.Devices;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Hosting;
-using PasswordManagerLocal.Common.Contracts.Responses;
 using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 using PasswordManagerLocal.Common.Contracts.Notifications;
@@ -1291,35 +1288,6 @@ public sealed class AndroidRuntimeServiceHostTests
     }
 
     [TestMethod]
-    public async Task PresenceRefreshEndpointForwardsArgumentsResponseAndCancellationThroughAuthorizedAttachment()
-    {
-        var innerEndpoints = DispatchProxy.Create<IEndpoints, PresenceRefreshEndpointProxy>();
-        var recording = (PresenceRefreshEndpointProxy)(object)innerEndpoints;
-        using var fixture = CreateFixture(backgroundEnabled: false, endpointOverride: innerEndpoints);
-        await using var host = fixture.Host;
-        var client = await host.AttachInteractiveClientAsync();
-        var endpoints = await client.GetEndpointsAsync();
-        var token = Guid.NewGuid();
-
-        var refreshed = await endpoints.RefreshUserDevicePresenceAsync(token);
-        Assert.AreEqual(token, recording.LastToken);
-        Assert.AreEqual(1, refreshed.Count);
-        Assert.AreEqual(recording.Device.DeviceId, refreshed[0].DeviceId);
-
-        using var cancelled = new CancellationTokenSource();
-        cancelled.Cancel();
-        await Assert.ThrowsAsync<OperationCanceledException>(
-            () => endpoints.RefreshUserDevicePresenceAsync(token, cancelled.Token));
-        Assert.AreEqual(cancelled.Token, recording.LastCancellationToken);
-
-        var callsBeforeDetach = recording.CallCount;
-        await client.DisposeAsync();
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => endpoints.RefreshUserDevicePresenceAsync(token));
-        Assert.AreEqual(callsBeforeDetach, recording.CallCount);
-    }
-
-    [TestMethod]
     public async Task LateOldDetachCannotReleaseNewInteractiveAuthority()
     {
         using var fixture = CreateFixture(backgroundEnabled: false);
@@ -1419,34 +1387,4 @@ public sealed class AndroidRuntimeServiceHostTests
             endpoints);
     }
 
-    public class PresenceRefreshEndpointProxy : DispatchProxy
-    {
-        public readonly UserDeviceInfoResponse Device = new()
-        {
-            DeviceId = Guid.Parse("33333333-3333-3333-3333-333333333333"),
-            Name = "Desktop",
-            DeviceType = DeviceType.WindowsPc,
-            TlsCertFingerprint = "fingerprint",
-            LinkedAt = DateTimeOffset.UtcNow,
-            IsCurrentDevice = true
-        };
-
-        public Guid LastToken { get; private set; }
-        public CancellationToken LastCancellationToken { get; private set; }
-        public int CallCount { get; private set; }
-
-        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
-        {
-            if (targetMethod?.Name != nameof(IEndpoints.RefreshUserDevicePresenceAsync))
-                throw new NotSupportedException($"Unexpected endpoint call: {targetMethod?.Name}.");
-
-            LastToken = (Guid)args![0]!;
-            LastCancellationToken = (CancellationToken)args[1]!;
-            CallCount++;
-            if (LastCancellationToken.IsCancellationRequested)
-                return Task.FromCanceled<IReadOnlyList<UserDeviceInfoResponse>>(LastCancellationToken);
-
-            return Task.FromResult<IReadOnlyList<UserDeviceInfoResponse>>([Device]);
-        }
-    }
 }

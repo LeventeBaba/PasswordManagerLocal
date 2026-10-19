@@ -14,7 +14,7 @@ namespace PasswordManagerLocal.Common.Tests.Frontend.ViewModels;
 public sealed class ProfileDeviceRefreshTests
 {
     [TestMethod]
-    public async Task AutomaticLoadsUseCachedQueryAndExplicitRefreshUsesProbeOperation()
+    public async Task DeviceLoadsAndReloadsUseOnlyTheCachedQuery()
     {
         var endpoints = DispatchProxy.Create<IEndpoints, RecordingDeviceEndpoints>();
         var recording = (RecordingDeviceEndpoints)(object)endpoints;
@@ -24,31 +24,20 @@ public sealed class ProfileDeviceRefreshTests
 
         Assert.IsTrue(await viewModel.EnsureDevicesLoadedAsync());
         Assert.AreEqual(1, recording.CachedReadCalls);
-        Assert.AreEqual(0, recording.PresenceRefreshCalls);
 
         Assert.IsTrue(await viewModel.RefreshLoadedDevicesAsync());
         Assert.AreEqual(2, recording.CachedReadCalls);
-        Assert.AreEqual(0, recording.PresenceRefreshCalls);
-
-        await viewModel.RefreshDevicesOnlyAsync();
-        Assert.AreEqual(2, recording.CachedReadCalls);
-        Assert.AreEqual(1, recording.PresenceRefreshCalls);
     }
 
     public class RecordingDeviceEndpoints : DispatchProxy
     {
         public int CachedReadCalls { get; private set; }
-        public int PresenceRefreshCalls { get; private set; }
-
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
             switch (targetMethod?.Name)
             {
                 case nameof(IEndpoints.GetUserDevicesAsync):
                     CachedReadCalls++;
-                    return Task.FromResult<IReadOnlyList<UserDeviceInfoResponse>>([]);
-                case nameof(IEndpoints.RefreshUserDevicePresenceAsync):
-                    PresenceRefreshCalls++;
                     return Task.FromResult<IReadOnlyList<UserDeviceInfoResponse>>([]);
                 default:
                     throw new NotSupportedException($"Unexpected endpoint call: {targetMethod?.Name}.");

@@ -130,7 +130,6 @@ public sealed class EndpointRpcDispatcher : IAsyncDisposable
                 EndpointOperationId.SetLocalUserSyncOn => await DispatchSetLocalUserSyncOnAsync(context, requestPayload, operationToken),
                 EndpointOperationId.SetLocalDeviceName => await DispatchSetLocalDeviceNameAsync(context, requestPayload, operationToken),
                 EndpointOperationId.GetUserDevices => await DispatchGetUserDevicesAsync(context, requestPayload, operationToken),
-                EndpointOperationId.RefreshUserDevicePresence => await DispatchRefreshUserDevicePresenceAsync(context, requestPayload, operationToken),
                 EndpointOperationId.RunSelfDiagnosticsAndRepair => await DispatchRunSelfDiagnosticsAndRepairAsync(context, requestPayload, operationToken),
                 EndpointOperationId.SetUserDeviceName => await DispatchSetUserDeviceNameAsync(context, requestPayload, operationToken),
                 EndpointOperationId.SetUserDeviceSyncOn => await DispatchSetUserDeviceSyncOnAsync(context, requestPayload, operationToken),
@@ -605,33 +604,6 @@ public sealed class EndpointRpcDispatcher : IAsyncDisposable
                 context,
                 response,
                 EndpointRpcJsonContext.Default.GetUserDevicesEndpointResponse);
-        }
-        finally
-        {
-            EndpointSensitiveData.ClearRequest(context.OperationId, request);
-        }
-    }
-
-    private async Task<EndpointRpcDispatchResult> DispatchRefreshUserDevicePresenceAsync(
-        EndpointRequestContext context,
-        byte[] payload,
-        CancellationToken operationToken)
-    {
-        var request = DeserializeRequest(
-            context.OperationId,
-            payload,
-            EndpointRpcJsonContext.Default.RefreshUserDevicePresenceEndpointRequest);
-        try
-        {
-            var endpoints = _endpointAdapter.GetEndpoints(context);
-            context.Invocation.MarkInvoking();
-            var result = await endpoints.RefreshUserDevicePresenceAsync(request.Token, operationToken);
-            context.Invocation.MarkInvocationCompleted();
-            var response = new RefreshUserDevicePresenceEndpointResponse { Devices = result };
-            return SerializeResponse(
-                context,
-                response,
-                EndpointRpcJsonContext.Default.RefreshUserDevicePresenceEndpointResponse);
         }
         finally
         {

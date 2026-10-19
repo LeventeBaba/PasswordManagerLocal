@@ -128,8 +128,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         ShowRegistrationCommand = Own(ReactiveCommand.Create(NavigateToRegistration));
         ShowChangeProfileCommand = Own(ReactiveCommand.CreateFromTask(ShowChangeProfileAsync));
         LogoutCommand = Own(ReactiveCommand.CreateFromTask(LogoutAsync));
-        RefreshCommand = Own(ReactiveCommand.CreateFromTask(RefreshAuthenticatedStateAsync));
-        RefreshVisiblePageCommand = Own(ReactiveCommand.CreateFromTask(RefreshVisiblePageAsync));
         ConfirmSessionRenewalCommand = Own(ReactiveCommand.CreateFromTask(ConfirmSessionRenewalAsync));
         DeclineSessionRenewalCommand = Own(ReactiveCommand.Create(DeclineSessionRenewal));
         DatabaseRecoveryPrimaryCommand = Own(ReactiveCommand.CreateFromTask(HandleDatabaseRecoveryPrimaryActionAsync));
@@ -525,13 +523,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
 
     public ReactiveCommand<RxVoid, RxVoid> LogoutCommand { get; }
 
-    public ReactiveCommand<RxVoid, RxVoid> RefreshCommand { get; }
-
-    public ReactiveCommand<RxVoid, RxVoid> RefreshVisiblePageCommand { get; }
-
-    public async Task RequestRefreshVisiblePageAsync() =>
-        await RefreshVisiblePageAsync();
-
     public ReactiveCommand<RxVoid, RxVoid> ConfirmSessionRenewalCommand { get; }
 
     public ReactiveCommand<RxVoid, RxVoid> DeclineSessionRenewalCommand { get; }
@@ -610,12 +601,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     public string WelcomeLabel => GetTranslation("Shell_Welcome");
 
     public string NavigationLabel => GetTranslation("Shell_Navigation");
-
-    public string RefreshButtonLabel => GetTranslation("Common_Refresh");
-
-    public string RefreshVisiblePageLabel => $"↻ {GetTranslation("Shell_RefreshVisiblePage")}";
-
-    public string RefreshVisiblePageMenuLabel => GetTranslation("Shell_RefreshVisiblePage");
 
     public string YesLabel => GetTranslation("Common_Yes");
 
@@ -1041,9 +1026,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         this.RaisePropertyChanged(nameof(RememberMeOffLabel));
         this.RaisePropertyChanged(nameof(WelcomeLabel));
         this.RaisePropertyChanged(nameof(NavigationLabel));
-        this.RaisePropertyChanged(nameof(RefreshButtonLabel));
-        this.RaisePropertyChanged(nameof(RefreshVisiblePageLabel));
-        this.RaisePropertyChanged(nameof(RefreshVisiblePageMenuLabel));
         this.RaisePropertyChanged(nameof(YesLabel));
         this.RaisePropertyChanged(nameof(NoLabel));
         this.RaisePropertyChanged(nameof(LogoutConfirmationTitle));
@@ -1756,83 +1738,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         return passwordsLoaded && profileLoaded;
     }
 
-    private async Task RefreshVisiblePageAsync()
-    {
-        var token = _authSessionRegistry.CurrentUserToken;
-        if (token == Guid.Empty || !IsAuthenticated)
-            return;
-
-        ClearStatusMessage();
-
-        if (_passwordsViewModel is not null && ReferenceEquals(CurrentPageViewModel, _passwordsViewModel))
-        {
-            await _passwordsViewModel.RefreshCurrentDataAsync();
-            return;
-        }
-
-        if (_profileViewModel is not null && ReferenceEquals(CurrentPageViewModel, _profileViewModel))
-        {
-            if (_profileViewModel.IsDevicesMainPage)
-                await _profileViewModel.RefreshDevicesOnlyAsync();
-            else
-                await _profileViewModel.RefreshCurrentDataAsync();
-
-            return;
-        }
-
-        await RefreshAuthenticatedStateAsync();
-    }
-
-    private async Task RefreshAllLoadedDataAsync()
-    {
-        var token = _authSessionRegistry.CurrentUserToken;
-        if (token == Guid.Empty || !IsAuthenticated)
-            return;
-
-        ClearStatusMessage();
-
-        try
-        {
-            var profile = await _endpoints.GetUserProfileInfoAsync(token);
-
-            CurrentUserDisplayName = BuildDisplayName(profile);
-            CurrentUserSubtitle = BuildSubtitle(profile);
-            ApplyRememberMeFromSession(profile.IsRememberMeEnabled);
-            SetSessionProfile(token, profile);
-
-            PasswordsViewModel.SetSessionToken(token);
-            ProfileViewModel.SetSessionToken(token);
-
-            var passwordsLoaded = await PasswordsViewModel.RefreshCurrentDataAsync(false);
-            var profileLoaded = await ProfileViewModel.LoadAsync(token, profile)
-                && await ProfileViewModel.RefreshLoadedDevicesAsync();
-
-            if (!passwordsLoaded)
-            {
-                var errorMessageFactory = PasswordsViewModel.CaptureStatusMessageFactory()
-                    ?? (() => GetTranslation("Error_Generic"));
-                PasswordsViewModel.ClearStatusMessage();
-                ShowErrorMessage(errorMessageFactory);
-                return;
-            }
-
-            if (!profileLoaded)
-            {
-                var errorMessageFactory = ProfileViewModel.CaptureStatusMessageFactory()
-                    ?? (() => GetTranslation("Error_Generic"));
-                ProfileViewModel.ClearStatusMessage();
-                ShowErrorMessage(errorMessageFactory);
-                return;
-            }
-
-            ShowLocalizedSuccessMessage("Shell_DataRefreshed");
-        }
-        catch (Exception ex)
-        {
-            ShowSafeErrorMessage(ex);
-        }
-    }
-
     private async Task<bool> RefreshProfileDataAsync()
     {
         var token = _authSessionRegistry.CurrentUserToken;
@@ -1848,14 +1753,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
 
         return await ProfileViewModel.LoadAsync(token, profile)
             && await ProfileViewModel.RefreshLoadedDevicesAsync();
-    }
-
-    private async Task RefreshAuthenticatedStateAsync()
-    {
-        var token = _authSessionRegistry.CurrentUserToken;
-        if (token != Guid.Empty)
-            await RevalidateSessionTokenAsync(token, LifetimeToken);
-        await RefreshAllLoadedDataAsync();
     }
 
     private async Task LogoutAsync()
@@ -2709,7 +2606,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
                 "IsExportConfirmationOpen") ||
             (sender is ProfileViewModel && property is
                 "IsDeviceDisconnectDialogOpen" or "IsLocalSyncDialogOpen" or "IsAddDeviceDialogOpen" or
-                "IsAddingDevice" or "IsRefreshingDevices" or "AreDevicesLoaded") ||
+                "IsAddingDevice" or "AreDevicesLoaded") ||
             (sender is ChangeProfileViewModel && property == "IsBusy") ||
             (sender is SettingsViewModel && property == nameof(SettingsViewModel.CanAutomaticallyRefreshBackgroundSync)))
         {

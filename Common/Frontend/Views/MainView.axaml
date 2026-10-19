@@ -109,12 +109,6 @@
                     <Button Classes="ghost"
                             HorizontalAlignment="Stretch"
                             HorizontalContentAlignment="Center"
-                            Command="{Binding RefreshVisiblePageCommand}"
-                            Click="HandleAccountMenuActionClick"
-                            Content="{Binding RefreshVisiblePageMenuLabel}" />
-                    <Button Classes="ghost"
-                            HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Center"
                             Command="{Binding ShowChangeProfileCommand}"
                             Click="HandleAccountMenuActionClick"
                             Content="{Binding ChangeProfileLabel}" />
@@ -231,12 +225,6 @@
                             AutomationProperties.Name="{Binding RememberMeDropdownLabel}" />
                       </Grid>
                       <Border Classes="divider" />
-                      <Button Classes="ghost"
-                              HorizontalAlignment="Stretch"
-                              HorizontalContentAlignment="Center"
-                              Command="{Binding RefreshVisiblePageCommand}"
-                              Click="HandleAccountMenuActionClick"
-                              Content="{Binding RefreshVisiblePageMenuLabel}" />
                       <Button Classes="ghost"
                               HorizontalAlignment="Stretch"
                               HorizontalContentAlignment="Center"

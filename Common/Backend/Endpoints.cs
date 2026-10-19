@@ -71,12 +71,6 @@ public sealed class Endpoints : IEndpoints
         RunAsync<IUserDeviceQueryService, IReadOnlyList<UserDeviceInfoResponse>>(service =>
             service.GetUserDevicesAsync(token, ct));
 
-    public Task<IReadOnlyList<UserDeviceInfoResponse>> RefreshUserDevicePresenceAsync(
-        Guid token,
-        CancellationToken ct = default) =>
-        RunAsync<IUserDeviceQueryService, IReadOnlyList<UserDeviceInfoResponse>>(service =>
-            service.RefreshUserDevicePresenceAsync(token, ct));
-
     public Task SetUserDeviceNameAsync(
         Guid token,
         Guid deviceId,

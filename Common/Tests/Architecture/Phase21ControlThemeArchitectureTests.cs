@@ -939,7 +939,7 @@ public sealed class Phase21ControlThemeArchitectureTests
         var viewRoot = Path.Combine(root, "Common", "Frontend", "Views");
         var viewFiles = Directory.EnumerateFiles(viewRoot, "*.axaml", SearchOption.AllDirectories).ToArray();
         var viewIcons = viewFiles.SelectMany(file => XDocument.Load(file).Descendants(avalonia + "PathIcon")).ToArray();
-        Assert.AreEqual(91, viewIcons.Length,
+        Assert.AreEqual(90, viewIcons.Length,
             "All current view PathIcons should receive the application-owned default theme.");
         Assert.IsTrue(viewIcons.All(icon => icon.Attribute("Theme") is null),
             "View PathIcons should inherit the application-owned default theme.");

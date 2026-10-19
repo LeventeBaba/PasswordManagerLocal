@@ -42,6 +42,6 @@ public enum EndpointOperationId
     DeletePasswordTag = 38,
     ExportPasswordTagsToUser = 39,
     UpdatePasswordTag = 40,
-    RunSelfDiagnosticsAndRepair = 41,
-    RefreshUserDevicePresence = 42,
+    RunSelfDiagnosticsAndRepair = 41
+    // Operation ID 42 was retired with the explicit device-presence refresh action.
 }

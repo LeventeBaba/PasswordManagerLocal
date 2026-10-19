@@ -1,6 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Contracts.Responses;
 using PasswordManagerLocal.Windows.EndpointRpc.Contracts;
 using PasswordManagerLocal.Windows.EndpointRpc.Contracts.Requests;
 using PasswordManagerLocal.Windows.EndpointRpc.Contracts.LargeTransfer;
@@ -23,28 +22,6 @@ public sealed class EndpointRpcValidationTests
             _validator.ValidateRequest(
                 EndpointOperationId.GetSavedPasswords,
                 new GetSavedPasswordsEndpointRequest()));
-    }
-
-    [TestMethod]
-    public void PresenceRefreshRequiresTokenAndRejectsDuplicateDeviceIds()
-    {
-        Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
-            _validator.ValidateRequest(
-                EndpointOperationId.RefreshUserDevicePresence,
-                new RefreshUserDevicePresenceEndpointRequest()));
-
-        var device = new UserDeviceInfoResponse
-        {
-            DeviceId = EndpointRpcTestData.ItemId,
-            Name = "Desktop",
-            DeviceType = PasswordManagerLocal.Common.Contracts.Devices.DeviceType.WindowsPc,
-            TlsCertFingerprint = "fingerprint",
-            LinkedAt = DateTimeOffset.UtcNow
-        };
-        Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
-            _validator.ValidateResponse(
-                EndpointOperationId.RefreshUserDevicePresence,
-                new RefreshUserDevicePresenceEndpointResponse { Devices = [device, device] }));
     }
 
     [TestMethod]

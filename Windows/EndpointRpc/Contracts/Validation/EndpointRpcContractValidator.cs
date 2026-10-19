@@ -29,7 +29,6 @@ public sealed class EndpointRpcContractValidator
         typeof(SetLocalUserSyncOnEndpointRequest),
         typeof(SetLocalDeviceNameEndpointRequest),
         typeof(GetUserDevicesEndpointRequest),
-        typeof(RefreshUserDevicePresenceEndpointRequest),
         typeof(SetUserDeviceNameEndpointRequest),
         typeof(SetUserDeviceSyncOnEndpointRequest),
         typeof(UnblockUserDeviceEndpointRequest),
@@ -75,7 +74,6 @@ public sealed class EndpointRpcContractValidator
         typeof(SetLocalUserSyncOnEndpointResponse),
         typeof(SetLocalDeviceNameEndpointResponse),
         typeof(GetUserDevicesEndpointResponse),
-        typeof(RefreshUserDevicePresenceEndpointResponse),
         typeof(SetUserDeviceNameEndpointResponse),
         typeof(SetUserDeviceSyncOnEndpointResponse),
         typeof(UnblockUserDeviceEndpointResponse),
@@ -130,7 +128,6 @@ public sealed class EndpointRpcContractValidator
             EndpointOperationId.SetLocalUserSyncOn when value is SetLocalUserSyncOnEndpointRequest request => Validate(request),
             EndpointOperationId.SetLocalDeviceName when value is SetLocalDeviceNameEndpointRequest request => Validate(request),
             EndpointOperationId.GetUserDevices when value is GetUserDevicesEndpointRequest request => Validate(request),
-            EndpointOperationId.RefreshUserDevicePresence when value is RefreshUserDevicePresenceEndpointRequest request => Validate(request),
             EndpointOperationId.SetUserDeviceName when value is SetUserDeviceNameEndpointRequest request => Validate(request),
             EndpointOperationId.SetUserDeviceSyncOn when value is SetUserDeviceSyncOnEndpointRequest request => Validate(request),
             EndpointOperationId.UnblockUserDevice when value is UnblockUserDeviceEndpointRequest request => Validate(request),
@@ -192,7 +189,6 @@ public sealed class EndpointRpcContractValidator
             EndpointOperationId.SetLocalUserSyncOn when value is SetLocalUserSyncOnEndpointResponse response => Validate(response),
             EndpointOperationId.SetLocalDeviceName when value is SetLocalDeviceNameEndpointResponse response => Validate(response),
             EndpointOperationId.GetUserDevices when value is GetUserDevicesEndpointResponse response => Validate(response),
-            EndpointOperationId.RefreshUserDevicePresence when value is RefreshUserDevicePresenceEndpointResponse response => Validate(response),
             EndpointOperationId.SetUserDeviceName when value is SetUserDeviceNameEndpointResponse response => Validate(response),
             EndpointOperationId.SetUserDeviceSyncOn when value is SetUserDeviceSyncOnEndpointResponse response => Validate(response),
             EndpointOperationId.UnblockUserDevice when value is UnblockUserDeviceEndpointResponse response => Validate(response),
@@ -370,7 +366,6 @@ public sealed class EndpointRpcContractValidator
     private static bool Validate(SetLocalUserSyncOnEndpointRequest value) => ValidGuid(value.Token);
     private static bool Validate(SetLocalDeviceNameEndpointRequest value) => ValidGuid(value.Token) && DataValidation.IsValidUserDeviceName(value.Name);
     private static bool Validate(GetUserDevicesEndpointRequest value) => ValidGuid(value.Token);
-    private static bool Validate(RefreshUserDevicePresenceEndpointRequest value) => ValidGuid(value.Token);
     private static bool Validate(SetUserDeviceNameEndpointRequest value) => ValidGuid(value.Token) && ValidGuid(value.DeviceId) && DataValidation.IsValidUserDeviceName(value.Name);
     private static bool Validate(SetUserDeviceSyncOnEndpointRequest value) => ValidGuid(value.Token) && ValidGuid(value.DeviceId);
     private static bool Validate(UnblockUserDeviceEndpointRequest value) => ValidGuid(value.Token) && ValidGuid(value.DeviceId);
@@ -419,10 +414,6 @@ public sealed class EndpointRpcContractValidator
     private static bool Validate(SetLocalUserSyncOnEndpointResponse value) => true;
     private static bool Validate(SetLocalDeviceNameEndpointResponse value) => true;
     private static bool Validate(GetUserDevicesEndpointResponse value) =>
-        value.Devices is not null && value.Devices.Count <= EndpointRpcLimits.MaximumCollectionItems &&
-        value.Devices.All(ValidUserDevice) &&
-        value.Devices.Select(device => device.DeviceId).Distinct().Count() == value.Devices.Count;
-    private static bool Validate(RefreshUserDevicePresenceEndpointResponse value) =>
         value.Devices is not null && value.Devices.Count <= EndpointRpcLimits.MaximumCollectionItems &&
         value.Devices.All(ValidUserDevice) &&
         value.Devices.Select(device => device.DeviceId).Distinct().Count() == value.Devices.Count;

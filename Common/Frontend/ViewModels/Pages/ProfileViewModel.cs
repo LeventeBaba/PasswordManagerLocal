@@ -86,7 +86,6 @@ public sealed class ProfileViewModel : ViewModelBase
 
     private static readonly string[] DeviceLocalizedPropertyNames =
     [
-        nameof(RefreshDevicesLabel),
         nameof(AddDeviceLabel),
         nameof(AddDeviceIconLabel),
         nameof(DeviceSearchLabel),
@@ -192,8 +191,6 @@ public sealed class ProfileViewModel : ViewModelBase
     private bool _pendingLocalSyncEnabled;
     private bool _isAddingDevice;
     private bool _isRunningSelfDiagnostics;
-    private bool _isRefreshingDevices;
-    private CancellationTokenSource? _deviceRefreshCancellation;
     private SelfDiagnosticsResultResponse? _selfDiagnosticsResult;
     private string _deviceEnrollmentCodeInput = string.Empty;
     private string _deviceSearchQuery = string.Empty;
@@ -233,8 +230,6 @@ public sealed class ProfileViewModel : ViewModelBase
         ToggleDeviceSyncCommand = Own(ReactiveCommand.CreateFromTask<DeviceItemViewModel>(ToggleDeviceSyncAsync));
         UnblockDeviceCommand = Own(ReactiveCommand.CreateFromTask<DeviceItemViewModel>(UnblockDeviceAsync));
         DisconnectDeviceCommand = Own(ReactiveCommand.Create<DeviceItemViewModel>(BeginDisconnectDevice));
-        RefreshDevicesCommand = Own(ReactiveCommand.CreateFromTask(RefreshDevicesAsync));
-        CancelDeviceRefreshCommand = Own(ReactiveCommand.Create(CancelDeviceRefresh));
         RunSelfDiagnosticsCommand = Own(ReactiveCommand.CreateFromTask(RunSelfDiagnosticsAsync));
         SearchDevicesCommand = Own(ReactiveCommand.Create(ApplyCurrentDeviceSearch));
         SelectDeviceSortOptionCommand = Own(ReactiveCommand.Create<string>(SelectDeviceSortOptionByKey));
@@ -728,10 +723,6 @@ public sealed class ProfileViewModel : ViewModelBase
 
     public ReactiveCommand<RxVoid, RxVoid> DeleteAccountCommand { get; }
 
-    public ReactiveCommand<RxVoid, RxVoid> RefreshDevicesCommand { get; }
-
-    public ReactiveCommand<RxVoid, RxVoid> CancelDeviceRefreshCommand { get; }
-
     public ReactiveCommand<RxVoid, RxVoid> RunSelfDiagnosticsCommand { get; }
 
     public ReactiveCommand<RxVoid, RxVoid> SearchDevicesCommand { get; }
@@ -868,8 +859,6 @@ public sealed class ProfileViewModel : ViewModelBase
 
     public string PasswordStrengthInfoAccessibleLabel => GetTranslation("PasswordStrength_Info_AccessibleLabel");
 
-    public string RefreshDevicesLabel => GetTranslation("Common_Refresh");
-
     public string AddDeviceLabel => GetTranslation("Profile_Device_Add");
 
     public string AddDeviceIconLabel => GetTranslation("Common_Add_Icon");
@@ -959,24 +948,6 @@ public sealed class ProfileViewModel : ViewModelBase
     }
 
     public bool CanRunSelfDiagnostics => !IsRunningSelfDiagnostics;
-
-    public bool IsRefreshingDevices
-    {
-        get => _isRefreshingDevices;
-        private set
-        {
-            this.RaiseAndSetIfChanged(ref _isRefreshingDevices, value);
-            this.RaisePropertyChanged(nameof(IsDevicesRefreshEnabled));
-            this.RaisePropertyChanged(nameof(IsDeviceRefreshButtonVisible));
-            this.RaisePropertyChanged(nameof(IsDeviceRefreshCancelVisible));
-        }
-    }
-
-    public bool IsDevicesRefreshEnabled => !IsRefreshingDevices;
-
-    public bool IsDeviceRefreshButtonVisible => !IsRefreshingDevices;
-
-    public bool IsDeviceRefreshCancelVisible => IsRefreshingDevices;
 
     public bool HasSelfDiagnosticsResult => _selfDiagnosticsResult is not null;
 
@@ -1084,7 +1055,6 @@ public sealed class ProfileViewModel : ViewModelBase
 
     public void ShowProfileMainPage()
     {
-        CancelDeviceRefresh();
         DiscardTransientNavigationState();
         CurrentMainPage = MainProfilePage;
     }
@@ -1116,7 +1086,6 @@ public sealed class ProfileViewModel : ViewModelBase
         !IsLocalSyncDialogOpen &&
         !IsAddDeviceDialogOpen &&
         !IsAddingDevice &&
-        !IsRefreshingDevices &&
         !_isRunningSelfDiagnostics;
 
     /// <summary>Updates only authoritative profile labels; all edit drafts remain untouched.</summary>
@@ -1143,7 +1112,7 @@ public sealed class ProfileViewModel : ViewModelBase
         var selectedId = SelectedDevice?.DeviceId;
         try
         {
-            // Automatic refresh is a cached read. Presence probes remain explicit user actions.
+            // Automatic refresh is a cached read; presence observations arrive through backend sync/discovery.
             var devices = await _endpoints.GetUserDevicesAsync(token, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (_token != token || !CanAutomaticallyRefreshDevices || !isCurrent())
@@ -1254,35 +1223,6 @@ public sealed class ProfileViewModel : ViewModelBase
     }
 
 
-    public async Task RefreshDevicesOnlyAsync()
-    {
-        if (_token == Guid.Empty)
-            return;
-
-        ClearStatusMessage();
-        await RefreshDevicePresenceAsync(showSuccessMessage: true);
-    }
-
-    public async Task RefreshCurrentDataAsync()
-    {
-        if (_token == Guid.Empty)
-            return;
-
-        try
-        {
-            ClearStatusMessage();
-            var profile = await _endpoints.GetUserProfileInfoAsync(_token);
-            var profileLoaded = await LoadAsync(_token, profile);
-            var devicesLoaded = !profileLoaded || await RefreshLoadedDevicesAsync();
-            if (profileLoaded && devicesLoaded)
-                ShowLocalizedSuccessMessage("Shell_DataRefreshed");
-        }
-        catch (Exception ex)
-        {
-            ShowSafeErrorMessage(ex);
-        }
-    }
-
     public async Task<bool> LoadAsync(Guid token, UserProfileInfoResponse profile)
     {
         _token = token;
@@ -1315,7 +1255,6 @@ public sealed class ProfileViewModel : ViewModelBase
 
     public void Reset()
     {
-        CancelDeviceRefresh();
         _token = Guid.Empty;
         _deviceSearchDebounce.Cancel();
         Username = string.Empty;
@@ -1549,11 +1488,6 @@ public sealed class ProfileViewModel : ViewModelBase
         CurrentProfilePane = ProfileDeleteAccountPane;
     }
 
-    private async Task RefreshDevicesAsync()
-    {
-        await RefreshDevicesOnlyAsync();
-    }
-
     private async Task<bool> LoadDevicesAsync()
     {
         if (_token == Guid.Empty)
@@ -1573,51 +1507,6 @@ public sealed class ProfileViewModel : ViewModelBase
             return false;
         }
     }
-
-    private async Task RefreshDevicePresenceAsync(bool showSuccessMessage)
-    {
-        if (_token == Guid.Empty || IsRefreshingDevices)
-            return;
-
-        var selectedId = SelectedDevice?.DeviceId;
-        using var refreshCancellation = CancellationTokenSource.CreateLinkedTokenSource(LifetimeToken);
-        using var timeoutCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            refreshCancellation.Token,
-            timeoutCancellation.Token);
-        _deviceRefreshCancellation = refreshCancellation;
-        IsRefreshingDevices = true;
-
-        try
-        {
-            var devices = await _endpoints.RefreshUserDevicePresenceAsync(_token, operationCancellation.Token);
-            ApplyLoadedDevices(devices, selectedId);
-            if (showSuccessMessage)
-                ShowLocalizedSuccessMessage("Shell_DataRefreshed");
-        }
-        catch (OperationCanceledException) when (refreshCancellation.IsCancellationRequested)
-        {
-            if (!LifetimeToken.IsCancellationRequested && _token != Guid.Empty)
-                await LoadDevicesAsync();
-        }
-        catch (OperationCanceledException) when (timeoutCancellation.IsCancellationRequested)
-        {
-            if (!LifetimeToken.IsCancellationRequested && _token != Guid.Empty)
-                await LoadDevicesAsync();
-            ShowLocalizedErrorMessage("Error_Generic");
-        }
-        catch (Exception ex)
-        {
-            ShowSafeErrorMessage(ex);
-        }
-        finally
-        {
-            _deviceRefreshCancellation = null;
-            IsRefreshingDevices = false;
-        }
-    }
-
-    private void CancelDeviceRefresh() => _deviceRefreshCancellation?.Cancel();
 
     private void ApplyLoadedDevices(IReadOnlyList<UserDeviceInfoResponse> devices, Guid? selectedId)
     {

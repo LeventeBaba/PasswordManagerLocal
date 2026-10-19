@@ -10,9 +10,4 @@ public interface IUserDeviceQueryService
     /// </summary>
     Task<IReadOnlyList<UserDeviceInfoResponse>> GetUserDevicesAsync(Guid token, CancellationToken ct = default);
 
-    /// <summary>
-    /// Authenticates the user, probes eligible linked devices in bounded batches, and returns one resulting
-    /// device projection. Callers should use this response directly instead of issuing a second cached query.
-    /// </summary>
-    Task<IReadOnlyList<UserDeviceInfoResponse>> RefreshUserDevicePresenceAsync(Guid token, CancellationToken ct = default);
 }

@@ -34,7 +34,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         nameof(Subtitle),
         nameof(AddPasswordButtonLabel),
         nameof(AddPasswordIconLabel),
-        nameof(RefreshButtonLabel),
         nameof(EmptyStateTitle),
         nameof(EmptyStateDescription),
         nameof(EmptyStateAddLabel),
@@ -274,7 +273,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         DeleteCustomColorCommand = Own(ReactiveCommand.CreateFromTask<CustomColorItemViewModel>(BeginDeleteCustomColorAsync));
         EditPasswordTagCommand = Own(ReactiveCommand.Create<PasswordTagManagementItemViewModel>(OpenPasswordTagEditorForEditing));
         DeletePasswordTagCommand = Own(ReactiveCommand.CreateFromTask<PasswordTagManagementItemViewModel>(BeginDeletePasswordTagAsync));
-        RefreshCommand = Own(ReactiveCommand.CreateFromTask(async () => { await RefreshAsync(true); }));
         ExecutePrimaryActionCommand = Own(ReactiveCommand.CreateFromTask(ExecutePrimaryActionAsync));
         SearchCommand = Own(ReactiveCommand.Create(ApplyCurrentSearch));
         SelectSortOptionCommand = Own(ReactiveCommand.Create<string>(SelectSortOptionByKey));
@@ -1021,8 +1019,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         }
     }
 
-    public ReactiveCommand<RxVoid, RxVoid> RefreshCommand { get; }
-
     public ReactiveCommand<RxVoid, RxVoid> ExecutePrimaryActionCommand { get; }
 
     public ReactiveCommand<RxVoid, RxVoid> SearchCommand { get; }
@@ -1098,8 +1094,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     public string AddPasswordButtonLabel => GetTranslation("Passwords_Add");
 
     public string AddPasswordIconLabel => GetTranslation("Passwords_Add_Icon");
-
-    public string RefreshButtonLabel => GetTranslation("Common_Refresh");
 
     public string EmptyStateTitle => GetTranslation("Passwords_Empty_Title");
 
@@ -1433,7 +1427,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     {
         _token = token;
         RaiseMultiSelectionStateChanged();
-        return await RefreshAsync(false);
+        return await RefreshAsync();
     }
 
     public void SetSessionToken(Guid token)
@@ -1441,8 +1435,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         _token = token;
         RaiseMultiSelectionStateChanged();
     }
-
-    public async Task<bool> RefreshCurrentDataAsync(bool showSuccessMessage = true) => await RefreshAsync(showSuccessMessage);
 
     public bool CanAutomaticallyRefresh =>
         _token != Guid.Empty &&
@@ -1457,7 +1449,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         Func<bool> isCurrent,
         CancellationToken cancellationToken) =>
         RefreshAsync(
-            showSuccessMessage: false,
             preserveUiState: true,
             isCurrent: isCurrent,
             cancellationToken: cancellationToken);
@@ -1868,7 +1859,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             ClearExportFlowState();
             SetCurrentPane(sourcePane, true);
 
-            if (deleteOriginal && !await RefreshAsync(false))
+            if (deleteOriginal && !await RefreshAsync())
             {
                 return;
             }
@@ -2257,7 +2248,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
 
     private async Task<bool> RefreshAsync(
-        bool showSuccessMessage,
         bool preserveUiState = false,
         Func<bool>? isCurrent = null,
         CancellationToken cancellationToken = default)
@@ -2330,9 +2320,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             }
 
             ApplyFiltersAndSorting(selectedId, preserveSelection: selectedId.HasValue);
-            if (showSuccessMessage)
-                ShowLocalizedSuccessMessage("Passwords_Refreshed");
-
             return true;
         }
         catch (OperationCanceledException) when (preserveUiState && cancellationToken.IsCancellationRequested)
@@ -2650,7 +2637,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
                 CurrentPane = ListPane;
             }
 
-            if (!await RefreshAsync(false))
+            if (!await RefreshAsync())
                 return;
 
             ShowLocalizedSuccessMessage(
@@ -2767,7 +2754,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             HidePassword();
             ResetEditorFields();
             CurrentPane = ListPane;
-            if (await RefreshAsync(false))
+            if (await RefreshAsync())
                 ShowLocalizedSuccessMessage(successKey);
         }
         catch (Exception ex)
@@ -3310,7 +3297,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
                 ]);
             }
 
-            if (!await RefreshAsync(false))
+            if (!await RefreshAsync())
             {
                 return;
             }
@@ -3456,7 +3443,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             await _endpoints.DeleteCustomUserColorsAsync(_token, customColorIds);
             CancelDeleteCustomColor();
 
-            if (!await RefreshAsync(false))
+            if (!await RefreshAsync())
             {
                 return;
             }
