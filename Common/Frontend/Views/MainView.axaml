@@ -87,7 +87,7 @@
             </StackPanel>
             <Button.Flyout>
               <Flyout>
-                <Border Classes="card" Padding="10">
+                <Border Padding="10">
                   <StackPanel Spacing="8">
                     <Grid ColumnDefinitions="Auto,Auto"
                           ColumnSpacing="8"
@@ -212,7 +212,7 @@
               </StackPanel>
               <Button.Flyout>
                 <Flyout>
-                  <Border Classes="card" Padding="10">
+                  <Border Padding="10">
                     <StackPanel Spacing="8">
                       <Grid ColumnDefinitions="Auto,Auto"
                             ColumnSpacing="8"
@@ -374,7 +374,7 @@
           <TextBlock Text="{Binding SessionRenewalWarningTitle}" Classes="sectionTitle" TextWrapping="Wrap" />
           <TextBlock Text="{Binding SessionRenewalWarningMessage}" TextWrapping="Wrap" />
           <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-            <Button Classes="ghost"
+            <Button Classes="secondary"
                     Command="{Binding DeclineSessionRenewalCommand}"
                     Content="{Binding NoLabel}" />
             <Button Grid.Column="1"
@@ -406,7 +406,7 @@
                        IsIndeterminate="True"
                        Height="6" />
           <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-            <Button Classes="ghost"
+            <Button Classes="secondary"
                     IsVisible="{Binding IsDatabaseRecoverySecondaryButtonVisible}"
                     Command="{Binding DatabaseRecoverySecondaryCommand}">
               <TextBlock Text="{Binding DatabaseRecoverySecondaryButtonLabel}"

@@ -198,11 +198,7 @@
     <Style Selector="^:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Opacity" Value="0.82" />
     </Style>
-    <Style Selector="^:disabled /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Foreground" Value="{DynamicResource AppBrush.Text.Disabled}" />
-      <Setter Property="Opacity" Value="0.58" />
-    </Style>
-    <Style Selector="^:focus /template/ Border#PART_FocusRing">
+    <Style Selector="^:focus-visible /template/ Border#PART_FocusRing">
       <Setter Property="IsVisible" Value="True" />
     </Style>
 
@@ -688,6 +684,12 @@
     </Style>
     <Style Selector="^:focus-visible /template/ Border#PART_FocusRing">
       <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="^:selected.compactProfileTab">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="^:selected.compactProfileTab:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AppBrush.Surface.Hover}" />
     </Style>
   </ControlTheme>
 

@@ -13,7 +13,14 @@
   <SolidColorBrush x:Key="AppBrush.Text.Disabled" Color="#FF94A3B8" />
   <SolidColorBrush x:Key="AppBrush.Action.Primary" Color="#FF2D6AE3" />
   <SolidColorBrush x:Key="AppBrush.Action.PrimaryForeground" Color="#FFFFFFFF" />
+  <SolidColorBrush x:Key="AppBrush.Action.Primary.DisabledSurface" Color="#FFADC2E8" />
   <SolidColorBrush x:Key="AppBrush.Action.Secondary" Color="#FF1F5FBF" />
+  <SolidColorBrush x:Key="AppBrush.Action.Secondary.Surface" Color="#FFE2E8F0" />
+  <SolidColorBrush x:Key="AppBrush.Action.Secondary.HoverSurface" Color="#FFCBD5E1" />
+  <SolidColorBrush x:Key="AppBrush.Action.Secondary.PressedSurface" Color="#FFBFCBDD" />
+  <SolidColorBrush x:Key="AppBrush.Action.Secondary.DisabledSurface" Color="#FFF1F5F9" />
+  <SolidColorBrush x:Key="AppBrush.Action.Danger.DisabledSurface" Color="#FFE8B4B4" />
+  <SolidColorBrush x:Key="AppBrush.Action.DisabledForeground" Color="#FF334155" />
   <SolidColorBrush x:Key="AppBrush.Focus" Color="#FF1D4ED8" />
   <SolidColorBrush x:Key="AppBrush.Selection.Background" Color="#332D6AE3" />
   <SolidColorBrush x:Key="AppBrush.Selection.Border" Color="#FF1D4ED8" />

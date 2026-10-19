@@ -2,20 +2,27 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     x:Class="PasswordManagerLocal.Common.Frontend.Theming.DarkThemeResources">
-  <SolidColorBrush x:Key="AppBrush.Background.Primary" Color="#FF111827" />
-  <SolidColorBrush x:Key="AppBrush.Background.Secondary" Color="#FF0B1220" />
-  <SolidColorBrush x:Key="AppBrush.Surface.Card" Color="#FF1F2937" />
-  <SolidColorBrush x:Key="AppBrush.Surface.Elevated" Color="#FF273449" />
-  <SolidColorBrush x:Key="AppBrush.Border.Default" Color="#FF4B5563" />
-  <SolidColorBrush x:Key="AppBrush.Divider" Color="#FF374151" />
-  <SolidColorBrush x:Key="AppBrush.Text.Primary" Color="#FFF9FAFB" />
-  <SolidColorBrush x:Key="AppBrush.Text.Secondary" Color="#FFD1D5DB" />
-  <SolidColorBrush x:Key="AppBrush.Text.Disabled" Color="#FF6B7280" />
+  <SolidColorBrush x:Key="AppBrush.Background.Primary" Color="#FF0D0F12" />
+  <SolidColorBrush x:Key="AppBrush.Background.Secondary" Color="#FF121519" />
+  <SolidColorBrush x:Key="AppBrush.Surface.Card" Color="#FF171B20" />
+  <SolidColorBrush x:Key="AppBrush.Surface.Elevated" Color="#FF20252C" />
+  <SolidColorBrush x:Key="AppBrush.Border.Default" Color="#FF3D444D" />
+  <SolidColorBrush x:Key="AppBrush.Divider" Color="#FF292F36" />
+  <SolidColorBrush x:Key="AppBrush.Text.Primary" Color="#FFF5F7FA" />
+  <SolidColorBrush x:Key="AppBrush.Text.Secondary" Color="#FFB8C0CC" />
+  <SolidColorBrush x:Key="AppBrush.Text.Disabled" Color="#FFA0A8B4" />
   <SolidColorBrush x:Key="AppBrush.Action.Primary" Color="#FF2D6AE3" />
   <SolidColorBrush x:Key="AppBrush.Action.PrimaryForeground" Color="#FFFFFFFF" />
+  <SolidColorBrush x:Key="AppBrush.Action.Primary.DisabledSurface" Color="#FF29466F" />
   <SolidColorBrush x:Key="AppBrush.Action.Secondary" Color="#FF7DB3FF" />
+  <SolidColorBrush x:Key="AppBrush.Action.Secondary.Surface" Color="#FF252A31" />
+  <SolidColorBrush x:Key="AppBrush.Action.Secondary.HoverSurface" Color="#FF303741" />
+  <SolidColorBrush x:Key="AppBrush.Action.Secondary.PressedSurface" Color="#FF1C2127" />
+  <SolidColorBrush x:Key="AppBrush.Action.Secondary.DisabledSurface" Color="#FF20242A" />
+  <SolidColorBrush x:Key="AppBrush.Action.Danger.DisabledSurface" Color="#FF5B3437" />
+  <SolidColorBrush x:Key="AppBrush.Action.DisabledForeground" Color="#FFD5DAE2" />
   <SolidColorBrush x:Key="AppBrush.Focus" Color="#FF93C5FD" />
-  <SolidColorBrush x:Key="AppBrush.Selection.Background" Color="#662D6AE3" />
+  <SolidColorBrush x:Key="AppBrush.Selection.Background" Color="#262D6AE3" />
   <SolidColorBrush x:Key="AppBrush.Selection.Border" Color="#FF7DB3FF" />
   <SolidColorBrush x:Key="AppBrush.Status.Information" Color="#FF7DB3FF" />
   <SolidColorBrush x:Key="AppBrush.Status.Success" Color="#FF34D399" />
@@ -28,7 +35,7 @@
   <SolidColorBrush x:Key="AppBrush.Navigation.Selected" Color="#4068A9FF" />
   <SolidColorBrush x:Key="AppBrush.Navigation.SelectedBorder" Color="#FF68A9FF" />
   <SolidColorBrush x:Key="AppBrush.Surface.Subtle" Color="#08808080" />
-  <SolidColorBrush x:Key="AppBrush.Surface.Input" Color="#0C808080" />
+  <SolidColorBrush x:Key="AppBrush.Surface.Input" Color="#FF101317" />
   <SolidColorBrush x:Key="AppBrush.Surface.SubtleEmphasis" Color="#14808080" />
   <SolidColorBrush x:Key="AppBrush.Surface.Pressed" Color="#20808080" />
   <SolidColorBrush x:Key="AppBrush.Surface.Badge" Color="#22808080" />
@@ -41,7 +48,7 @@
   <SolidColorBrush x:Key="AppBrush.Action.DangerForeground" Color="#FFFFFFFF" />
   <SolidColorBrush x:Key="AppBrush.Navigation.Hover" Color="#4068A9FF" />
   <SolidColorBrush x:Key="AppBrush.Navigation.HoverBorder" Color="#FF68A9FF" />
-  <SolidColorBrush x:Key="AppBrush.Selection.HoverBackground" Color="#302D6AE3" />
+  <SolidColorBrush x:Key="AppBrush.Selection.HoverBackground" Color="#1F2D6AE3" />
   <SolidColorBrush x:Key="AppBrush.Selection.HoverBorder" Color="#DD2D6AE3" />
   <SolidColorBrush x:Key="AppBrush.Status.Danger.Surface" Color="#14D13438" />
   <SolidColorBrush x:Key="AppBrush.Status.Danger.Border" Color="#66D13438" />

@@ -15,7 +15,7 @@
           <TextBlock Text="{Binding LocalSyncDialogWarning}" TextWrapping="Wrap" />
         </Border>
         <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-          <Button Classes="ghost" Command="{Binding CancelLocalSyncToggleCommand}" Content="{Binding CancelLabel}" />
+          <Button Classes="secondary" Command="{Binding CancelLocalSyncToggleCommand}" Content="{Binding CancelLabel}" />
           <Button
               Grid.Column="1"
               Classes="primary"

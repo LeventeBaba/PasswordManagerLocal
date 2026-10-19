@@ -41,7 +41,6 @@ public sealed class Phase21ControlThemeArchitectureTests
                  {
                      "AppBrush.Surface.Subtle",
                      "AppBrush.Text.Primary",
-                     "AppBrush.Text.Disabled",
                      "AppBrush.Border.Subtle",
                      "AppBrush.Focus"
                  })
@@ -61,18 +60,69 @@ public sealed class Phase21ControlThemeArchitectureTests
                      {
                          "AppBrush.Surface.Subtle",
                          "AppBrush.Text.Primary",
-                         "AppBrush.Text.Disabled",
                          "AppBrush.Border.Subtle",
-                         "AppBrush.Focus"
+                         "AppBrush.Focus",
+                         "AppBrush.Action.DisabledForeground",
+                         "AppBrush.Action.Secondary.DisabledSurface",
+                         "AppBrush.Action.Primary.DisabledSurface",
+                         "AppBrush.Action.Danger.DisabledSurface"
                      })
             {
                 Assert.IsTrue(resourceKeys.Contains(stateResource),
-                    $"{themeName} is missing the Button theme resource {stateResource}.");
+                    $"{themeName} is missing a Button state resource {stateResource}.");
             }
         }
 
-        foreach (var stateSelector in new[] { ":pointerover", ":pressed", ":disabled", ":focus" })
+        foreach (var stateSelector in new[] { ":pointerover", ":pressed", ":focus-visible" })
             StringAssert.Contains(themeText, stateSelector);
+
+        var commonStylesPath = Path.Combine(
+            root, "Common", "Frontend", "Assets", "Styles", "CommonStyles.axaml");
+        var commonStyles = XDocument.Load(commonStylesPath);
+        var disabledButtonStyles = commonStyles.Descendants(avalonia + "Style")
+            .Where(style => ((string?)style.Attribute("Selector"))?.Contains("Button") == true
+                            && ((string?)style.Attribute("Selector"))?.Contains(":disabled") == true)
+            .ToDictionary(style => (string)style.Attribute("Selector")!, StringComparer.Ordinal);
+
+        AssertDisabledButtonStyle(disabledButtonStyles, "Button:disabled", new Dictionary<string, string>
+        {
+            ["Background"] = "{DynamicResource AppBrush.Action.Secondary.DisabledSurface}",
+            ["Foreground"] = "{DynamicResource AppBrush.Action.DisabledForeground}",
+            ["BorderBrush"] = "{DynamicResource AppBrush.Border.SubtleStrong}"
+        });
+        AssertDisabledButtonStyle(disabledButtonStyles, "Button.primary:disabled", new Dictionary<string, string>
+        {
+            ["Background"] = "{DynamicResource AppBrush.Action.Primary.DisabledSurface}",
+            ["Foreground"] = "{DynamicResource AppBrush.Action.DisabledForeground}",
+            ["BorderBrush"] = "{DynamicResource AppBrush.Action.Primary.DisabledSurface}"
+        });
+        AssertDisabledButtonStyle(disabledButtonStyles, "Button.danger:disabled", new Dictionary<string, string>
+        {
+            ["Background"] = "{DynamicResource AppBrush.Action.Danger.DisabledSurface}",
+            ["Foreground"] = "{DynamicResource AppBrush.Action.DisabledForeground}",
+            ["BorderBrush"] = "{DynamicResource AppBrush.Action.Danger.DisabledSurface}"
+        });
+    }
+
+    private static void AssertDisabledButtonStyle(
+        IReadOnlyDictionary<string, XElement> styles,
+        string selector,
+        IReadOnlyDictionary<string, string> expectedSetters)
+    {
+        Assert.IsTrue(styles.TryGetValue(selector, out var style),
+            $"CommonStyles.axaml is missing the disabled Button style {selector}.");
+        var setters = style!.Elements().Where(element => element.Name.LocalName == "Setter")
+            .ToDictionary(
+                setter => (string)setter.Attribute("Property")!,
+                setter => (string)setter.Attribute("Value")!,
+                StringComparer.Ordinal);
+        foreach (var (property, value) in expectedSetters)
+        {
+            Assert.AreEqual(value, setters.GetValueOrDefault(property),
+                $"Disabled Button style {selector} must use its semantic {property} resource.");
+        }
+        Assert.IsFalse(setters.ContainsKey("Opacity"),
+            $"Disabled Button style {selector} must preserve label contrast without opacity fading.");
     }
 
     [TestMethod]

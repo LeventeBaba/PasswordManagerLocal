@@ -9,7 +9,8 @@
                 Classes.androidComfortableListScroller="{Binding IsAndroidUi}">
   <TabControl
       SelectedIndex="{Binding SelectedProfileTabIndex, Mode=TwoWay}"
-      HorizontalAlignment="Stretch">
+      HorizontalAlignment="Stretch"
+      Padding="12">
     <TabControl.ItemsPanel>
       <ItemsPanelTemplate>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" />

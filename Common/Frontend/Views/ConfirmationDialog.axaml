@@ -14,7 +14,7 @@
       <TextBlock x:Name="MessageText" TextWrapping="Wrap" />
       <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
         <Button x:Name="NoButton"
-                Classes="ghost"
+                Classes="secondary"
                 Click="NoButton_Click" />
         <Button x:Name="YesButton"
                 Grid.Column="1"

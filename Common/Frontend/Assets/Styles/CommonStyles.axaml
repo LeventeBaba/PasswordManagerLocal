@@ -10,8 +10,8 @@
       <Setter Property="Padding" Value="20" />
       <Setter Property="CornerRadius" Value="{StaticResource AppMetric.CornerRadius.Card}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="Background" Value="{DynamicResource AppBrush.Surface.CardOverlay}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AppBrush.Border.Subtle}" />
+      <Setter Property="Background" Value="{DynamicResource AppBrush.Surface.Card}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBrush.Border.Default}" />
     </Style>
 
     <Style Selector="Border.divider">
@@ -71,6 +71,58 @@
     <Style Selector="Button.ghost">
       <Setter Property="MinHeight" Value="{StaticResource AppMetric.TouchTarget.Standard}" />
       <Setter Property="Padding" Value="14,10" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+
+    <Style Selector="Button.secondary">
+      <Setter Property="MinHeight" Value="{StaticResource AppMetric.TouchTarget.Standard}" />
+      <Setter Property="Padding" Value="14,10" />
+      <Setter Property="Background" Value="{DynamicResource AppBrush.Action.Secondary.Surface}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppBrush.Text.Primary}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBrush.Border.Default}" />
+    </Style>
+
+    <Style Selector="Button.secondary:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AppBrush.Action.Secondary.HoverSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBrush.Border.Emphasis}" />
+    </Style>
+
+    <Style Selector="Button.secondary:pressed">
+      <Setter Property="Background" Value="{DynamicResource AppBrush.Action.Secondary.PressedSurface}" />
+    </Style>
+
+    <Style Selector="Button.ghost:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AppBrush.Surface.Hover}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+
+    <Style Selector="Button.ghost:pressed">
+      <Setter Property="Background" Value="{DynamicResource AppBrush.Surface.Pressed}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+
+    <Style Selector="Button:disabled">
+      <Setter Property="Background" Value="{DynamicResource AppBrush.Action.Secondary.DisabledSurface}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppBrush.Action.DisabledForeground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBrush.Border.SubtleStrong}" />
+    </Style>
+
+    <Style Selector="Button.ghost:disabled">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+
+    <Style Selector="Button.primary:disabled">
+      <Setter Property="Background" Value="{DynamicResource AppBrush.Action.Primary.DisabledSurface}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppBrush.Action.DisabledForeground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBrush.Action.Primary.DisabledSurface}" />
+    </Style>
+
+    <Style Selector="Button.danger:disabled">
+      <Setter Property="Background" Value="{DynamicResource AppBrush.Action.Danger.DisabledSurface}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppBrush.Action.DisabledForeground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBrush.Action.Danger.DisabledSurface}" />
     </Style>
 
     <Style Selector="Button.listItemContentButton">

@@ -13,7 +13,7 @@
         <TextBlock Text="{Binding CustomColorDeleteConfirmationMessage}" TextWrapping="Wrap" />
         <WrapPanel Orientation="Horizontal" HorizontalAlignment="Right">
           <Button
-              Classes="ghost"
+              Classes="secondary"
               Command="{Binding CancelDeleteCustomColorCommand}"
               Content="{Binding CancelButtonLabel}"
               Margin="0,0,8,8" />
