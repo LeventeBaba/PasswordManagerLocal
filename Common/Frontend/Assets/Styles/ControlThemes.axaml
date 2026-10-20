@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:conv="using:Avalonia.Controls.Converters">
+                    xmlns:conv="using:Avalonia.Controls.Converters"
+                    xmlns:embedding="using:Avalonia.Controls.Embedding">
   <!-- App-owned themes for the frontend controls; ColorPicker themes are in ColorPickerThemes.axaml. -->
   <conv:PlatformKeyGestureConverter x:Key="AppMenuKeyGestureConverter" />
   <StreamGeometry x:Key="AppMenuChevronPathData">M 1,0 10,10 l -9,10 -1,-1 L 8,10 -0,1 Z</StreamGeometry>
@@ -37,6 +38,26 @@
             <ContentPresenter Name="PART_ContentPresenter"
                               ContentTemplate="{TemplateBinding ContentTemplate}"
                               Content="{TemplateBinding Content}"
+                              Margin="{TemplateBinding Padding}"
+                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+          </VisualLayerManager>
+        </Panel>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <!-- Android uses an embeddable top-level, not Window. Give its content the
+       same Avalonia-managed popup/adorner layers as the desktop window. -->
+  <ControlTheme x:Key="{x:Type embedding:EmbeddableControlRoot}" TargetType="embedding:EmbeddableControlRoot">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Panel>
+          <Border Name="PART_TransparencyFallback" IsHitTestVisible="False" />
+          <VisualLayerManager Name="PART_VisualLayerManager">
+            <ContentPresenter Name="PART_ContentPresenter"
+                              Content="{TemplateBinding Content}"
+                              ContentTemplate="{TemplateBinding ContentTemplate}"
                               Margin="{TemplateBinding Padding}"
                               HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
                               VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />

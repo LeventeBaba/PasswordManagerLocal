@@ -340,8 +340,8 @@ public sealed class Phase21ControlThemeArchitectureTests
             .Sum(dictionary => dictionary.Root!.Elements(avalonia + "ControlTheme")
                 .Count(theme => ((string?)theme.Attribute(xaml + "Key"))
                     ?.StartsWith("{x:Type ", StringComparison.Ordinal) == true));
-        Assert.AreEqual(26, appOwnedDefaultThemeCount,
-            "Twenty-six app-owned default control themes should cover the migrated control families.");
+        Assert.AreEqual(27, appOwnedDefaultThemeCount,
+            "Twenty-seven app-owned default control themes should cover the migrated control families and Android popup root.");
     }
 
     [TestMethod]

@@ -70,7 +70,7 @@ public sealed class IpcFrameCodecTests
         Assert.AreEqual(IpcProtocolErrorCode.InvalidMagic, exception.ErrorCode);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(4)]
     [DataRow(6)]
     public async Task NonCurrentProtocolVersionIsRejected(int version)

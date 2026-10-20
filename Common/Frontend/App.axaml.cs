@@ -51,22 +51,38 @@ public partial class App : Application
             var session = new FrontendUiSession(view, context, ownsBackendClient: false);
             mainWindow.Closed += (_, _) =>
                 _ = CompleteDesktopCloseAsync(mainWindow, session, context, desktop);
-            desktop.MainWindow = mainWindow;
+            // The desktop lifetime automatically shows MainWindow when its event loop
+            // starts. Do not publish it yet: the selected theme and the first view
+            // model are loaded asynchronously, and showing it early exposes an
+            // unstyled (usually white) window before the first usable frame.
             Dispatcher.UIThread.Post(async () =>
             {
                 try
                 {
                     await session.InitializeAsync();
                     if (session.IsDisposed)
+                    {
+                        AbortUnshownDesktopStartup(desktop);
                         return;
+                    }
+                    if (session.ViewModel is null)
+                        throw new InvalidOperationException("The desktop UI did not initialize.");
+
                     mainWindow.DataContext = session.ViewModel;
+                    desktop.MainWindow = mainWindow;
+                    mainWindow.Show();
                     await TryShowFirewallPermissionPromptAsync(mainWindow, session, context);
                 }
-                catch (OperationCanceledException) when (session.IsDisposed) { }
+                catch (OperationCanceledException) when (session.IsDisposed)
+                {
+                    AbortUnshownDesktopStartup(desktop);
+                }
                 catch (Exception exception)
                 {
                     System.Diagnostics.Trace.TraceError(
                         $"Frontend initialization failed: {exception.GetType().Name}");
+                    // Do not leave an invisible UI process behind if startup fails.
+                    AbortUnshownDesktopStartup(desktop);
                 }
             }, DispatcherPriority.Background);
         }
@@ -87,6 +103,9 @@ public partial class App : Application
             TryShutdownDesktop(desktop);
         }
     }
+
+    private static void AbortUnshownDesktopStartup(
+        IClassicDesktopStyleApplicationLifetime desktop) => TryShutdownDesktop(desktop);
 
     private static void TryShutdownDesktop(
         IClassicDesktopStyleApplicationLifetime desktop)
