@@ -92,14 +92,24 @@ public sealed class WindowsAutomaticUiRefreshTests
 
             fixture.State.DeviceName = "Device renamed by sync";
             fixture.State.IsOnline = true;
+            var renameNotificationStart = fixture.Transport.Operations.Count;
             await fixture.DeliverAsync(FrontendChangeScope.Devices | FrontendChangeScope.DevicePresence, token);
+            Assert.IsTrue(fixture.Transport.Operations
+                    .Skip(renameNotificationStart)
+                    .Contains(EndpointOperationId.GetUserDevices),
+                "A backend device notification must trigger the cached GetUserDevices endpoint read.");
             var device = fixture.Session.ViewModel.ProfileViewModel.Devices.Single();
             Assert.IsTrue(device.ShowOnlineStatus);
             Assert.IsTrue(fixture.HasVisibleText("Device renamed by sync"));
             Assert.IsTrue(fixture.HasVisibleText(device.OnlineStateText));
 
             fixture.State.IsOnline = false;
+            var offlineNotificationStart = fixture.Transport.Operations.Count;
             await fixture.DeliverAsync(FrontendChangeScope.DevicePresence, token);
+            Assert.IsTrue(fixture.Transport.Operations
+                    .Skip(offlineNotificationStart)
+                    .Contains(EndpointOperationId.GetUserDevices),
+                "A backend presence notification must trigger another cached device read.");
             device = fixture.Session.ViewModel.ProfileViewModel.Devices.Single();
             Assert.IsTrue(device.ShowOfflineStatus);
             Assert.IsTrue(fixture.HasVisibleText(device.OnlineStateText));

@@ -37,7 +37,7 @@ public sealed class InMemoryEndpointRpcTransport : IEndpointRpcTransport
     public Task<EndpointRpcTransportResponse> SendAsync(
         EndpointOperationId operationId,
         byte[] requestPayload,
-        EndpointOperationCancellationClassification cancellationClassification,
+        bool isMutatingOperation,
         CancellationToken cancellationToken = default)
     {
         PublicRequestCount++;

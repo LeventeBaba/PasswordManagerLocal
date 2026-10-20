@@ -27,16 +27,14 @@ public sealed class WindowsEndpointRpcTransport : IEndpointRpcTransport
     public Task<EndpointRpcTransportResponse> SendAsync(
         EndpointOperationId operationId,
         byte[] requestPayload,
-        EndpointOperationCancellationClassification cancellationClassification,
+        bool isMutatingOperation,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(requestPayload);
-        if (!Enum.IsDefined(cancellationClassification))
-            throw new ArgumentOutOfRangeException(nameof(cancellationClassification));
 
         return SendCoreAsync(
             () => _messageCodec.EncodeRequest(operationId, requestPayload),
-            cancellationClassification != EndpointOperationCancellationClassification.ReadOnlySafelyCancellable,
+            isMutatingOperation,
             cancellationToken);
     }
 

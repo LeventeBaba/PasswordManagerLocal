@@ -1,9 +1,10 @@
 using PasswordManagerLocal.Windows.Ipc.Contracts;
 using PasswordManagerLocal.Windows.Ipc.Protocol;
+using PasswordManagerLocal.Windows.Ipc.Server;
 
-namespace PasswordManagerLocal.Windows.Ipc.Server;
+namespace PasswordManagerLocal.Windows.Tests.IPC.Infrastructure;
 
-public sealed class DelegateWindowsIpcRequestHandler : IWindowsIpcRequestHandler
+internal sealed class DelegateWindowsIpcRequestHandler : IWindowsIpcRequestHandler
 {
     private readonly Func<IpcRequestContext, CancellationToken, Task<IpcResponseEnvelope>> _handler;
 

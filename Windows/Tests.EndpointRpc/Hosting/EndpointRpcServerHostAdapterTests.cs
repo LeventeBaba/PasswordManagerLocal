@@ -19,7 +19,7 @@ public sealed class EndpointRpcServerHostAdapterTests
 
         var session = genericFactory.Create(connection);
 
-        Assert.IsInstanceOfType(session, typeof(IEndpointRpcServerSession));
+        Assert.IsInstanceOfType(session, typeof(WindowsIpcServerConnectionSession));
         await session.DisposeAsync();
         Assert.AreEqual(1, connection.DisposeCount);
     }

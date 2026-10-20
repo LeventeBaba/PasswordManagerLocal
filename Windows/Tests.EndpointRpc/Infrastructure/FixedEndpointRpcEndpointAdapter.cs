@@ -1,8 +1,9 @@
 using PasswordManagerLocal.Common.Contracts.Endpoints;
+using PasswordManagerLocal.Windows.EndpointRpc.Server;
 
-namespace PasswordManagerLocal.Windows.EndpointRpc.Server;
+namespace PasswordManagerLocal.Windows.Tests.EndpointRpc.Infrastructure;
 
-public sealed class FixedEndpointRpcEndpointAdapter : IEndpointRpcEndpointAdapter, IEndpointRpcSessionReadiness
+internal sealed class FixedEndpointRpcEndpointAdapter : IEndpointRpcEndpointAdapter, IEndpointRpcSessionReadiness
 {
     private readonly IEndpoints _endpoints;
 

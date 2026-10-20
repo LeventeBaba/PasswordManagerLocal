@@ -19,7 +19,7 @@ public sealed class BlockingEndpointRpcTransport : IEndpointRpcTransport
     public async Task<EndpointRpcTransportResponse> SendAsync(
         EndpointOperationId operationId,
         byte[] requestPayload,
-        EndpointOperationCancellationClassification cancellationClassification,
+        bool isMutatingOperation,
         CancellationToken cancellationToken = default)
     {
         if (!IsConnected)

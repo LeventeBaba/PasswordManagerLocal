@@ -12,7 +12,7 @@ namespace PasswordManagerLocal.Windows.Tests.EndpointRpc.Client;
 public sealed class EndpointRpcTransmissionMappingTests
 {
     [TestMethod]
-    public async Task DefinitelyNotSentMutationsRemainConclusiveForEveryMutationClassification()
+    public async Task DefinitelyNotSentMutationsRemainConclusiveForEveryCommitModel()
     {
         foreach (var operationId in MutationRepresentatives())
         {
@@ -26,11 +26,12 @@ public sealed class EndpointRpcTransmissionMappingTests
 
             await Assert.ThrowsExactlyAsync<IOException>(() => InvokeAsync(proxy, operationId));
             Assert.AreEqual(1, sends, operationId.ToString());
+            CollectionAssert.AreEqual(new[] { true }, transport.MutationFlags, operationId.ToString());
         }
     }
 
     [TestMethod]
-    public async Task SentMutationsWithoutResponseReportUnknownForEveryMutationClassification()
+    public async Task SentMutationsWithoutResponseReportUnknownForEveryCommitModel()
     {
         foreach (var operationId in MutationRepresentatives())
         {
@@ -45,11 +46,12 @@ public sealed class EndpointRpcTransmissionMappingTests
             await Assert.ThrowsExactlyAsync<EndpointOperationOutcomeUnknownException>(() =>
                 InvokeAsync(proxy, operationId));
             Assert.AreEqual(1, sends, operationId.ToString());
+            CollectionAssert.AreEqual(new[] { true }, transport.MutationFlags, operationId.ToString());
         }
     }
 
     [TestMethod]
-    public async Task TransmissionUnknownMutationsReportUnknownForEveryMutationClassification()
+    public async Task TransmissionUnknownMutationsReportUnknownForEveryCommitModel()
     {
         foreach (var operationId in MutationRepresentatives())
         {
@@ -64,6 +66,7 @@ public sealed class EndpointRpcTransmissionMappingTests
             await Assert.ThrowsExactlyAsync<EndpointOperationOutcomeUnknownException>(() =>
                 InvokeAsync(proxy, operationId));
             Assert.AreEqual(1, sends, operationId.ToString());
+            CollectionAssert.AreEqual(new[] { true }, transport.MutationFlags, operationId.ToString());
         }
     }
 
@@ -77,6 +80,7 @@ public sealed class EndpointRpcTransmissionMappingTests
 
         await Assert.ThrowsExactlyAsync<IOException>(() => proxy.GetLocalDeviceInfoAsync());
         Assert.HasCount(1, transport.Operations);
+        CollectionAssert.AreEqual(new[] { false }, transport.MutationFlags);
     }
 
     [TestMethod]
@@ -131,21 +135,25 @@ public sealed class EndpointRpcTransmissionMappingTests
     }
 
     [TestMethod]
-    public void RepresentativeOperationsCoverEveryCancellationClassification()
+    public async Task ProxyTransportMutationFlagComesFromCommitModel()
     {
-        var representatives = new[]
-        {
-            EndpointOperationId.GetLocalDeviceInfo,
-            EndpointOperationId.SetLocalUserSyncOn,
-            EndpointOperationId.StartDeviceEnrollment,
-            EndpointOperationId.Logout
-        };
+        var transport = new RecordingEndpointRpcTransport((operationId, _, _) =>
+            Task.FromResult(operationId == EndpointOperationId.GetLocalUserSyncOn
+                ? "{\"isSyncOn\":true}"u8.ToArray()
+                : "{}"u8.ToArray()));
+        await using var proxy = CreateProxy(transport);
 
-        CollectionAssert.AreEquivalent(
-            Enum.GetValues<EndpointOperationCancellationClassification>().Cast<object>().ToArray(),
-            representatives
-                .Select(id => (object)EndpointOperationManifest.Get(id).CancellationClassification)
-                .ToArray());
+        await proxy.GetLocalUserSyncOnAsync(EndpointRpcTestData.Token);
+        await proxy.SetLocalUserSyncOnAsync(EndpointRpcTestData.Token, true);
+
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                EndpointOperationManifest.Get(EndpointOperationId.GetLocalUserSyncOn).MutatesState,
+                EndpointOperationManifest.Get(EndpointOperationId.SetLocalUserSyncOn).MutatesState
+            },
+            transport.MutationFlags);
+        CollectionAssert.AreEqual(new[] { false, true }, transport.MutationFlags);
     }
 
     private static IReadOnlyList<EndpointOperationId> MutationRepresentatives() =>

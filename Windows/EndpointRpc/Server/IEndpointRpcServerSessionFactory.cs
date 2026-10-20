@@ -5,5 +5,4 @@ namespace PasswordManagerLocal.Windows.EndpointRpc.Server;
 
 public interface IEndpointRpcServerSessionFactory : IWindowsIpcServerSessionFactory, IAsyncDisposable
 {
-    new IEndpointRpcServerSession Create(IWindowsIpcConnection connection);
 }

@@ -219,7 +219,7 @@ public sealed class EndpointRpcInvocationOutcomeTests
         var endpoints = new ConfiguredLogoutEndpoints();
         var serializer = new EndpointRpcSerializer(type =>
         {
-            if (type == typeof(LogoutEndpointResponse))
+            if (type == typeof(EmptyEndpointResponse))
                 throw new EndpointRpcPayloadException("response serialization failed");
         });
         var context = CreateContext(EndpointOperationId.Logout, 106);
@@ -239,7 +239,7 @@ public sealed class EndpointRpcInvocationOutcomeTests
         var endpoints = new ConfiguredLogoutEndpoints();
         var serializer = new EndpointRpcSerializer(
             serializationObserver: null,
-            serializedPayloadOverride: type => type == typeof(LogoutEndpointResponse)
+            serializedPayloadOverride: type => type == typeof(EmptyEndpointResponse)
                 ? new byte[EndpointRpcLimits.MaximumSmallResponsePayloadSize + 1]
                 : null);
         var context = CreateContext(EndpointOperationId.Logout, 107);

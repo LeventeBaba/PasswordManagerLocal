@@ -73,11 +73,11 @@ public sealed class EndpointRpcServerSessionFactory : IEndpointRpcServerSessionF
             handshakeAuthorizer: connectionAuthorizer);
     }
 
-    public IEndpointRpcServerSession Create(IWindowsIpcConnection connection)
+    public IWindowsIpcServerSession Create(IWindowsIpcConnection connection)
     {
         if (Volatile.Read(ref _disposed) != 0)
             throw new ObjectDisposedException(nameof(EndpointRpcServerSessionFactory));
-        return new EndpointRpcServerSession(_innerFactory.Create(connection));
+        return _innerFactory.Create(connection);
     }
 
     public async ValueTask DisposeAsync()
@@ -87,7 +87,4 @@ public sealed class EndpointRpcServerSessionFactory : IEndpointRpcServerSessionF
         await _largeResultTransferStore.DisposeAsync();
         GC.SuppressFinalize(this);
     }
-
-    IWindowsIpcServerSession IWindowsIpcServerSessionFactory.Create(
-        IWindowsIpcConnection connection) => Create(connection);
 }

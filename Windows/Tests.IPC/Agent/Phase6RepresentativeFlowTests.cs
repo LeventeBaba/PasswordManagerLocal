@@ -98,8 +98,8 @@ public sealed class Phase6RepresentativeFlowTests
             new EndpointRpcBackendErrorMapper(),
             adapter);
         var requestPayload = serializer.Serialize(
-            new GetLocalDeviceInfoEndpointRequest(),
-            EndpointRpcJsonContext.Default.GetLocalDeviceInfoEndpointRequest);
+            new EmptyEndpointRequest(),
+            EndpointRpcJsonContext.Default.EmptyEndpointRequest);
         var result = await dispatcher.DispatchAsync(
             new EndpointRequestContext(
                 endpointConnection.ConnectionId,

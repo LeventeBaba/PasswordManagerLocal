@@ -1,5 +1,3 @@
 namespace PasswordManagerLocal.Windows.EndpointRpc.Contracts.Responses;
 
-public sealed class DeletePasswordTagEndpointResponse
-{
-}
+public sealed class EmptyEndpointResponse { }

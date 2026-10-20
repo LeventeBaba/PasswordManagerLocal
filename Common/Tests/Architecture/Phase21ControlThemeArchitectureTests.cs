@@ -938,11 +938,25 @@ public sealed class Phase21ControlThemeArchitectureTests
         Assert.AreEqual("Uniform", (string?)path.Attribute("Stretch"));
         var viewRoot = Path.Combine(root, "Common", "Frontend", "Views");
         var viewFiles = Directory.EnumerateFiles(viewRoot, "*.axaml", SearchOption.AllDirectories).ToArray();
-        var viewIcons = viewFiles.SelectMany(file => XDocument.Load(file).Descendants(avalonia + "PathIcon")).ToArray();
-        Assert.AreEqual(90, viewIcons.Length,
-            "All current view PathIcons should receive the application-owned default theme.");
-        Assert.IsTrue(viewIcons.All(icon => icon.Attribute("Theme") is null),
-            "View PathIcons should inherit the application-owned default theme.");
+        var viewIcons = viewFiles.SelectMany(file =>
+                XDocument.Load(file).Descendants(avalonia + "PathIcon")
+                    .Select(icon => (File: file, Icon: icon)))
+            .ToArray();
+        Assert.IsTrue(viewIcons.Length > 0,
+            "The view icon inventory should be non-empty so the per-icon theme checks execute.");
+        foreach (var (file, icon) in viewIcons)
+        {
+            var location = $"{Path.GetRelativePath(viewRoot, file)} PathIcon ({(string?)icon.Attribute("Data") ?? "no Data"})";
+            Assert.IsNull(icon.Attribute("Theme"),
+                $"{location} should use the application-owned default PathIcon theme.");
+
+            var foreground = (string?)icon.Attribute("Foreground");
+            if (foreground is not null)
+            {
+                Assert.AreEqual("{DynamicResource AppBrush.Status.Danger}", foreground,
+                    $"{location} has an explicit semantic foreground override; other view icons inherit Foreground.");
+            }
+        }
 
         var scrollBarTheme = themes.Root.Elements(avalonia + "ControlTheme")
             .Single(theme => (string?)theme.Attribute(xaml + "Key") == "{x:Type ScrollBar}");

@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Contracts.Errors;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Windows.EndpointRpc.Client;
@@ -38,13 +39,42 @@ public sealed class NamedPipeEndpointsProxyMappingTests
             new EndpointRpcSerializer(),
             new EndpointRpcContractValidator());
 
-        foreach (var invocation in CreateInvocations(proxy))
-            await Assert.ThrowsExactlyAsync<EndpointRpcRemoteException>(invocation);
+        var invocations = CreateInvocations(proxy);
+        var endpointMethodNames = typeof(IEndpoints).GetMethods()
+            .Select(method => method.Name)
+            .ToArray();
+        var descriptors = EndpointOperationManifest.All;
+        var manifestMethodNames = descriptors.Select(descriptor => descriptor.MethodName).ToArray();
+        var operationIds = Enum.GetValues<EndpointOperationId>();
+
+        EndpointOperationTestAssertions.AreEquivalent(
+            endpointMethodNames,
+            manifestMethodNames,
+            "EndpointRpc manifest method mappings");
+        EndpointOperationTestAssertions.AreEquivalent(
+            endpointMethodNames,
+            invocations.Select(invocation => invocation.MethodName),
+            "Proxy behavior invocation mappings");
+        EndpointOperationTestAssertions.AreEquivalent(
+            operationIds.Select(operationId => (int)operationId),
+            descriptors.Select(descriptor => (int)descriptor.OperationId),
+            "Stable endpoint operation IDs in the manifest");
+
+        var descriptorsByMethod = descriptors.ToDictionary(
+            descriptor => descriptor.MethodName,
+            StringComparer.Ordinal);
+        var expectedOperationIds = invocations
+            .Select(invocation => descriptorsByMethod[invocation.MethodName])
+            .Select(descriptor => descriptor.OperationId)
+            .ToArray();
+
+        foreach (var invocation in invocations)
+            await Assert.ThrowsExactlyAsync<EndpointRpcRemoteException>(invocation.Invoke);
 
         CollectionAssert.AreEqual(
-            Enum.GetValues<EndpointOperationId>().Cast<object>().ToArray(),
-            transport.Operations.Cast<object>().ToArray());
-        Assert.HasCount(41, transport.RequestPayloads);
+            expectedOperationIds.Cast<object>().ToArray(),
+            transport.Operations.Cast<object>().ToArray(),
+            "Each named proxy invocation must send the operation ID assigned by the manifest.");
     }
 
     [TestMethod]
@@ -273,9 +303,6 @@ public sealed class NamedPipeEndpointsProxyMappingTests
         Assert.IsTrue(exception.RequiresProcessRestart);
         Assert.IsFalse(exception.BlindRetryIsSafe);
         Assert.AreEqual(recovery, exception.Recovery);
-        Assert.AreEqual(EndpointMutationReplaySafety.RecoveryForSameImmutableTargetOnly, exception.ReplaySafety);
-        Assert.AreEqual(EndpointMutationRecoveryAction.ResumeEnrollmentForSameImmutableTargetOrPerformSignedRemoval, exception.RecoveryAction);
-        Assert.AreEqual(EndpointOperationId.GetUserDevices, exception.AuthoritativeReadBackOperationId);
     }
 
     [TestMethod]
@@ -302,8 +329,6 @@ public sealed class NamedPipeEndpointsProxyMappingTests
 
         Assert.AreEqual(EndpointOperationId.ChangeMasterPassword, exception.OperationId);
         Assert.IsNull(exception.Recovery);
-        Assert.AreEqual(EndpointMutationReplaySafety.AuthoritativeReadBackRequired, exception.ReplaySafety);
-        Assert.AreEqual(EndpointOperationId.GetAuthSessionStatus, exception.AuthoritativeReadBackOperationId);
         Assert.IsFalse(exception.BlindRetryIsSafe);
     }
 
@@ -358,7 +383,7 @@ public sealed class NamedPipeEndpointsProxyMappingTests
         Assert.AreEqual(EndpointMutationOutcome.NotCommitted, exception.Error.MutationOutcome);
     }
 
-    private static IReadOnlyList<Func<Task>> CreateInvocations(NamedPipeEndpointsProxy proxy)
+    private static IReadOnlyList<EndpointProxyInvocation> CreateInvocations(NamedPipeEndpointsProxy proxy)
     {
         Func<EndpointOperationId, object> request = EndpointRpcTestData.CreateRequest;
         var registration = ((PasswordManagerLocal.Windows.EndpointRpc.Contracts.Requests.RegisterEndpointRequest)request(EndpointOperationId.Register)).Request;
@@ -378,47 +403,49 @@ public sealed class NamedPipeEndpointsProxyMappingTests
 
         return
         [
-            async () => { await proxy.RegisterAsync(registration); },
-            async () => { await proxy.LoginAsync(login); },
-            async () => { await proxy.RenewAuthSessionAsync(EndpointRpcTestData.Token); },
-            async () => { await proxy.LogoutAsync(EndpointRpcTestData.Token); },
-            async () => { await proxy.GetAuthSessionStatusAsync(EndpointRpcTestData.Token); },
-            async () => { await proxy.ChangeMasterPasswordAsync(master); },
-            async () => { await proxy.GetUserProfileInfoAsync(EndpointRpcTestData.Token); },
-            async () => { await proxy.DeleteUserAccountAsync(EndpointRpcTestData.Token, password); },
-            async () => { await proxy.ChangeUsernameAsync(EndpointRpcTestData.Token, "ValidUser2"); },
-            async () => { await proxy.UpdateUserProfileInfoAsync(profile); },
-            async () => { await proxy.GetLocalDeviceInfoAsync(); },
-            async () => { await proxy.GetLocalUserSyncOnAsync(EndpointRpcTestData.Token); },
-            async () => { await proxy.SetLocalUserSyncOnAsync(EndpointRpcTestData.Token, true); },
-            async () => { await proxy.SetLocalDeviceNameAsync(EndpointRpcTestData.Token, "Desktop"); },
-            async () => { await proxy.GetUserDevicesAsync(EndpointRpcTestData.Token); },
-            async () => { await proxy.SetUserDeviceNameAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId, "Laptop"); },
-            async () => { await proxy.SetUserDeviceSyncOnAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId, true); },
-            async () => { await proxy.UnblockUserDeviceAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId); },
-            async () => { await proxy.DisconnectUserDeviceAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId, password); },
-            async () => { await proxy.StartDeviceEnrollmentAsync(); },
-            async () => { await proxy.GetDeviceEnrollmentStatusAsync(); },
-            async () => { await proxy.CancelDeviceEnrollmentAsync(); },
-            async () => { await proxy.AddDeviceByCodeAsync(EndpointRpcTestData.Token, "ABCD2345"); },
-            async () => { await proxy.RestoreRememberedSessionsAsync(); },
-            async () => { await proxy.InitializeRememberMeSessionAsync(EndpointRpcTestData.ItemId); },
-            async () => { await proxy.SetRememberMeAsync(EndpointRpcTestData.Token, true); },
-            async () => { await proxy.GetSavedPasswordsAsync(EndpointRpcTestData.Token); },
-            async () => { await proxy.AddNewPasswordAsync(EndpointRpcTestData.Token, newPassword); },
-            async () => { await proxy.RemovePasswordsAsync(EndpointRpcTestData.Token, [EndpointRpcTestData.ItemId]); },
-            async () => { await proxy.GetUnsecurePasswordAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId); },
-            async () => { await proxy.UpdatePasswordAsync(EndpointRpcTestData.Token, updatePassword); },
-            async () => { await proxy.ExportPasswordsToUserAsync(EndpointRpcTestData.Token, exportPasswords); },
-            async () => { await proxy.AddCustomUserColorsAsync(EndpointRpcTestData.Token, colors); },
-            async () => { await proxy.DeleteCustomUserColorsAsync(EndpointRpcTestData.Token, [EndpointRpcTestData.ItemId]); },
-            async () => { await proxy.ExportCustomUserColorsToUserAsync(EndpointRpcTestData.Token, exportColors); },
-            async () => { await proxy.UpdateCustomUserColorAsync(EndpointRpcTestData.Token, updateColor); },
-            async () => { await proxy.AddPasswordTagAsync(EndpointRpcTestData.Token, newTag); },
-            async () => { await proxy.DeletePasswordTagAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId); },
-            async () => { await proxy.ExportPasswordTagsToUserAsync(EndpointRpcTestData.Token, exportTags); },
-            async () => { await proxy.UpdatePasswordTagAsync(EndpointRpcTestData.Token, updateTag); },
-            async () => { await proxy.RunSelfDiagnosticsAndRepairAsync(EndpointRpcTestData.Token); }
+            new(nameof(IEndpoints.RegisterAsync), () => proxy.RegisterAsync(registration)),
+            new(nameof(IEndpoints.LoginAsync), () => proxy.LoginAsync(login)),
+            new(nameof(IEndpoints.RenewAuthSessionAsync), () => proxy.RenewAuthSessionAsync(EndpointRpcTestData.Token)),
+            new(nameof(IEndpoints.LogoutAsync), () => proxy.LogoutAsync(EndpointRpcTestData.Token)),
+            new(nameof(IEndpoints.GetAuthSessionStatusAsync), () => proxy.GetAuthSessionStatusAsync(EndpointRpcTestData.Token)),
+            new(nameof(IEndpoints.ChangeMasterPasswordAsync), () => proxy.ChangeMasterPasswordAsync(master)),
+            new(nameof(IEndpoints.GetUserProfileInfoAsync), () => proxy.GetUserProfileInfoAsync(EndpointRpcTestData.Token)),
+            new(nameof(IEndpoints.DeleteUserAccountAsync), () => proxy.DeleteUserAccountAsync(EndpointRpcTestData.Token, password)),
+            new(nameof(IEndpoints.ChangeUsernameAsync), () => proxy.ChangeUsernameAsync(EndpointRpcTestData.Token, "ValidUser2")),
+            new(nameof(IEndpoints.UpdateUserProfileInfoAsync), () => proxy.UpdateUserProfileInfoAsync(profile)),
+            new(nameof(IEndpoints.GetLocalDeviceInfoAsync), () => proxy.GetLocalDeviceInfoAsync()),
+            new(nameof(IEndpoints.GetLocalUserSyncOnAsync), () => proxy.GetLocalUserSyncOnAsync(EndpointRpcTestData.Token)),
+            new(nameof(IEndpoints.SetLocalUserSyncOnAsync), () => proxy.SetLocalUserSyncOnAsync(EndpointRpcTestData.Token, true)),
+            new(nameof(IEndpoints.SetLocalDeviceNameAsync), () => proxy.SetLocalDeviceNameAsync(EndpointRpcTestData.Token, "Desktop")),
+            new(nameof(IEndpoints.GetUserDevicesAsync), () => proxy.GetUserDevicesAsync(EndpointRpcTestData.Token)),
+            new(nameof(IEndpoints.SetUserDeviceNameAsync), () => proxy.SetUserDeviceNameAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId, "Laptop")),
+            new(nameof(IEndpoints.SetUserDeviceSyncOnAsync), () => proxy.SetUserDeviceSyncOnAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId, true)),
+            new(nameof(IEndpoints.UnblockUserDeviceAsync), () => proxy.UnblockUserDeviceAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId)),
+            new(nameof(IEndpoints.DisconnectUserDeviceAsync), () => proxy.DisconnectUserDeviceAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId, password)),
+            new(nameof(IEndpoints.StartDeviceEnrollmentAsync), () => proxy.StartDeviceEnrollmentAsync()),
+            new(nameof(IEndpoints.GetDeviceEnrollmentStatusAsync), () => proxy.GetDeviceEnrollmentStatusAsync()),
+            new(nameof(IEndpoints.CancelDeviceEnrollmentAsync), () => proxy.CancelDeviceEnrollmentAsync()),
+            new(nameof(IEndpoints.AddDeviceByCodeAsync), () => proxy.AddDeviceByCodeAsync(EndpointRpcTestData.Token, "ABCD2345")),
+            new(nameof(IEndpoints.RestoreRememberedSessionsAsync), () => proxy.RestoreRememberedSessionsAsync()),
+            new(nameof(IEndpoints.InitializeRememberMeSessionAsync), () => proxy.InitializeRememberMeSessionAsync(EndpointRpcTestData.ItemId)),
+            new(nameof(IEndpoints.SetRememberMeAsync), () => proxy.SetRememberMeAsync(EndpointRpcTestData.Token, true)),
+            new(nameof(IEndpoints.GetSavedPasswordsAsync), () => proxy.GetSavedPasswordsAsync(EndpointRpcTestData.Token)),
+            new(nameof(IEndpoints.AddNewPasswordAsync), () => proxy.AddNewPasswordAsync(EndpointRpcTestData.Token, newPassword)),
+            new(nameof(IEndpoints.RemovePasswordsAsync), () => proxy.RemovePasswordsAsync(EndpointRpcTestData.Token, [EndpointRpcTestData.ItemId])),
+            new(nameof(IEndpoints.GetUnsecurePasswordAsync), () => proxy.GetUnsecurePasswordAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId)),
+            new(nameof(IEndpoints.UpdatePasswordAsync), () => proxy.UpdatePasswordAsync(EndpointRpcTestData.Token, updatePassword)),
+            new(nameof(IEndpoints.ExportPasswordsToUserAsync), () => proxy.ExportPasswordsToUserAsync(EndpointRpcTestData.Token, exportPasswords)),
+            new(nameof(IEndpoints.AddCustomUserColorsAsync), () => proxy.AddCustomUserColorsAsync(EndpointRpcTestData.Token, colors)),
+            new(nameof(IEndpoints.DeleteCustomUserColorsAsync), () => proxy.DeleteCustomUserColorsAsync(EndpointRpcTestData.Token, [EndpointRpcTestData.ItemId])),
+            new(nameof(IEndpoints.ExportCustomUserColorsToUserAsync), () => proxy.ExportCustomUserColorsToUserAsync(EndpointRpcTestData.Token, exportColors)),
+            new(nameof(IEndpoints.UpdateCustomUserColorAsync), () => proxy.UpdateCustomUserColorAsync(EndpointRpcTestData.Token, updateColor)),
+            new(nameof(IEndpoints.AddPasswordTagAsync), () => proxy.AddPasswordTagAsync(EndpointRpcTestData.Token, newTag)),
+            new(nameof(IEndpoints.DeletePasswordTagAsync), () => proxy.DeletePasswordTagAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId)),
+            new(nameof(IEndpoints.ExportPasswordTagsToUserAsync), () => proxy.ExportPasswordTagsToUserAsync(EndpointRpcTestData.Token, exportTags)),
+            new(nameof(IEndpoints.UpdatePasswordTagAsync), () => proxy.UpdatePasswordTagAsync(EndpointRpcTestData.Token, updateTag)),
+            new(nameof(IEndpoints.RunSelfDiagnosticsAndRepairAsync), () => proxy.RunSelfDiagnosticsAndRepairAsync(EndpointRpcTestData.Token))
         ];
     }
+
+    private sealed record EndpointProxyInvocation(string MethodName, Func<Task> Invoke);
 }

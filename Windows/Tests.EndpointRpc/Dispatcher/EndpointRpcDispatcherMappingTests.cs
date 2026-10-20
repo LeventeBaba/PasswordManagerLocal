@@ -35,7 +35,7 @@ public sealed class EndpointRpcDispatcherMappingTests
 
             Assert.IsFalse(result.IsSuccess, descriptor.OperationId.ToString());
             Assert.AreEqual(descriptor.MethodName, endpoints.LastMethodName, descriptor.OperationId.ToString());
-            if (descriptor.CancellationClassification == EndpointOperationCancellationClassification.ReadOnlySafelyCancellable)
+            if (!descriptor.MutatesState)
                 Assert.IsTrue(endpoints.LastCancellationToken.IsCancellationRequested, descriptor.OperationId.ToString());
             else
                 Assert.AreEqual(CancellationToken.None, endpoints.LastCancellationToken, descriptor.OperationId.ToString());

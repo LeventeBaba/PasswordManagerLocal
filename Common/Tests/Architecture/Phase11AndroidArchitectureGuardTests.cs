@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using PasswordManagerLocal.Common.Contracts.Endpoints;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -12,12 +13,6 @@ public sealed class Phase11AndroidArchitectureGuardTests
     public void EveryEndpointInvocationPassesThroughCurrentAttachmentAuthority()
     {
         var root = GetRepositoryRoot();
-        var contract = File.ReadAllText(Path.Combine(
-            root,
-            "Common",
-            "Contracts",
-            "Endpoints",
-            "IEndpoints.cs"));
         var wrapper = File.ReadAllText(Path.Combine(
             root,
             "Android",
@@ -28,18 +23,96 @@ public sealed class Phase11AndroidArchitectureGuardTests
             "Android",
             "Runtime",
             "AndroidServiceFrontendBackendClient.cs"));
+        var host = File.ReadAllText(Path.Combine(
+            root,
+            "Android",
+            "Runtime",
+            "AndroidRuntimeServiceHost.cs"));
 
-        var contractMethods = ExtractAsyncMethodNames(contract);
-        var forwardedMethods = Regex.Matches(wrapper, @"_inner\.(?<name>\w+Async)\(")
+        var contractMethods = typeof(IEndpoints).GetMethods()
+            .Select(method => method.Name)
+            .ToArray();
+        var wrapperMethods = Regex.Matches(
+                wrapper,
+                @"(?m)^\s*public\s+[^\r\n;]+?\s+(?<name>\w+Async)\s*\(")
             .Select(match => match.Groups["name"].Value)
             .ToArray();
+        var forwardedMethods = Regex.Matches(
+                wrapper,
+                @"(?m)^\s*public\s+[^\r\n;]+?\s+(?<name>\w+Async)\s*\([^)]*\)\s*=>\s*InvokeAsync\(\(\)\s*=>\s*_inner\.(?<forwarded>\w+Async)\s*\(")
+            .Select(match => (
+                Method: match.Groups["name"].Value,
+                Forwarded: match.Groups["forwarded"].Value))
+            .ToArray();
 
-        Assert.AreEqual(41, contractMethods.Length);
-        CollectionAssert.AreEquivalent(contractMethods, forwardedMethods);
-        Assert.AreEqual(41, forwardedMethods.Distinct(StringComparer.Ordinal).Count());
-        StringAssert.Contains(wrapper, "_owner.EnsureEndpointAuthority(_client);");
-        StringAssert.Contains(client, "return new AndroidAttachmentAuthorizedEndpoints");
-        Assert.IsFalse(client.Contains("return endpoints;", StringComparison.Ordinal));
+        AssertMethodSetEquals(contractMethods, wrapperMethods, "Public Android endpoint wrapper methods");
+        AssertMethodSetEquals(
+            contractMethods,
+            forwardedMethods.Select(item => item.Method),
+            "Android endpoint methods routed through the authorization wrapper");
+        AssertMethodSetEquals(
+            contractMethods,
+            forwardedMethods.Select(item => item.Forwarded),
+            "Android endpoint methods forwarded to the current backend session");
+        Assert.IsTrue(forwardedMethods.All(item => item.Method == item.Forwarded),
+            "Every wrapper method must invoke the matching IEndpoints member.");
+
+        var invocationGuards = Regex.Matches(
+                wrapper,
+                @"(?m)^\s*private\s+Task(?:<T>)?\s+InvokeAsync(?:<T>)?\s*\([^)]*\)\s*\{(?<body>[^}]*)\}")
+            .Select(match => match.Groups["body"].Value)
+            .ToArray();
+        Assert.IsTrue(invocationGuards.Length > 0, "The endpoint wrapper must centralize endpoint invocation.");
+        foreach (var body in invocationGuards)
+        {
+            var authorityCheck = body.IndexOf("_owner.EnsureEndpointAuthority(_client);", StringComparison.Ordinal);
+            var operationCall = body.IndexOf("return operation();", StringComparison.Ordinal);
+            Assert.IsTrue(authorityCheck >= 0 && operationCall > authorityCheck,
+                "Each invocation helper must validate current attachment authority before calling the endpoint.");
+        }
+
+        var getEndpoints = Regex.Match(
+            client,
+            @"(?s)public async Task<IEndpoints>\s+GetEndpointsAsync\([^)]*\)\s*\{(?<body>.*?)\n    \}");
+        Assert.IsTrue(getEndpoints.Success, "The frontend endpoint attachment factory must remain discoverable.");
+        var getEndpointsBody = getEndpoints.Groups["body"].Value;
+        var authorityIndex = getEndpointsBody.IndexOf("_owner.EnsureEndpointAuthority(this);", StringComparison.Ordinal);
+        var wrapperIndex = getEndpointsBody.IndexOf(
+            "return new AndroidAttachmentAuthorizedEndpoints(_owner, this, endpoints);",
+            StringComparison.Ordinal);
+        Assert.IsTrue(authorityIndex >= 0 && wrapperIndex > authorityIndex,
+            "GetEndpointsAsync must authorize the current attachment before returning the guarded endpoint proxy.");
+        StringAssert.Contains(getEndpointsBody, "_interactiveSession?.Endpoints");
+
+        var authorityCheckMethod = Regex.Match(
+            host,
+            @"(?s)internal void EnsureEndpointAuthority\(AndroidServiceFrontendBackendClient client\)\s*\{(?<body>[^}]*)\}");
+        Assert.IsTrue(authorityCheckMethod.Success);
+        StringAssert.Contains(authorityCheckMethod.Groups["body"].Value, "!IsCurrentActiveAttachment(client)");
+
+        var activeAttachment = Regex.Match(
+            host,
+            @"private bool IsCurrentActiveAttachment\([^)]*\)\s*=>\s*(?<body>[^;]+);");
+        Assert.IsTrue(activeAttachment.Success);
+        Assert.AreEqual(
+            "!_runtimeUnsafe && IsCurrentInteractiveClient(client) && client.HasMutationAuthority",
+            Regex.Replace(activeAttachment.Groups["body"].Value, @"\s+", " ").Trim());
+
+        var currentClient = Regex.Match(
+            host,
+            @"private bool IsCurrentInteractiveClient\([^)]*\)\s*=>\s*(?<body>[^;]+);");
+        Assert.IsTrue(currentClient.Success);
+        Assert.AreEqual(
+            "ReferenceEquals(Volatile.Read(ref _interactiveClient), client) && client.AttachmentGeneration == Interlocked.Read(ref _attachmentGeneration)",
+            Regex.Replace(currentClient.Groups["body"].Value, @"\s+", " ").Trim());
+
+        var mutationAuthority = Regex.Match(
+            client,
+            @"internal bool HasMutationAuthority\s*=>\s*(?<body>[^;]+);");
+        Assert.IsTrue(mutationAuthority.Success);
+        Assert.AreEqual(
+            "AttachmentState == AndroidInteractiveAttachmentState.Active",
+            Regex.Replace(mutationAuthority.Groups["body"].Value, @"\s+", " ").Trim());
     }
 
     [TestMethod]
@@ -554,26 +627,60 @@ public sealed class Phase11AndroidArchitectureGuardTests
     }
 
     [TestMethod]
-    public void EndpointAndMutationCompletenessGuardsIncludeSelfDiagnostics()
+    public void EndpointAndMutationCompletenessGuardsUseDerivedSetsAndCoverSelfDiagnostics()
     {
-        var source = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(),
+        var root = GetRepositoryRoot();
+        var paritySource = File.ReadAllText(Path.Combine(
+            root,
             "Windows",
             "Tests.EndpointRpc",
             "Mapping",
             "EndpointOperationParityTests.cs"));
+        var proxySource = File.ReadAllText(Path.Combine(
+            root,
+            "Windows",
+            "Tests.EndpointRpc",
+            "Client",
+            "NamedPipeEndpointsProxyMappingTests.cs"));
 
-        StringAssert.Contains(source, "Assert.AreEqual(41, EndpointOperationManifest.All.Count);");
-        StringAssert.Contains(source, "Assert.HasCount(41, methods);");
-        StringAssert.Contains(source, "Assert.HasCount(33, mutations);");
-        StringAssert.Contains(source, "operationIds.Distinct()");
+        StringAssert.Contains(paritySource, "typeof(IEndpoints).GetMethods()");
+        StringAssert.Contains(paritySource, "EndpointOperationTestAssertions.AreEquivalent");
+        StringAssert.Contains(paritySource, "Enum.GetValues<EndpointOperationId>()");
+        StringAssert.Contains(paritySource, "descriptor.CommitModel != EndpointMutationCommitModel.NoDurableMutation");
+        StringAssert.Contains(paritySource, "descriptor.MutatesState");
+        StringAssert.Contains(proxySource, "EndpointOperationManifest.All");
+        StringAssert.Contains(proxySource, "nameof(IEndpoints.RunSelfDiagnosticsAndRepairAsync)");
+        StringAssert.Contains(proxySource, "EndpointOperationTestAssertions.AreEquivalent");
     }
 
-    private static string[] ExtractAsyncMethodNames(string source) =>
-        Regex.Matches(source, @"\b(?<name>\w+Async)\s*\(")
-            .Select(match => match.Groups["name"].Value)
-            .Distinct(StringComparer.Ordinal)
+    private static void AssertMethodSetEquals(
+        IEnumerable<string> expected,
+        IEnumerable<string> actual,
+        string description)
+    {
+        var expectedItems = expected.ToArray();
+        var actualItems = actual.ToArray();
+        var expectedSet = expectedItems.ToHashSet(StringComparer.Ordinal);
+        var actualSet = actualItems.ToHashSet(StringComparer.Ordinal);
+        var expectedDuplicates = expectedItems.GroupBy(name => name, StringComparer.Ordinal)
+            .Where(group => group.Skip(1).Any())
+            .Select(group => group.Key)
             .ToArray();
+        var actualDuplicates = actualItems.GroupBy(name => name, StringComparer.Ordinal)
+            .Where(group => group.Skip(1).Any())
+            .Select(group => group.Key)
+            .ToArray();
+        var missing = expectedSet.Except(actualSet, StringComparer.Ordinal).ToArray();
+        var unexpected = actualSet.Except(expectedSet, StringComparer.Ordinal).ToArray();
+
+        Assert.IsTrue(expectedDuplicates.Length == 0,
+            $"{description} expected set has duplicates: {string.Join(", ", expectedDuplicates)}.");
+        Assert.IsTrue(actualDuplicates.Length == 0,
+            $"{description} has duplicate entries: {string.Join(", ", actualDuplicates)}.");
+        Assert.IsTrue(missing.Length == 0 && unexpected.Length == 0,
+            $"{description} differs. Missing: [{string.Join(", ", missing)}]. " +
+            $"Unexpected: [{string.Join(", ", unexpected)}].");
+    }
 
     private static string GetRepositoryRoot([CallerFilePath] string sourcePath = "")
     {
