@@ -150,6 +150,39 @@ public sealed class DataValidationTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Unit")]
+    public void SharedRequestValidationOwnsIdentifiersAndNullSafeSensitiveFields()
+    {
+        var masterPassword = new MasterPasswordChangeRequest
+        {
+            Token = Guid.Empty,
+            Password = null!,
+            NewPassword = null!
+        };
+        var profile = new UpdateUserProfileRequest
+        {
+            Token = Guid.Empty,
+            newFirstName = "Valid"
+        };
+        var password = new UpdatePasswordRequest
+        {
+            Id = Guid.Empty,
+            Description = string.Empty
+        };
+
+        MSTestAssert.IsFalse(masterPassword.Validate(out var masterErrors));
+        CollectionAssert.AreEquivalent(
+            new[] { "Token", "CurrentPassword", "NewPassword" },
+            masterErrors);
+        MSTestAssert.IsFalse(profile.Validate(out var profileErrors));
+        CollectionAssert.AreEquivalent(new[] { "Token" }, profileErrors);
+        MSTestAssert.IsFalse(password.Validate(out var passwordErrors));
+        CollectionAssert.AreEquivalent(new[] { "Id" }, passwordErrors);
+        MSTestAssert.IsFalse(DataValidation.IsValidPassword(null));
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Unit")]
     public void RegistrationRequest_ReportsEveryInvalidFieldWithoutHidingLaterErrors()
     {
         var request = new RegistrationRequest

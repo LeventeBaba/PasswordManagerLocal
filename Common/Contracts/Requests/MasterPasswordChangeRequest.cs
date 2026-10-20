@@ -13,6 +13,9 @@ public sealed class MasterPasswordChangeRequest
     {
         errors = new List<string>();
 
+        if (Token == Guid.Empty)
+            errors.Add("Token");
+
         if (!IsValidPassword(Password))
             errors.Add("CurrentPassword");
 

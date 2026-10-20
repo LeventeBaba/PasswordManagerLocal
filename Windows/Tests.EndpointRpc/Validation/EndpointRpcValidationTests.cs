@@ -143,41 +143,29 @@ public sealed class EndpointRpcValidationTests
     }
 
     [TestMethod]
-    public void ErrorCodeCategoryMismatchAndInvalidRestartFlagAreRejected()
+    public void ErrorCodeFailureKindMismatchAndInvalidRestartFlagAreRejected()
     {
         Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
             _validator.Validate(new EndpointRpcError(
                 EndpointRpcErrorCode.AuthenticationFailed,
-                EndpointRpcErrorCategory.Internal,
+                EndpointFailureKind.Generic,
                 "Authentication failed.",
-                1,
-                DateTimeOffset.UtcNow,
                 false,
-                false,
-                EndpointMutationOutcome.NotApplicable,
-                Recovery: null)));
+                EndpointMutationOutcome.NotApplicable)));
         Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
             _validator.Validate(new EndpointRpcError(
                 EndpointRpcErrorCode.BackendFailure,
-                EndpointRpcErrorCategory.Internal,
+                EndpointFailureKind.Generic,
                 "The endpoint operation failed.",
-                1,
-                DateTimeOffset.UtcNow,
-                false,
                 true,
-                EndpointMutationOutcome.NotApplicable,
-                Recovery: null)));
+                EndpointMutationOutcome.NotApplicable)));
         Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
             _validator.Validate(new EndpointRpcError(
                 EndpointRpcErrorCode.ValidationFailed,
-                EndpointRpcErrorCategory.Validation,
+                EndpointFailureKind.InvalidInput,
                 "The endpoint input is invalid.",
-                1,
-                DateTimeOffset.UtcNow,
-                false,
                 true,
-                EndpointMutationOutcome.NotApplicable,
-                Recovery: null)));
+                EndpointMutationOutcome.NotApplicable)));
     }
 
     [TestMethod]
@@ -186,71 +174,43 @@ public sealed class EndpointRpcValidationTests
         Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
             _validator.Validate(EndpointOperationId.UpdatePassword, new EndpointRpcError(
                 EndpointRpcErrorCode.BackendFailure,
-                EndpointRpcErrorCategory.Internal,
+                EndpointFailureKind.Generic,
                 "The endpoint operation failed.",
-                1,
-                DateTimeOffset.UtcNow,
-                IsRetryable: false,
                 RequiresProcessRestart: false,
-                EndpointMutationOutcome.Committed,
-                Recovery: null)));
+                EndpointMutationOutcome.Committed)));
     }
 
     [TestMethod]
-    public void OperationOutcomeUnknownAllowsEitherRestartValueWithInternalCategory()
+    public void OperationOutcomeUnknownAllowsEitherRestartValue()
     {
         foreach (var requiresProcessRestart in new[] { false, true })
         {
             _validator.Validate(new EndpointRpcError(
                 EndpointRpcErrorCode.OperationOutcomeUnknown,
-                EndpointRpcErrorCategory.Internal,
+                EndpointFailureKind.Generic,
                 "The endpoint operation may have executed, but its outcome could not be confirmed.",
-                1,
-                DateTimeOffset.UtcNow,
-                false,
                 requiresProcessRestart,
-                EndpointMutationOutcome.OutcomeUnknown,
-                Recovery: null));
+                EndpointMutationOutcome.OutcomeUnknown));
         }
-
-        Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
-            _validator.Validate(new EndpointRpcError(
-                EndpointRpcErrorCode.OperationOutcomeUnknown,
-                EndpointRpcErrorCategory.Cancellation,
-                "The endpoint operation may have executed, but its outcome could not be confirmed.",
-                1,
-                DateTimeOffset.UtcNow,
-                false,
-                false,
-                EndpointMutationOutcome.OutcomeUnknown,
-                Recovery: null)));
     }
 
     [TestMethod]
-    public void CorrelationMismatchErrorRequiresInternalCategoryAndCannotRequireRestart()
+    public void CorrelationMismatchErrorCannotRequireRestart()
     {
         _validator.Validate(new EndpointRpcError(
             EndpointRpcErrorCode.EndpointCorrelationMismatch,
-            EndpointRpcErrorCategory.Internal,
+            EndpointFailureKind.Generic,
             "The endpoint response correlation does not match the request.",
-            1,
-            DateTimeOffset.UtcNow,
             false,
-            false,
-            EndpointMutationOutcome.NotApplicable,
-            Recovery: null));
+            EndpointMutationOutcome.NotApplicable));
 
         Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
             _validator.Validate(new EndpointRpcError(
                 EndpointRpcErrorCode.EndpointCorrelationMismatch,
-                EndpointRpcErrorCategory.Internal,
+                EndpointFailureKind.Generic,
                 "The endpoint response correlation does not match the request.",
-                1,
-                DateTimeOffset.UtcNow,
-                false,
                 true,
-                EndpointMutationOutcome.NotApplicable,
-                Recovery: null)));
+                EndpointMutationOutcome.NotApplicable)));
     }
 
     [TestMethod]
@@ -259,161 +219,61 @@ public sealed class EndpointRpcValidationTests
         Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
             _validator.Validate(new EndpointRpcError(
                 (EndpointRpcErrorCode)int.MaxValue,
-                EndpointRpcErrorCategory.Internal,
+                EndpointFailureKind.Generic,
                 "The endpoint operation failed.",
-                1,
-                DateTimeOffset.UtcNow,
                 false,
-                false,
-                EndpointMutationOutcome.NotApplicable,
-                Recovery: null)));
-    }
-
-
-    [TestMethod]
-    public void PartialCommitMetadataIsOperationSpecificAndRestartIsIndependent()
-    {
-        foreach (var requiresProcessRestart in new[] { false, true })
-        {
-            foreach (var transferPending in new[] { false, true })
-            {
-                var enrollmentError = new EndpointRpcError(
-                    EndpointRpcErrorCode.OperationPartiallyCommitted,
-                    EndpointRpcErrorCategory.Recovery,
-                    "The device addition was committed, but enrollment recovery is required.",
-                    1,
-                    DateTimeOffset.UtcNow,
-                    IsRetryable: false,
-                    RequiresProcessRestart: requiresProcessRestart,
-                    EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
-                    CreateRecovery() with { TransferPending = transferPending });
-                var genericError = enrollmentError with { Recovery = null };
-
-                _validator.Validate(EndpointOperationId.AddDeviceByCode, enrollmentError);
-                _validator.Validate(EndpointOperationId.ChangeMasterPassword, genericError);
-                Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
-                    _validator.Validate(EndpointOperationId.AddDeviceByCode, genericError));
-                Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
-                    _validator.Validate(EndpointOperationId.ChangeMasterPassword, enrollmentError));
-            }
-        }
+                EndpointMutationOutcome.NotApplicable)));
     }
 
     [TestMethod]
-    public void PartialCommitRejectsRetryableOrInvalidEnrollmentMetadata()
+    public void FailureKindAndEnrollmentCodeMustFormAnAllowedPair()
     {
-        var retryable = new EndpointRpcError(
-            EndpointRpcErrorCode.OperationPartiallyCommitted,
-            EndpointRpcErrorCategory.Recovery,
-            "The device addition was committed, but enrollment recovery is required.",
-            1,
-            DateTimeOffset.UtcNow,
-            IsRetryable: true,
+        var enrollmentError = new EndpointRpcError(
+            EndpointRpcErrorCode.OperationRejected,
+            EndpointFailureKind.DeviceEnrollment,
+            "The device enrollment operation failed.",
             RequiresProcessRestart: false,
+            EndpointMutationOutcome.NotApplicable,
+            DeviceEnrollmentErrorCode.InvalidCode);
+        _validator.Validate(enrollmentError);
+
+        Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
+            _validator.Validate(enrollmentError with
+            {
+                FailureKind = EndpointFailureKind.Generic
+            }));
+        Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
+            _validator.Validate(enrollmentError with
+            {
+                EnrollmentErrorCode = null
+            }));
+        Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
+            _validator.Validate(enrollmentError with
+            {
+                EnrollmentErrorCode = (DeviceEnrollmentErrorCode)int.MaxValue
+            }));
+    }
+
+    [TestMethod]
+    public void PartialCommitUsesCommitModelAndRetainsEnrollmentCodeWithoutRecoveryIdentifiers()
+    {
+        var enrollmentError = new EndpointRpcError(
+            EndpointRpcErrorCode.OperationPartiallyCommitted,
+            EndpointFailureKind.DeviceEnrollment,
+            "The device addition was committed, but enrollment recovery is required.",
+            RequiresProcessRestart: true,
             EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
-            CreateRecovery());
-        var invalidRecovery = retryable with
+            DeviceEnrollmentErrorCode.NewDeviceConnectionFailed);
+        var genericError = enrollmentError with
         {
-            IsRetryable = false,
-            Recovery = CreateRecovery() with { EnrollmentCommitId = Guid.Empty }
+            FailureKind = EndpointFailureKind.Generic,
+            EnrollmentErrorCode = null
         };
 
-        Assert.ThrowsExactly<EndpointRpcPayloadException>(() => _validator.Validate(retryable));
+        _validator.Validate(EndpointOperationId.AddDeviceByCode, enrollmentError);
+        _validator.Validate(EndpointOperationId.ChangeMasterPassword, genericError);
         Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
-            _validator.Validate(EndpointOperationId.AddDeviceByCode, invalidRecovery));
-    }
-
-    [TestMethod]
-    public void EnrollmentRecoveryRejectsContradictoryBooleanCombinations()
-    {
-        var invalidRecoveryStates = new[]
-        {
-            CreateRecovery() with
-            {
-                RecoveryAvailable = false,
-                TransferPending = true,
-                RequiresSignedRemovalToUndo = true
-            },
-            CreateRecovery() with
-            {
-                RecoveryAvailable = false,
-                TransferPending = false,
-                RequiresSignedRemovalToUndo = false
-            },
-            CreateRecovery() with
-            {
-                RecoveryAvailable = false,
-                TransferPending = false,
-                RequiresSignedRemovalToUndo = true
-            },
-            CreateRecovery() with
-            {
-                RecoveryAvailable = true,
-                TransferPending = true,
-                RequiresSignedRemovalToUndo = false
-            },
-            CreateRecovery() with
-            {
-                RecoveryAvailable = true,
-                TransferPending = false,
-                RequiresSignedRemovalToUndo = false
-            }
-        };
-
-        foreach (var recovery in invalidRecoveryStates)
-        {
-            Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
-                _validator.Validate(
-                    EndpointOperationId.AddDeviceByCode,
-                    CreatePartialCommitError(recovery)));
-        }
-    }
-
-    [TestMethod]
-    public void EnrollmentRecoveryRejectsMissingIdentifiersAndUndefinedKind()
-    {
-        var invalidRecoveryStates = new[]
-        {
-            CreateRecovery() with { EnrollmentCommitId = Guid.Empty },
-            CreateRecovery() with { TargetDeviceId = Guid.Empty },
-            CreateRecovery() with { TargetOriginInstanceId = Guid.Empty },
-            CreateRecovery() with { RecoveryKind = (EndpointRecoveryKind)int.MaxValue }
-        };
-
-        foreach (var recovery in invalidRecoveryStates)
-        {
-            Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
-                _validator.Validate(
-                    EndpointOperationId.AddDeviceByCode,
-                    CreatePartialCommitError(recovery)));
-        }
-    }
-
-    [TestMethod]
-    public void OrdinaryAndUnknownErrorsCannotCarryRecoveryMetadata()
-    {
-        Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
-            _validator.Validate(new EndpointRpcError(
-                EndpointRpcErrorCode.Conflict,
-                EndpointRpcErrorCategory.Conflict,
-                "The endpoint operation conflicts with current state.",
-                1,
-                DateTimeOffset.UtcNow,
-                IsRetryable: false,
-                RequiresProcessRestart: false,
-                EndpointMutationOutcome.NotCommitted,
-                CreateRecovery())));
-        Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
-            _validator.Validate(new EndpointRpcError(
-                EndpointRpcErrorCode.OperationOutcomeUnknown,
-                EndpointRpcErrorCategory.Internal,
-                "The endpoint operation may have executed, but its outcome could not be confirmed.",
-                1,
-                DateTimeOffset.UtcNow,
-                IsRetryable: false,
-                RequiresProcessRestart: false,
-                EndpointMutationOutcome.OutcomeUnknown,
-                CreateRecovery())));
+            _validator.Validate(EndpointOperationId.DisconnectUserDevice, genericError));
     }
 
     [TestMethod]
@@ -467,28 +327,5 @@ public sealed class EndpointRpcValidationTests
         };
         Assert.ThrowsExactly<EndpointRpcPayloadException>(() => validator.Validate(response));
     }
-
-    private static EndpointRpcError CreatePartialCommitError(EndpointRecoveryMetadata recovery) =>
-        new(
-            EndpointRpcErrorCode.OperationPartiallyCommitted,
-            EndpointRpcErrorCategory.Recovery,
-            "The device addition was committed, but enrollment recovery is required.",
-            1,
-            DateTimeOffset.UtcNow,
-            IsRetryable: false,
-            RequiresProcessRestart: false,
-            EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
-            recovery);
-
-    private static EndpointRecoveryMetadata CreateRecovery() =>
-        new(
-            EndpointRecoveryKind.DeviceEnrollment,
-            Guid.Parse("22222222-2222-2222-2222-222222222222"),
-            Guid.Parse("33333333-3333-3333-3333-333333333333"),
-            Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            RecoveryAvailable: true,
-            TransferPending: true,
-            RequiresSignedRemovalToUndo: true);
-
 
 }

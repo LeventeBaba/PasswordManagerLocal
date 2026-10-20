@@ -41,7 +41,8 @@ public static class DataValidation
         return LastNameRegex.IsMatch(lastName);
     }
 
-    public static bool IsValidPassword(byte[] password) =>
+    public static bool IsValidPassword(byte[]? password) =>
+        password is not null &&
         password.Length >= PasswordMinLength && password.Length <= PasswordMaxLength;
 
 

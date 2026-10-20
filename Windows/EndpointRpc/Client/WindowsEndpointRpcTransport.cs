@@ -146,7 +146,9 @@ public sealed class WindowsEndpointRpcTransport : IEndpointRpcTransport
             }
             catch (IpcRemoteException exception)
             {
-                var mapped = EndpointRpcTransportErrorMapper.Map(exception.Error);
+                var mapped = EndpointRpcTransportErrorMapper.Map(
+                    exception.Error,
+                    isMutatingOperation: treatPostHandlerFailureAsUncertain);
                 if (treatPostHandlerFailureAsUncertain &&
                     IsPostHandlerFailure(exception.Error.ErrorCode))
                 {

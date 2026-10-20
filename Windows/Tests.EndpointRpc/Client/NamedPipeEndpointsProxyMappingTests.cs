@@ -24,14 +24,10 @@ public sealed class NamedPipeEndpointsProxyMappingTests
                 : EndpointMutationOutcome.NotApplicable;
             var remoteError = new EndpointRpcError(
                 EndpointRpcErrorCode.BackendFailure,
-                EndpointRpcErrorCategory.Internal,
+                EndpointFailureKind.Generic,
                 "The endpoint operation failed.",
-                1,
-                DateTimeOffset.UtcNow,
-                false,
-                false,
-                mutationOutcome,
-                Recovery: null);
+                RequiresProcessRestart: false,
+                mutationOutcome);
             return Task.FromException<byte[]>(new EndpointRpcRemoteException(remoteError));
         });
         var proxy = new NamedPipeEndpointsProxy(
@@ -69,7 +65,7 @@ public sealed class NamedPipeEndpointsProxyMappingTests
             .ToArray();
 
         foreach (var invocation in invocations)
-            await Assert.ThrowsExactlyAsync<EndpointRpcRemoteException>(invocation.Invoke);
+            await Assert.ThrowsExactlyAsync<EndpointFailureException>(invocation.Invoke);
 
         CollectionAssert.AreEqual(
             expectedOperationIds.Cast<object>().ToArray(),
@@ -148,14 +144,10 @@ public sealed class NamedPipeEndpointsProxyMappingTests
             return Task.FromException<byte[]>(new EndpointRpcRemoteException(
                 new EndpointRpcError(
                     EndpointRpcErrorCode.Disconnected,
-                    EndpointRpcErrorCategory.Availability,
+                    EndpointFailureKind.Generic,
                     "The endpoint connection is unavailable.",
-                    1,
-                    DateTimeOffset.UtcNow,
-                    true,
-                    false,
-                    EndpointMutationOutcome.NotCommitted,
-                    Recovery: null)));
+                    RequiresProcessRestart: false,
+                    EndpointMutationOutcome.NotCommitted)));
         });
         var proxy = new NamedPipeEndpointsProxy(
             transport,
@@ -177,21 +169,17 @@ public sealed class NamedPipeEndpointsProxyMappingTests
             return Task.FromException<byte[]>(new EndpointRpcRemoteException(
                 new EndpointRpcError(
                     EndpointRpcErrorCode.ResponsePayloadTooLarge,
-                    EndpointRpcErrorCategory.Validation,
+                    EndpointFailureKind.Generic,
                     "The endpoint response payload exceeds the permitted size.",
-                    1,
-                    DateTimeOffset.UtcNow,
-                    false,
-                    false,
-                    EndpointMutationOutcome.NotCommitted,
-                    Recovery: null)));
+                    RequiresProcessRestart: false,
+                    EndpointMutationOutcome.NotCommitted)));
         });
         var proxy = new NamedPipeEndpointsProxy(
             transport,
             new EndpointRpcSerializer(),
             new EndpointRpcContractValidator());
 
-        await Assert.ThrowsExactlyAsync<EndpointRpcRemoteException>(() =>
+        await Assert.ThrowsExactlyAsync<EndpointFailureException>(() =>
             proxy.LogoutAsync(EndpointRpcTestData.Token));
         Assert.AreEqual(1, sends);
     }
@@ -205,24 +193,61 @@ public sealed class NamedPipeEndpointsProxyMappingTests
             Task.FromException<byte[]>(new EndpointRpcRemoteException(
                 new EndpointRpcError(
                     EndpointRpcErrorCode.ValidationFailed,
-                    EndpointRpcErrorCategory.Validation,
+                    EndpointFailureKind.InvalidInput,
                     "The endpoint input is invalid.",
-                    1,
-                    DateTimeOffset.UtcNow,
-                    false,
-                    false,
-                    EndpointMutationOutcome.NotCommitted,
-                    Recovery: null))));
+                    RequiresProcessRestart: false,
+                    EndpointMutationOutcome.NotCommitted))));
         var proxy = new NamedPipeEndpointsProxy(
             transport,
             new EndpointRpcSerializer(),
             new EndpointRpcContractValidator());
 
-        var exception = await Assert.ThrowsExactlyAsync<InvalidInputException>(() =>
+        var exception = await Assert.ThrowsExactlyAsync<EndpointFailureException>(() =>
             proxy.DeleteUserAccountAsync(EndpointRpcTestData.Token, password));
 
         CollectionAssert.AreEqual(expected, password);
+        Assert.AreEqual(EndpointFailureKind.InvalidInput, exception.FailureKind);
         Assert.IsFalse(exception.Message.Contains(Convert.ToBase64String(password), StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task StableFailureKindsCrossTheProxyWithoutRecreatingBackendExceptions()
+    {
+        var cases = new (EndpointRpcErrorCode Code, EndpointFailureKind Kind, DeviceEnrollmentErrorCode? Enrollment)[]
+        {
+            (EndpointRpcErrorCode.AuthenticationFailed, EndpointFailureKind.InvalidCredentials, null),
+            (EndpointRpcErrorCode.AuthorizationFailed, EndpointFailureKind.InvalidSession, null),
+            (EndpointRpcErrorCode.NotFound, EndpointFailureKind.NotFound, null),
+            (EndpointRpcErrorCode.Conflict, EndpointFailureKind.DuplicatePasswordName, null),
+            (EndpointRpcErrorCode.OperationRejected, EndpointFailureKind.LimitReached, null),
+            (EndpointRpcErrorCode.OperationRejected, EndpointFailureKind.DeviceEnrollment,
+                DeviceEnrollmentErrorCode.InvalidCode),
+            (EndpointRpcErrorCode.BackendFailure, EndpointFailureKind.Generic, null)
+        };
+
+        foreach (var (code, kind, enrollment) in cases)
+        {
+            var remoteError = new EndpointRpcError(
+                code,
+                kind,
+                "A fixed safe endpoint message.",
+                RequiresProcessRestart: false,
+                EndpointMutationOutcome.NotApplicable,
+                enrollment);
+            var transport = new RecordingEndpointRpcTransport((_, _, _) =>
+                Task.FromException<byte[]>(new EndpointRpcRemoteException(remoteError)));
+            await using var proxy = new NamedPipeEndpointsProxy(
+                transport,
+                new EndpointRpcSerializer(),
+                new EndpointRpcContractValidator());
+
+            var exception = await Assert.ThrowsExactlyAsync<EndpointFailureException>(() =>
+                proxy.GetLocalDeviceInfoAsync());
+
+            Assert.AreEqual(kind, exception.FailureKind, code.ToString());
+            Assert.AreEqual(enrollment, exception.EnrollmentErrorCode, code.ToString());
+            Assert.IsInstanceOfType<EndpointRpcRemoteException>(exception.InnerException, code.ToString());
+        }
     }
 
 
@@ -265,24 +290,13 @@ public sealed class NamedPipeEndpointsProxyMappingTests
     public async Task PartialCommitMapsToDedicatedClientExceptionWithoutReplay()
     {
         var sends = 0;
-        var recovery = new EndpointRecoveryMetadata(
-            EndpointRecoveryKind.DeviceEnrollment,
-            Guid.Parse("22222222-2222-2222-2222-222222222222"),
-            Guid.Parse("33333333-3333-3333-3333-333333333333"),
-            Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            RecoveryAvailable: true,
-            TransferPending: true,
-            RequiresSignedRemovalToUndo: true);
         var remoteError = new EndpointRpcError(
             EndpointRpcErrorCode.OperationPartiallyCommitted,
-            EndpointRpcErrorCategory.Recovery,
+            EndpointFailureKind.DeviceEnrollment,
             "The device addition was committed, but enrollment recovery is required.",
-            1,
-            DateTimeOffset.UtcNow,
-            IsRetryable: false,
             RequiresProcessRestart: true,
             EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
-            recovery);
+            DeviceEnrollmentErrorCode.NewDeviceConnectionFailed);
         var transport = new RecordingEndpointRpcTransport((_, _, _) =>
         {
             sends++;
@@ -302,22 +316,20 @@ public sealed class NamedPipeEndpointsProxyMappingTests
         Assert.IsTrue(exception.RequiresRecovery);
         Assert.IsTrue(exception.RequiresProcessRestart);
         Assert.IsFalse(exception.BlindRetryIsSafe);
-        Assert.AreEqual(recovery, exception.Recovery);
+        var inner = Assert.IsInstanceOfType<EndpointRpcRemoteException>(exception.InnerException);
+        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, inner.Error.FailureKind);
+        Assert.AreEqual(DeviceEnrollmentErrorCode.NewDeviceConnectionFailed, inner.Error.EnrollmentErrorCode);
     }
 
     [TestMethod]
-    public async Task GenericPartialCommitMapsWithoutEnrollmentRecoveryMetadata()
+    public async Task GenericPartialCommitMapsWithoutEnrollmentDetails()
     {
         var remoteError = new EndpointRpcError(
             EndpointRpcErrorCode.OperationPartiallyCommitted,
-            EndpointRpcErrorCategory.Recovery,
+            EndpointFailureKind.Generic,
             "The endpoint operation committed authoritative state, but required follow-up work did not complete.",
-            1,
-            DateTimeOffset.UtcNow,
-            IsRetryable: false,
             RequiresProcessRestart: false,
-            EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
-            Recovery: null);
+            EndpointMutationOutcome.PartiallyCommittedRecoveryRequired);
         var transport = new RecordingEndpointRpcTransport((_, _, _) =>
             Task.FromException<byte[]>(new EndpointRpcRemoteException(remoteError)));
         var proxy = new NamedPipeEndpointsProxy(transport, new EndpointRpcSerializer(), new EndpointRpcContractValidator());
@@ -328,23 +340,18 @@ public sealed class NamedPipeEndpointsProxyMappingTests
             proxy.ChangeMasterPasswordAsync(request.Request));
 
         Assert.AreEqual(EndpointOperationId.ChangeMasterPassword, exception.OperationId);
-        Assert.IsNull(exception.Recovery);
         Assert.IsFalse(exception.BlindRetryIsSafe);
     }
 
     [TestMethod]
-    public async Task MissingEnrollmentRecoveryMetadataMapsToOutcomeUnknown()
+    public async Task MissingEnrollmentErrorCodeMapsToOutcomeUnknown()
     {
         var remoteError = new EndpointRpcError(
             EndpointRpcErrorCode.OperationPartiallyCommitted,
-            EndpointRpcErrorCategory.Recovery,
+            EndpointFailureKind.DeviceEnrollment,
             "The device addition was committed, but enrollment recovery is required.",
-            1,
-            DateTimeOffset.UtcNow,
-            IsRetryable: false,
             RequiresProcessRestart: true,
-            EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
-            Recovery: null);
+            EndpointMutationOutcome.PartiallyCommittedRecoveryRequired);
         var transport = new RecordingEndpointRpcTransport((_, _, _) =>
             Task.FromException<byte[]>(new EndpointRpcRemoteException(remoteError)));
         var proxy = new NamedPipeEndpointsProxy(transport, new EndpointRpcSerializer(), new EndpointRpcContractValidator());
@@ -361,14 +368,10 @@ public sealed class NamedPipeEndpointsProxyMappingTests
     {
         var error = new EndpointRpcError(
             EndpointRpcErrorCode.Conflict,
-            EndpointRpcErrorCategory.Conflict,
+            EndpointFailureKind.Generic,
             "The endpoint operation conflicts with current state.",
-            1,
-            DateTimeOffset.UtcNow,
-            IsRetryable: false,
             RequiresProcessRestart: false,
-            EndpointMutationOutcome.NotCommitted,
-            Recovery: null);
+            EndpointMutationOutcome.NotCommitted);
         var transport = new RecordingEndpointRpcTransport((_, _, _) =>
             Task.FromException<byte[]>(new EndpointRpcRemoteException(error)));
         var proxy = new NamedPipeEndpointsProxy(
@@ -376,11 +379,13 @@ public sealed class NamedPipeEndpointsProxyMappingTests
             new EndpointRpcSerializer(),
             new EndpointRpcContractValidator());
 
-        var exception = await Assert.ThrowsExactlyAsync<EndpointRpcRemoteException>(() =>
+        var exception = await Assert.ThrowsExactlyAsync<EndpointFailureException>(() =>
             proxy.AddDeviceByCodeAsync(EndpointRpcTestData.Token, "ABCD2345"));
 
-        Assert.AreEqual(EndpointRpcErrorCode.Conflict, exception.Error.ErrorCode);
-        Assert.AreEqual(EndpointMutationOutcome.NotCommitted, exception.Error.MutationOutcome);
+        Assert.AreEqual(EndpointFailureKind.Generic, exception.FailureKind);
+        var inner = Assert.IsInstanceOfType<EndpointRpcRemoteException>(exception.InnerException);
+        Assert.AreEqual(EndpointRpcErrorCode.Conflict, inner.Error.ErrorCode);
+        Assert.AreEqual(EndpointMutationOutcome.NotCommitted, inner.Error.MutationOutcome);
     }
 
     private static IReadOnlyList<EndpointProxyInvocation> CreateInvocations(NamedPipeEndpointsProxy proxy)

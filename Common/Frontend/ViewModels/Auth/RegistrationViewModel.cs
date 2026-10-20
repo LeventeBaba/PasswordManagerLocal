@@ -430,6 +430,12 @@ public sealed class RegistrationViewModel : ViewModelBase
             if (!ApplyBackendValidationErrors(ex))
                 ShowSafeErrorMessage(ex);
         }
+        catch (EndpointFailureException ex) when (!registrationCommitted)
+        {
+            MarkAllFieldsTouched();
+            if (!ApplyEndpointFailure(ex))
+                ShowSafeErrorMessage(ex);
+        }
         catch (Exception ex)
         {
             if (registrationCommitted)
@@ -530,6 +536,25 @@ public sealed class RegistrationViewModel : ViewModelBase
             RaiseRegistrationValidationChanged();
 
         return applied;
+    }
+
+    private bool ApplyEndpointFailure(EndpointFailureException exception)
+    {
+        var messageKey = exception.FailureKind switch
+        {
+            EndpointFailureKind.RegistrationUsernameUnavailable =>
+                "Validation_Username_Unavailable",
+            EndpointFailureKind.RegistrationUsernameAvailabilityIndeterminate =>
+                "Validation_Username_AvailabilityIndeterminate",
+            _ => null
+        };
+        if (messageKey is null)
+            return false;
+
+        _usernameTouched = true;
+        _usernameServerValidationMessage = GetTranslation(messageKey);
+        RaiseRegistrationValidationChanged();
+        return true;
     }
 
     private string? GetUsernameValidationMessage()

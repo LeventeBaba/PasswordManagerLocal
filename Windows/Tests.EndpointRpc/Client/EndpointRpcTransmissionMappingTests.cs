@@ -88,21 +88,19 @@ public sealed class EndpointRpcTransmissionMappingTests
     {
         var error = new EndpointRpcError(
             EndpointRpcErrorCode.Conflict,
-            EndpointRpcErrorCategory.Conflict,
+            EndpointFailureKind.Generic,
             "The endpoint operation conflicts with current state.",
-            1,
-            DateTimeOffset.UtcNow,
-            false,
-            false,
-            EndpointMutationOutcome.NotCommitted,
-            Recovery: null);
+            RequiresProcessRestart: false,
+            EndpointMutationOutcome.NotCommitted);
         var transport = new RecordingEndpointRpcTransport((_, _, _) =>
             Task.FromException<byte[]>(new EndpointRpcRemoteException(error)));
         await using var proxy = CreateProxy(transport);
 
-        var exception = await Assert.ThrowsExactlyAsync<EndpointRpcRemoteException>(() =>
+        var exception = await Assert.ThrowsExactlyAsync<EndpointFailureException>(() =>
             proxy.SetLocalUserSyncOnAsync(EndpointRpcTestData.Token, true));
-        Assert.AreEqual(EndpointRpcErrorCode.Conflict, exception.Error.ErrorCode);
+        Assert.AreEqual(EndpointFailureKind.Generic, exception.FailureKind);
+        var remote = Assert.IsInstanceOfType<EndpointRpcRemoteException>(exception.InnerException);
+        Assert.AreEqual(EndpointRpcErrorCode.Conflict, remote.Error.ErrorCode);
         Assert.HasCount(1, transport.Operations);
     }
 
@@ -113,14 +111,10 @@ public sealed class EndpointRpcTransmissionMappingTests
         {
             var error = new EndpointRpcError(
                 EndpointRpcErrorCode.OperationOutcomeUnknown,
-                EndpointRpcErrorCategory.Internal,
+                EndpointFailureKind.Generic,
                 "The endpoint operation may have executed, but its outcome could not be confirmed.",
-                1,
-                DateTimeOffset.UtcNow,
-                false,
                 requiresProcessRestart,
-                EndpointMutationOutcome.OutcomeUnknown,
-                Recovery: null);
+                EndpointMutationOutcome.OutcomeUnknown);
             var transport = new RecordingEndpointRpcTransport((_, _, _) =>
                 Task.FromException<byte[]>(new EndpointRpcRemoteException(error)));
             await using var proxy = CreateProxy(transport);

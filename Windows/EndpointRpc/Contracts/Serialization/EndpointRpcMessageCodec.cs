@@ -132,7 +132,6 @@ public sealed class EndpointRpcMessageCodec
 
         var error = _serializer.Deserialize(payload, EndpointRpcJsonContext.Default.EndpointRpcError);
         _validator.Validate(error);
-        ValidateCorrelation(expectedCorrelationId, error.CorrelationId);
         return EndpointRpcTransportResponse.Failure(error);
     }
 

@@ -25,8 +25,8 @@ public sealed class EndpointRpcBackendErrorMapperRestartTests
 
         Assert.AreEqual(EndpointRpcErrorCode.RuntimeUnavailable, error.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.NotCommitted, error.MutationOutcome);
+        Assert.AreEqual(EndpointFailureKind.Generic, error.FailureKind);
         Assert.IsTrue(error.RequiresProcessRestart);
-        Assert.IsNull(error.Recovery);
     }
 
     [TestMethod]
@@ -54,8 +54,8 @@ public sealed class EndpointRpcBackendErrorMapperRestartTests
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, error.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.PartiallyCommittedRecoveryRequired, error.MutationOutcome);
+        Assert.AreEqual(EndpointFailureKind.Generic, error.FailureKind);
         Assert.IsTrue(error.RequiresProcessRestart);
-        Assert.IsNull(error.Recovery);
     }
 
     [TestMethod]
@@ -149,8 +149,9 @@ public sealed class EndpointRpcBackendErrorMapperRestartTests
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, error.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.PartiallyCommittedRecoveryRequired, error.MutationOutcome);
+        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, error.FailureKind);
+        Assert.AreEqual(DeviceEnrollmentErrorCode.Unknown, error.EnrollmentErrorCode);
         Assert.IsTrue(error.RequiresProcessRestart);
-        Assert.IsNotNull(error.Recovery);
     }
 
     [TestMethod]

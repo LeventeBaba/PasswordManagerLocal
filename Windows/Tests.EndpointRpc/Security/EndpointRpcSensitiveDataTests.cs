@@ -29,21 +29,17 @@ public sealed class EndpointRpcSensitiveDataTests
             return Task.FromException<byte[]>(new EndpointRpcRemoteException(
                 new EndpointRpcError(
                     EndpointRpcErrorCode.BackendFailure,
-                    EndpointRpcErrorCategory.Internal,
+                    EndpointFailureKind.Generic,
                     "The endpoint operation failed.",
-                    1,
-                    DateTimeOffset.UtcNow,
-                    false,
-                    false,
-                    EndpointMutationOutcome.NotCommitted,
-                    Recovery: null)));
+                    RequiresProcessRestart: false,
+                    EndpointMutationOutcome.NotCommitted)));
         });
         var proxy = new NamedPipeEndpointsProxy(
             transport,
             new EndpointRpcSerializer(),
             new EndpointRpcContractValidator());
 
-        await Assert.ThrowsExactlyAsync<EndpointRpcRemoteException>(() =>
+        await Assert.ThrowsExactlyAsync<EndpointFailureException>(() =>
             proxy.DeleteUserAccountAsync(EndpointRpcTestData.Token, EndpointRpcTestData.Password()));
 
         Assert.IsNotNull(observedPayload);
@@ -176,26 +172,16 @@ public sealed class EndpointRpcSensitiveDataTests
 
 
     [TestMethod]
-    public void PartialCommitRecoveryMetadataContainsOnlySafeIdentifiersAndFlags()
+    public void PartialCommitFailureMetadataContainsOnlyAllowlistedSafeValues()
     {
         var serializer = new EndpointRpcSerializer();
         var error = new EndpointRpcError(
             EndpointRpcErrorCode.OperationPartiallyCommitted,
-            EndpointRpcErrorCategory.Recovery,
+            EndpointFailureKind.DeviceEnrollment,
             "The device addition was committed, but enrollment recovery is required.",
-            1,
-            DateTimeOffset.UtcNow,
-            IsRetryable: false,
             RequiresProcessRestart: false,
             EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
-            new EndpointRecoveryMetadata(
-                EndpointRecoveryKind.DeviceEnrollment,
-                Guid.Parse("22222222-2222-2222-2222-222222222222"),
-                Guid.Parse("33333333-3333-3333-3333-333333333333"),
-                Guid.Parse("11111111-1111-1111-1111-111111111111"),
-                RecoveryAvailable: true,
-                TransferPending: true,
-                RequiresSignedRemovalToUndo: true));
+            DeviceEnrollmentErrorCode.NewDeviceConnectionFailed);
 
         var payload = serializer.Serialize(error, EndpointRpcJsonContext.Default.EndpointRpcError);
         var json = System.Text.Encoding.UTF8.GetString(payload);
@@ -206,6 +192,10 @@ public sealed class EndpointRpcSensitiveDataTests
         Assert.IsFalse(json.Contains("key", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(json.Contains("snapshot", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(json.Contains("path", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(json.Contains("correlationId", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(json.Contains("validationErrors", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(json.Contains("targetDeviceId", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(json.Contains("enrollmentCommitId", StringComparison.OrdinalIgnoreCase));
         Array.Clear(payload);
     }
 

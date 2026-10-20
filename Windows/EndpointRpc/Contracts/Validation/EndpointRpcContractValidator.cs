@@ -203,14 +203,11 @@ public sealed class EndpointRpcContractValidator
     {
         ArgumentNullException.ThrowIfNull(error);
         if (!Enum.IsDefined(error.ErrorCode) ||
-            !Enum.IsDefined(error.ErrorCategory) ||
+            !Enum.IsDefined(error.FailureKind) ||
             !Enum.IsDefined(error.MutationOutcome) ||
-            error.CorrelationId <= 0 ||
             string.IsNullOrWhiteSpace(error.SafeMessage) ||
             error.SafeMessage.Length > EndpointRpcLimits.MaximumSafeErrorMessageLength ||
-            error.OccurredAtUtc.Offset != TimeSpan.Zero ||
-            !HasExpectedErrorCategory(error.ErrorCode, error.ErrorCategory) ||
-            !HasValidValidationErrors(error) ||
+            !HasValidFailureKind(error) ||
             !HasValidMutationOutcome(error) ||
             (error.RequiresProcessRestart &&
                 error.ErrorCode is not EndpointRpcErrorCode.RuntimeUnavailable and
@@ -226,97 +223,83 @@ public sealed class EndpointRpcContractValidator
         Validate(error);
         var descriptor = EndpointOperationManifest.Get(operationId);
         var valid = descriptor.MutatesState
-            ? HasValidMutationOutcomeForMutation(operationId, descriptor, error)
-            : error.MutationOutcome == EndpointMutationOutcome.NotApplicable && error.Recovery is null;
+            ? HasValidMutationOutcomeForMutation(descriptor, error)
+            : error.MutationOutcome == EndpointMutationOutcome.NotApplicable;
 
         if (!valid)
             throw new EndpointRpcPayloadException("The endpoint RPC error does not match the operation mutation policy.");
     }
 
-    private static bool HasValidValidationErrors(EndpointRpcError error)
-    {
-        if (error.ValidationErrors is null)
-            return true;
-
-        if (error.ErrorCode != EndpointRpcErrorCode.ValidationFailed ||
-            error.ValidationErrors.Count == 0 ||
-            error.ValidationErrors.Count > EndpointRpcLimits.MaximumValidationErrorFields)
-        {
-            return false;
-        }
-
-        return error.ValidationErrors.All(static field =>
-            !string.IsNullOrWhiteSpace(field) &&
-            field.Length <= EndpointRpcLimits.MaximumValidationErrorFieldLength);
-    }
-
     private static bool HasValidMutationOutcome(EndpointRpcError error) => error.ErrorCode switch
     {
         EndpointRpcErrorCode.OperationPartiallyCommitted =>
-            error.MutationOutcome == EndpointMutationOutcome.PartiallyCommittedRecoveryRequired &&
-            !error.IsRetryable &&
-            (error.Recovery is null || ValidRecovery(error.Recovery)),
+            error.MutationOutcome == EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
         EndpointRpcErrorCode.OperationOutcomeUnknown =>
-            error.MutationOutcome == EndpointMutationOutcome.OutcomeUnknown &&
-            !error.IsRetryable &&
-            error.Recovery is null,
+            error.MutationOutcome == EndpointMutationOutcome.OutcomeUnknown,
         _ =>
-            error.MutationOutcome is EndpointMutationOutcome.NotApplicable or EndpointMutationOutcome.NotCommitted &&
-            error.Recovery is null
+            error.MutationOutcome is EndpointMutationOutcome.NotApplicable or EndpointMutationOutcome.NotCommitted
     };
 
     private static bool HasValidMutationOutcomeForMutation(
-        EndpointOperationId operationId,
         EndpointOperationDescriptor descriptor,
         EndpointRpcError error)
     {
         if (error.ErrorCode == EndpointRpcErrorCode.OperationPartiallyCommitted)
-        {
-            if (!descriptor.CanPartiallyCommit)
-                return false;
-
-            return operationId == EndpointOperationId.AddDeviceByCode
-                ? ValidRecovery(error.Recovery) && error.Recovery!.RecoveryKind == EndpointRecoveryKind.DeviceEnrollment
-                : error.Recovery is null;
-        }
+            return descriptor.CanPartiallyCommit;
 
         if (error.ErrorCode == EndpointRpcErrorCode.OperationOutcomeUnknown)
             return error.MutationOutcome == EndpointMutationOutcome.OutcomeUnknown;
 
-        return error.MutationOutcome == EndpointMutationOutcome.NotCommitted && error.Recovery is null;
+        return error.MutationOutcome == EndpointMutationOutcome.NotCommitted;
     }
 
-    private static bool ValidRecovery(EndpointRecoveryMetadata? recovery) =>
-        recovery is not null &&
-        recovery.RecoveryKind == EndpointRecoveryKind.DeviceEnrollment &&
-        recovery.TargetDeviceId != Guid.Empty &&
-        recovery.TargetOriginInstanceId != Guid.Empty &&
-        recovery.EnrollmentCommitId != Guid.Empty &&
-        recovery.RecoveryAvailable &&
-        recovery.RequiresSignedRemovalToUndo;
-
-
-    private static bool HasExpectedErrorCategory(
-        EndpointRpcErrorCode errorCode,
-        EndpointRpcErrorCategory errorCategory) => errorCode switch
+    private static bool HasValidFailureKind(EndpointRpcError error)
     {
-        EndpointRpcErrorCode.AuthenticationFailed => errorCategory == EndpointRpcErrorCategory.Authentication,
-        EndpointRpcErrorCode.AuthorizationFailed => errorCategory == EndpointRpcErrorCategory.Authorization,
+        if (error.EnrollmentErrorCode.HasValue && !Enum.IsDefined(error.EnrollmentErrorCode.Value))
+            return false;
+        if ((error.FailureKind == EndpointFailureKind.DeviceEnrollment) != error.EnrollmentErrorCode.HasValue)
+            return false;
+
+        return error.ErrorCode switch
+        {
+        EndpointRpcErrorCode.AuthenticationFailed => error.FailureKind == EndpointFailureKind.InvalidCredentials,
+        EndpointRpcErrorCode.AuthorizationFailed => error.FailureKind is EndpointFailureKind.InvalidSession or EndpointFailureKind.Generic,
         EndpointRpcErrorCode.ValidationFailed or EndpointRpcErrorCode.OperationRejected or
-            EndpointRpcErrorCode.RequestPayloadTooLarge or EndpointRpcErrorCode.ResponsePayloadTooLarge or
-            EndpointRpcErrorCode.UnknownOperation => errorCategory == EndpointRpcErrorCategory.Validation,
-        EndpointRpcErrorCode.NotFound => errorCategory == EndpointRpcErrorCategory.NotFound,
-        EndpointRpcErrorCode.Conflict => errorCategory == EndpointRpcErrorCategory.Conflict,
+            EndpointRpcErrorCode.RequestPayloadTooLarge =>
+                error.FailureKind is EndpointFailureKind.InvalidInput or
+                    EndpointFailureKind.LimitReached or
+                    EndpointFailureKind.RegistrationUsernameUnavailable or
+                    EndpointFailureKind.RegistrationUsernameAvailabilityIndeterminate or
+                    EndpointFailureKind.DeviceEnrollment or
+                    EndpointFailureKind.Generic,
+        EndpointRpcErrorCode.ResponsePayloadTooLarge or EndpointRpcErrorCode.UnknownOperation =>
+            error.FailureKind == EndpointFailureKind.Generic,
+        EndpointRpcErrorCode.NotFound =>
+            error.FailureKind is EndpointFailureKind.NotFound or EndpointFailureKind.DeviceEnrollment,
+        EndpointRpcErrorCode.Conflict =>
+            error.FailureKind is EndpointFailureKind.DuplicatePasswordName or
+                EndpointFailureKind.DuplicatePasswordTagName or
+                EndpointFailureKind.DuplicateCustomColorName or
+                EndpointFailureKind.DuplicateCustomColorCode or
+                EndpointFailureKind.DeviceEnrollment or
+                EndpointFailureKind.Generic,
         EndpointRpcErrorCode.InteractiveSessionUnavailable or EndpointRpcErrorCode.RuntimeUnavailable or
-            EndpointRpcErrorCode.Disconnected => errorCategory == EndpointRpcErrorCategory.Availability,
-        EndpointRpcErrorCode.OperationCancelled => errorCategory == EndpointRpcErrorCategory.Cancellation,
-        EndpointRpcErrorCode.OperationPartiallyCommitted => errorCategory == EndpointRpcErrorCategory.Recovery,
-        EndpointRpcErrorCode.OperationOutcomeUnknown or
-            EndpointRpcErrorCode.BackendFailure or
+            EndpointRpcErrorCode.Disconnected =>
+                error.FailureKind is EndpointFailureKind.DeviceIdentityUnavailable or
+                    EndpointFailureKind.DeviceEnrollment or
+                    EndpointFailureKind.Generic,
+        EndpointRpcErrorCode.OperationCancelled or EndpointRpcErrorCode.OperationOutcomeUnknown or
             EndpointRpcErrorCode.EndpointCorrelationMismatch =>
-                errorCategory == EndpointRpcErrorCategory.Internal,
+                error.FailureKind == EndpointFailureKind.Generic,
+        EndpointRpcErrorCode.OperationPartiallyCommitted =>
+            error.FailureKind is EndpointFailureKind.DeviceEnrollment or EndpointFailureKind.Generic,
+        EndpointRpcErrorCode.BackendFailure =>
+            error.FailureKind is EndpointFailureKind.DataIntegrity or
+                EndpointFailureKind.DeviceEnrollment or
+                EndpointFailureKind.Generic,
         _ => false
-    };
+        };
+    }
 
     private static bool Validate(EmptyEndpointRequest value) => true;
     private static bool Validate(EmptyEndpointResponse value) => true;
@@ -329,13 +312,14 @@ public sealed class EndpointRpcContractValidator
     private static bool Validate(LogoutEndpointRequest value) => ValidGuid(value.Token);
     private static bool Validate(GetAuthSessionStatusEndpointRequest value) => ValidGuid(value.Token);
     private static bool Validate(ChangeMasterPasswordEndpointRequest value) =>
-        value.Request is not null && ValidGuid(value.Request.Token) &&
+        value.Request is not null &&
         ValidSensitive(value.Request.Password) && ValidSensitive(value.Request.NewPassword) &&
         value.Request.Validate(out _);
     private static bool Validate(GetUserProfileInfoEndpointRequest value) => ValidGuid(value.Token);
     private static bool Validate(DeleteUserAccountEndpointRequest value) => ValidGuid(value.Token) && ValidSensitive(value.Password);
     private static bool Validate(ChangeUsernameEndpointRequest value) => ValidGuid(value.Token) && DataValidation.IsValidUsername(value.NewUsername);
-    private static bool Validate(UpdateUserProfileInfoEndpointRequest value) => value.Request is not null && ValidGuid(value.Request.Token) && value.Request.Validate(out _);
+    private static bool Validate(UpdateUserProfileInfoEndpointRequest value) =>
+        value.Request is not null && value.Request.Validate(out _);
     private static bool Validate(GetLocalUserSyncOnEndpointRequest value) => ValidGuid(value.Token);
     private static bool Validate(SetLocalUserSyncOnEndpointRequest value) => ValidGuid(value.Token);
     private static bool Validate(SetLocalDeviceNameEndpointRequest value) => ValidGuid(value.Token) && DataValidation.IsValidUserDeviceName(value.Name);
@@ -354,7 +338,7 @@ public sealed class EndpointRpcContractValidator
     private static bool Validate(RemovePasswordsEndpointRequest value) => ValidGuid(value.Token) && ValidIds(value.PasswordIds, requireNonEmpty: true);
     private static bool Validate(GetUnsecurePasswordEndpointRequest value) => ValidGuid(value.Token) && ValidGuid(value.PasswordId);
     private static bool Validate(UpdatePasswordEndpointRequest value) =>
-        ValidGuid(value.Token) && value.Request is not null && value.Request.Id != Guid.Empty &&
+        ValidGuid(value.Token) && value.Request is not null &&
         (value.Request.Password is null || ValidSensitive(value.Request.Password)) &&
         (value.Request.TagIds is null || ValidIds(value.Request.TagIds, requireNonEmpty: false)) &&
         value.Request.Validate(out _);

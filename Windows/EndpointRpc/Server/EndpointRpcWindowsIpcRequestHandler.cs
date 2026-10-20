@@ -84,7 +84,7 @@ public sealed class EndpointRpcWindowsIpcRequestHandler : IWindowsIpcRequestHand
         using (admissionLease)
         {
             if (context.Request.Payload is null)
-                return SuccessFailure(context, CreateInvalidPayloadError(context.Request.CorrelationId));
+                return SuccessFailure(context, CreateInvalidPayloadError());
 
             byte[]? decodedPayload = null;
             try
@@ -99,7 +99,7 @@ public sealed class EndpointRpcWindowsIpcRequestHandler : IWindowsIpcRequestHand
                 {
                     return SuccessFailure(
                         context,
-                        CreateInvalidPayloadError(context.Request.CorrelationId));
+                        CreateInvalidPayloadError());
                 }
 
                 try
@@ -119,7 +119,7 @@ public sealed class EndpointRpcWindowsIpcRequestHandler : IWindowsIpcRequestHand
                             decodedPayload),
                         _ => SuccessFailure(
                             context,
-                            CreateInvalidPayloadError(context.Request.CorrelationId))
+                            CreateInvalidPayloadError())
                     };
                 }
                 catch (EndpointRpcPayloadException)
@@ -127,7 +127,7 @@ public sealed class EndpointRpcWindowsIpcRequestHandler : IWindowsIpcRequestHand
                 {
                     return SuccessFailure(
                         context,
-                        CreateInvalidPayloadError(context.Request.CorrelationId));
+                        CreateInvalidPayloadError());
                 }
             }
             finally
@@ -327,15 +327,11 @@ public sealed class EndpointRpcWindowsIpcRequestHandler : IWindowsIpcRequestHand
             _messageCodec.EncodeFailure(error));
     }
 
-    private static EndpointRpcError CreateInvalidPayloadError(long correlationId) =>
+    private static EndpointRpcError CreateInvalidPayloadError() =>
         new(
             EndpointRpcErrorCode.ValidationFailed,
-            EndpointRpcErrorCategory.Validation,
+            EndpointFailureKind.InvalidInput,
             "The endpoint RPC payload is invalid.",
-            correlationId,
-            DateTimeOffset.UtcNow,
-            IsRetryable: false,
             RequiresProcessRestart: false,
-            EndpointMutationOutcome.NotApplicable,
-            Recovery: null);
+            EndpointMutationOutcome.NotApplicable);
 }

@@ -1,13 +1,12 @@
+using PasswordManagerLocal.Common.Contracts.Enrollment;
+using PasswordManagerLocal.Common.Contracts.Errors;
+
 namespace PasswordManagerLocal.Windows.EndpointRpc.Contracts;
 
 public sealed record EndpointRpcError(
     EndpointRpcErrorCode ErrorCode,
-    EndpointRpcErrorCategory ErrorCategory,
+    EndpointFailureKind FailureKind,
     string SafeMessage,
-    long CorrelationId,
-    DateTimeOffset OccurredAtUtc,
-    bool IsRetryable,
     bool RequiresProcessRestart,
     EndpointMutationOutcome MutationOutcome,
-    EndpointRecoveryMetadata? Recovery,
-    IReadOnlyList<string>? ValidationErrors = null);
+    DeviceEnrollmentErrorCode? EnrollmentErrorCode = null);

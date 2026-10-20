@@ -62,8 +62,8 @@ public sealed class EndpointRpcInvocationOutcomeTests
         Assert.AreEqual(EndpointInvocationStage.Invoking, context.Invocation.Stage);
         Assert.AreEqual(EndpointRpcErrorCode.OperationOutcomeUnknown, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.OutcomeUnknown, result.Error.MutationOutcome);
+        Assert.AreEqual(EndpointFailureKind.Generic, result.Error.FailureKind);
         Assert.IsFalse(result.Error.SafeMessage.Contains("secret", StringComparison.Ordinal));
-        Assert.IsFalse(result.Error.IsRetryable);
         Assert.IsFalse(result.Error.RequiresProcessRestart);
     }
 
@@ -107,8 +107,8 @@ public sealed class EndpointRpcInvocationOutcomeTests
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationOutcomeUnknown, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.OutcomeUnknown, result.Error.MutationOutcome);
+        Assert.AreEqual(EndpointFailureKind.Generic, result.Error.FailureKind);
         Assert.IsTrue(result.Error.RequiresProcessRestart);
-        Assert.IsNull(result.Error.Recovery);
     }
 
     [TestMethod]
@@ -369,7 +369,8 @@ public sealed class EndpointRpcInvocationOutcomeTests
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationRejected, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.NotCommitted, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
+        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, result.Error.FailureKind);
+        Assert.AreEqual(DeviceEnrollmentErrorCode.InvalidCode, result.Error.EnrollmentErrorCode);
     }
 
     [TestMethod]
@@ -388,7 +389,8 @@ public sealed class EndpointRpcInvocationOutcomeTests
 
         Assert.AreEqual(EndpointRpcErrorCode.NotFound, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.NotCommitted, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
+        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, result.Error.FailureKind);
+        Assert.AreEqual(DeviceEnrollmentErrorCode.NewDeviceNotFound, result.Error.EnrollmentErrorCode);
     }
 
     [TestMethod]
@@ -409,12 +411,13 @@ public sealed class EndpointRpcInvocationOutcomeTests
 
         Assert.AreEqual(EndpointRpcErrorCode.Conflict, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.NotCommitted, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
+        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, result.Error.FailureKind);
+        Assert.AreEqual(DeviceEnrollmentErrorCode.DeviceIdentityConflict, result.Error.EnrollmentErrorCode);
         Assert.IsFalse(result.Error.RequiresProcessRestart);
     }
 
     [TestMethod]
-    public async Task EnrollmentIdentityConflictAfterCommitRequiresRecovery()
+    public async Task EnrollmentIdentityConflictAfterCommitPreservesSafeFailureCode()
     {
         var recovery = CreatePartialCommitFailure(
             DeviceEnrollmentErrorCode.DeviceIdentityConflict,
@@ -431,17 +434,10 @@ public sealed class EndpointRpcInvocationOutcomeTests
             CancellationToken.None);
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, result.Error!.ErrorCode);
-        Assert.AreEqual(EndpointRpcErrorCategory.Recovery, result.Error.ErrorCategory);
         Assert.AreEqual(EndpointMutationOutcome.PartiallyCommittedRecoveryRequired, result.Error.MutationOutcome);
-        Assert.IsFalse(result.Error.IsRetryable);
+        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, result.Error.FailureKind);
+        Assert.AreEqual(DeviceEnrollmentErrorCode.DeviceIdentityConflict, result.Error.EnrollmentErrorCode);
         Assert.IsFalse(result.Error.RequiresProcessRestart);
-        Assert.IsNotNull(result.Error.Recovery);
-        Assert.AreEqual(recovery.TargetDeviceId, result.Error.Recovery.TargetDeviceId);
-        Assert.AreEqual(recovery.TargetOriginInstanceId, result.Error.Recovery.TargetOriginInstanceId);
-        Assert.AreEqual(recovery.EnrollmentCommitId, result.Error.Recovery.EnrollmentCommitId);
-        Assert.IsTrue(result.Error.Recovery.RecoveryAvailable);
-        Assert.IsTrue(result.Error.Recovery.TransferPending);
-        Assert.IsTrue(result.Error.Recovery.RequiresSignedRemovalToUndo);
     }
 
     [TestMethod]
@@ -462,8 +458,9 @@ public sealed class EndpointRpcInvocationOutcomeTests
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.PartiallyCommittedRecoveryRequired, result.Error.MutationOutcome);
+        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, result.Error.FailureKind);
+        Assert.AreEqual(DeviceEnrollmentErrorCode.UnsupportedDatabaseVersion, result.Error.EnrollmentErrorCode);
         Assert.IsTrue(result.Error.RequiresProcessRestart);
-        Assert.IsNotNull(result.Error.Recovery);
     }
 
     [TestMethod]
@@ -485,7 +482,8 @@ public sealed class EndpointRpcInvocationOutcomeTests
 
         Assert.AreEqual(EndpointRpcErrorCode.BackendFailure, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.NotCommitted, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
+        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, result.Error.FailureKind);
+        Assert.AreEqual(DeviceEnrollmentErrorCode.Unknown, result.Error.EnrollmentErrorCode);
     }
 
     [TestMethod]
@@ -504,11 +502,11 @@ public sealed class EndpointRpcInvocationOutcomeTests
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationOutcomeUnknown, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.OutcomeUnknown, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
+        Assert.AreEqual(EndpointFailureKind.Generic, result.Error.FailureKind);
     }
 
     [TestMethod]
-    public async Task KnownGenericPartialCommitUsesManifestPolicyWithoutEnrollmentMetadata()
+    public async Task KnownGenericPartialCommitUsesManifestPolicyWithoutEnrollmentDetails()
     {
         var endpoints = new ConfiguredEndpointFailureEndpoints(
             EndpointOperationId.ChangeMasterPassword,
@@ -523,8 +521,8 @@ public sealed class EndpointRpcInvocationOutcomeTests
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.PartiallyCommittedRecoveryRequired, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
-        Assert.IsFalse(result.Error.IsRetryable);
+        Assert.AreEqual(EndpointFailureKind.Generic, result.Error.FailureKind);
+        Assert.IsNull(result.Error.EnrollmentErrorCode);
     }
 
     [TestMethod]
@@ -543,7 +541,7 @@ public sealed class EndpointRpcInvocationOutcomeTests
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationOutcomeUnknown, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.OutcomeUnknown, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
+        Assert.AreEqual(EndpointFailureKind.Generic, result.Error.FailureKind);
     }
 
     [TestMethod]
@@ -562,7 +560,7 @@ public sealed class EndpointRpcInvocationOutcomeTests
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationOutcomeUnknown, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.OutcomeUnknown, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
+        Assert.AreEqual(EndpointFailureKind.Generic, result.Error.FailureKind);
     }
 
     [TestMethod]
@@ -608,8 +606,8 @@ public sealed class EndpointRpcInvocationOutcomeTests
                 out var error), operationId.ToString());
             Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, error.ErrorCode, operationId.ToString());
             Assert.AreEqual(EndpointMutationOutcome.PartiallyCommittedRecoveryRequired, error.MutationOutcome, operationId.ToString());
-            Assert.IsNull(error.Recovery, operationId.ToString());
-            Assert.IsFalse(error.IsRetryable, operationId.ToString());
+            Assert.AreEqual(EndpointFailureKind.Generic, error.FailureKind, operationId.ToString());
+            Assert.IsNull(error.EnrollmentErrorCode, operationId.ToString());
         }
 
         var atomicContext = CreateContext(EndpointOperationId.DisconnectUserDevice, 299);
@@ -636,8 +634,7 @@ public sealed class EndpointRpcInvocationOutcomeTests
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationOutcomeUnknown, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.OutcomeUnknown, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
-        Assert.IsFalse(result.Error.IsRetryable);
+        Assert.AreEqual(EndpointFailureKind.Generic, result.Error.FailureKind);
     }
 
     private static EndpointRpcDispatcher CreateDispatcher(

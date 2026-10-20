@@ -120,7 +120,9 @@ public sealed class EndpointRpcDispatcherMappingTests
         var unknownResult = await unknown.DispatchAsync(CreateContext(descriptor.OperationId, 26), payload, CancellationToken.None);
 
         Assert.AreEqual(EndpointRpcErrorCode.AuthorizationFailed, knownResult.Error!.ErrorCode);
+        Assert.AreEqual(EndpointFailureKind.InvalidSession, knownResult.Error.FailureKind);
         Assert.AreEqual(EndpointRpcErrorCode.BackendFailure, unknownResult.Error!.ErrorCode);
+        Assert.AreEqual(EndpointFailureKind.Generic, unknownResult.Error.FailureKind);
         Assert.IsFalse(knownResult.Error.SafeMessage.Contains(secret, StringComparison.Ordinal));
         Assert.IsFalse(unknownResult.Error.SafeMessage.Contains(secret, StringComparison.Ordinal));
     }
@@ -159,8 +161,44 @@ public sealed class EndpointRpcDispatcherMappingTests
             CancellationToken.None);
 
         Assert.AreEqual(EndpointRpcErrorCode.AuthenticationFailed, result.Error!.ErrorCode);
-        Assert.AreEqual(EndpointRpcErrorCategory.Authentication, result.Error.ErrorCategory);
+        Assert.AreEqual(EndpointFailureKind.InvalidCredentials, result.Error.FailureKind);
         Assert.IsFalse(result.Error.SafeMessage.Contains(secret, StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task RepresentativeDomainFailuresMapToStableAllowlistedKindsWithoutDetails()
+    {
+        const string secret = "sensitive-domain-value";
+        var cases = new (Exception Failure, EndpointRpcErrorCode Code, EndpointFailureKind Kind)[]
+        {
+            (new InvalidTokenException(secret), EndpointRpcErrorCode.AuthorizationFailed,
+                EndpointFailureKind.InvalidSession),
+            (new PasswordNotFoundException(Guid.Parse("11111111-1111-1111-1111-111111111111")),
+                EndpointRpcErrorCode.NotFound, EndpointFailureKind.NotFound),
+            (new DuplicatePasswordNameException(secret), EndpointRpcErrorCode.Conflict,
+                EndpointFailureKind.DuplicatePasswordName),
+            (new LimitReachedException(7, secret), EndpointRpcErrorCode.OperationRejected,
+                EndpointFailureKind.LimitReached),
+            (new InvalidDataIntegrityException(typeof(EndpointRpcDispatcherMappingTests)),
+                EndpointRpcErrorCode.BackendFailure, EndpointFailureKind.DataIntegrity)
+        };
+        var descriptor = EndpointOperationManifest.Get(EndpointOperationId.GetLocalDeviceInfo);
+        var correlationId = 200L;
+
+        foreach (var (failure, code, kind) in cases)
+        {
+            await using var dispatcher = CreateDispatcher(new ExceptionEndpointAdapter(failure));
+            var result = await dispatcher.DispatchAsync(
+                CreateContext(descriptor.OperationId, ++correlationId),
+                SerializeRequest(descriptor),
+                CancellationToken.None);
+
+            Assert.AreEqual(code, result.Error!.ErrorCode, failure.GetType().Name);
+            Assert.AreEqual(kind, result.Error.FailureKind, failure.GetType().Name);
+            Assert.IsNull(result.Error.EnrollmentErrorCode, failure.GetType().Name);
+            Assert.IsFalse(result.Error.SafeMessage.Contains(secret, StringComparison.Ordinal),
+                failure.GetType().Name);
+        }
     }
 
 
@@ -233,7 +271,7 @@ public sealed class EndpointRpcDispatcherMappingTests
             context);
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationRejected, error.ErrorCode);
-        Assert.AreEqual(EndpointRpcErrorCategory.Validation, error.ErrorCategory);
+        Assert.AreEqual(EndpointFailureKind.Generic, error.FailureKind);
         Assert.IsFalse(error.SafeMessage.Contains("route-secret", StringComparison.Ordinal));
     }
 
@@ -256,13 +294,35 @@ public sealed class EndpointRpcDispatcherMappingTests
             context);
 
         Assert.AreEqual(EndpointRpcErrorCode.RuntimeUnavailable, availability.ErrorCode);
-        Assert.IsTrue(availability.IsRetryable);
+        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, availability.FailureKind);
+        Assert.AreEqual(DeviceEnrollmentErrorCode.LocalNetworkUnavailable, availability.EnrollmentErrorCode);
         Assert.IsFalse(availability.RequiresProcessRestart);
         Assert.AreEqual(EndpointRpcErrorCode.RuntimeUnavailable, restart.ErrorCode);
-        Assert.IsFalse(restart.IsRetryable);
+        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, restart.FailureKind);
+        Assert.AreEqual(DeviceEnrollmentErrorCode.UnsupportedDatabaseVersion, restart.EnrollmentErrorCode);
         Assert.IsTrue(restart.RequiresProcessRestart);
         Assert.IsFalse(availability.SafeMessage.Contains("secret", StringComparison.Ordinal));
         Assert.IsFalse(restart.SafeMessage.Contains("secret", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void RegistrationValidationCodesAreAllowlistedOnlyForRegistration()
+    {
+        var mapper = new EndpointRpcBackendErrorMapper();
+        var failure = new InvalidInputException(
+            [RegistrationValidationErrors.UsernameUnavailable]);
+
+        var registration = mapper.Map(
+            failure,
+            CreateContext(EndpointOperationId.Register, 301));
+        var unrelated = mapper.Map(
+            failure,
+            CreateContext(EndpointOperationId.UpdatePassword, 302));
+
+        Assert.AreEqual(
+            EndpointFailureKind.RegistrationUsernameUnavailable,
+            registration.FailureKind);
+        Assert.AreEqual(EndpointFailureKind.InvalidInput, unrelated.FailureKind);
     }
 
     private static EndpointRpcDispatcher CreateDispatcher(IEndpointRpcEndpointAdapter adapter) =>

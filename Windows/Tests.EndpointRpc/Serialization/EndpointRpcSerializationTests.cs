@@ -52,32 +52,42 @@ public sealed class EndpointRpcSerializationTests
 
 
     [TestMethod]
-    public void PartialCommitErrorRoundTripsWithSafeRecoveryMetadata()
+    public void PartialCommitErrorRoundTripsWithOnlySafeFailureMetadata()
     {
         var serializer = new EndpointRpcSerializer();
         var error = new EndpointRpcError(
             EndpointRpcErrorCode.OperationPartiallyCommitted,
-            EndpointRpcErrorCategory.Recovery,
+            EndpointFailureKind.DeviceEnrollment,
             "The device addition was committed, but enrollment recovery is required.",
-            1,
-            DateTimeOffset.UtcNow,
-            IsRetryable: false,
             RequiresProcessRestart: true,
             EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
-            new EndpointRecoveryMetadata(
-                EndpointRecoveryKind.DeviceEnrollment,
-                Guid.Parse("22222222-2222-2222-2222-222222222222"),
-                Guid.Parse("33333333-3333-3333-3333-333333333333"),
-                Guid.Parse("11111111-1111-1111-1111-111111111111"),
-                RecoveryAvailable: true,
-                TransferPending: true,
-                RequiresSignedRemovalToUndo: true));
+            DeviceEnrollmentErrorCode.NewDeviceConnectionFailed);
 
         var payload = serializer.Serialize(error, EndpointRpcJsonContext.Default.EndpointRpcError);
         var roundTrip = serializer.Deserialize(payload, EndpointRpcJsonContext.Default.EndpointRpcError);
 
+        var json = System.Text.Encoding.UTF8.GetString(payload);
+
         Assert.AreEqual(error, roundTrip);
-        Assert.IsNotNull(EndpointRpcJsonContext.Default.GetTypeInfo(typeof(EndpointRecoveryMetadata)));
+        Assert.IsFalse(json.Contains("correlationId", StringComparison.Ordinal));
+        Assert.IsFalse(json.Contains("occurredAtUtc", StringComparison.Ordinal));
+        Assert.IsFalse(json.Contains("isRetryable", StringComparison.Ordinal));
+        Assert.IsFalse(json.Contains("validationErrors", StringComparison.Ordinal));
+
+        using var jsonDocument = JsonDocument.Parse(json);
+        var hasRecoveryMetadataProperty = false;
+        foreach (var property in jsonDocument.RootElement.EnumerateObject())
+        {
+            if (property.Name.Contains("recovery", StringComparison.OrdinalIgnoreCase))
+            {
+                hasRecoveryMetadataProperty = true;
+                break;
+            }
+        }
+
+        Assert.IsFalse(
+            hasRecoveryMetadataProperty,
+            "EndpointRpcError must not serialize recovery metadata properties.");
         Array.Clear(payload);
     }
 

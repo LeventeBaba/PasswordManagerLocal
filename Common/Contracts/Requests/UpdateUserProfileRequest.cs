@@ -18,6 +18,9 @@ public sealed class  UpdateUserProfileRequest
         var firstNameEmpty = newFirstName is null;
         var lastNameEmpty = NewLastName is null;
 
+        if (Token == Guid.Empty)
+            errors.Add("Token");
+
         if (emailEmpty && firstNameEmpty && lastNameEmpty)
             errors.Add("NoDataUpdate");
 

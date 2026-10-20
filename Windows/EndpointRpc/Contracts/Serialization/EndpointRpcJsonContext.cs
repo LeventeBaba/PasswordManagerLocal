@@ -12,7 +12,6 @@ namespace PasswordManagerLocal.Windows.EndpointRpc.Serialization;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow)]
 [JsonSerializable(typeof(EndpointRpcError))]
-[JsonSerializable(typeof(EndpointRecoveryMetadata))]
 [JsonSerializable(typeof(EndpointLargeResultDescriptor))]
 [JsonSerializable(typeof(GetEndpointLargeResultChunkRequest))]
 [JsonSerializable(typeof(GetEndpointLargeResultChunkResponse))]

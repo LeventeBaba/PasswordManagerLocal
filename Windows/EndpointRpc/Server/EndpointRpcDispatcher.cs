@@ -85,7 +85,7 @@ public sealed class EndpointRpcDispatcher : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestPayload);
         if (requestPayload.Length > EndpointRpcLimits.MaximumRequestPayloadSize)
-            return Failure(context, EndpointRpcErrorCode.RequestPayloadTooLarge, EndpointRpcErrorCategory.Validation, "The endpoint RPC request payload exceeds the permitted size.");
+            return Failure(context, EndpointRpcErrorCode.RequestPayloadTooLarge, EndpointFailureKind.InvalidInput, "The endpoint RPC request payload exceeds the permitted size.");
 
         EndpointOperationDescriptor descriptor;
         try
@@ -94,7 +94,7 @@ public sealed class EndpointRpcDispatcher : IAsyncDisposable
         }
         catch (ArgumentOutOfRangeException)
         {
-            return Failure(context, EndpointRpcErrorCode.UnknownOperation, EndpointRpcErrorCategory.Validation, "The endpoint RPC operation is not supported.");
+            return Failure(context, EndpointRpcErrorCode.UnknownOperation, EndpointFailureKind.Generic, "The endpoint RPC operation is not supported.");
         }
 
         if (requestPayload.Length > descriptor.MaximumRequestPayloadSize)
@@ -102,7 +102,7 @@ public sealed class EndpointRpcDispatcher : IAsyncDisposable
             return Failure(
                 context,
                 EndpointRpcErrorCode.RequestPayloadTooLarge,
-                EndpointRpcErrorCategory.Validation,
+                EndpointFailureKind.InvalidInput,
                 "The endpoint RPC request payload exceeds the permitted size.");
         }
 
@@ -598,26 +598,26 @@ public sealed class EndpointRpcDispatcher : IAsyncDisposable
                         await endpoints.UpdatePasswordTagAsync(request.Token, request.Request, token);
                         context.Invocation.MarkInvocationCompleted();
                     }),
-                _ => Failure(context, EndpointRpcErrorCode.UnknownOperation, EndpointRpcErrorCategory.Validation, "The endpoint RPC operation is not supported.")
+                _ => Failure(context, EndpointRpcErrorCode.UnknownOperation, EndpointFailureKind.Generic, "The endpoint RPC operation is not supported.")
             };
         }
         catch (OperationCanceledException) when (operationToken.IsCancellationRequested)
         {
             return MutationOutcomeCouldBeUnknown(descriptor, context)
                 ? EndpointRpcDispatchResult.Failure(_errorMapper.CreateOutcomeUnknown(context))
-                : Failure(context, EndpointRpcErrorCode.OperationCancelled, EndpointRpcErrorCategory.Cancellation, "The endpoint operation was cancelled.", true);
+                : Failure(context, EndpointRpcErrorCode.OperationCancelled, EndpointFailureKind.Generic, "The endpoint operation was cancelled.");
         }
         catch (EndpointLargeResultCapacityException)
         {
             return MutationOutcomeCouldBeUnknown(descriptor, context)
                 ? EndpointRpcDispatchResult.Failure(_errorMapper.CreateOutcomeUnknown(context))
-                : Failure(context, EndpointRpcErrorCode.RuntimeUnavailable, EndpointRpcErrorCategory.Availability, "The endpoint large-result transfer capacity is unavailable.", true);
+                : Failure(context, EndpointRpcErrorCode.RuntimeUnavailable, EndpointFailureKind.Generic, "The endpoint large-result transfer capacity is unavailable.");
         }
         catch (EndpointRpcPayloadException)
         {
             return MutationOutcomeCouldBeUnknown(descriptor, context)
                 ? EndpointRpcDispatchResult.Failure(_errorMapper.CreateOutcomeUnknown(context))
-                : Failure(context, EndpointRpcErrorCode.ValidationFailed, EndpointRpcErrorCategory.Validation, "The endpoint RPC payload is invalid.");
+                : Failure(context, EndpointRpcErrorCode.ValidationFailed, EndpointFailureKind.InvalidInput, "The endpoint RPC payload is invalid.");
         }
         catch (Exception exception)
         {
@@ -737,7 +737,7 @@ public sealed class EndpointRpcDispatcher : IAsyncDisposable
                     : Failure(
                         context,
                         EndpointRpcErrorCode.ResponsePayloadTooLarge,
-                        EndpointRpcErrorCategory.Validation,
+                        EndpointFailureKind.Generic,
                         "The endpoint RPC response payload exceeds the permitted size.");
             }
 
@@ -752,7 +752,7 @@ public sealed class EndpointRpcDispatcher : IAsyncDisposable
                         : Failure(
                             context,
                             EndpointRpcErrorCode.ResponsePayloadTooLarge,
-                            EndpointRpcErrorCategory.Validation,
+                            EndpointFailureKind.Generic,
                             "The endpoint RPC response payload exceeds the permitted size.");
                 }
 
@@ -781,20 +781,15 @@ public sealed class EndpointRpcDispatcher : IAsyncDisposable
     private static EndpointRpcDispatchResult Failure(
         EndpointRequestContext context,
         EndpointRpcErrorCode code,
-        EndpointRpcErrorCategory category,
-        string safeMessage,
-        bool isRetryable = false) =>
+        EndpointFailureKind failureKind,
+        string safeMessage) =>
         EndpointRpcDispatchResult.Failure(
             new EndpointRpcError(
                 code,
-                category,
+                failureKind,
                 safeMessage,
-                context.CorrelationId,
-                DateTimeOffset.UtcNow,
-                isRetryable,
                 RequiresProcessRestart: false,
-                GetConclusiveMutationOutcome(context.OperationId),
-                Recovery: null));
+                GetConclusiveMutationOutcome(context.OperationId)));
     private static EndpointMutationOutcome GetConclusiveMutationOutcome(EndpointOperationId operationId) =>
         Enum.IsDefined(operationId) && EndpointOperationManifest.Get(operationId).MutatesState
             ? EndpointMutationOutcome.NotCommitted

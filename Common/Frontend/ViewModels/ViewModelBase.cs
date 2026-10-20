@@ -124,6 +124,9 @@ public abstract class ViewModelBase : DisposableReactiveObject
 
     protected Func<string> CreateSafeErrorMessageFactory(Exception exception)
     {
+        if (exception is EndpointFailureException endpointFailure)
+            return CreateEndpointFailureMessageFactory(endpointFailure);
+
         var key = exception switch
         {
             InvalidTokenException => "Error_InvalidSession",
@@ -153,6 +156,35 @@ public abstract class ViewModelBase : DisposableReactiveObject
         var errorCode = enrollmentException.ErrorCode;
         var detail = enrollmentException.Message?.Trim();
         return () => GetDeviceEnrollmentErrorMessage(errorCode, detail);
+    }
+
+    private Func<string> CreateEndpointFailureMessageFactory(EndpointFailureException exception)
+    {
+        if (exception.FailureKind == EndpointFailureKind.DeviceEnrollment)
+        {
+            var errorCode = exception.EnrollmentErrorCode ?? DeviceEnrollmentErrorCode.Unknown;
+            return () => GetDeviceEnrollmentErrorMessage(errorCode);
+        }
+
+        var key = exception.FailureKind switch
+        {
+            EndpointFailureKind.InvalidCredentials => "Error_InvalidCredentials",
+            EndpointFailureKind.InvalidSession => "Error_InvalidSession",
+            EndpointFailureKind.InvalidInput => "Error_InvalidInput",
+            EndpointFailureKind.NotFound => "Error_NotFound",
+            EndpointFailureKind.DuplicatePasswordName => "Error_DuplicatePasswordName",
+            EndpointFailureKind.DuplicatePasswordTagName => "Error_DuplicatePasswordTagName",
+            EndpointFailureKind.DuplicateCustomColorName => "Error_DuplicateCustomColorName",
+            EndpointFailureKind.DuplicateCustomColorCode => "Error_DuplicateCustomColorCode",
+            EndpointFailureKind.LimitReached => "Error_LimitReached",
+            EndpointFailureKind.DataIntegrity => "Error_DataIntegrity",
+            EndpointFailureKind.DeviceIdentityUnavailable => "Error_DeviceIdentity",
+            EndpointFailureKind.RegistrationUsernameUnavailable => "Validation_Username_Unavailable",
+            EndpointFailureKind.RegistrationUsernameAvailabilityIndeterminate =>
+                "Validation_Username_AvailabilityIndeterminate",
+            _ => "Error_Generic"
+        };
+        return () => GetTranslation(key);
     }
 
     protected string GetDeviceEnrollmentErrorMessage(DeviceEnrollmentException exception)

@@ -23,6 +23,9 @@ public sealed class UpdatePasswordRequest
         var passwordEmpty = Password is null;
         var tagIdsEmpty = TagIds is null;
 
+        if (Id == Guid.Empty)
+            errors.Add("Id");
+
         if (nameEmpty && descriptionEmpty && colorEmpty && passwordEmpty && tagIdsEmpty)
             errors.Add("NoDataUpdate");
 

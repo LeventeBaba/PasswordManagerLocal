@@ -1,5 +1,6 @@
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Contracts.Enrollment;
+using PasswordManagerLocal.Common.Contracts.Errors;
 using PasswordManagerLocal.Windows.EndpointRpc.Contracts;
 using PasswordManagerLocal.Windows.EndpointRpc.Metadata;
 using System.Security.Cryptography;
@@ -19,56 +20,124 @@ public sealed class EndpointRpcBackendErrorMapper
         var requiresProcessRestart = ExceptionRestartRequirementClassifier.RequiresProcessRestart(exception);
         var metadata = exception switch
         {
+            DeviceEnrollmentException enrollmentException when requiresProcessRestart =>
+                MapDeviceEnrollmentError(enrollmentException.ErrorCode) with
+                {
+                    Code = EndpointRpcErrorCode.RuntimeUnavailable,
+                    RequiresRestart = true
+                },
             _ when requiresProcessRestart =>
-                Error(EndpointRpcErrorCode.RuntimeUnavailable, EndpointRpcErrorCategory.Availability, "The backend runtime requires process replacement.", false, true),
+                Error(
+                    EndpointRpcErrorCode.RuntimeUnavailable,
+                    EndpointFailureKind.Generic,
+                    "The backend runtime requires process replacement.",
+                    requiresRestart: true),
+            InvalidInputException invalidInputException =>
+                Error(
+                    EndpointRpcErrorCode.ValidationFailed,
+                    MapInvalidInputFailure(invalidInputException, context.OperationId),
+                    "The endpoint input is invalid."),
             ArgumentException =>
-                Error(EndpointRpcErrorCode.ValidationFailed, EndpointRpcErrorCategory.Validation, "The endpoint input is invalid."),
+                Error(
+                    EndpointRpcErrorCode.ValidationFailed,
+                    EndpointFailureKind.InvalidInput,
+                    "The endpoint input is invalid."),
             SyncRouteDisabledException =>
-                Error(EndpointRpcErrorCode.OperationRejected, EndpointRpcErrorCategory.Validation, "The endpoint operation was rejected."),
+                Error(
+                    EndpointRpcErrorCode.OperationRejected,
+                    EndpointFailureKind.Generic,
+                    "The endpoint operation was rejected."),
             UserNotFoundException or UsernameChangedDuringLoginException
                 when context.OperationId == EndpointOperationId.Login =>
-                Error(EndpointRpcErrorCode.AuthenticationFailed, EndpointRpcErrorCategory.Authentication, "Authentication failed."),
+                Error(
+                    EndpointRpcErrorCode.AuthenticationFailed,
+                    EndpointFailureKind.InvalidCredentials,
+                    "Authentication failed."),
             UnauthorizedAccessException when context.OperationId == EndpointOperationId.Login =>
-                Error(EndpointRpcErrorCode.AuthenticationFailed, EndpointRpcErrorCategory.Authentication, "Authentication failed."),
+                Error(
+                    EndpointRpcErrorCode.AuthenticationFailed,
+                    EndpointFailureKind.InvalidCredentials,
+                    "Authentication failed."),
             InvalidTokenException =>
-                Error(EndpointRpcErrorCode.AuthorizationFailed, EndpointRpcErrorCategory.Authorization, "The endpoint authorization is invalid."),
+                Error(
+                    EndpointRpcErrorCode.AuthorizationFailed,
+                    EndpointFailureKind.InvalidSession,
+                    "The endpoint authorization is invalid."),
             UnauthorizedAccessException =>
-                Error(EndpointRpcErrorCode.AuthorizationFailed, EndpointRpcErrorCategory.Authorization, "The endpoint operation is not authorized."),
-            UserNotFoundException or PasswordNotFoundException or PasswordTagNotFoundException or CustomUserColorNotFoundException =>
-                Error(EndpointRpcErrorCode.NotFound, EndpointRpcErrorCategory.NotFound, "The requested endpoint resource was not found."),
-            DuplicatePasswordNameException or DuplicatePasswordTagNameException or
-                DuplicateCustomUserColorNameException or DuplicateCustomUserColorCodeException or
-                DeterministicSyncConflictException or RecoveryEvidenceConflictException =>
-                Error(EndpointRpcErrorCode.Conflict, EndpointRpcErrorCategory.Conflict, "The endpoint operation conflicts with current state."),
+                Error(
+                    EndpointRpcErrorCode.AuthorizationFailed,
+                    EndpointFailureKind.InvalidSession,
+                    "The endpoint operation is not authorized."),
+            UserNotFoundException or PasswordNotFoundException or PasswordTagNotFoundException or
+                CustomUserColorNotFoundException =>
+                Error(
+                    EndpointRpcErrorCode.NotFound,
+                    EndpointFailureKind.NotFound,
+                    "The requested endpoint resource was not found."),
+            DuplicatePasswordNameException =>
+                Error(
+                    EndpointRpcErrorCode.Conflict,
+                    EndpointFailureKind.DuplicatePasswordName,
+                    "The endpoint operation conflicts with current state."),
+            DuplicatePasswordTagNameException =>
+                Error(
+                    EndpointRpcErrorCode.Conflict,
+                    EndpointFailureKind.DuplicatePasswordTagName,
+                    "The endpoint operation conflicts with current state."),
+            DuplicateCustomUserColorNameException =>
+                Error(
+                    EndpointRpcErrorCode.Conflict,
+                    EndpointFailureKind.DuplicateCustomColorName,
+                    "The endpoint operation conflicts with current state."),
+            DuplicateCustomUserColorCodeException =>
+                Error(
+                    EndpointRpcErrorCode.Conflict,
+                    EndpointFailureKind.DuplicateCustomColorCode,
+                    "The endpoint operation conflicts with current state."),
+            DeterministicSyncConflictException or RecoveryEvidenceConflictException =>
+                Error(
+                    EndpointRpcErrorCode.Conflict,
+                    EndpointFailureKind.Generic,
+                    "The endpoint operation conflicts with current state."),
             LimitReachedException =>
-                Error(EndpointRpcErrorCode.OperationRejected, EndpointRpcErrorCategory.Validation, "The endpoint operation was rejected."),
+                Error(
+                    EndpointRpcErrorCode.OperationRejected,
+                    EndpointFailureKind.LimitReached,
+                    "The endpoint operation was rejected."),
             DeviceEnrollmentException enrollmentException =>
                 MapDeviceEnrollmentError(enrollmentException.ErrorCode),
             DeviceIdentityNotInitilaizedException =>
-                Error(EndpointRpcErrorCode.RuntimeUnavailable, EndpointRpcErrorCategory.Availability, "The backend runtime is temporarily unavailable.", true),
+                Error(
+                    EndpointRpcErrorCode.RuntimeUnavailable,
+                    EndpointFailureKind.DeviceIdentityUnavailable,
+                    "The backend runtime is temporarily unavailable."),
             KeyProtectorUnavailableException =>
-                Error(EndpointRpcErrorCode.RuntimeUnavailable, EndpointRpcErrorCategory.Availability, "The backend runtime is temporarily unavailable.", true),
-            CryptographicException or InvalidDataIntegrityException =>
-                Error(EndpointRpcErrorCode.BackendFailure, EndpointRpcErrorCategory.Internal, "The backend could not safely complete the operation."),
+                Error(
+                    EndpointRpcErrorCode.RuntimeUnavailable,
+                    EndpointFailureKind.Generic,
+                    "The backend runtime is temporarily unavailable."),
+            InvalidDataIntegrityException =>
+                Error(
+                    EndpointRpcErrorCode.BackendFailure,
+                    EndpointFailureKind.DataIntegrity,
+                    "The backend could not safely complete the operation."),
+            CryptographicException =>
+                Error(
+                    EndpointRpcErrorCode.BackendFailure,
+                    EndpointFailureKind.Generic,
+                    "The backend could not safely complete the operation."),
             InvalidOperationException =>
-                Error(EndpointRpcErrorCode.InteractiveSessionUnavailable, EndpointRpcErrorCategory.Availability, "The interactive backend session is unavailable."),
-            _ => Error(EndpointRpcErrorCode.BackendFailure, EndpointRpcErrorCategory.Internal, "The endpoint operation failed.")
+                Error(
+                    EndpointRpcErrorCode.InteractiveSessionUnavailable,
+                    EndpointFailureKind.Generic,
+                    "The interactive backend session is unavailable."),
+            _ => Error(
+                EndpointRpcErrorCode.BackendFailure,
+                EndpointFailureKind.Generic,
+                "The endpoint operation failed.")
         };
 
-        var validationErrors = exception is InvalidInputException invalidInput && invalidInput.Errors.Count > 0
-            ? invalidInput.Errors
-                .Where(static error => !string.IsNullOrWhiteSpace(error))
-                .Distinct(StringComparer.Ordinal)
-                .Take(EndpointRpcLimits.MaximumValidationErrorFields)
-                .ToArray()
-            : null;
-
-        return CreateError(
-            metadata,
-            context,
-            GetConclusiveMutationOutcome(context.OperationId),
-            recovery: null,
-            validationErrors: validationErrors);
+        return CreateError(metadata, context.OperationId);
     }
 
     public bool TryMapKnownMutationFailure(
@@ -120,14 +189,10 @@ public sealed class EndpointRpcBackendErrorMapper
         ArgumentNullException.ThrowIfNull(context);
         return new EndpointRpcError(
             EndpointRpcErrorCode.OperationOutcomeUnknown,
-            EndpointRpcErrorCategory.Internal,
+            EndpointFailureKind.Generic,
             "The endpoint operation may have executed, but its outcome could not be confirmed.",
-            context.CorrelationId,
-            DateTimeOffset.UtcNow,
-            IsRetryable: false,
-            RequiresProcessRestart: requiresProcessRestart,
-            EndpointMutationOutcome.OutcomeUnknown,
-            Recovery: null);
+            requiresProcessRestart,
+            EndpointMutationOutcome.OutcomeUnknown);
     }
 
     public bool RequiresProcessRestart(Exception exception)
@@ -145,21 +210,16 @@ public sealed class EndpointRpcBackendErrorMapper
         if (!descriptor.CanPartiallyCommit)
             return CreateOutcomeUnknown(context, requiresProcessRestart);
 
-        EndpointRecoveryMetadata? recovery = null;
+        var failureKind = EndpointFailureKind.Generic;
+        DeviceEnrollmentErrorCode? enrollmentErrorCode = null;
         var safeMessage = "The endpoint operation committed authoritative state, but required follow-up work did not complete.";
         if (context.OperationId == EndpointOperationId.AddDeviceByCode)
         {
             if (exception is not DeviceEnrollmentPartiallyCommittedException enrollmentException)
                 return CreateOutcomeUnknown(context, requiresProcessRestart);
 
-            recovery = new EndpointRecoveryMetadata(
-                EndpointRecoveryKind.DeviceEnrollment,
-                enrollmentException.TargetDeviceId,
-                enrollmentException.TargetOriginInstanceId,
-                enrollmentException.EnrollmentCommitId,
-                enrollmentException.RecoveryAvailable,
-                enrollmentException.TransferPending,
-                enrollmentException.RequiresSignedRemovalToUndo);
+            failureKind = EndpointFailureKind.DeviceEnrollment;
+            enrollmentErrorCode = enrollmentException.ErrorCode;
             safeMessage = "The device addition was committed, but enrollment recovery is required.";
         }
         else if (exception is DeviceEnrollmentPartiallyCommittedException)
@@ -169,61 +229,86 @@ public sealed class EndpointRpcBackendErrorMapper
 
         return new EndpointRpcError(
             EndpointRpcErrorCode.OperationPartiallyCommitted,
-            EndpointRpcErrorCategory.Recovery,
+            failureKind,
             safeMessage,
-            context.CorrelationId,
-            DateTimeOffset.UtcNow,
-            IsRetryable: false,
-            RequiresProcessRestart: requiresProcessRestart,
+            requiresProcessRestart,
             EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
-            recovery);
+            enrollmentErrorCode);
     }
+
+    private static EndpointRpcError CreateError(
+        ErrorMetadata metadata,
+        EndpointOperationId operationId) =>
+        new(
+            metadata.Code,
+            metadata.FailureKind,
+            metadata.Message,
+            metadata.RequiresRestart,
+            GetConclusiveMutationOutcome(operationId),
+            metadata.EnrollmentErrorCode);
 
     private static EndpointMutationOutcome GetConclusiveMutationOutcome(EndpointOperationId operationId) =>
         EndpointOperationManifest.Get(operationId).MutatesState
             ? EndpointMutationOutcome.NotCommitted
             : EndpointMutationOutcome.NotApplicable;
 
-    private static EndpointRpcError CreateError(
-        (EndpointRpcErrorCode Code, EndpointRpcErrorCategory Category, string Message, bool Retryable, bool RequiresRestart) metadata,
-        EndpointRequestContext context,
-        EndpointMutationOutcome mutationOutcome,
-        EndpointRecoveryMetadata? recovery,
-        IReadOnlyList<string>? validationErrors = null) =>
-        new(
-            metadata.Code,
-            metadata.Category,
-            metadata.Message,
-            context.CorrelationId,
-            DateTimeOffset.UtcNow,
-            metadata.Retryable,
-            metadata.RequiresRestart,
-            mutationOutcome,
-            recovery,
-            validationErrors);
-
-    private static (EndpointRpcErrorCode Code, EndpointRpcErrorCategory Category, string Message, bool Retryable, bool RequiresRestart) MapDeviceEnrollmentError(
-        DeviceEnrollmentErrorCode errorCode) => errorCode switch
+    private static EndpointFailureKind MapInvalidInputFailure(
+        InvalidInputException exception,
+        EndpointOperationId operationId)
     {
-        DeviceEnrollmentErrorCode.Unknown =>
-            Error(EndpointRpcErrorCode.BackendFailure, EndpointRpcErrorCategory.Internal, "The backend could not safely complete the enrollment operation."),
-        DeviceEnrollmentErrorCode.NewDeviceNotFound =>
-            Error(EndpointRpcErrorCode.NotFound, EndpointRpcErrorCategory.NotFound, "The requested endpoint resource was not found."),
-        DeviceEnrollmentErrorCode.DeviceIdentityConflict =>
-            Error(EndpointRpcErrorCode.Conflict, EndpointRpcErrorCategory.Conflict, "The endpoint operation conflicts with current state."),
-        DeviceEnrollmentErrorCode.NewDeviceConnectionFailed or
-            DeviceEnrollmentErrorCode.LocalNetworkUnavailable or
-            DeviceEnrollmentErrorCode.LocalEnrollmentListenerUnavailable =>
-            Error(EndpointRpcErrorCode.RuntimeUnavailable, EndpointRpcErrorCategory.Availability, "The backend runtime is temporarily unavailable.", true),
-        _ =>
-            Error(EndpointRpcErrorCode.OperationRejected, EndpointRpcErrorCategory.Validation, "The endpoint operation was rejected.")
-    };
+        if (operationId != EndpointOperationId.Register)
+            return EndpointFailureKind.InvalidInput;
 
-    private static (EndpointRpcErrorCode Code, EndpointRpcErrorCategory Category, string Message, bool Retryable, bool RequiresRestart) Error(
+        if (exception.Errors.Contains(
+            RegistrationValidationErrors.UsernameUnavailable,
+            StringComparer.Ordinal))
+        {
+            return EndpointFailureKind.RegistrationUsernameUnavailable;
+        }
+
+        if (exception.Errors.Contains(
+            RegistrationValidationErrors.UsernameAvailabilityIndeterminate,
+            StringComparer.Ordinal))
+        {
+            return EndpointFailureKind.RegistrationUsernameAvailabilityIndeterminate;
+        }
+
+        return EndpointFailureKind.InvalidInput;
+    }
+
+    private static ErrorMetadata MapDeviceEnrollmentError(DeviceEnrollmentErrorCode errorCode)
+    {
+        var code = errorCode switch
+        {
+            DeviceEnrollmentErrorCode.Unknown => EndpointRpcErrorCode.BackendFailure,
+            DeviceEnrollmentErrorCode.NewDeviceNotFound => EndpointRpcErrorCode.NotFound,
+            DeviceEnrollmentErrorCode.DeviceIdentityConflict => EndpointRpcErrorCode.Conflict,
+            DeviceEnrollmentErrorCode.NewDeviceConnectionFailed or
+                DeviceEnrollmentErrorCode.LocalNetworkUnavailable or
+                DeviceEnrollmentErrorCode.LocalEnrollmentListenerUnavailable =>
+                    EndpointRpcErrorCode.RuntimeUnavailable,
+            _ => EndpointRpcErrorCode.OperationRejected
+        };
+
+        return Error(
+            code,
+            EndpointFailureKind.DeviceEnrollment,
+            "The device enrollment operation failed.",
+            enrollmentErrorCode: errorCode);
+    }
+
+    private static ErrorMetadata Error(
         EndpointRpcErrorCode code,
-        EndpointRpcErrorCategory category,
+        EndpointFailureKind failureKind,
         string message,
-        bool retryable = false,
-        bool requiresRestart = false) =>
-        (code, category, message, retryable, requiresRestart);
+        bool requiresRestart = false,
+        DeviceEnrollmentErrorCode? enrollmentErrorCode = null) =>
+        new(code, failureKind, message, requiresRestart, enrollmentErrorCode);
+
+    private sealed record ErrorMetadata(
+        EndpointRpcErrorCode Code,
+        EndpointFailureKind FailureKind,
+        string Message,
+        bool RequiresRestart,
+        DeviceEnrollmentErrorCode? EnrollmentErrorCode);
 }

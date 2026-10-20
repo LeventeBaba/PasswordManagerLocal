@@ -1,11 +1,14 @@
 using PasswordManagerLocal.Windows.EndpointRpc.Contracts;
 using PasswordManagerLocal.Windows.Ipc.Contracts;
+using PasswordManagerLocal.Common.Contracts.Errors;
 
 namespace PasswordManagerLocal.Windows.EndpointRpc.Client;
 
 internal static class EndpointRpcTransportErrorMapper
 {
-    public static EndpointRpcRemoteException Map(IpcError error)
+    public static EndpointRpcRemoteException Map(
+        IpcError error,
+        bool isMutatingOperation = false)
     {
         ArgumentNullException.ThrowIfNull(error);
 
@@ -13,57 +16,66 @@ internal static class EndpointRpcTransportErrorMapper
         {
             IpcErrorCode.RequestCancelled => Create(
                 EndpointRpcErrorCode.OperationCancelled,
-                EndpointRpcErrorCategory.Cancellation,
+                EndpointFailureKind.Generic,
                 "The endpoint operation was cancelled.",
-                error),
+                error,
+                isMutatingOperation),
             IpcErrorCode.RequestPayloadTooLarge => Create(
                 EndpointRpcErrorCode.RequestPayloadTooLarge,
-                EndpointRpcErrorCategory.Validation,
+                EndpointFailureKind.InvalidInput,
                 "The endpoint request payload exceeds the permitted size.",
-                error),
+                error,
+                isMutatingOperation),
             IpcErrorCode.ResponsePayloadTooLarge or IpcErrorCode.SerializedEnvelopeTooLarge => Create(
                 EndpointRpcErrorCode.ResponsePayloadTooLarge,
-                EndpointRpcErrorCategory.Validation,
+                EndpointFailureKind.Generic,
                 "The endpoint response payload exceeds the permitted size.",
-                error),
+                error,
+                isMutatingOperation),
             IpcErrorCode.UnexpectedPeerRole or
             IpcErrorCode.UnsupportedCapability or
             IpcErrorCode.UiNotRegistered or
             IpcErrorCode.UnauthorizedOperation => Create(
                 EndpointRpcErrorCode.AuthorizationFailed,
-                EndpointRpcErrorCategory.Authorization,
+                EndpointFailureKind.Generic,
                 "The endpoint connection is not authorized.",
-                error),
+                error,
+                isMutatingOperation),
             IpcErrorCode.UnknownOperation => Create(
                 EndpointRpcErrorCode.UnknownOperation,
-                EndpointRpcErrorCategory.Validation,
+                EndpointFailureKind.Generic,
                 "The endpoint operation is not supported.",
-                error),
+                error,
+                isMutatingOperation),
             IpcErrorCode.UiAlreadyRegistered or
             IpcErrorCode.TooManyConnections => Create(
                 EndpointRpcErrorCode.Conflict,
-                EndpointRpcErrorCategory.Conflict,
+                EndpointFailureKind.Generic,
                 "An interactive endpoint connection is already active.",
-                error),
+                error,
+                isMutatingOperation),
             IpcErrorCode.ServerBusy or
             IpcErrorCode.TooManyRequests or
             IpcErrorCode.AgentStopping or
             IpcErrorCode.AgentUnavailable or
             IpcErrorCode.ConnectionClosed => Create(
                 EndpointRpcErrorCode.RuntimeUnavailable,
-                EndpointRpcErrorCategory.Availability,
+                EndpointFailureKind.Generic,
                 "The endpoint runtime is not available.",
-                error),
+                error,
+                isMutatingOperation),
             IpcErrorCode.RequestRejected => Create(
                 EndpointRpcErrorCode.OperationRejected,
-                EndpointRpcErrorCategory.Validation,
+                EndpointFailureKind.Generic,
                 "The endpoint operation was rejected.",
-                error),
+                error,
+                isMutatingOperation),
             _ => Create(
                 EndpointRpcErrorCode.BackendFailure,
-                EndpointRpcErrorCategory.Internal,
+                EndpointFailureKind.Generic,
                 "The endpoint transport failed.",
-                error)
+                error,
+                isMutatingOperation)
         };
 
         return new EndpointRpcRemoteException(endpointError);
@@ -71,17 +83,16 @@ internal static class EndpointRpcTransportErrorMapper
 
     private static EndpointRpcError Create(
         EndpointRpcErrorCode errorCode,
-        EndpointRpcErrorCategory errorCategory,
+        EndpointFailureKind failureKind,
         string safeMessage,
-        IpcError error) =>
+        IpcError error,
+        bool isMutatingOperation) =>
         new(
             errorCode,
-            errorCategory,
+            failureKind,
             safeMessage,
-            error.CorrelationId,
-            error.OccurredAtUtc,
-            error.IsRetryable,
             error.RequiresProcessRestart && errorCode == EndpointRpcErrorCode.RuntimeUnavailable,
-            EndpointMutationOutcome.NotApplicable,
-            Recovery: null);
+            isMutatingOperation
+                ? EndpointMutationOutcome.NotCommitted
+                : EndpointMutationOutcome.NotApplicable);
 }

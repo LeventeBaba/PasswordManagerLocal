@@ -9,7 +9,7 @@ namespace PasswordManagerLocal.Windows.Tests.EndpointRpc.Client;
 public sealed class EndpointRpcTransportErrorMapperTests
 {
     [TestMethod]
-    public void AuthorizationFailureUsesEndpointSafeMessageAndPreservesMetadata()
+    public void AuthorizationFailureUsesEndpointSafeMessageWithoutTransportDiagnostics()
     {
         var occurredAtUtc = DateTimeOffset.UtcNow;
         var source = new IpcError(
@@ -24,12 +24,12 @@ public sealed class EndpointRpcTransportErrorMapperTests
         var exception = EndpointRpcTransportErrorMapper.Map(source);
 
         Assert.AreEqual(EndpointRpcErrorCode.AuthorizationFailed, exception.Error.ErrorCode);
-        Assert.AreEqual(EndpointRpcErrorCategory.Authorization, exception.Error.ErrorCategory);
+        Assert.AreEqual(EndpointFailureKind.Generic, exception.Error.FailureKind);
         Assert.AreEqual("The endpoint connection is not authorized.", exception.Message);
-        Assert.AreEqual(42, exception.Error.CorrelationId);
-        Assert.AreEqual(occurredAtUtc, exception.Error.OccurredAtUtc);
         Assert.IsFalse(exception.Message.Contains("sensitive", StringComparison.Ordinal));
         Assert.IsFalse(exception.Error.RequiresProcessRestart);
+        Assert.IsNull(typeof(EndpointRpcError).GetProperty("CorrelationId"));
+        Assert.IsNull(typeof(EndpointRpcError).GetProperty("OccurredAtUtc"));
     }
 
 
@@ -48,12 +48,12 @@ public sealed class EndpointRpcTransportErrorMapperTests
         var exception = EndpointRpcTransportErrorMapper.Map(source);
 
         Assert.AreEqual(EndpointRpcErrorCode.RuntimeUnavailable, exception.Error.ErrorCode);
-        Assert.AreEqual(EndpointRpcErrorCategory.Availability, exception.Error.ErrorCategory);
+        Assert.AreEqual(EndpointFailureKind.Generic, exception.Error.FailureKind);
         Assert.IsTrue(exception.Error.RequiresProcessRestart);
     }
 
     [TestMethod]
-    public void RequestRejectedMapsToValidOperationRejectedCategory()
+    public void RequestRejectedMapsToGenericOperationRejectedFailure()
     {
         var source = new IpcError(
             IpcErrorCode.RequestRejected,
@@ -67,7 +67,27 @@ public sealed class EndpointRpcTransportErrorMapperTests
         var exception = EndpointRpcTransportErrorMapper.Map(source);
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationRejected, exception.Error.ErrorCode);
-        Assert.AreEqual(EndpointRpcErrorCategory.Validation, exception.Error.ErrorCategory);
+        Assert.AreEqual(EndpointFailureKind.Generic, exception.Error.FailureKind);
+    }
+
+    [TestMethod]
+    public void ConclusiveMutationTransportRejectionIsMarkedNotCommitted()
+    {
+        var source = new IpcError(
+            IpcErrorCode.UnauthorizedOperation,
+            IpcErrorCategory.Protocol,
+            "transport detail",
+            10,
+            DateTimeOffset.UtcNow,
+            false,
+            false);
+
+        var exception = EndpointRpcTransportErrorMapper.Map(
+            source,
+            isMutatingOperation: true);
+
+        Assert.AreEqual(EndpointMutationOutcome.NotCommitted, exception.Error.MutationOutcome);
+        Assert.AreEqual(EndpointRpcErrorCode.AuthorizationFailed, exception.Error.ErrorCode);
     }
 
     [TestMethod]
@@ -105,6 +125,6 @@ public sealed class EndpointRpcTransportErrorMapperTests
         var exception = EndpointRpcTransportErrorMapper.Map(source);
 
         Assert.AreEqual(EndpointRpcErrorCode.ResponsePayloadTooLarge, exception.Error.ErrorCode);
-        Assert.AreEqual(EndpointRpcErrorCategory.Validation, exception.Error.ErrorCategory);
+        Assert.AreEqual(EndpointFailureKind.Generic, exception.Error.FailureKind);
     }
 }

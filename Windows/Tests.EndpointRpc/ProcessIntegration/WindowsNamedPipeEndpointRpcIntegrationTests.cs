@@ -119,10 +119,12 @@ public sealed class WindowsNamedPipeEndpointRpcIntegrationTests
             new EndpointRpcContractValidator());
         resolver.RegistrationGeneration++;
 
-        var exception = await Assert.ThrowsAsync<EndpointRpcRemoteException>(() =>
+        var exception = await Assert.ThrowsAsync<EndpointFailureException>(() =>
             proxy.GetLocalDeviceInfoAsync());
 
-        Assert.AreEqual(EndpointRpcErrorCode.AuthorizationFailed, exception.Error.ErrorCode);
+        Assert.AreEqual(EndpointFailureKind.Generic, exception.FailureKind);
+        var remote = Assert.IsInstanceOfType<EndpointRpcRemoteException>(exception.InnerException);
+        Assert.AreEqual(EndpointRpcErrorCode.AuthorizationFailed, remote.Error.ErrorCode);
     }
 
     private static PasswordManagerLocal.Windows.Ipc.Contracts.WindowsUiIpcIdentity CreateIdentity() =>
