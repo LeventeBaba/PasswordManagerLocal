@@ -20,7 +20,7 @@ public sealed class WindowsIpcTransmissionCertaintyTests
             connection,
             serializer,
             maximumPendingRequests: 1,
-            requestEnvelopeSerializer: _ => throw new IOException("serialization failed"));
+            requestEnvelopeSerializer: (_, _) => throw new IOException("serialization failed"));
         await client.HandshakeAsync();
 
         var exception = await Assert.ThrowsExactlyAsync<IpcRequestTransmissionException>(() =>
@@ -220,7 +220,7 @@ public sealed class WindowsIpcTransmissionCertaintyTests
         RecordingWindowsIpcConnection connection,
         WindowsIpcSerializer serializer,
         int maximumPendingRequests,
-        Func<IpcRequestEnvelope, byte[]>? requestEnvelopeSerializer = null) =>
+        Func<IpcRequestEnvelope, long, byte[]>? requestEnvelopeSerializer = null) =>
         new(
             connection,
             serializer,

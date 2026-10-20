@@ -533,7 +533,9 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             admission = await AcquireAdmissionAsync(cancellationToken);
             request = requestFactory();
             _validator.ValidateRequest(operationId, request);
-            requestPayload = _serializer.Serialize(request, requestTypeInfo);
+            requestPayload = typeof(TRequest) == typeof(EmptyEndpointRequest)
+                ? Array.Empty<byte>()
+                : _serializer.Serialize(request, requestTypeInfo);
             cancellationToken.ThrowIfCancellationRequested();
             if (requestPayload.Length > descriptor.MaximumRequestPayloadSize)
                 throw new EndpointRpcPayloadException("The endpoint RPC request payload exceeds the permitted size.");
@@ -556,7 +558,11 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             if (responsePayload.Length > descriptor.MaximumLogicalResponsePayloadSize)
                 throw new EndpointRpcPayloadException("The endpoint RPC response payload exceeds the permitted size.");
 
-            response = _serializer.Deserialize(responsePayload, responseTypeInfo);
+            response = typeof(TResponse) == typeof(EmptyEndpointResponse)
+                ? responsePayload.Length == 0
+                    ? (TResponse)(object)new EmptyEndpointResponse()
+                    : throw new EndpointRpcPayloadException("The endpoint RPC void response must not contain a payload.")
+                : _serializer.Deserialize(responsePayload, responseTypeInfo);
             _validator.ValidateResponse(operationId, response);
             responseTransferred = true;
             return response;

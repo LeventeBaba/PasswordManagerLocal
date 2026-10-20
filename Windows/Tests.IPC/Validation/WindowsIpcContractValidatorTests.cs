@@ -93,7 +93,6 @@ public sealed class WindowsIpcContractValidatorTests
             (IpcErrorCode)999,
             IpcErrorCategory.Internal,
             "Invalid error code.",
-            1,
             DateTimeOffset.UtcNow,
             false,
             false));
@@ -101,7 +100,6 @@ public sealed class WindowsIpcContractValidatorTests
             IpcErrorCode.InternalFailure,
             (IpcErrorCategory)999,
             "Invalid error category.",
-            1,
             DateTimeOffset.UtcNow,
             false,
             false));
@@ -192,7 +190,6 @@ public sealed class WindowsIpcContractValidatorTests
             IpcErrorCode.InvalidPayload,
             IpcErrorCategory.Validation,
             "Invalid payload.",
-            4,
             DateTimeOffset.UtcNow,
             IsRetryable: false,
             RequiresProcessRestart: true));
@@ -256,7 +253,6 @@ public sealed class WindowsIpcContractValidatorTests
                 errorCode,
                 IpcErrorCategory.Availability,
                 "The IPC channel is busy.",
-                8,
                 DateTimeOffset.UtcNow,
                 IsRetryable: true,
                 RequiresProcessRestart: false);
@@ -283,28 +279,24 @@ public sealed class WindowsIpcContractValidatorTests
         AssertInvalid(new UiOpenRequestDto((UiActivationReason)999));
         AssertInvalid(new AgentExitRequestDto((AgentExitReason)999));
         AssertInvalid(new IpcHandshakeRequest(
-            WindowsIpcProtocol.CurrentVersion,
             IpcPeerRole.Ui,
             0,
             0,
             Guid.NewGuid(),
             IpcCapabilities.Control));
         AssertInvalid(new IpcHandshakeRequest(
-            WindowsIpcProtocol.CurrentVersion,
             IpcPeerRole.Ui,
             Environment.ProcessId,
             0,
             Guid.Empty,
             IpcCapabilities.Control));
         AssertInvalid(new IpcHandshakeRequest(
-            WindowsIpcProtocol.CurrentVersion,
             IpcPeerRole.Ui,
             Environment.ProcessId,
             0,
             Guid.NewGuid(),
             IpcCapabilities.None));
         AssertInvalid(new IpcHandshakeRequest(
-            WindowsIpcProtocol.CurrentVersion,
             IpcPeerRole.Ui,
             Environment.ProcessId,
             0,

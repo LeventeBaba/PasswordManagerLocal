@@ -108,16 +108,14 @@ public sealed class WindowsIpcRequestLimitTests
                 if (Interlocked.Increment(ref requestWriteCount) == 1)
                     return ValueTask.FromException(new IOException("request write failed"));
 
-                var envelope = IpcResponseEnvelope.Success(frame.Header.CorrelationId);
-                var payload = serializer.Serialize(
-                    envelope,
-                    WindowsIpcJsonContext.Default.IpcResponseEnvelope);
+                var payload = new IpcFramePayloadCodec(serializer).EncodeResponse(
+                    IpcResponseEnvelope.Success(),
+                    frame.Header.CorrelationId);
                 responseReady.TrySetResult(new IpcFrame(
                     new IpcFrameHeader(
                         WindowsIpcProtocol.CurrentVersion,
                         IpcMessageKind.Response,
-                        IpcFrameFlags.None,
-                        frame.Header.CorrelationId,
+                                                frame.Header.CorrelationId,
                         payload.Length),
                     payload));
                 return ValueTask.CompletedTask;
@@ -176,7 +174,7 @@ public sealed class WindowsIpcRequestLimitTests
         Assert.AreEqual(IpcErrorCategory.Availability, busy.Error.ErrorCategory);
         Assert.IsTrue(busy.Error.IsRetryable);
         Assert.IsFalse(busy.Error.RequiresProcessRestart);
-        Assert.IsTrue(busy.Error.CorrelationId > 0);
+        Assert.IsTrue(busy.CorrelationId > 0);
         Assert.AreEqual(1, session.Server.ActiveRequestCount);
 
         releaseFirst.TrySetResult();
@@ -362,7 +360,6 @@ public sealed class WindowsIpcRequestLimitTests
     {
         var response = new IpcHandshakeResponse(
             Accepted: true,
-            WindowsIpcProtocol.CurrentVersion,
             IpcPeerRole.Agent,
             Guid.NewGuid(),
             IpcCapabilities.Control,
@@ -374,8 +371,7 @@ public sealed class WindowsIpcRequestLimitTests
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 IpcMessageKind.HandshakeResponse,
-                IpcFrameFlags.None,
-                1,
+                                1,
                 payload.Length),
             payload);
     }

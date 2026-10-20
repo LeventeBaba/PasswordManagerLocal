@@ -167,13 +167,13 @@ public sealed class WindowsAgentChangeNotificationAdapterTests
         var connection = CreateUiConnection(Guid.NewGuid());
         var serializer = new WindowsIpcSerializer();
         var request = new IpcRequestEnvelope(
-            2,
             IpcOperationId.SetChangeNotificationUser,
             serializer.Serialize(
                 new SetChangeNotificationUserRequestDto(Guid.NewGuid(), Enabled: true),
                 WindowsIpcJsonContext.Default.SetChangeNotificationUserRequestDto));
         var context = new IpcRequestContext(
             connection,
+            1,
             request,
             serializer);
 
@@ -183,6 +183,7 @@ public sealed class WindowsAgentChangeNotificationAdapterTests
 
         var noCapabilityContext = new IpcRequestContext(
             connection with { PeerCapabilities = IpcCapabilities.Control },
+            1,
             request,
             serializer);
         Assert.AreEqual(

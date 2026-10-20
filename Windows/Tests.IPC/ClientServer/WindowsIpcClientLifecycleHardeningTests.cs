@@ -214,7 +214,6 @@ public sealed class WindowsIpcClientLifecycleHardeningTests
     {
         var response = new IpcHandshakeResponse(
             Accepted: true,
-            WindowsIpcProtocol.CurrentVersion,
             IpcPeerRole.Agent,
             connectionId,
             IpcCapabilities.Control | IpcCapabilities.Status,
@@ -226,8 +225,7 @@ public sealed class WindowsIpcClientLifecycleHardeningTests
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 IpcMessageKind.HandshakeResponse,
-                IpcFrameFlags.None,
-                1,
+                                1,
                 payload.Length),
             payload);
     }

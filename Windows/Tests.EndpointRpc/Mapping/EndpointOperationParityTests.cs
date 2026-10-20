@@ -7,7 +7,6 @@ using PasswordManagerLocal.Windows.EndpointRpc.Metadata;
 using PasswordManagerLocal.Windows.EndpointRpc.Serialization;
 using PasswordManagerLocal.Windows.EndpointRpc.Validation;
 using PasswordManagerLocal.Windows.Tests.EndpointRpc.Infrastructure;
-using System.Text.Json;
 
 namespace PasswordManagerLocal.Windows.Tests.EndpointRpc.Mapping;
 
@@ -70,7 +69,7 @@ public sealed class EndpointOperationParityTests
     }
 
     [TestMethod]
-    public void EmptyOperationContractsShareSourceGeneratedTypesAndRetainObjectJson()
+    public void EmptyOperationContractsUseZeroLengthWireBodies()
     {
         var emptyRequestOperations = EndpointOperationManifest.All
             .Where(descriptor => descriptor.RequestType == typeof(EmptyEndpointRequest))
@@ -122,21 +121,18 @@ public sealed class EndpointOperationParityTests
             emptyResponseOperations,
             "Operations using the shared empty response contract");
 
-        var requestJson = JsonSerializer.SerializeToUtf8Bytes(
-            new EmptyEndpointRequest(),
-            EndpointRpcJsonContext.Default.EmptyEndpointRequest);
-        var responseJson = JsonSerializer.SerializeToUtf8Bytes(
-            new EmptyEndpointResponse(),
-            EndpointRpcJsonContext.Default.EmptyEndpointResponse);
+        var codec = new EndpointRpcMessageCodec(new EndpointRpcSerializer());
+        foreach (var operationId in emptyRequestOperations)
+        {
+            var message = codec.EncodeRequest(operationId, ReadOnlySpan<byte>.Empty);
+            var decoded = codec.DecodeRequest(message);
 
-        CollectionAssert.AreEqual("{}"u8.ToArray(), requestJson);
-        CollectionAssert.AreEqual("{}"u8.ToArray(), responseJson);
-        Assert.IsNotNull(JsonSerializer.Deserialize(
-            requestJson,
-            EndpointRpcJsonContext.Default.EmptyEndpointRequest));
-        Assert.IsNotNull(JsonSerializer.Deserialize(
-            responseJson,
-            EndpointRpcJsonContext.Default.EmptyEndpointResponse));
+            Assert.AreEqual(sizeof(int), message.Length, operationId.ToString());
+            Assert.AreEqual(operationId, decoded.OperationId, operationId.ToString());
+            Assert.AreEqual(0, decoded.Payload!.Length, operationId.ToString());
+        }
+
+        Assert.AreEqual(0, codec.EncodeSuccess(ReadOnlySpan<byte>.Empty).Length);
     }
 
     [TestMethod]

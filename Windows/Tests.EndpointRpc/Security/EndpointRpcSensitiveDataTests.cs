@@ -87,7 +87,9 @@ public sealed class EndpointRpcSensitiveDataTests
 
         var response = await handler.HandleAsync(context, CancellationToken.None);
 
-        Assert.IsTrue(response.IsSuccess);
+        Assert.AreEqual(IpcResponsePayloadKind.EndpointFailure, response.PayloadKind);
+        var failure = codec.DecodeFailure(response.Result!);
+        Assert.AreEqual(EndpointRpcErrorCode.OperationOutcomeUnknown, failure.ErrorCode);
         Assert.IsTrue(endpointMessage.All(value => value == 0));
         Array.Clear(requestPayload);
         Array.Clear(response.Result!);
@@ -208,6 +210,7 @@ public sealed class EndpointRpcSensitiveDataTests
                 0,
                 Guid.NewGuid(),
                 IpcCapabilities.EndpointRpc),
-            new IpcRequestEnvelope(60, IpcOperationId.EndpointRpcRequest, endpointMessage),
+            1,
+            new IpcRequestEnvelope(IpcOperationId.EndpointRpcRequest, endpointMessage),
             new WindowsIpcSerializer());
 }

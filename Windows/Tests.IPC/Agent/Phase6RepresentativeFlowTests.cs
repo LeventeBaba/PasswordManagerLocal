@@ -97,9 +97,7 @@ public sealed class Phase6RepresentativeFlowTests
             validator,
             new EndpointRpcBackendErrorMapper(),
             adapter);
-        var requestPayload = serializer.Serialize(
-            new EmptyEndpointRequest(),
-            EndpointRpcJsonContext.Default.EmptyEndpointRequest);
+        var requestPayload = Array.Empty<byte>();
         var result = await dispatcher.DispatchAsync(
             new EndpointRequestContext(
                 endpointConnection.ConnectionId,

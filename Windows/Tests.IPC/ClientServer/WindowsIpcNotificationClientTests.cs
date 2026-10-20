@@ -55,8 +55,7 @@ public sealed class WindowsIpcNotificationClientTests
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 IpcMessageKind.Notification,
-                IpcFrameFlags.None,
-                0,
+                                0,
                 payload.Length),
             payload));
 
@@ -114,8 +113,7 @@ public sealed class WindowsIpcNotificationClientTests
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 IpcMessageKind.Notification,
-                IpcFrameFlags.None,
-                0,
+                                0,
                 payload.Length),
             payload));
 

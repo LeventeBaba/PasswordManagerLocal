@@ -20,8 +20,8 @@ public sealed class EndpointRpcPayloadLimitTests
         var maxInner = ReadPublishedConstant(typeof(IpcContractLimits), nameof(IpcContractLimits.MaximumInnerPayloadSize));
         var maxOuter = ReadPublishedConstant(typeof(WindowsIpcProtocol), nameof(WindowsIpcProtocol.MaximumPayloadSize));
 
-        Assert.IsTrue(maxRequest + 5 <= maxInner, "Request frames must fit inside the IPC envelope.");
-        Assert.IsTrue(maxResponse + 1 <= maxInner, "Response frames must fit inside the IPC envelope.");
+        Assert.IsTrue(maxRequest + sizeof(int) <= maxInner, "Request frames must fit inside the IPC envelope.");
+        Assert.IsTrue(maxResponse <= maxInner, "Response frames must fit inside the IPC envelope.");
         Assert.IsTrue(maxInner < maxOuter, "The outer transport must accommodate the IPC envelope.");
     }
 
@@ -36,8 +36,8 @@ public sealed class EndpointRpcPayloadLimitTests
         var response = codec.EncodeSuccess(
             new byte[EndpointRpcLimits.MaximumResponsePayloadSize]);
 
-        Assert.AreEqual(EndpointRpcLimits.MaximumRequestPayloadSize + 5, request.Length);
-        Assert.AreEqual(EndpointRpcLimits.MaximumResponsePayloadSize + 1, response.Length);
+        Assert.AreEqual(EndpointRpcLimits.MaximumRequestPayloadSize + sizeof(int), request.Length);
+        Assert.AreEqual(EndpointRpcLimits.MaximumResponsePayloadSize, response.Length);
     }
 
     [TestMethod]
@@ -59,7 +59,6 @@ public sealed class EndpointRpcPayloadLimitTests
         var validator = new WindowsIpcContractValidator();
         Assert.ThrowsExactly<PasswordManagerLocal.Windows.Ipc.Serialization.IpcPayloadLimitExceededException>(() =>
             validator.Validate(new IpcRequestEnvelope(
-                2,
                 IpcOperationId.EndpointRpcRequest,
                 new byte[IpcContractLimits.MaximumInnerPayloadSize + 1])));
     }
@@ -71,7 +70,7 @@ public sealed class EndpointRpcPayloadLimitTests
         var message = new byte[EndpointRpcLimits.MaximumErrorPayloadSize + 2];
         message[0] = 0;
 
-        Assert.ThrowsExactly<EndpointRpcPayloadException>(() => codec.DecodeResponse(message, 1));
+        Assert.ThrowsExactly<EndpointRpcPayloadException>(() => codec.DecodeFailure(message));
     }
 
     [TestMethod]
@@ -93,9 +92,9 @@ public sealed class EndpointRpcPayloadLimitTests
             response,
             EndpointRpcJsonContext.Default.GetEndpointLargeResultChunkResponse);
         var encoded = codec.EncodeSuccess(serialized);
-        var outer = new WindowsIpcSerializer().Serialize(
-            IpcResponseEnvelope.Success(1, encoded),
-            WindowsIpcJsonContext.Default.IpcResponseEnvelope);
+        var outer = new IpcFramePayloadCodec(new WindowsIpcSerializer()).EncodeResponse(
+            IpcResponseEnvelope.Success(encoded),
+            1);
 
         Assert.IsTrue(serialized.Length <= EndpointRpcLimits.MaximumLargeResultChunkResponsePayloadSize);
         Assert.IsTrue(

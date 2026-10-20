@@ -701,7 +701,11 @@ public sealed class EndpointRpcDispatcher : IAsyncDisposable
         JsonTypeInfo<TRequest> typeInfo)
         where TRequest : class
     {
-        var request = _serializer.Deserialize(payload, typeInfo);
+        var request = typeof(TRequest) == typeof(EmptyEndpointRequest)
+            ? payload.Length == 0
+                ? (TRequest)(object)new EmptyEndpointRequest()
+                : throw new EndpointRpcPayloadException("The endpoint RPC request must not contain a payload.")
+            : _serializer.Deserialize(payload, typeInfo);
         try
         {
             _validator.ValidateRequest(operationId, request);
@@ -725,7 +729,9 @@ public sealed class EndpointRpcDispatcher : IAsyncDisposable
         {
             _validator.ValidateResponse(context.OperationId, response);
             context.Invocation.MarkResponseValidated();
-            payload = _serializer.Serialize(response, typeInfo);
+            payload = typeof(TResponse) == typeof(EmptyEndpointResponse)
+                ? Array.Empty<byte>()
+                : _serializer.Serialize(response, typeInfo);
             context.Invocation.MarkResponseSerialized();
             var descriptor = EndpointOperationManifest.Get(context.OperationId);
             if (payload.Length > descriptor.MaximumLogicalResponsePayloadSize)

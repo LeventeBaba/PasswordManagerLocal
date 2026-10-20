@@ -44,7 +44,6 @@ public sealed class WindowsIpcRequestDispatcher
         if (!_handlers.TryGetValue(context.Request.OperationId, out var handler))
         {
             return Failure(
-                context.Request.CorrelationId,
                 IpcErrorCode.UnknownOperation,
                 IpcErrorCategory.Validation,
                 "The requested IPC operation is not supported.",
@@ -57,7 +56,6 @@ public sealed class WindowsIpcRequestDispatcher
             if (!decision.IsAuthorized)
             {
                 return Failure(
-                    context.Request.CorrelationId,
                     decision.ErrorCode,
                     decision.ErrorCategory,
                     decision.SafeMessage,
@@ -68,20 +66,14 @@ public sealed class WindowsIpcRequestDispatcher
         try
         {
             var response = await handler.HandleAsync(context, cancellationToken);
-            if (response.CorrelationId != context.Request.CorrelationId)
-            {
-                return InvalidHandlerResponse(context.Request.CorrelationId);
-            }
-
             try
             {
-                _contractValidator.Validate(response);
+                _contractValidator.Validate(response, context.CorrelationId);
             }
             catch (IpcPayloadLimitExceededException exception)
                 when (exception.ErrorCode == IpcErrorCode.ResponsePayloadTooLarge)
             {
                 return Failure(
-                    context.Request.CorrelationId,
                     exception.ErrorCode,
                     exception.ErrorCategory,
                     exception.SafeMessage,
@@ -89,7 +81,7 @@ public sealed class WindowsIpcRequestDispatcher
             }
             catch (IpcPayloadException)
             {
-                return InvalidHandlerResponse(context.Request.CorrelationId);
+                return InvalidHandlerResponse();
             }
 
             return response;
@@ -97,7 +89,6 @@ public sealed class WindowsIpcRequestDispatcher
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             return Failure(
-                context.Request.CorrelationId,
                 IpcErrorCode.RequestCancelled,
                 IpcErrorCategory.Cancellation,
                 "The IPC request was cancelled.",
@@ -107,7 +98,6 @@ public sealed class WindowsIpcRequestDispatcher
             when (exception.ErrorCode == IpcErrorCode.ResponsePayloadTooLarge)
         {
             return Failure(
-                context.Request.CorrelationId,
                 exception.ErrorCode,
                 exception.ErrorCategory,
                 exception.SafeMessage,
@@ -116,7 +106,6 @@ public sealed class WindowsIpcRequestDispatcher
         catch (IpcPayloadException)
         {
             return Failure(
-                context.Request.CorrelationId,
                 IpcErrorCode.InvalidPayload,
                 IpcErrorCategory.Validation,
                 "The IPC request payload is invalid.",
@@ -125,7 +114,6 @@ public sealed class WindowsIpcRequestDispatcher
         catch
         {
             return Failure(
-                context.Request.CorrelationId,
                 IpcErrorCode.HandlerFailed,
                 IpcErrorCategory.Internal,
                 "The IPC operation failed.",
@@ -133,27 +121,23 @@ public sealed class WindowsIpcRequestDispatcher
         }
     }
 
-    private static IpcResponseEnvelope InvalidHandlerResponse(long correlationId) =>
+    private static IpcResponseEnvelope InvalidHandlerResponse() =>
         Failure(
-            correlationId,
             IpcErrorCode.InvalidEnvelope,
             IpcErrorCategory.Internal,
             "The IPC handler returned an invalid response.",
             isRetryable: false);
 
     private static IpcResponseEnvelope Failure(
-        long correlationId,
         IpcErrorCode code,
         IpcErrorCategory category,
         string safeMessage,
         bool isRetryable) =>
         IpcResponseEnvelope.Failure(
-            correlationId,
             new IpcError(
                 code,
                 category,
                 safeMessage,
-                correlationId,
                 DateTimeOffset.UtcNow,
                 isRetryable,
                 RequiresProcessRestart: false));

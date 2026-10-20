@@ -70,12 +70,10 @@ public sealed class EndpointRpcWindowsIpcRequestHandler : IWindowsIpcRequestHand
         if (!_admissionPolicy.TryEnterRequest(out var admissionLease))
         {
             return IpcResponseEnvelope.Failure(
-                context.Request.CorrelationId,
                 new IpcError(
                     IpcErrorCode.AgentUnavailable,
                     IpcErrorCategory.Availability,
                     "The Windows agent endpoint channel is unavailable.",
-                    context.Request.CorrelationId,
                     DateTimeOffset.UtcNow,
                     IsRetryable: true,
                     RequiresProcessRestart: false));
@@ -146,7 +144,7 @@ public sealed class EndpointRpcWindowsIpcRequestHandler : IWindowsIpcRequestHand
     {
         var endpointContext = new EndpointRequestContext(
             context.Connection.ConnectionId,
-            context.Request.CorrelationId,
+            context.CorrelationId,
             operationId,
             context.Connection.PeerRole,
             context.Connection.PeerProcessId,
@@ -157,13 +155,13 @@ public sealed class EndpointRpcWindowsIpcRequestHandler : IWindowsIpcRequestHand
             payload,
             cancellationToken);
 
-        byte[] encoded;
         if (!result.IsSuccess)
         {
             try
             {
                 _validator.Validate(operationId, result.Error!);
-                encoded = _messageCodec.EncodeFailure(result.Error!);
+                return IpcResponseEnvelope.EndpointFailure(
+                    _messageCodec.EncodeFailure(result.Error!));
             }
             catch
             {
@@ -174,46 +172,28 @@ public sealed class EndpointRpcWindowsIpcRequestHandler : IWindowsIpcRequestHand
                     throw;
                 }
 
-                encoded = _messageCodec.EncodeFailure(
-                    _errorMapper.CreateOutcomeUnknown(
-                        endpointContext,
-                        result.Error!.RequiresProcessRestart));
+                return IpcResponseEnvelope.EndpointFailure(
+                    _messageCodec.EncodeFailure(
+                        _errorMapper.CreateOutcomeUnknown(
+                            endpointContext,
+                            result.Error!.RequiresProcessRestart)));
             }
         }
-        else
+
+        if (result.IsLargeResult)
         {
             try
             {
-                if (result.IsLargeResult)
-                {
-                    try
-                    {
-                        encoded = _messageCodec.EncodeLargeResult(result.LargeResult!);
-                    }
-                    catch
-                    {
-                        _largeResultTransferStore.InvalidateIfOwned(
-                            endpointContext.ConnectionId,
-                            endpointContext.PeerSessionId,
-                            result.LargeResult!.TransferId,
-                            result.LargeResult.OriginalCorrelationId);
-                        throw;
-                    }
-                }
-                else
-                {
-                    try
-                    {
-                        encoded = _messageCodec.EncodeSuccess(result.Result!);
-                    }
-                    finally
-                    {
-                        EndpointSensitiveData.Clear(result.Result);
-                    }
-                }
+                return IpcResponseEnvelope.LargeResult(
+                    _messageCodec.EncodeLargeResult(result.LargeResult!));
             }
             catch
             {
+                _largeResultTransferStore.InvalidateIfOwned(
+                    endpointContext.ConnectionId,
+                    endpointContext.PeerSessionId,
+                    result.LargeResult!.TransferId,
+                    result.LargeResult.OriginalCorrelationId);
                 var descriptor = EndpointOperationManifest.Get(operationId);
                 if (!descriptor.MutatesState ||
                     endpointContext.Invocation.Stage < EndpointInvocationStage.Invoking)
@@ -221,12 +201,35 @@ public sealed class EndpointRpcWindowsIpcRequestHandler : IWindowsIpcRequestHand
                     throw;
                 }
 
-                encoded = _messageCodec.EncodeFailure(
-                    _errorMapper.CreateOutcomeUnknown(endpointContext));
+                return IpcResponseEnvelope.EndpointFailure(
+                    _messageCodec.EncodeFailure(
+                        _errorMapper.CreateOutcomeUnknown(endpointContext)));
             }
         }
 
-        return IpcResponseEnvelope.Success(context.Request.CorrelationId, encoded);
+        byte[] encoded;
+        try
+        {
+            encoded = _messageCodec.EncodeSuccess(result.Result!);
+        }
+        catch
+        {
+            var descriptor = EndpointOperationManifest.Get(operationId);
+            if (!descriptor.MutatesState ||
+                endpointContext.Invocation.Stage < EndpointInvocationStage.Invoking)
+            {
+                throw;
+            }
+
+            return IpcResponseEnvelope.EndpointFailure(
+                _messageCodec.EncodeFailure(_errorMapper.CreateOutcomeUnknown(endpointContext)));
+        }
+        finally
+        {
+            EndpointSensitiveData.Clear(result.Result);
+        }
+
+        return IpcResponseEnvelope.Success(encoded);
     }
 
     private IpcResponseEnvelope HandleLargeResultChunk(
@@ -266,9 +269,7 @@ public sealed class EndpointRpcWindowsIpcRequestHandler : IWindowsIpcRequestHand
                 throw new EndpointRpcPayloadException("The endpoint large-result chunk response is too large.");
             }
 
-            return IpcResponseEnvelope.Success(
-                context.Request.CorrelationId,
-                _messageCodec.EncodeSuccess(serialized));
+            return IpcResponseEnvelope.Success(_messageCodec.EncodeSuccess(serialized));
         }
         catch
         {
@@ -307,9 +308,7 @@ public sealed class EndpointRpcWindowsIpcRequestHandler : IWindowsIpcRequestHand
             EndpointRpcJsonContext.Default.ReleaseEndpointLargeResultResponse);
         try
         {
-            return IpcResponseEnvelope.Success(
-                context.Request.CorrelationId,
-                _messageCodec.EncodeSuccess(serialized));
+            return IpcResponseEnvelope.Success(_messageCodec.EncodeSuccess(serialized));
         }
         finally
         {
@@ -322,9 +321,7 @@ public sealed class EndpointRpcWindowsIpcRequestHandler : IWindowsIpcRequestHand
         EndpointRpcError error)
     {
         _validator.Validate(error);
-        return IpcResponseEnvelope.Success(
-            context.Request.CorrelationId,
-            _messageCodec.EncodeFailure(error));
+        return IpcResponseEnvelope.EndpointFailure(_messageCodec.EncodeFailure(error));
     }
 
     private static EndpointRpcError CreateInvalidPayloadError() =>

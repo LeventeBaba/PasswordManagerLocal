@@ -32,12 +32,10 @@ public sealed class EndpointSessionReadyWindowsIpcRequestHandler : IWindowsIpcRe
         if (!_admissionPolicy.TryEnterRequest(out var admissionLease))
         {
             return Task.FromResult(IpcResponseEnvelope.Failure(
-                context.Request.CorrelationId,
                 new IpcError(
                     IpcErrorCode.AgentUnavailable,
                     IpcErrorCategory.Availability,
                     "The Windows agent endpoint channel is unavailable.",
-                    context.Request.CorrelationId,
                     DateTimeOffset.UtcNow,
                     IsRetryable: true,
                     RequiresProcessRestart: false)));

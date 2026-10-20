@@ -344,6 +344,9 @@ public sealed class EndpointRpcDispatcherMappingTests
 
     private static byte[] SerializeRequest(EndpointOperationDescriptor descriptor)
     {
+        if (descriptor.RequestType == typeof(PasswordManagerLocal.Windows.EndpointRpc.Contracts.Requests.EmptyEndpointRequest))
+            return Array.Empty<byte>();
+
         var value = EndpointRpcTestData.CreateRequest(descriptor.OperationId);
         var typeInfo = EndpointRpcJsonContext.Default.GetTypeInfo(descriptor.RequestType)
             ?? throw new InvalidOperationException(descriptor.RequestType.FullName);

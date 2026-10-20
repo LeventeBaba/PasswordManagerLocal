@@ -102,7 +102,7 @@ public sealed class WindowsIpcServerResponseShutdownTests
             IpcOperationId.Ping,
             (context, cancellationToken) =>
             {
-                if (context.Request.CorrelationId == 3)
+                if (context.CorrelationId == 3)
                 {
                     cancellationToken.Register(
                         () => queuedRequestCancelled.TrySetResult());
@@ -186,7 +186,6 @@ public sealed class WindowsIpcServerResponseShutdownTests
     private static IpcFrame CreateHandshakeRequest(WindowsIpcSerializer serializer)
     {
         var request = new IpcHandshakeRequest(
-            WindowsIpcProtocol.CurrentVersion,
             IpcPeerRole.TestClient,
             Environment.ProcessId,
             0,
@@ -202,13 +201,9 @@ public sealed class WindowsIpcServerResponseShutdownTests
         WindowsIpcSerializer serializer,
         long correlationId)
     {
-        var request = new IpcRequestEnvelope(
-            correlationId,
-            IpcOperationId.Ping,
-            Payload: null);
-        var payload = serializer.Serialize(
-            request,
-            WindowsIpcJsonContext.Default.IpcRequestEnvelope);
+        var payload = new IpcFramePayloadCodec(serializer).EncodeRequest(
+            new IpcRequestEnvelope(IpcOperationId.Ping, Payload: null),
+            correlationId);
         return CreateFrame(IpcMessageKind.Request, correlationId, payload);
     }
 
@@ -226,8 +221,7 @@ public sealed class WindowsIpcServerResponseShutdownTests
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 messageKind,
-                IpcFrameFlags.None,
-                correlationId,
+                                correlationId,
                 payload.Length),
             payload);
 

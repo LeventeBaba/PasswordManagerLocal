@@ -134,7 +134,7 @@ public sealed class EndpointRpcTransmissionMappingTests
         var transport = new RecordingEndpointRpcTransport((operationId, _, _) =>
             Task.FromResult(operationId == EndpointOperationId.GetLocalUserSyncOn
                 ? "{\"isSyncOn\":true}"u8.ToArray()
-                : "{}"u8.ToArray()));
+                : Array.Empty<byte>()));
         await using var proxy = CreateProxy(transport);
 
         await proxy.GetLocalUserSyncOnAsync(EndpointRpcTestData.Token);

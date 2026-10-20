@@ -7,8 +7,6 @@ namespace PasswordManagerLocal.Windows.Ipc.Serialization;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = false,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
-[JsonSerializable(typeof(IpcRequestEnvelope))]
-[JsonSerializable(typeof(IpcResponseEnvelope))]
 [JsonSerializable(typeof(IpcHandshakeRequest))]
 [JsonSerializable(typeof(IpcHandshakeResponse))]
 [JsonSerializable(typeof(WindowsUiIpcIdentity))]

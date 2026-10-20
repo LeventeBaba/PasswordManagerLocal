@@ -17,7 +17,7 @@ public sealed class EndpointRpcCorrelationBindingTests
         var codec = CreateCodec();
         var encoded = codec.EncodeFailure(CreateError());
 
-        var response = codec.DecodeResponse(encoded, 41);
+        var response = EndpointRpcTransportResponse.Failure(codec.DecodeFailure(encoded));
 
         Assert.AreEqual(EndpointRpcResponseKind.Failure, response.ResponseKind);
         Assert.AreEqual(EndpointRpcErrorCode.Conflict, response.Error!.ErrorCode);
@@ -36,7 +36,7 @@ public sealed class EndpointRpcCorrelationBindingTests
         var descriptor = CreateDescriptor(41);
         var encoded = codec.EncodeLargeResult(descriptor);
 
-        var response = codec.DecodeResponse(encoded, 41);
+        var response = EndpointRpcTransportResponse.Large(codec.DecodeLargeResult(encoded, 41));
 
         Assert.AreEqual(EndpointRpcResponseKind.LargeResult, response.ResponseKind);
         Assert.AreEqual(41, response.LargeResult!.OriginalCorrelationId);
@@ -50,7 +50,7 @@ public sealed class EndpointRpcCorrelationBindingTests
         var encoded = codec.EncodeLargeResult(CreateDescriptor(42));
 
         var exception = Assert.ThrowsExactly<EndpointRpcCorrelationMismatchException>(() =>
-            codec.DecodeResponse(encoded, 41));
+            codec.DecodeLargeResult(encoded, 41));
 
         Assert.AreEqual(EndpointRpcErrorCode.EndpointCorrelationMismatch, exception.ErrorCode);
         Assert.IsFalse(exception.RequiresProcessRestart);
@@ -63,7 +63,7 @@ public sealed class EndpointRpcCorrelationBindingTests
     public async Task ReadOnlyMismatchedDescriptorIsRejectedBeforeChunksOrRelease()
     {
         await using var transport = new ScriptedEndpointRpcResponseTransport(
-            correlationId => EncodeDescriptor(correlationId + 1));
+            correlationId => EndpointRpcTransportResponse.Large(CreateDescriptor(correlationId + 1)));
         await using var proxy = CreateProxy(transport);
 
         await Assert.ThrowsExactlyAsync<EndpointRpcCorrelationMismatchException>(() =>
@@ -77,7 +77,8 @@ public sealed class EndpointRpcCorrelationBindingTests
     [TestMethod]
     public async Task ReadOnlyMatchingDescriptorStartsChunkTransfer()
     {
-        await using var transport = new ScriptedEndpointRpcResponseTransport(EncodeDescriptor);
+        await using var transport = new ScriptedEndpointRpcResponseTransport(
+            correlationId => EndpointRpcTransportResponse.Large(CreateDescriptor(correlationId)));
         await using var proxy = CreateProxy(transport);
 
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
@@ -91,7 +92,7 @@ public sealed class EndpointRpcCorrelationBindingTests
     public async Task SentMutationWithMismatchedDescriptorReportsOutcomeUnknownWithoutChunks()
     {
         await using var transport = new ScriptedEndpointRpcResponseTransport(
-            correlationId => EncodeDescriptor(correlationId + 1));
+            correlationId => EndpointRpcTransportResponse.Large(CreateDescriptor(correlationId + 1)));
         await using var proxy = CreateProxy(transport);
 
         var exception = await Assert.ThrowsExactlyAsync<EndpointOperationOutcomeUnknownException>(() =>
@@ -107,9 +108,6 @@ public sealed class EndpointRpcCorrelationBindingTests
 
     private static EndpointRpcMessageCodec CreateCodec() =>
         new(new EndpointRpcSerializer());
-
-    private static byte[] EncodeDescriptor(long correlationId) =>
-        CreateCodec().EncodeLargeResult(CreateDescriptor(correlationId));
 
     private static EndpointRpcError CreateError() =>
         new(

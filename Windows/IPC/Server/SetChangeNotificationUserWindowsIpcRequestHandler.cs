@@ -30,12 +30,10 @@ public sealed class SetChangeNotificationUserWindowsIpcRequestHandler : IWindows
         if (!selected)
         {
             return IpcResponseEnvelope.Failure(
-                context.Request.CorrelationId,
                 new IpcError(
                     IpcErrorCode.UiNotRegistered,
                     IpcErrorCategory.Conflict,
                     "The change-notification filter requires the registered UI connection.",
-                    context.Request.CorrelationId,
                     DateTimeOffset.UtcNow,
                     IsRetryable: true,
                     RequiresProcessRestart: false));

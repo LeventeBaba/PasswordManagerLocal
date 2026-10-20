@@ -13,17 +13,22 @@ public sealed class IpcRequestContext
 
     public IpcRequestContext(
         IpcConnectionContext connection,
+        long correlationId,
         IpcRequestEnvelope request,
         WindowsIpcSerializer serializer,
         WindowsIpcContractValidator? contractValidator = null)
     {
         Connection = connection ?? throw new ArgumentNullException(nameof(connection));
+        if (correlationId <= 0)
+            throw new ArgumentOutOfRangeException(nameof(correlationId));
+        CorrelationId = correlationId;
         Request = request ?? throw new ArgumentNullException(nameof(request));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         _contractValidator = contractValidator ?? new WindowsIpcContractValidator();
     }
 
     public IpcConnectionContext Connection { get; }
+    public long CorrelationId { get; }
     public IpcRequestEnvelope Request { get; }
 
     public void EnsureNoPayload()
@@ -54,13 +59,11 @@ public sealed class IpcRequestContext
 
     public IpcResponseEnvelope Success<T>(T result, JsonTypeInfo<T> typeInfo)
     {
-        var response = IpcResponseEnvelope.Success(
-            Request.CorrelationId,
-            _serializer.Serialize(result, typeInfo));
-        _contractValidator.Validate(response);
+        var response = IpcResponseEnvelope.Success(_serializer.Serialize(result, typeInfo));
+        _contractValidator.Validate(response, CorrelationId);
         return response;
     }
 
     public IpcResponseEnvelope Success() =>
-        IpcResponseEnvelope.Success(Request.CorrelationId);
+        IpcResponseEnvelope.Success();
 }

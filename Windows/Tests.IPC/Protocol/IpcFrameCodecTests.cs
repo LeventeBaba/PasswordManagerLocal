@@ -13,10 +13,10 @@ public sealed class IpcFrameCodecTests
             ?? throw new InvalidOperationException($"Missing IPC protocol constant: {fieldName}."));
 
     [TestMethod]
-    public void ProtocolIdentifiersRemainStableForVersionFour()
+    public void ProtocolIdentifiersRemainStableForVersionFive()
     {
-        Assert.AreEqual(4, ReadPublishedProtocolConstant(nameof(WindowsIpcProtocol.CurrentVersion)));
-        Assert.AreEqual(28, ReadPublishedProtocolConstant(nameof(WindowsIpcProtocol.HeaderSize)));
+        Assert.AreEqual(5, ReadPublishedProtocolConstant(nameof(WindowsIpcProtocol.CurrentVersion)));
+        Assert.AreEqual(24, ReadPublishedProtocolConstant(nameof(WindowsIpcProtocol.HeaderSize)));
         Assert.AreEqual(1, (int)IpcMessageKind.HandshakeRequest);
         Assert.AreEqual(5, (int)IpcMessageKind.RequestCancellation);
         Assert.AreEqual(6, (int)IpcMessageKind.Notification);
@@ -28,7 +28,7 @@ public sealed class IpcFrameCodecTests
     }
 
     [TestMethod]
-    public async Task ValidFrameRoundTrips()
+    public async Task ValidFrameRoundTripsAndUsesTheVersionFiveHeaderLayout()
     {
         var codec = new IpcFrameCodec();
         var payload = new byte[] { 1, 2, 3, 4 };
@@ -36,16 +36,22 @@ public sealed class IpcFrameCodecTests
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 IpcMessageKind.Request,
-                IpcFrameFlags.None,
-                42,
+                0x0102030405060708,
                 payload.Length),
             payload);
         await using var stream = new MemoryStream();
 
         await codec.WriteAsync(stream, frame);
+        var bytes = stream.ToArray();
+        Assert.AreEqual(WindowsIpcProtocol.HeaderSize + payload.Length, bytes.Length);
+        Assert.AreEqual(WindowsIpcProtocol.Magic, BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(0, 4)));
+        Assert.AreEqual(5, BinaryPrimitives.ReadInt32BigEndian(bytes.AsSpan(4, 4)));
+        Assert.AreEqual((int)IpcMessageKind.Request, BinaryPrimitives.ReadInt32BigEndian(bytes.AsSpan(8, 4)));
+        Assert.AreEqual(0x0102030405060708, BinaryPrimitives.ReadInt64BigEndian(bytes.AsSpan(12, 8)));
+        Assert.AreEqual(payload.Length, BinaryPrimitives.ReadInt32BigEndian(bytes.AsSpan(20, 4)));
+
         stream.Position = 0;
         var restored = await codec.ReadAsync(stream);
-
         Assert.IsNotNull(restored);
         Assert.AreEqual(frame.Header, restored.Header);
         CollectionAssert.AreEqual(payload, restored.Payload);
@@ -54,58 +60,27 @@ public sealed class IpcFrameCodecTests
     [TestMethod]
     public async Task InvalidMagicIsRejected()
     {
-        var bytes = CreateHeaderBytes(
-            WindowsIpcProtocol.CurrentVersion,
-            IpcMessageKind.Request,
-            IpcFrameFlags.None,
-            1,
-            0);
+        var bytes = CreateHeaderBytes(WindowsIpcProtocol.CurrentVersion, IpcMessageKind.Request, 1, 0);
         BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(0, 4), 0x01020304);
-
         var exception = await Assert.ThrowsAsync<IpcProtocolException>(async () =>
         {
             await using var stream = new MemoryStream(bytes);
             await new IpcFrameCodec().ReadAsync(stream);
         });
-
         Assert.AreEqual(IpcProtocolErrorCode.InvalidMagic, exception.ErrorCode);
     }
 
-    [TestMethod]
-    public async Task UnsupportedVersionIsRejected()
+    [DataTestMethod]
+    [DataRow(4)]
+    [DataRow(6)]
+    public async Task NonCurrentProtocolVersionIsRejected(int version)
     {
-        var bytes = CreateHeaderBytes(
-            WindowsIpcProtocol.CurrentVersion + 1,
-            IpcMessageKind.Request,
-            IpcFrameFlags.None,
-            1,
-            0);
-
+        var bytes = CreateHeaderBytes(version, IpcMessageKind.Request, 1, 0);
         var exception = await Assert.ThrowsAsync<IpcProtocolException>(async () =>
         {
             await using var stream = new MemoryStream(bytes);
             await new IpcFrameCodec().ReadAsync(stream);
         });
-
-        Assert.AreEqual(IpcProtocolErrorCode.UnsupportedVersion, exception.ErrorCode);
-    }
-
-    [TestMethod]
-    public async Task PreviousProtocolVersionIsRejected()
-    {
-        var bytes = CreateHeaderBytes(
-            WindowsIpcProtocol.CurrentVersion - 1,
-            IpcMessageKind.Request,
-            IpcFrameFlags.None,
-            1,
-            0);
-
-        var exception = await Assert.ThrowsAsync<IpcProtocolException>(async () =>
-        {
-            await using var stream = new MemoryStream(bytes);
-            await new IpcFrameCodec().ReadAsync(stream);
-        });
-
         Assert.AreEqual(IpcProtocolErrorCode.UnsupportedVersion, exception.ErrorCode);
     }
 
@@ -115,28 +90,16 @@ public sealed class IpcFrameCodecTests
         var codec = new IpcFrameCodec();
         var payload = new byte[] { 0x7b, 0x7d };
         var frame = new IpcFrame(
-            new IpcFrameHeader(
-                WindowsIpcProtocol.CurrentVersion,
-                IpcMessageKind.Notification,
-                IpcFrameFlags.None,
-                0,
-                payload.Length),
+            new IpcFrameHeader(WindowsIpcProtocol.CurrentVersion, IpcMessageKind.Notification, 0, payload.Length),
             payload);
         await using var stream = new MemoryStream();
-
         await codec.WriteAsync(stream, frame);
         stream.Position = 0;
         var restored = await codec.ReadAsync(stream);
-
         Assert.AreEqual(frame.Header, restored?.Header);
         CollectionAssert.AreEqual(payload, restored?.Payload);
         await AssertHeaderFailureAsync(
-            CreateHeaderBytes(
-                WindowsIpcProtocol.CurrentVersion,
-                IpcMessageKind.Notification,
-                IpcFrameFlags.None,
-                1,
-                0),
+            CreateHeaderBytes(WindowsIpcProtocol.CurrentVersion, IpcMessageKind.Notification, 1, 0),
             IpcProtocolErrorCode.InvalidCorrelationId);
     }
 
@@ -144,9 +107,7 @@ public sealed class IpcFrameCodecTests
     public async Task NegativeImpossibleAndOversizedPayloadLengthsAreRejectedBeforePayloadRead()
     {
         await AssertInvalidPayloadLengthAsync(-1, WindowsIpcProtocol.MaximumPayloadSize);
-        await AssertInvalidPayloadLengthAsync(
-            WindowsIpcProtocol.MaximumPayloadSize + 1,
-            WindowsIpcProtocol.MaximumPayloadSize);
+        await AssertInvalidPayloadLengthAsync(WindowsIpcProtocol.MaximumPayloadSize + 1, WindowsIpcProtocol.MaximumPayloadSize);
         await AssertInvalidPayloadLengthAsync(17, 16);
     }
 
@@ -154,50 +115,28 @@ public sealed class IpcFrameCodecTests
     public async Task TruncatedHeaderIsRejected()
     {
         await using var stream = new MemoryStream(new byte[] { 1, 2, 3 });
-
         var exception = await Assert.ThrowsAsync<IpcProtocolException>(async () =>
             await new IpcFrameCodec().ReadAsync(stream));
-
         Assert.AreEqual(IpcProtocolErrorCode.TruncatedHeader, exception.ErrorCode);
     }
 
     [TestMethod]
     public async Task TruncatedPayloadIsRejected()
     {
-        var header = CreateHeaderBytes(
-            WindowsIpcProtocol.CurrentVersion,
-            IpcMessageKind.Response,
-            IpcFrameFlags.None,
-            5,
-            4);
+        var header = CreateHeaderBytes(WindowsIpcProtocol.CurrentVersion, IpcMessageKind.Response, 5, 4);
         var bytes = header.Concat(new byte[] { 1, 2 }).ToArray();
         await using var stream = new MemoryStream(bytes);
-
         var exception = await Assert.ThrowsAsync<IpcProtocolException>(async () =>
             await new IpcFrameCodec().ReadAsync(stream));
-
         Assert.AreEqual(IpcProtocolErrorCode.TruncatedPayload, exception.ErrorCode);
     }
 
     [TestMethod]
-    public async Task UnknownMessageKindAndInvalidFlagsAreRejected()
+    public async Task UnknownMessageKindIsRejected()
     {
         await AssertHeaderFailureAsync(
-            CreateHeaderBytes(
-                WindowsIpcProtocol.CurrentVersion,
-                (IpcMessageKind)999,
-                IpcFrameFlags.None,
-                1,
-                0),
+            CreateHeaderBytes(WindowsIpcProtocol.CurrentVersion, (IpcMessageKind)999, 1, 0),
             IpcProtocolErrorCode.UnknownMessageKind);
-        await AssertHeaderFailureAsync(
-            CreateHeaderBytes(
-                WindowsIpcProtocol.CurrentVersion,
-                IpcMessageKind.Request,
-                (IpcFrameFlags)1,
-                1,
-                0),
-            IpcProtocolErrorCode.InvalidFlags);
     }
 
     [TestMethod]
@@ -206,7 +145,6 @@ public sealed class IpcFrameCodecTests
         await using var stream = new BlockingReadStream();
         using var cancellationSource = new CancellationTokenSource();
         cancellationSource.Cancel();
-
         await Assert.ThrowsAsync<OperationCanceledException>(async () =>
             await new IpcFrameCodec().ReadAsync(stream, cancellationSource.Token));
     }
@@ -217,43 +155,23 @@ public sealed class IpcFrameCodecTests
         await using var stream = new BlockingWriteStream();
         using var cancellationSource = new CancellationTokenSource();
         var frame = new IpcFrame(
-            new IpcFrameHeader(
-                WindowsIpcProtocol.CurrentVersion,
-                IpcMessageKind.Request,
-                IpcFrameFlags.None,
-                1,
-                0),
+            new IpcFrameHeader(WindowsIpcProtocol.CurrentVersion, IpcMessageKind.Request, 1, 0),
             Array.Empty<byte>());
-        var writeTask = new IpcFrameCodec().WriteAsync(
-            stream,
-            frame,
-            cancellationSource.Token).AsTask();
+        var writeTask = new IpcFrameCodec().WriteAsync(stream, frame, cancellationSource.Token).AsTask();
         cancellationSource.Cancel();
-
         await Assert.ThrowsAsync<OperationCanceledException>(async () => await writeTask);
     }
 
-    private static async Task AssertInvalidPayloadLengthAsync(
-        int payloadLength,
-        int maximumPayloadLength)
+    private static async Task AssertInvalidPayloadLengthAsync(int payloadLength, int maximumPayloadLength)
     {
-        var bytes = CreateHeaderBytes(
-            WindowsIpcProtocol.CurrentVersion,
-            IpcMessageKind.Request,
-            IpcFrameFlags.None,
-            1,
-            payloadLength);
+        var bytes = CreateHeaderBytes(WindowsIpcProtocol.CurrentVersion, IpcMessageKind.Request, 1, payloadLength);
         await using var stream = new MemoryStream(bytes);
-
         var exception = await Assert.ThrowsAsync<IpcProtocolException>(async () =>
             await new IpcFrameCodec(maximumPayloadLength).ReadAsync(stream));
-
         Assert.AreEqual(IpcProtocolErrorCode.InvalidPayloadLength, exception.ErrorCode);
     }
 
-    private static async Task AssertHeaderFailureAsync(
-        byte[] bytes,
-        IpcProtocolErrorCode expectedError)
+    private static async Task AssertHeaderFailureAsync(byte[] bytes, IpcProtocolErrorCode expectedError)
     {
         await using var stream = new MemoryStream(bytes);
         var exception = await Assert.ThrowsAsync<IpcProtocolException>(async () =>
@@ -261,20 +179,14 @@ public sealed class IpcFrameCodecTests
         Assert.AreEqual(expectedError, exception.ErrorCode);
     }
 
-    private static byte[] CreateHeaderBytes(
-        int protocolVersion,
-        IpcMessageKind messageKind,
-        IpcFrameFlags flags,
-        long correlationId,
-        int payloadLength)
+    private static byte[] CreateHeaderBytes(int protocolVersion, IpcMessageKind messageKind, long correlationId, int payloadLength)
     {
         var bytes = new byte[WindowsIpcProtocol.HeaderSize];
         BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(0, 4), WindowsIpcProtocol.Magic);
         BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(4, 4), protocolVersion);
         BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(8, 4), (int)messageKind);
-        BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(12, 4), (int)flags);
-        BinaryPrimitives.WriteInt64BigEndian(bytes.AsSpan(16, 8), correlationId);
-        BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(24, 4), payloadLength);
+        BinaryPrimitives.WriteInt64BigEndian(bytes.AsSpan(12, 8), correlationId);
+        BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(20, 4), payloadLength);
         return bytes;
     }
 }

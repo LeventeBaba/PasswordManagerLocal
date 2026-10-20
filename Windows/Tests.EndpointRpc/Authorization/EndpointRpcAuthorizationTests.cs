@@ -189,6 +189,7 @@ public sealed class EndpointRpcAuthorizationTests
         IpcOperationId operationId) =>
         new(
             connection,
-            new IpcRequestEnvelope(2, operationId, null),
+            1,
+            new IpcRequestEnvelope(operationId, null),
             new WindowsIpcSerializer());
 }

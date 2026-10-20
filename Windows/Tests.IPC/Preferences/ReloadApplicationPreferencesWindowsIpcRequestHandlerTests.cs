@@ -46,8 +46,8 @@ public sealed class ReloadApplicationPreferencesWindowsIpcRequestHandlerTests
                 PeerWindowsSessionId: 1,
                 PeerSessionId: Guid.NewGuid(),
                 PeerCapabilities: IpcCapabilities.Control),
+            7,
             new IpcRequestEnvelope(
-                CorrelationId: 7,
                 OperationId: IpcOperationId.ReloadApplicationPreferences,
                 Payload: null),
             serializer);
@@ -84,8 +84,8 @@ public sealed class ReloadApplicationPreferencesWindowsIpcRequestHandlerTests
                 PeerWindowsSessionId: 1,
                 PeerSessionId: Guid.NewGuid(),
                 PeerCapabilities: IpcCapabilities.Control),
+            8,
             new IpcRequestEnvelope(
-                CorrelationId: 8,
                 OperationId: IpcOperationId.ReloadApplicationPreferences,
                 Payload: new byte[] { 1 }),
             new WindowsIpcSerializer());

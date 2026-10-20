@@ -45,7 +45,7 @@ public sealed class BlockingEndpointRpcTransport : IEndpointRpcTransport
                 exception);
         }
 
-        return EndpointRpcTransportResponse.Inline("{}"u8.ToArray());
+        return EndpointRpcTransportResponse.Inline(Array.Empty<byte>());
     }
 
     public Task<byte[]> GetLargeResultChunkAsync(

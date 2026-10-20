@@ -117,8 +117,8 @@ public sealed class EndpointRpcAdmissionHardeningTests
         byte[] encoded) =>
         new(
             connection,
+            correlationId,
             new IpcRequestEnvelope(
-                correlationId,
                 IpcOperationId.EndpointRpcRequest,
                 encoded),
             new WindowsIpcSerializer());

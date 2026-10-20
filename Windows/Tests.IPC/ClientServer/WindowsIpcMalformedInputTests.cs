@@ -35,14 +35,16 @@ public sealed class WindowsIpcMalformedInputTests
     }
 
     [TestMethod]
-    public async Task InvalidEnvelopeCorrelationIsRejectedWithoutDispatch()
+    public async Task OuterFrameCorrelationIsAuthoritativeForDispatch()
     {
         var dispatchCalls = 0;
+        long dispatchedCorrelationId = 0;
         var handler = new DelegateWindowsIpcRequestHandler(
             IpcOperationId.Ping,
             (context, cancellationToken) =>
             {
                 dispatchCalls++;
+                dispatchedCorrelationId = context.CorrelationId;
                 return Task.FromResult(context.Success());
             });
         var pair = new InMemoryIpcConnectionPair();
@@ -57,20 +59,19 @@ public sealed class WindowsIpcMalformedInputTests
                 IpcCapabilities.Control));
         var serverTask = server.RunAsync();
         await CompleteRawHandshakeAsync(pair, serializer);
-        var request = new IpcRequestEnvelope(55, IpcOperationId.Ping, null);
-        var payload = serializer.Serialize(
-            request,
-            WindowsIpcJsonContext.Default.IpcRequestEnvelope);
+        var payload = new IpcFramePayloadCodec(serializer).EncodeRequest(
+            new IpcRequestEnvelope(IpcOperationId.Ping, null), 55);
         await pair.Client.WriteFrameAsync(CreateFrame(IpcMessageKind.Request, 56, payload));
 
         var responseFrame = await pair.Client.ReadFrameAsync();
         Assert.IsNotNull(responseFrame);
-        var response = serializer.Deserialize(
-            responseFrame.Payload,
-            WindowsIpcJsonContext.Default.IpcResponseEnvelope);
+        var response = new IpcFramePayloadCodec(serializer).DecodeResponse(
+            responseFrame.Header.CorrelationId,
+            responseFrame.Payload);
 
-        Assert.AreEqual(IpcErrorCode.InvalidEnvelope, response.Error?.ErrorCode);
-        Assert.AreEqual(0, dispatchCalls);
+        Assert.IsTrue(response.IsSuccess);
+        Assert.AreEqual(56, dispatchedCorrelationId);
+        Assert.AreEqual(1, dispatchCalls);
         await pair.Client.DisposeAsync();
         await serverTask;
     }
@@ -90,17 +91,17 @@ public sealed class WindowsIpcMalformedInputTests
                 IpcCapabilities.Control));
         var serverTask = server.RunAsync();
         await CompleteRawHandshakeAsync(pair, serializer);
-        var request = new IpcRequestEnvelope(57, (IpcOperationId)999, null);
-        var payload = serializer.Serialize(
-            request,
-            WindowsIpcJsonContext.Default.IpcRequestEnvelope);
+        var payload = new byte[sizeof(int)];
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(
+            payload,
+            999);
         await pair.Client.WriteFrameAsync(CreateFrame(IpcMessageKind.Request, 57, payload));
 
         var responseFrame = await pair.Client.ReadFrameAsync();
         Assert.IsNotNull(responseFrame);
-        var response = serializer.Deserialize(
-            responseFrame.Payload,
-            WindowsIpcJsonContext.Default.IpcResponseEnvelope);
+        var response = new IpcFramePayloadCodec(serializer).DecodeResponse(
+            responseFrame.Header.CorrelationId,
+            responseFrame.Payload);
 
         Assert.AreEqual(IpcErrorCode.InvalidEnvelope, response.Error?.ErrorCode);
         await pair.Client.DisposeAsync();
@@ -114,7 +115,7 @@ public sealed class WindowsIpcMalformedInputTests
             new IWindowsIpcRequestHandler[] { new PingWindowsIpcRequestHandler() });
 
         var exception = await Assert.ThrowsAsync<IpcRemoteException>(async () =>
-            await session.Client.SendAsync(IpcOperationId.Ping, Array.Empty<byte>()));
+            await session.Client.SendAsync(IpcOperationId.Ping, "{}"u8.ToArray()));
 
         Assert.AreEqual(IpcErrorCode.InvalidPayload, exception.Error.ErrorCode);
     }
@@ -173,7 +174,6 @@ public sealed class WindowsIpcMalformedInputTests
         Assert.IsNotNull(requestFrame);
         var handshakeResponse = new IpcHandshakeResponse(
             true,
-            WindowsIpcProtocol.CurrentVersion,
             IpcPeerRole.Agent,
             Guid.NewGuid(),
             IpcCapabilities.Control,
@@ -188,21 +188,7 @@ public sealed class WindowsIpcMalformedInputTests
         var pendingTask = client.SendAsync(IpcOperationId.Ping);
         var ordinaryRequest = await pair.Server.ReadFrameAsync();
         Assert.IsNotNull(ordinaryRequest);
-        var invalidResponse = new IpcResponseEnvelope(
-            ordinaryRequest.Header.CorrelationId,
-            IsSuccess: true,
-            Result: null,
-            Error: new IpcError(
-                IpcErrorCode.InternalFailure,
-                IpcErrorCategory.Internal,
-                "invalid",
-                ordinaryRequest.Header.CorrelationId,
-                DateTimeOffset.UtcNow,
-                false,
-                false));
-        var responsePayload = serializer.Serialize(
-            invalidResponse,
-            WindowsIpcJsonContext.Default.IpcResponseEnvelope);
+        var responsePayload = new byte[] { byte.MaxValue };
         await pair.Server.WriteFrameAsync(
             CreateFrame(
                 IpcMessageKind.Response,
@@ -220,7 +206,6 @@ public sealed class WindowsIpcMalformedInputTests
         WindowsIpcSerializer serializer)
     {
         var request = new IpcHandshakeRequest(
-            WindowsIpcProtocol.CurrentVersion,
             IpcPeerRole.TestClient,
             Environment.ProcessId,
             0,
@@ -241,7 +226,6 @@ public sealed class WindowsIpcMalformedInputTests
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 kind,
-                IpcFrameFlags.None,
                 correlationId,
                 payload.Length),
             payload);

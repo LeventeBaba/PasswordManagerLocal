@@ -15,7 +15,8 @@ public sealed class WindowsIpcClient : IAsyncDisposable
     private readonly WindowsIpcSerializer _serializer;
     private readonly WindowsIpcClientOptions _options;
     private readonly WindowsIpcContractValidator _contractValidator;
-    private readonly Func<IpcRequestEnvelope, byte[]> _serializeRequestEnvelope;
+    private readonly IpcFramePayloadCodec _framePayloadCodec;
+    private readonly Func<IpcRequestEnvelope, long, byte[]> _serializeRequestEnvelope;
     private readonly Func<long, PendingIpcRequest, bool> _allowPendingRequestRegistration;
     private readonly SemaphoreSlim _handshakeLock = new(1, 1);
     private readonly SemaphoreSlim _pendingRequestCapacity;
@@ -57,18 +58,16 @@ public sealed class WindowsIpcClient : IAsyncDisposable
         WindowsIpcSerializer serializer,
         WindowsIpcClientOptions options,
         WindowsIpcContractValidator? contractValidator,
-        Func<IpcRequestEnvelope, byte[]>? requestEnvelopeSerializer,
+        Func<IpcRequestEnvelope, long, byte[]>? requestEnvelopeSerializer,
         Func<long, PendingIpcRequest, bool>? pendingRequestRegistrationGuard)
     {
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _contractValidator = contractValidator ?? new WindowsIpcContractValidator();
+        _framePayloadCodec = new IpcFramePayloadCodec(_serializer, _contractValidator);
         _shutdownToken = _shutdownSource.Token;
-        _serializeRequestEnvelope = requestEnvelopeSerializer
-            ?? (request => _serializer.Serialize(
-                request,
-                WindowsIpcJsonContext.Default.IpcRequestEnvelope));
+        _serializeRequestEnvelope = requestEnvelopeSerializer ?? _framePayloadCodec.EncodeRequest;
         _allowPendingRequestRegistration = pendingRequestRegistrationGuard ?? ((_, _) => true);
         _pendingRequestCapacity = new SemaphoreSlim(
             options.MaximumPendingRequests,
@@ -129,7 +128,6 @@ public sealed class WindowsIpcClient : IAsyncDisposable
             try
             {
                 var request = new IpcHandshakeRequest(
-                    WindowsIpcProtocol.CurrentVersion,
                     _options.ClientRole,
                     _options.ProcessId,
                     _options.WindowsSessionId,
@@ -155,12 +153,21 @@ public sealed class WindowsIpcClient : IAsyncDisposable
                         "The IPC handshake response is invalid.");
                 }
 
-                var response = _serializer.Deserialize(
-                    frame.Payload,
-                    WindowsIpcJsonContext.Default.IpcHandshakeResponse);
-                ValidateHandshakeResponse(response);
+                IpcHandshakeResponse response;
+                try
+                {
+                    response = _serializer.Deserialize(
+                        frame.Payload,
+                        WindowsIpcJsonContext.Default.IpcHandshakeResponse);
+                    ValidateHandshakeResponse(response);
+                }
+                finally
+                {
+                    Array.Clear(frame.Payload);
+                }
+
                 if (!response.Accepted)
-                    throw new IpcRemoteException(response.Error!);
+                    throw new IpcRemoteException(response.Error!, HandshakeCorrelationId);
 
                 ThrowIfDisposed();
                 ServerConnectionId = response.ConnectionId;
@@ -224,17 +231,17 @@ public sealed class WindowsIpcClient : IAsyncDisposable
 
             correlationId = GetNextCorrelationId();
             cancellationToken.ThrowIfCancellationRequested();
-            var request = new IpcRequestEnvelope(correlationId, operationId, payload);
-            _contractValidator.Validate(request);
+            var request = new IpcRequestEnvelope(operationId, payload);
+            _contractValidator.Validate(request, correlationId);
             await WaitForPendingRequestCapacityAsync(cancellationToken);
 
             var pending = new PendingIpcRequest(
                 correlationId,
                 cancellationToken,
                 ReleasePendingRequest);
+            byte[]? serialized = null;
             try
             {
-                byte[]? serialized = null;
                 if (cancellationToken.IsCancellationRequested)
                 {
                     pending.RequestCallerCancellation();
@@ -250,8 +257,8 @@ public sealed class WindowsIpcClient : IAsyncDisposable
                                 "The IPC connection is not available.");
                         }
 
-                        serialized = _serializeRequestEnvelope(request);
-                        _contractValidator.ValidateSerializedRequestEnvelope(
+                        serialized = _serializeRequestEnvelope(request, correlationId);
+                        _contractValidator.ValidateSerializedRequestPayload(
                             correlationId,
                             serialized);
                     }
@@ -316,8 +323,20 @@ public sealed class WindowsIpcClient : IAsyncDisposable
                         exception);
                 }
 
-                if (!response.IsSuccess)
-                    throw new IpcRemoteException(response.Error!);
+                if (response.PayloadKind == IpcResponsePayloadKind.Failure)
+                    throw new IpcRemoteException(response.Error!, correlationId);
+
+                if (operationId != IpcOperationId.EndpointRpcRequest &&
+                    (response.PayloadKind is IpcResponsePayloadKind.EndpointFailure or
+                        IpcResponsePayloadKind.LargeResult))
+                {
+                    throw new IpcRequestTransmissionException(
+                        correlationId,
+                        IpcRequestTransmissionState.Sent,
+                        new IpcProtocolException(
+                            IpcProtocolErrorCode.UnexpectedMessageKind,
+                            "The IPC server returned an endpoint-only response for a control operation."));
+                }
 
                 return new IpcTransmissionAwareResponse(
                     correlationId,
@@ -327,6 +346,8 @@ public sealed class WindowsIpcClient : IAsyncDisposable
             finally
             {
                 pending.DisposeCancellationRegistration();
+                if (serialized is not null)
+                    Array.Clear(serialized);
             }
         }
         catch (IpcRequestTransmissionException)
@@ -408,48 +429,78 @@ public sealed class WindowsIpcClient : IAsyncDisposable
                     break;
                 }
 
-                ValidateFrame(frame);
-                if (frame.Header.MessageKind == IpcMessageKind.Notification)
+                try
                 {
-                    if ((ServerCapabilities & IpcCapabilities.ChangeNotifications) == 0)
+                    ValidateFrame(frame);
+                    if (frame.Header.MessageKind == IpcMessageKind.Notification)
+                    {
+                        if ((ServerCapabilities & IpcCapabilities.ChangeNotifications) == 0)
+                        {
+                            throw new IpcProtocolException(
+                                IpcProtocolErrorCode.UnexpectedMessageKind,
+                                "The IPC server sent an unsupported notification frame.");
+                        }
+
+                        IpcChangeNotificationDto notification;
+                        try
+                        {
+                            notification = _serializer.Deserialize(
+                                frame.Payload,
+                                WindowsIpcJsonContext.Default.IpcChangeNotificationDto);
+                            _contractValidator.Validate(notification);
+                        }
+                        catch (IpcPayloadException)
+                        {
+                            throw new IpcProtocolException(
+                                IpcProtocolErrorCode.InvalidEnvelope,
+                                "The IPC notification frame is invalid.");
+                        }
+
+                        _changeNotifications.TryEnqueue(notification);
+                        continue;
+                    }
+
+                    if (frame.Header.MessageKind != IpcMessageKind.Response)
                     {
                         throw new IpcProtocolException(
                             IpcProtocolErrorCode.UnexpectedMessageKind,
-                            "The IPC server sent an unsupported notification frame.");
+                            "The IPC client received an unexpected message kind.");
                     }
 
-                    IpcChangeNotificationDto notification;
+                    IpcResponseEnvelope response;
                     try
                     {
-                        notification = _serializer.Deserialize(
-                            frame.Payload,
-                            WindowsIpcJsonContext.Default.IpcChangeNotificationDto);
-                        _contractValidator.Validate(notification);
+                        response = _framePayloadCodec.DecodeResponse(
+                            frame.Header.CorrelationId,
+                            frame.Payload);
                     }
-                    catch (IpcPayloadException)
+                    catch (IpcPayloadException exception)
                     {
                         throw new IpcProtocolException(
                             IpcProtocolErrorCode.InvalidEnvelope,
-                            "The IPC notification frame is invalid.");
+                            "The IPC response payload is invalid.",
+                            exception);
+                    }
+                    try
+                    {
+                        ValidateResponse(response);
+                    }
+                    catch
+                    {
+                        ClearResponsePayload(response);
+                        throw;
                     }
 
-                    _changeNotifications.TryEnqueue(notification);
-                    continue;
+                    if (!_pendingRequests.TryGetValue(frame.Header.CorrelationId, out var pending) ||
+                        !pending.TrySetResult(response))
+                    {
+                        ClearResponsePayload(response);
+                    }
                 }
-
-                if (frame.Header.MessageKind != IpcMessageKind.Response)
+                finally
                 {
-                    throw new IpcProtocolException(
-                        IpcProtocolErrorCode.UnexpectedMessageKind,
-                        "The IPC client received an unexpected message kind.");
+                    Array.Clear(frame.Payload);
                 }
-
-                var response = _serializer.Deserialize(
-                    frame.Payload,
-                    WindowsIpcJsonContext.Default.IpcResponseEnvelope);
-                ValidateResponse(frame.Header, response);
-                if (_pendingRequests.TryGetValue(response.CorrelationId, out var pending))
-                    pending.TrySetResult(response);
             }
         }
         catch (OperationCanceledException) when (_shutdownSource.IsCancellationRequested)
@@ -640,12 +691,9 @@ public sealed class WindowsIpcClient : IAsyncDisposable
                 exception);
         }
 
-        if (response.ProtocolVersion != WindowsIpcProtocol.CurrentVersion ||
-            response.ServerRole != _options.ExpectedServerRole ||
+        if (response.ServerRole != _options.ExpectedServerRole ||
             (response.Capabilities & _options.RequiredServerCapabilities) !=
-                _options.RequiredServerCapabilities ||
-            (response.Error is not null &&
-                response.Error.CorrelationId != HandshakeCorrelationId))
+                _options.RequiredServerCapabilities)
         {
             throw new IpcProtocolException(
                 IpcProtocolErrorCode.InvalidEnvelope,
@@ -653,9 +701,7 @@ public sealed class WindowsIpcClient : IAsyncDisposable
         }
     }
 
-    private void ValidateResponse(
-        IpcFrameHeader header,
-        IpcResponseEnvelope response)
+    private void ValidateResponse(IpcResponseEnvelope response)
     {
         try
         {
@@ -669,12 +715,12 @@ public sealed class WindowsIpcClient : IAsyncDisposable
                 exception);
         }
 
-        if (response.CorrelationId != header.CorrelationId)
-        {
-            throw new IpcProtocolException(
-                IpcProtocolErrorCode.InvalidEnvelope,
-                "The IPC response envelope is invalid.");
-        }
+    }
+
+    private static void ClearResponsePayload(IpcResponseEnvelope response)
+    {
+        if (response.Result is not null)
+            Array.Clear(response.Result);
     }
 
     private long GetNextCorrelationId()
@@ -690,7 +736,6 @@ public sealed class WindowsIpcClient : IAsyncDisposable
     {
         if (frame.Header.ProtocolVersion != WindowsIpcProtocol.CurrentVersion ||
             !Enum.IsDefined(frame.Header.MessageKind) ||
-            frame.Header.Flags != IpcFrameFlags.None ||
             (frame.Header.MessageKind == IpcMessageKind.Notification
                 ? frame.Header.CorrelationId != 0
                 : frame.Header.CorrelationId <= 0) ||
@@ -711,7 +756,6 @@ public sealed class WindowsIpcClient : IAsyncDisposable
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 messageKind,
-                IpcFrameFlags.None,
                 correlationId,
                 payload.Length),
             payload);

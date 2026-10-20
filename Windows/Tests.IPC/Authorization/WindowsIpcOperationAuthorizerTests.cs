@@ -321,6 +321,7 @@ public sealed class WindowsIpcOperationAuthorizerTests
                 0,
                 PeerSessionId: Guid.NewGuid(),
                 PeerCapabilities: IpcCapabilities.Control | IpcCapabilities.Status | IpcCapabilities.UiActivation),
-            new IpcRequestEnvelope(1, operation, Payload: null),
+            1,
+            new IpcRequestEnvelope(operation, Payload: null),
             new WindowsIpcSerializer());
 }

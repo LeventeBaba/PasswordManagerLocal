@@ -16,7 +16,6 @@ public sealed class EndpointRpcTransportErrorMapperTests
             IpcErrorCode.UnsupportedCapability,
             IpcErrorCategory.Protocol,
             "sensitive transport detail",
-            42,
             occurredAtUtc,
             false,
             true);
@@ -40,7 +39,6 @@ public sealed class EndpointRpcTransportErrorMapperTests
             IpcErrorCode.AgentUnavailable,
             IpcErrorCategory.Availability,
             "transport detail",
-            8,
             DateTimeOffset.UtcNow,
             true,
             true);
@@ -59,7 +57,6 @@ public sealed class EndpointRpcTransportErrorMapperTests
             IpcErrorCode.RequestRejected,
             IpcErrorCategory.Validation,
             "transport detail",
-            9,
             DateTimeOffset.UtcNow,
             false,
             false);
@@ -77,7 +74,6 @@ public sealed class EndpointRpcTransportErrorMapperTests
             IpcErrorCode.UnauthorizedOperation,
             IpcErrorCategory.Protocol,
             "transport detail",
-            10,
             DateTimeOffset.UtcNow,
             false,
             false);
@@ -117,7 +113,6 @@ public sealed class EndpointRpcTransportErrorMapperTests
             IpcErrorCode.ResponsePayloadTooLarge,
             IpcErrorCategory.Validation,
             "outer detail",
-            7,
             DateTimeOffset.UtcNow,
             false,
             false);

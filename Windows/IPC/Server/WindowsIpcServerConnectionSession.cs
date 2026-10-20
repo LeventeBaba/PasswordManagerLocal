@@ -19,6 +19,7 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
     private readonly WindowsIpcRequestDispatcher _dispatcher;
     private readonly WindowsIpcServerOptions _options;
     private readonly WindowsIpcContractValidator _contractValidator;
+    private readonly IpcFramePayloadCodec _framePayloadCodec;
     private readonly IReadOnlyList<IWindowsIpcConnectionLifecycleObserver> _observers;
     private readonly IUiConnectionCoordinator? _uiConnectionCoordinator;
     private readonly IWindowsIpcHandshakeAuthorizer? _handshakeAuthorizer;
@@ -62,6 +63,7 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _notificationQueue = new IpcChangeNotificationQueue(options.ChangeNotificationQueueCapacity);
         _contractValidator = contractValidator ?? new WindowsIpcContractValidator();
+        _framePayloadCodec = new IpcFramePayloadCodec(_serializer, _contractValidator);
         _observers = observers?.ToArray()
             ?? Array.Empty<IWindowsIpcConnectionLifecycleObserver>();
         if (options.ManagesUiRegistration &&
@@ -347,11 +349,11 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
         {
             await SendResponseAsync(
                 Failure(
-                    frame.Header.CorrelationId,
                     IpcErrorCode.HandshakeRequired,
                     IpcErrorCategory.Protocol,
                     "An IPC handshake is required before ordinary operations.",
                     isRetryable: false),
+                frame.Header.CorrelationId,
                 cancellationToken);
             return null;
         }
@@ -373,15 +375,9 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
                 cancellationToken);
             return null;
         }
-
-        if (request.ProtocolVersion != WindowsIpcProtocol.CurrentVersion)
+        finally
         {
-            await SendHandshakeRejectionAsync(
-                frame.Header.CorrelationId,
-                IpcErrorCode.UnsupportedProtocolVersion,
-                "The IPC protocol version is not supported.",
-                cancellationToken);
-            return null;
+            Array.Clear(frame.Payload);
         }
 
         if (_connection.VerifiedPeerProcessId is { } verifiedPeerProcessId)
@@ -479,7 +475,6 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
 
         var response = new IpcHandshakeResponse(
             Accepted: true,
-            WindowsIpcProtocol.CurrentVersion,
             _options.ServerRole,
             _connection.ConnectionId,
             _options.Capabilities,
@@ -497,21 +492,18 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
         IpcRequestEnvelope request;
         try
         {
-            request = _serializer.Deserialize(
-                frame.Payload,
-                WindowsIpcJsonContext.Default.IpcRequestEnvelope);
-            ValidateRequest(frame.Header, request);
+            request = _framePayloadCodec.DecodeRequest(frame.Header.CorrelationId, frame.Payload);
         }
         catch (IpcPayloadLimitExceededException exception)
             when (exception.ErrorCode == IpcErrorCode.RequestPayloadTooLarge)
         {
             await SendResponseAsync(
                 Failure(
-                    frame.Header.CorrelationId,
                     exception.ErrorCode,
                     exception.ErrorCategory,
                     exception.SafeMessage,
                     exception.IsRetryable),
+                frame.Header.CorrelationId,
                 connectionCancellationToken);
             return;
         }
@@ -519,11 +511,11 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
         {
             await SendResponseAsync(
                 Failure(
-                    frame.Header.CorrelationId,
                     IpcErrorCode.InvalidEnvelope,
                     IpcErrorCategory.Validation,
                     "The IPC request envelope is invalid.",
                     isRetryable: false),
+                frame.Header.CorrelationId,
                 connectionCancellationToken);
             return;
         }
@@ -531,25 +523,32 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
         {
             await SendResponseAsync(
                 Failure(
-                    frame.Header.CorrelationId,
                     IpcErrorCode.InvalidEnvelope,
                     IpcErrorCategory.Protocol,
                     "The IPC request envelope is invalid.",
                     isRetryable: false),
+                frame.Header.CorrelationId,
                 connectionCancellationToken);
             return;
         }
+        finally
+        {
+            Array.Clear(frame.Payload);
+        }
 
-        if (_activeRequests.ContainsKey(request.CorrelationId))
+        var correlationId = frame.Header.CorrelationId;
+        if (_activeRequests.ContainsKey(correlationId))
         {
             await SendResponseAsync(
                 Failure(
-                    request.CorrelationId,
                     IpcErrorCode.InvalidEnvelope,
                     IpcErrorCategory.Protocol,
                     "The IPC correlation ID is already active.",
                     isRetryable: false),
+                correlationId,
                 connectionCancellationToken);
+            if (request.Payload is not null)
+                Array.Clear(request.Payload);
             return;
         }
 
@@ -557,12 +556,14 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
         {
             await SendResponseAsync(
                 Failure(
-                    request.CorrelationId,
                     IpcErrorCode.TooManyRequests,
                     IpcErrorCategory.Availability,
                     "The IPC server has reached the per-connection request limit.",
                     isRetryable: true),
+                correlationId,
                 connectionCancellationToken);
+            if (request.Payload is not null)
+                Array.Clear(request.Payload);
             return;
         }
 
@@ -578,23 +579,26 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
                 {
                     _activeRequestCapacity.Release();
                 });
-            if (!_activeRequests.TryAdd(request.CorrelationId, execution))
+            if (!_activeRequests.TryAdd(correlationId, execution))
             {
                 execution.Dispose();
                 await SendResponseAsync(
                     Failure(
-                        request.CorrelationId,
                         IpcErrorCode.InvalidEnvelope,
                         IpcErrorCategory.Protocol,
                         "The IPC correlation ID is already active.",
                         isRetryable: false),
+                    correlationId,
                     connectionCancellationToken);
+                if (request.Payload is not null)
+                    Array.Clear(request.Payload);
                 return;
             }
 
             registered = true;
             execution.Task = ProcessRequestAsync(
                 connectionContext,
+                correlationId,
                 request,
                 execution,
                 connectionCancellationToken);
@@ -604,7 +608,7 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
             if (registered && execution is not null)
             {
                 var pair = new KeyValuePair<long, ServerIpcRequestExecution>(
-                    request.CorrelationId,
+                    correlationId,
                     execution);
                 ((ICollection<KeyValuePair<long, ServerIpcRequestExecution>>)_activeRequests)
                     .Remove(pair);
@@ -615,12 +619,16 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
                 _activeRequestCapacity.Release();
             }
 
+            if (!registered && request.Payload is not null)
+                Array.Clear(request.Payload);
+
             throw;
         }
     }
 
     private async Task ProcessRequestAsync(
         IpcConnectionContext connectionContext,
+        long correlationId,
         IpcRequestEnvelope request,
         ServerIpcRequestExecution execution,
         CancellationToken connectionCancellationToken)
@@ -629,6 +637,7 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
         {
             var context = new IpcRequestContext(
                 connectionContext,
+                correlationId,
                 request,
                 _serializer,
                 _contractValidator);
@@ -664,7 +673,7 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
             }
 
             if (Volatile.Read(ref _connectionEnding) == 0)
-                await SendResponseAsync(response, connectionCancellationToken);
+                await SendResponseAsync(response, correlationId, connectionCancellationToken);
         }
         catch (OperationCanceledException) when (execution.CancellationSource.IsCancellationRequested)
         {
@@ -683,8 +692,10 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
         }
         finally
         {
+            if (request.Payload is not null)
+                Array.Clear(request.Payload);
             var pair = new KeyValuePair<long, ServerIpcRequestExecution>(
-                request.CorrelationId,
+                correlationId,
                 execution);
             ((ICollection<KeyValuePair<long, ServerIpcRequestExecution>>)_activeRequests)
                 .Remove(pair);
@@ -800,13 +811,11 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
             errorCode,
             IpcErrorCategory.Protocol,
             safeMessage,
-            correlationId,
             DateTimeOffset.UtcNow,
             IsRetryable: isRetryable,
             RequiresProcessRestart: false);
         var response = new IpcHandshakeResponse(
             Accepted: false,
-            WindowsIpcProtocol.CurrentVersion,
             _options.ServerRole,
             _connection.ConnectionId,
             _options.Capabilities,
@@ -820,8 +829,6 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
         CancellationToken cancellationToken)
     {
         _contractValidator.Validate(response);
-        if (response.Error is not null && response.Error.CorrelationId != correlationId)
-            throw new IpcPayloadException("The IPC handshake error correlation ID is invalid.");
 
         var payload = _serializer.Serialize(
             response,
@@ -831,7 +838,6 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
                 new IpcFrameHeader(
                     WindowsIpcProtocol.CurrentVersion,
                     IpcMessageKind.HandshakeResponse,
-                    IpcFrameFlags.None,
                     correlationId,
                     payload.Length),
                 payload),
@@ -840,42 +846,48 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
 
     private async Task SendResponseAsync(
         IpcResponseEnvelope response,
+        long correlationId,
         CancellationToken cancellationToken)
     {
-        var transportResponse = CreateTransportResponse(response);
-        var payload = _serializer.Serialize(
-            transportResponse,
-            WindowsIpcJsonContext.Default.IpcResponseEnvelope);
+        IpcResponseEnvelope? transportResponse = null;
         try
         {
-            _contractValidator.ValidateSerializedResponseEnvelope(
-                transportResponse.CorrelationId,
-                payload);
-        }
-        catch (IpcPayloadLimitExceededException)
-        {
-            transportResponse = PayloadLimitFailure(
-                response.CorrelationId,
-                IpcErrorCode.SerializedEnvelopeTooLarge,
-                "The serialized IPC response envelope exceeds the permitted frame size.");
-            payload = _serializer.Serialize(
-                transportResponse,
-                WindowsIpcJsonContext.Default.IpcResponseEnvelope);
-            _contractValidator.ValidateSerializedResponseEnvelope(
-                transportResponse.CorrelationId,
-                payload);
-        }
+            transportResponse = CreateTransportResponse(response);
+            byte[] payload;
+            try
+            {
+                payload = _framePayloadCodec.EncodeResponse(transportResponse, correlationId);
+                _contractValidator.ValidateSerializedResponsePayload(correlationId, payload);
+            }
+            catch (IpcPayloadLimitExceededException)
+            {
+                transportResponse = PayloadLimitFailure(
+                    IpcErrorCode.SerializedEnvelopeTooLarge,
+                    "The IPC response payload exceeds the permitted frame size.");
+                payload = _framePayloadCodec.EncodeResponse(transportResponse, correlationId);
+                _contractValidator.ValidateSerializedResponsePayload(correlationId, payload);
+            }
 
-        await _connection.WriteFrameAsync(
-            new IpcFrame(
-                new IpcFrameHeader(
-                    WindowsIpcProtocol.CurrentVersion,
-                    IpcMessageKind.Response,
-                    IpcFrameFlags.None,
-                    transportResponse.CorrelationId,
-                    payload.Length),
-                payload),
-            cancellationToken);
+            await _connection.WriteFrameAsync(
+                new IpcFrame(
+                    new IpcFrameHeader(
+                        WindowsIpcProtocol.CurrentVersion,
+                        IpcMessageKind.Response,
+                        correlationId,
+                        payload.Length),
+                    payload),
+                cancellationToken);
+        }
+        finally
+        {
+            if (response.Result is not null)
+                Array.Clear(response.Result);
+            if (transportResponse?.Result is { } transportResult &&
+                !ReferenceEquals(response.Result, transportResult))
+            {
+                Array.Clear(transportResult);
+            }
+        }
     }
 
     private async Task RunNotificationWriterAsync(CancellationToken connectionCancellationToken)
@@ -892,7 +904,6 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
                     new IpcFrameHeader(
                         WindowsIpcProtocol.CurrentVersion,
                         IpcMessageKind.Notification,
-                        IpcFrameFlags.None,
                         CorrelationId: 0,
                         PayloadLength: payload.Length),
                     payload);
@@ -937,7 +948,8 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
         }
     }
 
-    private IpcResponseEnvelope CreateTransportResponse(IpcResponseEnvelope response)
+    private IpcResponseEnvelope CreateTransportResponse(
+        IpcResponseEnvelope response)
     {
         try
         {
@@ -948,18 +960,15 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
             when (exception.ErrorCode == IpcErrorCode.ResponsePayloadTooLarge)
         {
             return PayloadLimitFailure(
-                response.CorrelationId,
                 exception.ErrorCode,
                 exception.SafeMessage);
         }
     }
 
     private static IpcResponseEnvelope PayloadLimitFailure(
-        long correlationId,
         IpcErrorCode errorCode,
         string safeMessage) =>
         Failure(
-            correlationId,
             errorCode,
             IpcErrorCategory.Validation,
             safeMessage,
@@ -983,19 +992,6 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
         }
 
         return CombineFailures(failures);
-    }
-
-    private void ValidateRequest(
-        IpcFrameHeader header,
-        IpcRequestEnvelope request)
-    {
-        _contractValidator.Validate(request);
-        if (request.CorrelationId != header.CorrelationId)
-        {
-            throw new IpcProtocolException(
-                IpcProtocolErrorCode.InvalidEnvelope,
-                "The IPC request envelope is invalid.");
-        }
     }
 
     private Task DisposeConnectionOnceAsync()
@@ -1061,13 +1057,6 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
                 "The IPC frame message kind is unknown.");
         }
 
-        if (frame.Header.Flags != IpcFrameFlags.None)
-        {
-            throw new IpcProtocolException(
-                IpcProtocolErrorCode.InvalidFlags,
-                "The IPC frame flags are invalid.");
-        }
-
         if (frame.Header.CorrelationId <= 0)
         {
             throw new IpcProtocolException(
@@ -1085,18 +1074,15 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
     }
 
     private static IpcResponseEnvelope Failure(
-        long correlationId,
         IpcErrorCode errorCode,
         IpcErrorCategory category,
         string safeMessage,
         bool isRetryable) =>
         IpcResponseEnvelope.Failure(
-            correlationId,
             new IpcError(
                 errorCode,
                 category,
                 safeMessage,
-                correlationId,
                 DateTimeOffset.UtcNow,
                 isRetryable,
                 RequiresProcessRestart: false));

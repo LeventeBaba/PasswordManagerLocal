@@ -93,18 +93,26 @@ public sealed class InMemoryEndpointRpcTransport : IEndpointRpcTransport
                 SessionId,
                 IpcCapabilities.EndpointRpc);
             var envelope = new IpcRequestEnvelope(
-                correlationId,
                 IpcOperationId.EndpointRpcRequest,
                 encodedRequest);
             var context = new IpcRequestContext(
                 connection,
+                correlationId,
                 envelope,
                 new WindowsIpcSerializer());
             var response = await _handler.HandleAsync(context, cancellationToken);
-            if (!response.IsSuccess)
+            if (response.PayloadKind == IpcResponsePayloadKind.Failure)
                 throw new InvalidOperationException("The in-memory IPC handler returned an outer transport failure.");
-            return EndpointRpcClientResponseMapper.RequireSuccess(
-                _codec.DecodeResponse(response.Result!, correlationId));
+            return response.PayloadKind switch
+            {
+                IpcResponsePayloadKind.Success => EndpointRpcTransportResponse.Inline(
+                    response.Result ?? Array.Empty<byte>()),
+                IpcResponsePayloadKind.EndpointFailure => EndpointRpcTransportResponse.Failure(
+                    _codec.DecodeFailure(response.Result!)),
+                IpcResponsePayloadKind.LargeResult => EndpointRpcTransportResponse.Large(
+                    _codec.DecodeLargeResult(response.Result!, correlationId)),
+                _ => throw new InvalidOperationException("The in-memory IPC handler returned an invalid response kind.")
+            };
         }
         finally
         {

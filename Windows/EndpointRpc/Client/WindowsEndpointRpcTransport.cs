@@ -153,7 +153,7 @@ public sealed class WindowsEndpointRpcTransport : IEndpointRpcTransport
                     IsPostHandlerFailure(exception.Error.ErrorCode))
                 {
                     throw new EndpointRpcTransportException(
-                        exception.Error.CorrelationId,
+                        exception.CorrelationId,
                         EndpointRpcTransmissionState.Sent,
                         mapped);
                 }
@@ -161,15 +161,26 @@ public sealed class WindowsEndpointRpcTransport : IEndpointRpcTransport
                 throw mapped;
             }
 
-            encodedResponse = response.Response.Result
-                ?? throw new EndpointRpcTransportException(
-                    correlationId,
-                    EndpointRpcTransmissionState.Sent,
-                    new EndpointRpcPayloadException("The endpoint RPC response payload is missing."));
             try
             {
-                return EndpointRpcClientResponseMapper.RequireSuccess(
-                    _messageCodec.DecodeResponse(encodedResponse, correlationId));
+                var responseEnvelope = response.Response;
+                encodedResponse = responseEnvelope.Result;
+                return responseEnvelope.PayloadKind switch
+                {
+                    IpcResponsePayloadKind.Success => EndpointRpcTransportResponse.Inline(
+                        encodedResponse is null
+                            ? Array.Empty<byte>()
+                            : encodedResponse.AsSpan().ToArray()),
+                    IpcResponsePayloadKind.EndpointFailure => EndpointRpcTransportResponse.Failure(
+                        _messageCodec.DecodeFailure(encodedResponse
+                            ?? throw new EndpointRpcPayloadException("The endpoint RPC error payload is missing."))),
+                    IpcResponsePayloadKind.LargeResult => EndpointRpcTransportResponse.Large(
+                        _messageCodec.DecodeLargeResult(
+                            encodedResponse
+                                ?? throw new EndpointRpcPayloadException("The large-result descriptor payload is missing."),
+                            correlationId)),
+                    _ => throw new EndpointRpcPayloadException("The endpoint RPC response form is invalid.")
+                };
             }
             catch (EndpointRpcRemoteException)
             {

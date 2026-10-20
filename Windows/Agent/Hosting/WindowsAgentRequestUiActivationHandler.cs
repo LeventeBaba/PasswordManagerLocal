@@ -44,12 +44,10 @@ public sealed class WindowsAgentRequestUiActivationHandler : IWindowsIpcRequestH
                 (IpcErrorCode.UiActivationUnavailable, IpcErrorCategory.Availability, true)
         };
         return IpcResponseEnvelope.Failure(
-            context.Request.CorrelationId,
             new IpcError(
                 code,
                 category,
                 result.SafeMessage,
-                context.Request.CorrelationId,
                 DateTimeOffset.UtcNow,
                 retryable,
                 RequiresProcessRestart: false));

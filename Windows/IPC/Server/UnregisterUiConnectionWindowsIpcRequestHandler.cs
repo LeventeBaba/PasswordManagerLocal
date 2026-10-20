@@ -26,12 +26,10 @@ public sealed class UnregisterUiConnectionWindowsIpcRequestHandler : IWindowsIpc
         if (!_coordinator.Unregister(context.Connection.ConnectionId))
         {
             return Task.FromResult(IpcResponseEnvelope.Failure(
-                context.Request.CorrelationId,
                 new IpcError(
                     IpcErrorCode.UiNotRegistered,
                     IpcErrorCategory.Conflict,
                     "The connection is not the registered UI.",
-                    context.Request.CorrelationId,
                     DateTimeOffset.UtcNow,
                     IsRetryable: true,
                     RequiresProcessRestart: false)));

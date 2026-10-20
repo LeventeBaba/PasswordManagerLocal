@@ -27,12 +27,10 @@ public sealed class RegisterUiConnectionWindowsIpcRequestHandler : IWindowsIpcRe
         if (context.Connection.PeerRole != IpcPeerRole.Ui)
         {
             return Task.FromResult(IpcResponseEnvelope.Failure(
-                context.Request.CorrelationId,
                 new IpcError(
                     IpcErrorCode.RequestRejected,
                     IpcErrorCategory.Validation,
                     "Only a UI connection can register as the interactive UI.",
-                    context.Request.CorrelationId,
                     DateTimeOffset.UtcNow,
                     IsRetryable: false,
                     RequiresProcessRestart: false)));
@@ -41,12 +39,10 @@ public sealed class RegisterUiConnectionWindowsIpcRequestHandler : IWindowsIpcRe
         if (!_coordinator.TryRegister(context.Connection, out _))
         {
             return Task.FromResult(IpcResponseEnvelope.Failure(
-                context.Request.CorrelationId,
                 new IpcError(
                     IpcErrorCode.UiAlreadyRegistered,
                     IpcErrorCategory.Conflict,
                     "Another UI connection is already registered.",
-                    context.Request.CorrelationId,
                     DateTimeOffset.UtcNow,
                     IsRetryable: true,
                     RequiresProcessRestart: false)));

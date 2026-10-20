@@ -97,9 +97,8 @@ public sealed class IpcFrameCodec
         var header = new IpcFrameHeader(
             BinaryPrimitives.ReadInt32BigEndian(headerBytes[4..8]),
             (IpcMessageKind)BinaryPrimitives.ReadInt32BigEndian(headerBytes[8..12]),
-            (IpcFrameFlags)BinaryPrimitives.ReadInt32BigEndian(headerBytes[12..16]),
-            BinaryPrimitives.ReadInt64BigEndian(headerBytes[16..24]),
-            BinaryPrimitives.ReadInt32BigEndian(headerBytes[24..28]));
+            BinaryPrimitives.ReadInt64BigEndian(headerBytes[12..20]),
+            BinaryPrimitives.ReadInt32BigEndian(headerBytes[20..24]));
 
         ValidateHeader(header);
         return header;
@@ -115,9 +114,8 @@ public sealed class IpcFrameCodec
         BinaryPrimitives.WriteUInt32BigEndian(destination[0..4], WindowsIpcProtocol.Magic);
         BinaryPrimitives.WriteInt32BigEndian(destination[4..8], header.ProtocolVersion);
         BinaryPrimitives.WriteInt32BigEndian(destination[8..12], (int)header.MessageKind);
-        BinaryPrimitives.WriteInt32BigEndian(destination[12..16], (int)header.Flags);
-        BinaryPrimitives.WriteInt64BigEndian(destination[16..24], header.CorrelationId);
-        BinaryPrimitives.WriteInt32BigEndian(destination[24..28], header.PayloadLength);
+        BinaryPrimitives.WriteInt64BigEndian(destination[12..20], header.CorrelationId);
+        BinaryPrimitives.WriteInt32BigEndian(destination[20..24], header.PayloadLength);
     }
 
     public void ValidateHeader(IpcFrameHeader header)
@@ -136,13 +134,6 @@ public sealed class IpcFrameCodec
             throw new IpcProtocolException(
                 IpcProtocolErrorCode.UnknownMessageKind,
                 "The IPC message kind is unknown.");
-        }
-
-        if (header.Flags != IpcFrameFlags.None)
-        {
-            throw new IpcProtocolException(
-                IpcProtocolErrorCode.InvalidFlags,
-                "The IPC frame contains unsupported flags.");
         }
 
         if ((header.MessageKind == IpcMessageKind.Notification && header.CorrelationId != 0) ||

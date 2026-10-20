@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Sync.Enrollment;
 using PasswordManagerLocal.Windows.EndpointRpc.Contracts;
+using PasswordManagerLocal.Windows.EndpointRpc.Contracts.Requests;
 using PasswordManagerLocal.Windows.EndpointRpc.Contracts.Responses;
 using PasswordManagerLocal.Windows.EndpointRpc.Metadata;
 using PasswordManagerLocal.Windows.EndpointRpc.Serialization;
@@ -216,17 +217,17 @@ public sealed class EndpointRpcInvocationOutcomeTests
     [TestMethod]
     public async Task MutationResponseSerializationFailureIsOutcomeUnknown()
     {
-        var endpoints = new ConfiguredLogoutEndpoints();
+        var endpoints = new SuccessfulRecordingEndpoints();
         var serializer = new EndpointRpcSerializer(type =>
         {
-            if (type == typeof(EmptyEndpointResponse))
+            if (type == typeof(RegisterEndpointResponse))
                 throw new EndpointRpcPayloadException("response serialization failed");
         });
-        var context = CreateContext(EndpointOperationId.Logout, 106);
+        var context = CreateContext(EndpointOperationId.Register, 106);
         await using var dispatcher = CreateDispatcher(endpoints, serializer);
         var result = await dispatcher.DispatchAsync(
             context,
-            SerializeRequest(EndpointOperationId.Logout),
+            SerializeRequest(EndpointOperationId.Register),
             CancellationToken.None);
 
         Assert.AreEqual(EndpointInvocationStage.ResponseValidated, context.Invocation.Stage);
@@ -236,17 +237,17 @@ public sealed class EndpointRpcInvocationOutcomeTests
     [TestMethod]
     public async Task MutationResponseSizeFailureIsOutcomeUnknown()
     {
-        var endpoints = new ConfiguredLogoutEndpoints();
+        var endpoints = new SuccessfulRecordingEndpoints();
         var serializer = new EndpointRpcSerializer(
             serializationObserver: null,
-            serializedPayloadOverride: type => type == typeof(EmptyEndpointResponse)
+            serializedPayloadOverride: type => type == typeof(RegisterEndpointResponse)
                 ? new byte[EndpointRpcLimits.MaximumSmallResponsePayloadSize + 1]
                 : null);
-        var context = CreateContext(EndpointOperationId.Logout, 107);
+        var context = CreateContext(EndpointOperationId.Register, 107);
         await using var dispatcher = CreateDispatcher(endpoints, serializer);
         var result = await dispatcher.DispatchAsync(
             context,
-            SerializeRequest(EndpointOperationId.Logout),
+            SerializeRequest(EndpointOperationId.Register),
             CancellationToken.None);
 
         Assert.AreEqual(EndpointInvocationStage.ResponseSerialized, context.Invocation.Stage);
@@ -323,7 +324,8 @@ public sealed class EndpointRpcInvocationOutcomeTests
         var encodedRequest = codec.EncodeRequest(EndpointOperationId.Logout, requestPayload);
         var requestContext = new IpcRequestContext(
             connection,
-            new IpcRequestEnvelope(110, IpcOperationId.EndpointRpcRequest, encodedRequest),
+            110,
+            new IpcRequestEnvelope(IpcOperationId.EndpointRpcRequest, encodedRequest),
             new WindowsIpcSerializer());
 
         await Assert.ThrowsExactlyAsync<EndpointRpcPayloadException>(() =>
@@ -676,6 +678,9 @@ public sealed class EndpointRpcInvocationOutcomeTests
     private static byte[] SerializeRequest(EndpointOperationId operationId)
     {
         var descriptor = EndpointOperationManifest.Get(operationId);
+        if (descriptor.RequestType == typeof(EmptyEndpointRequest))
+            return Array.Empty<byte>();
+
         var value = EndpointRpcTestData.CreateRequest(operationId);
         var typeInfo = EndpointRpcJsonContext.Default.GetTypeInfo(descriptor.RequestType)
             ?? throw new InvalidOperationException(descriptor.RequestType.FullName);

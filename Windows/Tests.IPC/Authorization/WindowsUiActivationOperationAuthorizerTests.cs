@@ -50,7 +50,8 @@ public sealed class WindowsUiActivationOperationAuthorizerTests
 
         var denied = authorizer.Authorize(new IpcRequestContext(
             CreateConnection(IpcPeerRole.Agent, 200),
-            new IpcRequestEnvelope(1, IpcOperationId.Ping, Payload: null),
+            1,
+            new IpcRequestEnvelope(IpcOperationId.Ping, Payload: null),
             new WindowsIpcSerializer()));
         Assert.IsFalse(denied.IsAuthorized);
     }
@@ -69,8 +70,8 @@ public sealed class WindowsUiActivationOperationAuthorizerTests
             Command: command);
         return new IpcRequestContext(
             CreateConnection(role, processId),
+            1,
             new IpcRequestEnvelope(
-                1,
                 IpcOperationId.RequestUiActivation,
                 serializer.Serialize(request, WindowsIpcJsonContext.Default.UiActivationRequestDto)),
             serializer);

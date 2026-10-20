@@ -17,7 +17,6 @@ public sealed class WindowsIpcNotificationContractTests
     {
         var capabilities = IpcCapabilities.Control | IpcCapabilities.ChangeNotifications;
         var request = new IpcHandshakeRequest(
-            WindowsIpcProtocol.CurrentVersion,
             IpcPeerRole.Ui,
             Environment.ProcessId,
             0,

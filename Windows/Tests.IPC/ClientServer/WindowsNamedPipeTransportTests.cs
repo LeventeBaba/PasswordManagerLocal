@@ -28,8 +28,7 @@ public sealed class WindowsNamedPipeTransportTests
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 IpcMessageKind.Request,
-                IpcFrameFlags.None,
-                3,
+                                3,
                 payload.Length),
             payload);
 

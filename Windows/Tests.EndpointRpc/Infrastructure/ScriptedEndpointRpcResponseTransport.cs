@@ -1,20 +1,18 @@
 using PasswordManagerLocal.Windows.EndpointRpc.Client;
 using PasswordManagerLocal.Windows.EndpointRpc.Contracts;
 using PasswordManagerLocal.Windows.EndpointRpc.Security;
-using PasswordManagerLocal.Windows.EndpointRpc.Serialization;
 
 namespace PasswordManagerLocal.Windows.Tests.EndpointRpc.Infrastructure;
 
 public sealed class ScriptedEndpointRpcResponseTransport : IEndpointRpcTransport
 {
-    private readonly Func<long, byte[]> _responseFactory;
+    private readonly Func<long, EndpointRpcTransportResponse> _responseFactory;
     private readonly EndpointRpcTransmissionState _transmissionState;
-    private readonly EndpointRpcMessageCodec _codec = new(new EndpointRpcSerializer());
     private long _correlationId;
     private bool _disposed;
 
     public ScriptedEndpointRpcResponseTransport(
-        Func<long, byte[]> responseFactory,
+        Func<long, EndpointRpcTransportResponse> responseFactory,
         EndpointRpcTransmissionState transmissionState = EndpointRpcTransmissionState.Sent)
     {
         _responseFactory = responseFactory ?? throw new ArgumentNullException(nameof(responseFactory));
@@ -38,12 +36,17 @@ public sealed class ScriptedEndpointRpcResponseTransport : IEndpointRpcTransport
         cancellationToken.ThrowIfCancellationRequested();
         var correlationId = Interlocked.Increment(ref _correlationId);
         PublicRequestCount++;
-        byte[]? encodedResponse = null;
         try
         {
-            encodedResponse = _responseFactory(correlationId);
-            return Task.FromResult(EndpointRpcClientResponseMapper.RequireSuccess(
-                _codec.DecodeResponse(encodedResponse, correlationId)));
+            var response = _responseFactory(correlationId);
+            if (response.ResponseKind == EndpointRpcResponseKind.LargeResult &&
+                response.LargeResult is { } descriptor &&
+                descriptor.OriginalCorrelationId != correlationId)
+            {
+                throw new EndpointRpcCorrelationMismatchException();
+            }
+
+            return Task.FromResult(EndpointRpcClientResponseMapper.RequireSuccess(response));
         }
         catch (EndpointRpcRemoteException)
         {
@@ -55,10 +58,6 @@ public sealed class ScriptedEndpointRpcResponseTransport : IEndpointRpcTransport
                 correlationId,
                 _transmissionState,
                 exception);
-        }
-        finally
-        {
-            EndpointSensitiveData.Clear(encodedResponse);
         }
     }
 

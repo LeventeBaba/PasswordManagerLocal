@@ -5,10 +5,16 @@ using System.Buffers.Binary;
 
 namespace PasswordManagerLocal.Windows.EndpointRpc.Serialization;
 
+/// <summary>
+/// Encodes endpoint messages inside the IPC request/response payload. The v5
+/// IPC response discriminator owns the response kind, so endpoint responses
+/// contain only their JSON body.
+/// </summary>
 public sealed class EndpointRpcMessageCodec
 {
-    private const int RequestHeaderSize = 5;
-    private const int ResponseHeaderSize = 1;
+    private const int OperationIdPrefixSize = sizeof(int);
+    private const int LargeResultChunkOperationId = -1;
+    private const int LargeResultReleaseOperationId = -2;
     private readonly EndpointRpcSerializer _serializer;
     private readonly EndpointRpcContractValidator _validator;
     private readonly EndpointLargeResultContractValidator _largeResultValidator;
@@ -24,45 +30,40 @@ public sealed class EndpointRpcMessageCodec
     {
         if (!Enum.IsDefined(operationId))
             throw new ArgumentOutOfRangeException(nameof(operationId));
-        return EncodeRequestCore(EndpointRpcRequestKind.PublicOperation, (int)operationId, payload);
+        return EncodeRequestCore((int)operationId, payload);
     }
 
     public byte[] EncodeLargeResultChunkRequest(ReadOnlySpan<byte> payload) =>
-        EncodeRequestCore(EndpointRpcRequestKind.GetLargeResultChunk, 0, payload);
+        EncodeRequestCore(LargeResultChunkOperationId, payload);
 
     public byte[] EncodeLargeResultReleaseRequest(ReadOnlySpan<byte> payload) =>
-        EncodeRequestCore(EndpointRpcRequestKind.ReleaseLargeResult, 0, payload);
+        EncodeRequestCore(LargeResultReleaseOperationId, payload);
 
     public EndpointRpcDecodedRequest DecodeRequest(ReadOnlySpan<byte> message)
     {
-        if (message.Length < RequestHeaderSize ||
-            message.Length - RequestHeaderSize > EndpointRpcLimits.MaximumRequestPayloadSize)
+        if (message.Length < OperationIdPrefixSize ||
+            message.Length - OperationIdPrefixSize > EndpointRpcLimits.MaximumRequestPayloadSize)
         {
             throw new EndpointRpcPayloadException("The endpoint RPC request message is invalid.");
         }
 
-        var requestKind = (EndpointRpcRequestKind)message[0];
-        if (!Enum.IsDefined(requestKind))
-            throw new EndpointRpcPayloadException("The endpoint RPC request kind is invalid.");
-        var rawOperationId = BinaryPrimitives.ReadInt32BigEndian(message.Slice(1, 4));
-        EndpointOperationId? operationId = null;
-        if (requestKind == EndpointRpcRequestKind.PublicOperation)
-        {
-            operationId = (EndpointOperationId)rawOperationId;
-        }
-        else if (rawOperationId != 0)
-        {
-            throw new EndpointRpcPayloadException("The endpoint RPC internal request is invalid.");
-        }
+        var rawOperationId = BinaryPrimitives.ReadInt32BigEndian(message[..OperationIdPrefixSize]);
+        var body = message[OperationIdPrefixSize..];
+        if (rawOperationId == LargeResultChunkOperationId)
+            return new EndpointRpcDecodedRequest(EndpointRpcRequestKind.GetLargeResultChunk, null, body.ToArray());
+        if (rawOperationId == LargeResultReleaseOperationId)
+            return new EndpointRpcDecodedRequest(EndpointRpcRequestKind.ReleaseLargeResult, null, body.ToArray());
+        if (rawOperationId <= 0 || !Enum.IsDefined((EndpointOperationId)rawOperationId))
+            throw new EndpointRpcPayloadException("The endpoint RPC operation ID is invalid.");
 
         return new EndpointRpcDecodedRequest(
-            requestKind,
-            operationId,
-            message[RequestHeaderSize..].ToArray());
+            EndpointRpcRequestKind.PublicOperation,
+            (EndpointOperationId)rawOperationId,
+            body.ToArray());
     }
 
     public byte[] EncodeSuccess(ReadOnlySpan<byte> payload) =>
-        EncodeResponse(EndpointRpcResponseKind.InlineResult, payload, EndpointRpcLimits.MaximumResponsePayloadSize);
+        CopyBounded(payload, EndpointRpcLimits.MaximumResponsePayloadSize);
 
     public byte[] EncodeLargeResult(EndpointLargeResultDescriptor descriptor)
     {
@@ -72,10 +73,7 @@ public sealed class EndpointRpcMessageCodec
             EndpointRpcJsonContext.Default.EndpointLargeResultDescriptor);
         try
         {
-            return EncodeResponse(
-                EndpointRpcResponseKind.LargeResult,
-                payload,
-                EndpointRpcLimits.MaximumSmallResponsePayloadSize);
+            return CopyBounded(payload, EndpointRpcLimits.MaximumSmallResponsePayloadSize);
         }
         finally
         {
@@ -89,10 +87,7 @@ public sealed class EndpointRpcMessageCodec
         var payload = _serializer.Serialize(error, EndpointRpcJsonContext.Default.EndpointRpcError);
         try
         {
-            return EncodeResponse(
-                EndpointRpcResponseKind.Failure,
-                payload,
-                EndpointRpcLimits.MaximumErrorPayloadSize);
+            return CopyBounded(payload, EndpointRpcLimits.MaximumErrorPayloadSize);
         }
         finally
         {
@@ -100,73 +95,49 @@ public sealed class EndpointRpcMessageCodec
         }
     }
 
-    public EndpointRpcTransportResponse DecodeResponse(
-        ReadOnlySpan<byte> message,
-        long expectedCorrelationId)
+    public EndpointRpcError DecodeFailure(ReadOnlySpan<byte> payload)
     {
-        if (expectedCorrelationId <= 0)
-            throw new ArgumentOutOfRangeException(nameof(expectedCorrelationId));
-        if (message.Length < ResponseHeaderSize ||
-            message.Length - ResponseHeaderSize > EndpointRpcLimits.MaximumResponsePayloadSize)
-        {
-            throw new EndpointRpcPayloadException("The endpoint RPC response message is invalid.");
-        }
-
-        var responseKind = (EndpointRpcResponseKind)message[0];
-        if (!Enum.IsDefined(responseKind))
-            throw new EndpointRpcPayloadException("The endpoint RPC response status is invalid.");
-        var payload = message[ResponseHeaderSize..];
-        if (responseKind == EndpointRpcResponseKind.InlineResult)
-            return EndpointRpcTransportResponse.Inline(payload.ToArray());
-        if (responseKind == EndpointRpcResponseKind.LargeResult)
-        {
-            var descriptor = _serializer.Deserialize(
-                payload,
-                EndpointRpcJsonContext.Default.EndpointLargeResultDescriptor);
-            _largeResultValidator.Validate(descriptor);
-            ValidateCorrelation(expectedCorrelationId, descriptor.OriginalCorrelationId);
-            return EndpointRpcTransportResponse.Large(descriptor);
-        }
-        if (payload.Length > EndpointRpcLimits.MaximumErrorPayloadSize)
-            throw new EndpointRpcPayloadException("The endpoint RPC error payload exceeds the permitted size.");
-
+        if (payload.IsEmpty || payload.Length > EndpointRpcLimits.MaximumErrorPayloadSize)
+            throw new EndpointRpcPayloadException("The endpoint RPC error payload is invalid.");
         var error = _serializer.Deserialize(payload, EndpointRpcJsonContext.Default.EndpointRpcError);
         _validator.Validate(error);
-        return EndpointRpcTransportResponse.Failure(error);
+        return error;
     }
 
-    private static void ValidateCorrelation(long expectedCorrelationId, long nestedCorrelationId)
+    public EndpointLargeResultDescriptor DecodeLargeResult(
+        ReadOnlySpan<byte> payload,
+        long expectedCorrelationId)
     {
-        if (nestedCorrelationId != expectedCorrelationId)
+        if (expectedCorrelationId <= 0 || payload.IsEmpty ||
+            payload.Length > EndpointRpcLimits.MaximumSmallResponsePayloadSize)
+        {
+            throw new EndpointRpcPayloadException("The endpoint large-result descriptor payload is invalid.");
+        }
+
+        var descriptor = _serializer.Deserialize(
+            payload,
+            EndpointRpcJsonContext.Default.EndpointLargeResultDescriptor);
+        _largeResultValidator.Validate(descriptor);
+        if (descriptor.OriginalCorrelationId != expectedCorrelationId)
             throw new EndpointRpcCorrelationMismatchException();
+        return descriptor;
     }
 
-    private static byte[] EncodeRequestCore(
-        EndpointRpcRequestKind requestKind,
-        int operationId,
-        ReadOnlySpan<byte> payload)
+    private static byte[] EncodeRequestCore(int operationId, ReadOnlySpan<byte> payload)
     {
         if (payload.Length > EndpointRpcLimits.MaximumRequestPayloadSize)
             throw new EndpointRpcPayloadException("The endpoint RPC request payload exceeds the permitted size.");
 
-        var result = new byte[RequestHeaderSize + payload.Length];
-        result[0] = (byte)requestKind;
-        BinaryPrimitives.WriteInt32BigEndian(result.AsSpan(1, 4), operationId);
-        payload.CopyTo(result.AsSpan(RequestHeaderSize));
+        var result = new byte[checked(OperationIdPrefixSize + payload.Length)];
+        BinaryPrimitives.WriteInt32BigEndian(result.AsSpan(0, OperationIdPrefixSize), operationId);
+        payload.CopyTo(result.AsSpan(OperationIdPrefixSize));
         return result;
     }
 
-    private static byte[] EncodeResponse(
-        EndpointRpcResponseKind responseKind,
-        ReadOnlySpan<byte> payload,
-        int maximumPayloadSize)
+    private static byte[] CopyBounded(ReadOnlySpan<byte> payload, int maximumPayloadSize)
     {
         if (payload.Length > maximumPayloadSize)
             throw new EndpointRpcPayloadException("The endpoint RPC response payload exceeds the permitted size.");
-
-        var result = new byte[ResponseHeaderSize + payload.Length];
-        result[0] = (byte)responseKind;
-        payload.CopyTo(result.AsSpan(ResponseHeaderSize));
-        return result;
+        return payload.ToArray();
     }
 }
