@@ -23,7 +23,7 @@ public sealed class EndpointRpcServerSessionFactory : IEndpointRpcServerSessionF
         EndpointRpcConnectionAuthorizer connectionAuthorizer,
         IEndpointRpcAdmissionPolicy admissionPolicy,
         IEndpointRpcSessionReadiness? sessionReadiness = null,
-        IEnumerable<PasswordManagerLocal.Windows.Ipc.Lifecycle.IWindowsIpcConnectionLifecycleObserver>? observers = null)
+        IEnumerable<PasswordManagerLocal.Windows.Ipc.Abstractions.Lifecycle.IWindowsIpcConnectionLifecycleObserver>? observers = null)
     {
         ArgumentNullException.ThrowIfNull(endpointAdapter);
         ArgumentNullException.ThrowIfNull(connectionAuthorizer);
@@ -67,7 +67,7 @@ public sealed class EndpointRpcServerSessionFactory : IEndpointRpcServerSessionF
             new WindowsIpcSerializer(),
             ipcDispatcher,
             options,
-            observers: [connectionAuthorizer, .. (observers ?? Array.Empty<PasswordManagerLocal.Windows.Ipc.Lifecycle.IWindowsIpcConnectionLifecycleObserver>()), _largeResultTransferStore],
+            observers: [connectionAuthorizer, .. (observers ?? Array.Empty<PasswordManagerLocal.Windows.Ipc.Abstractions.Lifecycle.IWindowsIpcConnectionLifecycleObserver>()), _largeResultTransferStore],
             uiCoordinator: null,
             contractValidator: new WindowsIpcContractValidator(),
             handshakeAuthorizer: connectionAuthorizer);

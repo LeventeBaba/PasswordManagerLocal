@@ -5,17 +5,15 @@ namespace PasswordManagerLocal.Windows.Ipc.Server;
 
 public sealed class WindowsIpcServerOptions
 {
-    public const int DefaultMaximumActiveRequestsPerConnection = 64;
-    public const int MaximumConfigurableActiveRequestsPerConnection = 1024;
 
     public WindowsIpcServerOptions(
         IpcPeerRole serverRole,
         IEnumerable<IpcPeerRole> acceptedClientRoles,
         IpcCapabilities capabilities,
-        int maximumActiveRequestsPerConnection = DefaultMaximumActiveRequestsPerConnection,
+        int maximumActiveRequestsPerConnection = ServerConstants.WindowsIpcServerOptionsDefaultMaximumActiveRequestsPerConnection,
         bool managesUiRegistration = true,
         IpcCapabilities requiredClientCapabilities = IpcCapabilities.None,
-        int changeNotificationQueueCapacity = IpcChangeNotificationQueue.DefaultCapacity)
+        int changeNotificationQueueCapacity = TransportConstants.IpcChangeNotificationQueueDefaultCapacity)
     {
         if (!Enum.IsDefined(serverRole) || serverRole == IpcPeerRole.TestClient)
             throw new ArgumentOutOfRangeException(nameof(serverRole));
@@ -27,12 +25,12 @@ public sealed class WindowsIpcServerOptions
             throw new ArgumentOutOfRangeException(nameof(requiredClientCapabilities));
         }
         if (maximumActiveRequestsPerConnection <= 0 ||
-            maximumActiveRequestsPerConnection > MaximumConfigurableActiveRequestsPerConnection)
+            maximumActiveRequestsPerConnection > ServerConstants.WindowsIpcServerOptionsMaximumConfigurableActiveRequestsPerConnection)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(maximumActiveRequestsPerConnection),
                 maximumActiveRequestsPerConnection,
-                $"The IPC active-request limit must be between 1 and {MaximumConfigurableActiveRequestsPerConnection}.");
+                $"The IPC active-request limit must be between 1 and {ServerConstants.WindowsIpcServerOptionsMaximumConfigurableActiveRequestsPerConnection}.");
         }
         if (changeNotificationQueueCapacity <= 0 || changeNotificationQueueCapacity > 4096)
             throw new ArgumentOutOfRangeException(nameof(changeNotificationQueueCapacity));

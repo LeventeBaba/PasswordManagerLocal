@@ -10,9 +10,6 @@ namespace PasswordManagerLocal.Windows.Ipc.Server;
 
 public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
 {
-    private const int StopKindNone = 0;
-    private const int StopKindRequested = 1;
-    private const int StopKindRequestFailure = 2;
 
     private readonly IWindowsIpcConnection _connection;
     private readonly WindowsIpcSerializer _serializer;
@@ -206,7 +203,7 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
         }
         catch (OperationCanceledException exception) when (_shutdownSource.IsCancellationRequested)
         {
-            if (Volatile.Read(ref _stopKind) == StopKindRequestFailure)
+            if (Volatile.Read(ref _stopKind) == ServerConstants.WindowsIpcServerConnectionSessionStopKindRequestFailure)
             {
                 lifecycleState = IpcConnectionLifecycleState.Faulted;
                 disconnectKind = IpcDisconnectKind.TransportFailure;
@@ -293,8 +290,8 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
     {
         Interlocked.CompareExchange(
             ref _stopKind,
-            StopKindRequested,
-            StopKindNone);
+            ServerConstants.WindowsIpcServerConnectionSessionStopKindRequested,
+            ServerConstants.WindowsIpcServerConnectionSessionStopKindNone);
         var cancellationFailure = CaptureCancellationFailure(_shutdownSource);
 
         Task? runTask;
@@ -683,8 +680,8 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
             _backgroundFailures.Enqueue(exception);
             Interlocked.CompareExchange(
                 ref _stopKind,
-                StopKindRequestFailure,
-                StopKindNone);
+                ServerConstants.WindowsIpcServerConnectionSessionStopKindRequestFailure,
+                ServerConstants.WindowsIpcServerConnectionSessionStopKindNone);
             var cancellationFailure = CaptureCancellationFailure(_shutdownSource);
             if (cancellationFailure is not null)
                 _backgroundCleanupFailures.Enqueue(cancellationFailure);
@@ -933,7 +930,7 @@ public sealed class WindowsIpcServerConnectionSession : IWindowsIpcServerSession
             _backgroundFailures.Enqueue(new InvalidOperationException(
                 "The IPC change notification could not be delivered.",
                 exception));
-            Interlocked.CompareExchange(ref _stopKind, StopKindRequestFailure, StopKindNone);
+            Interlocked.CompareExchange(ref _stopKind, ServerConstants.WindowsIpcServerConnectionSessionStopKindRequestFailure, ServerConstants.WindowsIpcServerConnectionSessionStopKindNone);
             _ = CaptureCancellationFailure(_shutdownSource);
             _ = ObserveConnectionDisposalFailureAsync();
         }

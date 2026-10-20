@@ -5,7 +5,6 @@ namespace PasswordManagerLocal.Windows.Ipc.Transport;
 
 public sealed class WindowsNamedPipeServer : IWindowsIpcConnectionListener
 {
-    private const int PipeBufferSize = 64 * 1024;
 
     private readonly string _pipeName;
     private readonly IpcFrameCodec _frameCodec;
@@ -26,8 +25,8 @@ public sealed class WindowsNamedPipeServer : IWindowsIpcConnectionListener
             NamedPipeServerStream.MaxAllowedServerInstances,
             PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly,
-            PipeBufferSize,
-            PipeBufferSize);
+            TransportConstants.WindowsNamedPipeServerPipeBufferSize,
+            TransportConstants.WindowsNamedPipeServerPipeBufferSize);
 
         try
         {

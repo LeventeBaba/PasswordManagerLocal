@@ -393,7 +393,7 @@ public sealed class Phase6DependencyBoundaryTests
             root,
             "Windows",
             "IPC",
-            "Coordination",
+            "Constants",
             "WindowsAgentLaunchArguments.cs"));
 
         StringAssert.Contains(source, "Registry.CurrentUser");

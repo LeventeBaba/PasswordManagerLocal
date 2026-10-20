@@ -2,14 +2,12 @@ namespace PasswordManagerLocal.Windows.Ipc.Server;
 
 public sealed class WindowsIpcServerHostOptions
 {
-    public const int DefaultMaximumActiveConnections = 8;
-    public const int MaximumConfigurableActiveConnections = 64;
 
     public WindowsIpcServerHostOptions(
-        int maximumActiveConnections = DefaultMaximumActiveConnections)
+        int maximumActiveConnections = ServerConstants.WindowsIpcServerHostOptionsDefaultMaximumActiveConnections)
     {
         if (maximumActiveConnections <= 0 ||
-            maximumActiveConnections > MaximumConfigurableActiveConnections)
+            maximumActiveConnections > ServerConstants.WindowsIpcServerHostOptionsMaximumConfigurableActiveConnections)
         {
             throw new ArgumentOutOfRangeException(nameof(maximumActiveConnections));
         }

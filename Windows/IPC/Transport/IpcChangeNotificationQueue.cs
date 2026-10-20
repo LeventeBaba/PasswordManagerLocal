@@ -11,7 +11,6 @@ namespace PasswordManagerLocal.Windows.Ipc.Transport;
 /// </summary>
 public sealed class IpcChangeNotificationQueue : IAsyncDisposable
 {
-    public const int DefaultCapacity = 32;
 
     private readonly object _gate = new();
     private readonly Queue<IpcChangeNotificationDto> _items = new();
@@ -25,7 +24,7 @@ public sealed class IpcChangeNotificationQueue : IAsyncDisposable
     private readonly int _capacity;
     private bool _completed;
 
-    public IpcChangeNotificationQueue(int capacity = DefaultCapacity)
+    public IpcChangeNotificationQueue(int capacity = TransportConstants.IpcChangeNotificationQueueDefaultCapacity)
     {
         if (capacity <= 0 || capacity > 4096)
             throw new ArgumentOutOfRangeException(nameof(capacity));

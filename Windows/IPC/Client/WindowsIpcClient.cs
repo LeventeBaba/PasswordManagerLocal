@@ -9,7 +9,6 @@ namespace PasswordManagerLocal.Windows.Ipc.Client;
 
 public sealed class WindowsIpcClient : IAsyncDisposable
 {
-    private const long HandshakeCorrelationId = 1;
 
     private readonly IWindowsIpcConnection _connection;
     private readonly WindowsIpcSerializer _serializer;
@@ -34,7 +33,7 @@ public sealed class WindowsIpcClient : IAsyncDisposable
     private Task? _readLoopTask;
     private Exception? _terminationFailure;
     private Exception? _cleanupFailure;
-    private long _nextCorrelationId = HandshakeCorrelationId;
+    private long _nextCorrelationId = ClientConstants.WindowsIpcClientHandshakeCorrelationId;
     private int _handshakeState;
     private int _disposeStarted;
 
@@ -138,7 +137,7 @@ public sealed class WindowsIpcClient : IAsyncDisposable
                     request,
                     WindowsIpcJsonContext.Default.IpcHandshakeRequest);
                 await _connection.WriteFrameAsync(
-                    CreateFrame(IpcMessageKind.HandshakeRequest, HandshakeCorrelationId, payload),
+                    CreateFrame(IpcMessageKind.HandshakeRequest, ClientConstants.WindowsIpcClientHandshakeCorrelationId, payload),
                     linkedSource.Token);
 
                 var frame = await _connection.ReadFrameAsync(linkedSource.Token)
@@ -146,7 +145,7 @@ public sealed class WindowsIpcClient : IAsyncDisposable
                         "The IPC connection closed during the handshake.");
                 ValidateFrame(frame);
                 if (frame.Header.MessageKind != IpcMessageKind.HandshakeResponse ||
-                    frame.Header.CorrelationId != HandshakeCorrelationId)
+                    frame.Header.CorrelationId != ClientConstants.WindowsIpcClientHandshakeCorrelationId)
                 {
                     throw new IpcProtocolException(
                         IpcProtocolErrorCode.UnexpectedMessageKind,
@@ -167,7 +166,7 @@ public sealed class WindowsIpcClient : IAsyncDisposable
                 }
 
                 if (!response.Accepted)
-                    throw new IpcRemoteException(response.Error!, HandshakeCorrelationId);
+                    throw new IpcRemoteException(response.Error!, ClientConstants.WindowsIpcClientHandshakeCorrelationId);
 
                 ThrowIfDisposed();
                 ServerConnectionId = response.ConnectionId;

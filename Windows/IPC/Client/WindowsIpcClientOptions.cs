@@ -4,8 +4,6 @@ namespace PasswordManagerLocal.Windows.Ipc.Client;
 
 public sealed class WindowsIpcClientOptions
 {
-    public const int DefaultMaximumPendingRequests = 64;
-    public const int MaximumConfigurablePendingRequests = 1024;
 
     public WindowsIpcClientOptions(
         IpcPeerRole clientRole,
@@ -14,7 +12,7 @@ public sealed class WindowsIpcClientOptions
         int processId,
         int windowsSessionId,
         Guid sessionId,
-        int maximumPendingRequests = DefaultMaximumPendingRequests,
+        int maximumPendingRequests = ClientConstants.WindowsIpcClientOptionsDefaultMaximumPendingRequests,
         IpcCapabilities requiredServerCapabilities = IpcCapabilities.None)
     {
         if (!Enum.IsDefined(clientRole))
@@ -35,12 +33,12 @@ public sealed class WindowsIpcClientOptions
             throw new ArgumentOutOfRangeException(nameof(requiredServerCapabilities));
         }
         if (maximumPendingRequests <= 0 ||
-            maximumPendingRequests > MaximumConfigurablePendingRequests)
+            maximumPendingRequests > ClientConstants.WindowsIpcClientOptionsMaximumConfigurablePendingRequests)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(maximumPendingRequests),
                 maximumPendingRequests,
-                $"The IPC pending-request limit must be between 1 and {MaximumConfigurablePendingRequests}.");
+                $"The IPC pending-request limit must be between 1 and {ClientConstants.WindowsIpcClientOptionsMaximumConfigurablePendingRequests}.");
         }
 
         ClientRole = clientRole;

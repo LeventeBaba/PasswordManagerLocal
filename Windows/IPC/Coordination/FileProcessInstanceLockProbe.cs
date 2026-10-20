@@ -5,12 +5,6 @@ namespace PasswordManagerLocal.Windows.Ipc.Coordination;
 
 public sealed class FileProcessInstanceLockProbe : IProcessInstanceLockProbe
 {
-    private const int ErrorFileNotFound = 2;
-    private const int ErrorPathNotFound = 3;
-    private const int ErrorSharingViolation = 32;
-    private const int ErrorLockViolation = 33;
-    private const uint GenericRead = 0x80000000;
-    private const uint FileAttributeNormal = 0x80;
     private readonly string _lockFilePath;
     private readonly IProcessInstanceLockFileOpener? _fileOpener;
 
@@ -35,19 +29,19 @@ public sealed class FileProcessInstanceLockProbe : IProcessInstanceLockProbe
         {
             using var handle = CreateFile(
                 _lockFilePath,
-                desiredAccess: GenericRead,
+                desiredAccess: ProcessLockConstants.FileProcessInstanceLockProbeGenericRead,
                 FileShare.ReadWrite | FileShare.Delete,
                 IntPtr.Zero,
                 FileMode.Open,
-                flagsAndAttributes: FileAttributeNormal,
+                flagsAndAttributes: ProcessLockConstants.FileProcessInstanceLockProbeFileAttributeNormal,
                 IntPtr.Zero);
             if (!handle.IsInvalid)
                 return ProcessInstanceLockProbeResult.Free;
 
             var error = Marshal.GetLastWin32Error();
-            if (error is ErrorFileNotFound or ErrorPathNotFound)
+            if (error is ProcessLockConstants.FileProcessInstanceLockProbeErrorFileNotFound or ProcessLockConstants.FileProcessInstanceLockProbeErrorPathNotFound)
                 return ProcessInstanceLockProbeResult.Free;
-            return error is ErrorSharingViolation or ErrorLockViolation
+            return error is ProcessLockConstants.FileProcessInstanceLockProbeErrorSharingViolation or ProcessLockConstants.FileProcessInstanceLockProbeErrorLockViolation
                 ? ProcessInstanceLockProbeResult.Held
                 : ProcessInstanceLockProbeResult.Uncertain;
         }

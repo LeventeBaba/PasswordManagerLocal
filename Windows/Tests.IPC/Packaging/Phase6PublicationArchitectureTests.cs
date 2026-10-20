@@ -152,7 +152,7 @@ public sealed class Phase6PublicationArchitectureTests
             Path.Combine(root, "Windows", "Frontend", "Agent", "WindowsAgentLauncher.cs"),
             Path.Combine(root, "Windows", "Agent", "Ui", "WindowsUiLauncher.cs"),
             Path.Combine(root, "Windows", "Frontend", "WindowsFirewallPermissionManager.cs"),
-            Path.Combine(root, "Windows", "IPC", "Coordination", "WindowsExecutableNames.cs"),
+            Path.Combine(root, "Windows", "IPC", "Constants", "WindowsExecutableNames.cs"),
             Path.Combine(root, "Tools", "ConfigureWindowsFirewall.ps1"),
             Path.Combine(root, "Tools", "Publish.ps1")
         };

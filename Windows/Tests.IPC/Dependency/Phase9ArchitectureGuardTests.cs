@@ -245,7 +245,7 @@ public sealed class Phase9ArchitectureGuardTests
             GetRepositoryRoot(),
             "Windows",
             "IPC",
-            "Coordination",
+            "Constants",
             "WindowsExecutableNames.cs"));
         StringAssert.Contains(
             executableNamesSource,

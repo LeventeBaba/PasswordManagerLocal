@@ -2,8 +2,6 @@ namespace PasswordManagerLocal.Windows.Ipc.Coordination;
 
 public sealed class ProcessInstanceLockFileOpener : IProcessInstanceLockFileOpener
 {
-    private const int ErrorSharingViolation = 32;
-    private const int ErrorLockViolation = 33;
 
     public Stream? OpenExclusive(string lockFilePath)
     {
@@ -28,6 +26,6 @@ public sealed class ProcessInstanceLockFileOpener : IProcessInstanceLockFileOpen
     private static bool IsOwnershipUnavailable(IOException exception)
     {
         var nativeErrorCode = exception.HResult & 0xFFFF;
-        return nativeErrorCode is ErrorSharingViolation or ErrorLockViolation;
+        return nativeErrorCode is ProcessLockConstants.ProcessInstanceLockFileOpenerErrorSharingViolation or ProcessLockConstants.ProcessInstanceLockFileOpenerErrorLockViolation;
     }
 }

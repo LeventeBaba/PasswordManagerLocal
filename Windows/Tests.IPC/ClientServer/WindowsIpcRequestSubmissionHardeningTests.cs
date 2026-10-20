@@ -888,7 +888,7 @@ public sealed class WindowsIpcRequestSubmissionHardeningTests
     private static WindowsIpcClient CreateClient(
         RecordingWindowsIpcConnection connection,
         WindowsIpcSerializer serializer,
-        int maximumPendingRequests = WindowsIpcClientOptions.DefaultMaximumPendingRequests) =>
+        int maximumPendingRequests = ClientConstants.WindowsIpcClientOptionsDefaultMaximumPendingRequests) =>
         new(
             connection,
             serializer,

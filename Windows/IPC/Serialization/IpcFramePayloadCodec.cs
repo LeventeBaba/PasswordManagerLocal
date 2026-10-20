@@ -7,8 +7,6 @@ namespace PasswordManagerLocal.Windows.Ipc.Serialization;
 
 public sealed class IpcFramePayloadCodec
 {
-    private const int OperationIdPrefixSize = sizeof(int);
-    private const int ResponseKindPrefixSize = sizeof(byte);
 
     private readonly WindowsIpcSerializer _serializer;
     private readonly WindowsIpcContractValidator _validator;
@@ -27,7 +25,7 @@ public sealed class IpcFramePayloadCodec
         _validator.Validate(request, correlationId);
 
         var innerPayload = request.Payload ?? Array.Empty<byte>();
-        var length = checked(OperationIdPrefixSize + innerPayload.Length);
+        var length = checked(SerializationConstants.IpcFramePayloadCodecOperationIdPrefixSize + innerPayload.Length);
         if (length > WindowsIpcProtocol.MaximumPayloadSize)
         {
             throw new IpcPayloadLimitExceededException(
@@ -37,19 +35,19 @@ public sealed class IpcFramePayloadCodec
         }
 
         var payload = new byte[length];
-        BinaryPrimitives.WriteInt32BigEndian(payload.AsSpan(0, OperationIdPrefixSize), (int)request.OperationId);
-        innerPayload.AsSpan().CopyTo(payload.AsSpan(OperationIdPrefixSize));
+        BinaryPrimitives.WriteInt32BigEndian(payload.AsSpan(0, SerializationConstants.IpcFramePayloadCodecOperationIdPrefixSize), (int)request.OperationId);
+        innerPayload.AsSpan().CopyTo(payload.AsSpan(SerializationConstants.IpcFramePayloadCodecOperationIdPrefixSize));
         return payload;
     }
 
     public IpcRequestEnvelope DecodeRequest(long correlationId, ReadOnlySpan<byte> payload)
     {
-        if (correlationId <= 0 || payload.Length < OperationIdPrefixSize)
+        if (correlationId <= 0 || payload.Length < SerializationConstants.IpcFramePayloadCodecOperationIdPrefixSize)
             throw new IpcPayloadException("The IPC request payload is invalid.");
 
-        var rawOperationId = BinaryPrimitives.ReadInt32BigEndian(payload[..OperationIdPrefixSize]);
+        var rawOperationId = BinaryPrimitives.ReadInt32BigEndian(payload[..SerializationConstants.IpcFramePayloadCodecOperationIdPrefixSize]);
         var operationId = (IpcOperationId)rawOperationId;
-        var innerPayload = payload[OperationIdPrefixSize..];
+        var innerPayload = payload[SerializationConstants.IpcFramePayloadCodecOperationIdPrefixSize..];
         if (!Enum.IsDefined(operationId))
             throw new IpcPayloadException("The IPC request operation ID is invalid.");
         if (innerPayload.Length > IpcContractLimits.MaximumInnerPayloadSize)
@@ -110,7 +108,7 @@ public sealed class IpcFramePayloadCodec
                 throw new IpcPayloadException("The IPC response payload kind is invalid.");
         }
 
-        var length = checked(ResponseKindPrefixSize + body.Length);
+        var length = checked(SerializationConstants.IpcFramePayloadCodecResponseKindPrefixSize + body.Length);
         if (length > WindowsIpcProtocol.MaximumPayloadSize)
         {
             if (errorPayload is not null)
@@ -123,7 +121,7 @@ public sealed class IpcFramePayloadCodec
 
         var payload = new byte[length];
         payload[0] = (byte)response.PayloadKind;
-        body.CopyTo(payload.AsSpan(ResponseKindPrefixSize));
+        body.CopyTo(payload.AsSpan(SerializationConstants.IpcFramePayloadCodecResponseKindPrefixSize));
         if (errorPayload is not null)
             Array.Clear(errorPayload);
         return payload;
@@ -131,14 +129,14 @@ public sealed class IpcFramePayloadCodec
 
     public IpcResponseEnvelope DecodeResponse(long correlationId, ReadOnlySpan<byte> payload)
     {
-        if (correlationId <= 0 || payload.Length < ResponseKindPrefixSize)
+        if (correlationId <= 0 || payload.Length < SerializationConstants.IpcFramePayloadCodecResponseKindPrefixSize)
             throw new IpcPayloadException("The IPC response payload is invalid.");
 
         var payloadKind = (IpcResponsePayloadKind)payload[0];
         if (!Enum.IsDefined(payloadKind))
             throw new IpcPayloadException("The IPC response payload kind is invalid.");
 
-        var body = payload[ResponseKindPrefixSize..];
+        var body = payload[SerializationConstants.IpcFramePayloadCodecResponseKindPrefixSize..];
         if (payloadKind == IpcResponsePayloadKind.Failure)
         {
             if (body.IsEmpty || body.Length > IpcContractLimits.MaximumErrorPayloadSize)

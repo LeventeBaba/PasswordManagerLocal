@@ -5,7 +5,6 @@ namespace PasswordManagerLocal.Windows.Ipc.Coordination;
 
 public sealed class WindowsInstanceNameProvider
 {
-    private const string InstanceLocksDirectoryName = "instance-locks";
 
     private readonly string _applicationIdentifier;
     private readonly string _applicationDataDirectory;
@@ -40,7 +39,7 @@ public sealed class WindowsInstanceNameProvider
         var suffix = Convert.ToHexString(SHA256.HashData(material))[..32].ToLowerInvariant();
         var lockDirectory = Path.Combine(
             _applicationDataDirectory,
-            InstanceLocksDirectoryName);
+            CoordinationConstants.WindowsInstanceNameProviderInstanceLocksDirectoryName);
 
         return new WindowsInstanceNames(
             Path.Combine(lockDirectory, $"agent.{suffix}.lock"),
