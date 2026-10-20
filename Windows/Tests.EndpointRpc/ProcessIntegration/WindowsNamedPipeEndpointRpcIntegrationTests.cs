@@ -127,14 +127,14 @@ public sealed class WindowsNamedPipeEndpointRpcIntegrationTests
         Assert.AreEqual(EndpointRpcErrorCode.AuthorizationFailed, remote.Error.ErrorCode);
     }
 
-    private static PasswordManagerLocal.Windows.Ipc.Contracts.WindowsUiIpcIdentity CreateIdentity() =>
+    private static PasswordManagerLocal.Windows.Ipc.Contracts.Handshake.WindowsUiIpcIdentity CreateIdentity() =>
         new(
             Environment.ProcessId,
             Process.GetCurrentProcess().SessionId,
             Guid.NewGuid());
 
     private static FakeEndpointUiRegistrationResolver CreateResolver(
-        PasswordManagerLocal.Windows.Ipc.Contracts.WindowsUiIpcIdentity identity) =>
+        PasswordManagerLocal.Windows.Ipc.Contracts.Handshake.WindowsUiIpcIdentity identity) =>
         new()
         {
             ExpectedProcessId = identity.ProcessId,

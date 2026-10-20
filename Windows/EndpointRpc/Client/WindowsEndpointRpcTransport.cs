@@ -221,7 +221,7 @@ public sealed class WindowsEndpointRpcTransport : IEndpointRpcTransport
 
     private static Exception MapTransportFailure(Exception exception) => exception switch
     {
-        PasswordManagerLocal.Windows.Ipc.Transport.IpcConnectionClosedException =>
+        PasswordManagerLocal.Windows.Ipc.Transport.Connections.IpcConnectionClosedException =>
             new EndpointRpcDisconnectedException(exception),
         _ => exception
     };

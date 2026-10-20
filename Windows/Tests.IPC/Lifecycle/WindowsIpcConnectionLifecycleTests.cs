@@ -74,7 +74,7 @@ public sealed class WindowsIpcConnectionLifecycleTests
             await secondControl.RegisterUiConnectionAsync());
 
         Assert.IsTrue(registration.IsRegistered);
-        Assert.AreEqual(PasswordManagerLocal.Windows.Ipc.Contracts.IpcErrorCode.UiAlreadyRegistered, exception.Error.ErrorCode);
+        Assert.AreEqual(PasswordManagerLocal.Windows.Ipc.Contracts.Errors.IpcErrorCode.UiAlreadyRegistered, exception.Error.ErrorCode);
 
         await first.DisposeAsync();
         Assert.IsNull(coordinator.RegisteredConnectionId);

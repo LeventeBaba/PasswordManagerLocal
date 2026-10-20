@@ -195,7 +195,7 @@ public sealed class WindowsIpcMalformedInputTests
                 ordinaryRequest.Header.CorrelationId,
                 responsePayload));
 
-        await Assert.ThrowsAsync<PasswordManagerLocal.Windows.Ipc.Transport.IpcConnectionClosedException>(
+        await Assert.ThrowsAsync<PasswordManagerLocal.Windows.Ipc.Transport.Connections.IpcConnectionClosedException>(
             async () => await pendingTask);
         await client.DisposeAsync();
         await pair.Server.DisposeAsync();

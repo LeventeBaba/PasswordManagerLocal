@@ -246,6 +246,7 @@ public sealed class Phase9ArchitectureGuardTests
             "Windows",
             "IPC",
             "Constants",
+            "Launch",
             "WindowsExecutableNames.cs"));
         StringAssert.Contains(
             executableNamesSource,
