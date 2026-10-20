@@ -907,18 +907,6 @@ public sealed class AndroidRuntimeServiceHost : IAsyncDisposable
             throw failure;
     }
 
-    private async Task AcquireBackgroundLeaseLockedAsync(CancellationToken cancellationToken)
-    {
-        if (_backgroundLease is not null)
-            return;
-
-        var composition = EnsureCompositionLocked();
-        _backgroundLease = await composition.LifetimeCoordinator.AcquireAsync(
-            BackendLifetimeReason.BackgroundSync,
-            cancellationToken);
-        _backgroundState = _backgroundState with { IsBackgroundLeaseActive = true };
-    }
-
     private async Task ReleaseBackgroundLeaseLockedAsync()
     {
         var lease = _backgroundLease;

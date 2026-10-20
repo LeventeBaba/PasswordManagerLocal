@@ -161,7 +161,8 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
         var authorizations = await authorizationsRepository.ListForUserAsync(userId, ct);
         var targetAuthorization = authorizations.SingleOrDefault(row => row.IsActive && row.DeviceId == target.DeviceId && row.OriginInstanceId == target.OriginInstanceId)
             ?? throw new InvalidDataException("The target installation is not authoritatively authorized.");
-        if (targetAuthorization.AdditionOperationId != authorizingAdditionOperationId || targetAuthorization.AdditionOperationHash is null)
+        if (targetAuthorization.AuthorizationId != authorizingAdditionOperationId ||
+            targetAuthorization.AdditionOperationId != authorizingAdditionOperationId || targetAuthorization.AdditionOperationHash is null)
             throw new InvalidDataException("The target authorization does not reference the committed addition operation.");
 
         var operations = await operationsRepository.ListForUserAsync(userId, ct);
@@ -236,9 +237,6 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
 
         var knowledge = await knowledgeRepository.ListForUserAsync(userId, ct);
         var cutoffs = await cutoffsRepository.ListForUserAsync(userId, ct);
-        var canonicalAuthorizationIds = authorizations.ToDictionary(
-            row => row.AuthorizationId,
-            UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId);
         var retainedSnapshots = (await snapshotsRepository.ListForUserAsync(userId, ct))
             .Where(row => row.Status is
                 UserSyncSnapshotStatus.Pending or
@@ -301,7 +299,7 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
             UserDevices = relationshipSnapshots,
             MembershipAuthorizations = authorizations.Select(row => new DeviceEnrollmentMembershipAuthorizationSnapshot
             {
-                AuthorizationId = UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(row),
+                AuthorizationId = row.AuthorizationId,
                 UserId = row.UserId,
                 DeviceId = row.DeviceId,
                 OriginInstanceId = row.OriginInstanceId,
@@ -328,9 +326,7 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
                 CutoffId = row.CutoffId, UserId = row.UserId, DeviceId = row.DeviceId, OriginInstanceId = row.OriginInstanceId,
                 UserKeyEpoch = row.UserKeyEpoch, HighestAcceptedSnapshotRevision = row.HighestAcceptedSnapshotRevision,
                 HighestAcceptedControlSequence = row.HighestAcceptedControlSequence, ResultingMembershipEpoch = row.ResultingMembershipEpoch,
-                AuthorizationId = canonicalAuthorizationIds.TryGetValue(row.AuthorizationId, out var canonicalAuthorizationId)
-                    ? canonicalAuthorizationId
-                    : row.AuthorizationId, RemovalOperationId = row.RemovalOperationId,
+                AuthorizationId = row.AuthorizationId, RemovalOperationId = row.RemovalOperationId,
                 RemovalOperationHash = row.RemovalOperationHash.ToArray(), CreatedAtUtc = row.CreatedAtUtc
             }).ToList(),
             ControlOperations = operations.Select(row => new DeviceEnrollmentControlOperationSnapshot

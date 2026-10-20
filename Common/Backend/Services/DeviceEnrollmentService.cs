@@ -490,7 +490,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
                     var controlState = await controlStates.GetAsync(userId, lifecycleToken);
                     if (controlState?.HasConflict == true)
                         throw new DeviceEnrollmentException(DeviceEnrollmentErrorCode.NewDeviceRejected, controlState.ConflictReason ?? "The account control plane is quarantined.");
-                    if ((await snapshots.ListForUserAsync(userId, lifecycleToken)).Any(row => row.Status == UserSyncSnapshotStatus.Quarantined))
+                    if ((await snapshots.ListForUserAsync(userId, lifecycleToken)).Any(row => row.Status == UserSyncSnapshotStatus.IsolatedFork))
                         throw new DeviceEnrollmentException(DeviceEnrollmentErrorCode.NewDeviceRejected, "Enrollment is blocked by unresolved snapshot fork evidence.");
 
                     await snapshotMerge.TryMergePendingUnderLifecycleAsync(userId, mergeKey, UserSyncKeyConfidence.AuthenticatedSession, lifecycleToken);

@@ -239,7 +239,7 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
                 }
                 else
                 {
-                    if (existing.Status == UserSyncSnapshotStatus.Quarantined)
+                    if (existing.Status == UserSyncSnapshotStatus.IsolatedFork)
                         throw new InvalidDataException("The enrollment bootstrap cannot overwrite locally retained snapshot quarantine evidence.");
                     CopySnapshotRow(CreateSnapshotRow(item, envelope), existing);
                     pendingSnapshots.Update(existing);
@@ -470,7 +470,7 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         {
             if (!Enum.IsDefined(pending.Status))
                 throw new InvalidDataException("A retained user snapshot has an invalid status.");
-            if (pending.Status == UserSyncSnapshotStatus.Quarantined)
+            if (pending.Status == UserSyncSnapshotStatus.IsolatedFork)
             {
                 if (string.IsNullOrWhiteSpace(pending.QuarantineReason) ||
                     pending.ConflictingSnapshotHash is { Length: not CryptographyConstants.Sha256HashSizeInBytes })

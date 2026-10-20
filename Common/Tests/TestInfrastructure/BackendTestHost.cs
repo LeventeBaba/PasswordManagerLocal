@@ -66,7 +66,6 @@ public sealed class BackendTestHost : IDisposable
             SignHandler = bytes => SignatureAlgorithm.Ed25519.Sign(_signingKey, bytes)
         });
         sc.AddSingleton<FakeSyncQueueService>();
-        sc.AddSingleton<ISyncQueueService>(sp => sp.GetRequiredService<FakeSyncQueueService>());
         sc.AddSingleton<ISyncChangeQueueService>(sp => sp.GetRequiredService<FakeSyncQueueService>());
         sc.AddSingleton<IUserSyncCatchUpService>(sp => sp.GetRequiredService<FakeSyncQueueService>());
         sc.AddSingleton<IPendingSyncActivationService>(sp => sp.GetRequiredService<FakeSyncQueueService>());

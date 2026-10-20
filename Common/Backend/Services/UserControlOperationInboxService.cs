@@ -692,7 +692,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         var obsoleteSnapshots = (await _snapshots.ListForUserAsync(user.UId, ct))
             .Where(snapshot =>
                 snapshot.UserKeyEpoch <= envelope.PreviousKeyEpoch &&
-                snapshot.Status != UserSyncSnapshotStatus.Quarantined)
+                snapshot.Status != UserSyncSnapshotStatus.IsolatedFork)
             .ToList();
         if (obsoleteSnapshots.Count != 0)
             _snapshots.DeleteRange(obsoleteSnapshots);
@@ -810,7 +810,9 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         if (user.MembershipEpoch > envelope.PreviousMembershipEpoch)
         {
             var authorization = await _authorizationRows.GetActiveAsync(payload.UserId, payload.NewDeviceId, payload.NewOriginInstanceId, ct);
-            if (authorization?.AdditionOperationId == envelope.OperationId && authorization.AdditionOperationHash is not null && HashEquals(authorization.AdditionOperationHash, envelope.OperationHash))
+            if (authorization?.AuthorizationId == envelope.OperationId &&
+                authorization.AdditionOperationId == envelope.OperationId && authorization.AdditionOperationHash is not null &&
+                HashEquals(authorization.AdditionOperationHash, envelope.OperationHash))
             {
                 MarkApplied(row, state, envelope, "The exact device addition was already reflected in canonical membership.");
                 if (_loginIdentities is not null)
@@ -954,7 +956,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         if (user.MembershipEpoch > envelope.PreviousMembershipEpoch)
         {
             var ended = await _authorizationRows.ListForUserAsync(user.UId, ct);
-            if (payload.Origins.All(origin => ended.Any(auth => UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(auth) == origin.AuthorizationId && auth.RemovalOperationId == envelope.OperationId && auth.RemovalOperationHash is not null && HashEquals(auth.RemovalOperationHash, envelope.OperationHash))))
+            if (payload.Origins.All(origin => ended.Any(auth => auth.AuthorizationId == origin.AuthorizationId && auth.RemovalOperationId == envelope.OperationId && auth.RemovalOperationHash is not null && HashEquals(auth.RemovalOperationHash, envelope.OperationHash))))
             {
                 MarkApplied(row, state, envelope, "The exact device removal was already reflected in canonical membership.");
                 if (_loginIdentities is not null)
@@ -969,7 +971,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         }
 
         var active = await _authorizationRows.ListActiveForDeviceAsync(user.UId, payload.RemovedDeviceId, ct);
-        if (active.Count == 0 || active.Any(auth => payload.Origins.All(origin => origin.AuthorizationId != UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(auth))))
+        if (active.Count == 0 || active.Any(auth => payload.Origins.All(origin => origin.AuthorizationId != auth.AuthorizationId)))
             return await QuarantinePayloadMismatchAsync(row, envelope, state, transaction, "The removal does not exactly cover current installation authorizations.", ct);
         foreach (var authorization in active)
             await _membershipAuthorization.EndAuthorizationAsync(authorization, payload, envelope.OperationId, envelope.OperationHash, envelope.CreatedAtUtc, ct);

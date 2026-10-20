@@ -858,66 +858,6 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
             JsonException;
 
 
-    private async Task<UserDataBundle> ReadAndVerifyUserDataBundleForSyncAsync(User user, EncryptionKey userKey, CancellationToken ct)
-    {
-        var userData = await DecryptDecompressDeserializeAsync(user.EncryptedPayload, userKey, BackendJsonSerializerContext.Default.UserData, ct: ct);
-        if (userData is null)
-            throw new UnauthorizedAccessException();
-
-        try
-        {
-            _integrity.VerifyUserData(userData);
-        }
-        catch
-        {
-            userData.Dispose();
-            throw;
-        }
-
-        var generalTask = DecryptAndVerifyEncryptedUserBlobAsync(
-            user.EncryptedGeneralUserDataPayload,
-            userData.GeneralUserDataKey,
-            BackendJsonSerializerContext.Default.GeneralUserData,
-            _integrity.VerifyGeneralUserData,
-            ct);
-        var passwordsTask = DecryptAndVerifyEncryptedUserBlobAsync(
-            user.EncryptedUserPasswordsDataPayload,
-            userData.UserPasswordsDataKey,
-            BackendJsonSerializerContext.Default.UserPasswordsData,
-            _integrity.VerifyUserPasswordsData,
-            ct);
-        var devicesTask = DecryptAndVerifyEncryptedUserBlobAsync(
-            user.EncryptedUserDevicesDataPayload,
-            userData.UserDevicesDataKey,
-            BackendJsonSerializerContext.Default.UserDevicesData,
-            _integrity.VerifyUserDevicesData,
-            ct);
-
-        try
-        {
-            await Task.WhenAll(generalTask, passwordsTask, devicesTask);
-
-            var bundle = new UserDataBundle
-            {
-                UserData = userData,
-                GeneralUserData = await generalTask,
-                UserPasswordsData = await passwordsTask,
-                UserDevicesData = await devicesTask
-            };
-
-            _integrity.VerifyBundleLinks(bundle);
-            return bundle;
-        }
-        catch
-        {
-            DisposeCompletedTaskResult(generalTask);
-            DisposeCompletedTaskResult(passwordsTask);
-            DisposeCompletedTaskResult(devicesTask);
-            userData.Dispose();
-            throw;
-        }
-    }
-
 
     private async Task<T> DecryptEncryptedUserBlobAsync<T>(byte[] encryptedBlob, byte[] rawKey, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo, CancellationToken ct) where T : class
     {
@@ -1015,13 +955,6 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
     }
 
 
-    private void DisposeCompletedTaskResult<T>(Task<T> task) where T : IDisposable
-    {
-        if (task.Status == TaskStatus.RanToCompletion)
-            task.Result.Dispose();
-    }
-
-
     private void ZeroCompletedEncryptionTask(Task<byte[]> task)
     {
         if (task.Status == TaskStatus.RanToCompletion)
@@ -1054,33 +987,4 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
         return max;
     }
 
-
-    private User CreateUser(UserSyncPayload payload) =>
-        new()
-        {
-            UId = payload.UId
-        };
-
-
-    private void CopyUserData(UserSyncPayload source, User target)
-    {
-        target.UId = source.UId;
-        target.UsernameHash = source.UsernameHash;
-        target.UsernameSalt = source.UsernameSalt;
-        target.SetGeneralUserDataVersion(source.GeneralUserDataVersion);
-        target.PasswordSalt = source.PasswordSalt;
-        target.EncryptedPayload = source.EncryptedPayload;
-        target.EncryptedGeneralUserDataPayload = source.EncryptedGeneralUserDataPayload;
-        target.EncryptedUserPasswordsDataPayload = source.EncryptedUserPasswordsDataPayload;
-        target.EncryptedUserDevicesDataPayload = source.EncryptedUserDevicesDataPayload;
-        target.UserDataLastModifiedAt = source.UserDataLastModifiedAt;
-        target.GeneralUserDataLastModifiedAt = source.GeneralUserDataLastModifiedAt;
-        target.UserPasswordsDataLastModifiedAt = source.UserPasswordsDataLastModifiedAt;
-        target.UserDevicesDataLastModifiedAt = source.UserDevicesDataLastModifiedAt;
-        target.IntegrityHash = source.IntegrityHash;
-    }
-
-
-    private DateTimeOffset FromTimestamp(long ts) =>
-        DateTimeOffset.FromUnixTimeMilliseconds(ts);
 }

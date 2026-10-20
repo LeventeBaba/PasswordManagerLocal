@@ -35,8 +35,8 @@ internal static class TombstoneGarbageCollectionRules
         var genesisCount = 0;
         foreach (var row in authorizations)
         {
-            var canonicalAuthorizationId = UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(row);
-            if (row.UserId != userId || canonicalAuthorizationId == Guid.Empty || row.DeviceId == Guid.Empty ||
+            var authorizationId = row.AuthorizationId;
+            if (row.UserId != userId || authorizationId == Guid.Empty || row.DeviceId == Guid.Empty ||
                 row.OriginInstanceId == Guid.Empty || row.SignPublicKey.Length != SyncConstants.SyncDeltaEd25519PublicKeyBytes ||
                 row.SignPublicKeyHash.Length != SyncConstants.SyncDeltaPayloadHashBytes ||
                 row.AgreementPublicKeyHash.Length != SyncConstants.SyncDeltaPayloadHashBytes ||
@@ -44,7 +44,7 @@ internal static class TombstoneGarbageCollectionRules
                 string.IsNullOrWhiteSpace(row.TlsCertFingerprint) || !DeviceTypeDetector.IsValid(row.DeviceType) ||
                 row.StartedMembershipEpoch <= 0 || row.StartedMembershipEpoch > currentMembershipEpoch ||
                 row.MinimumKeyEpoch <= 0 || row.MinimumKeyEpoch > currentKeyEpoch ||
-                !authorizationById.TryAdd(canonicalAuthorizationId, row) ||
+                !authorizationById.TryAdd(authorizationId, row) ||
                 !exactInstallations.Add((row.DeviceId, row.OriginInstanceId)))
             {
                 throw new InvalidDataException("Membership history contains invalid or conflicting causal evidence.");
@@ -70,6 +70,7 @@ internal static class TombstoneGarbageCollectionRules
             else
             {
                 if (row.StartedMembershipEpoch <= 1 || !hasAdditionId ||
+                    row.AdditionOperationId != row.AuthorizationId ||
                     !membershipTransitionEpochs.Add(row.StartedMembershipEpoch))
                 {
                     throw new InvalidDataException("Membership addition history is incomplete or conflicting.");
@@ -140,7 +141,7 @@ internal static class TombstoneGarbageCollectionRules
         {
             if (authorization.IsActive)
             {
-                if (cutoffsByAuthorization.ContainsKey(UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(authorization)))
+                if (cutoffsByAuthorization.ContainsKey(authorization.AuthorizationId))
                     throw new InvalidDataException("An active membership authorization has removal cutoffs.");
                 continue;
             }
@@ -148,7 +149,7 @@ internal static class TombstoneGarbageCollectionRules
             var maximumKeyEpoch = authorization.MaximumKeyEpoch
                 ?? throw new InvalidDataException("An ended membership authorization has no maximum key epoch.");
             var expectedCutoffCount = checked(maximumKeyEpoch - authorization.MinimumKeyEpoch + 1);
-            if (!cutoffsByAuthorization.TryGetValue(UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(authorization), out var authorizationCutoffs) ||
+            if (!cutoffsByAuthorization.TryGetValue(authorization.AuthorizationId, out var authorizationCutoffs) ||
                 authorizationCutoffs.LongLength != expectedCutoffCount)
             {
                 throw new InvalidDataException("Removal-cutoff history is incomplete for an ended installation.");
@@ -258,7 +259,7 @@ internal static class TombstoneGarbageCollectionRules
     {
         if (member.RemovalOperationId is null || member.RemovalOperationHash is null ||
             member.EndedMembershipEpoch is null ||
-            !cutoffByAuthorization.TryGetValue(UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(member), out var cutoffs) ||
+            !cutoffByAuthorization.TryGetValue(member.AuthorizationId, out var cutoffs) ||
             cutoffs.Length == 0 ||
             cutoffs.All(cutoff => cutoff.UserKeyEpoch != reference.UserKeyEpoch))
         {

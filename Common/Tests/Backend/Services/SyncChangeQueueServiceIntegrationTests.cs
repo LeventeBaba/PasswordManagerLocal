@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Persistence;
@@ -15,7 +16,7 @@ using PasswordManagerLocal.Common.Tests.TestInfrastructure.Services.Fixtures;
 namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 
 [TestClass]
-public sealed class SyncQueueServiceIntegrationTests
+public sealed class SyncChangeQueueServiceIntegrationTests
 {
     [TestMethod]
     [DataRow(false)]
@@ -27,7 +28,7 @@ public sealed class SyncQueueServiceIntegrationTests
         await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
         var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 2, disabledRemoteCount: 0);
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
-        await service.EnqueueAsync(new SyncItem
+        await service.Queue.EnqueueAsync(new SyncItem
         {
             ModelId = seeded.User.UId, ModelType = SyncModelType.User, ChangeType = SyncChangeType.Updated
         });
@@ -43,7 +44,7 @@ public sealed class SyncQueueServiceIntegrationTests
         var inFlight = await senderQueue.GetNextPendingForDeviceAsync(source.Id);
         MSTestAssert.IsNotNull(inFlight);
         var incomingTimestamp = pendingItem.ChangedAtTs + (newerLocalWork ? -1 : 1);
-        await service.EnqueuePropagationAsync(new SyncItem
+        await service.Queue.EnqueuePropagationAsync(new SyncItem
         {
             ModelId = seeded.User.UId, ModelType = SyncModelType.User, ChangeType = SyncChangeType.Updated
         }, source.Id, incomingTimestamp);
@@ -82,7 +83,7 @@ public sealed class SyncQueueServiceIntegrationTests
         await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
         var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 1, disabledRemoteCount: 0);
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
-        await service.EnqueueAsync(new SyncItem
+        await service.Queue.EnqueueAsync(new SyncItem
         {
             ModelId = seeded.User.UId,
             ModelType = SyncModelType.User,
@@ -123,13 +124,13 @@ public sealed class SyncQueueServiceIntegrationTests
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
         var originalModifiedAt = seeded.User.LastModifiedAt;
 
-        await service.EnqueueAsync(new SyncItem
+        await service.Queue.EnqueueAsync(new SyncItem
         {
             ModelId = seeded.User.UId,
             ModelType = SyncModelType.User,
             ChangeType = SyncChangeType.Updated
         });
-        await service.EnqueueAsync(new SyncItem
+        await service.Queue.EnqueueAsync(new SyncItem
         {
             ModelId = seeded.User.UId,
             ModelType = SyncModelType.User,
@@ -185,19 +186,19 @@ public sealed class SyncQueueServiceIntegrationTests
             });
             await database.Db.SaveChangesAsync();
 
-            await service.EnqueueDeferredAsync(new SyncItem
+            await service.Queue.EnqueueDeferredAsync(new SyncItem
             {
                 ModelId = seeded.User.UId,
                 ModelType = SyncModelType.User,
                 ChangeType = SyncChangeType.Updated
             });
-            await service.EnqueueDeferredAsync(new SyncItem
+            await service.Queue.EnqueueDeferredAsync(new SyncItem
             {
                 ModelId = newDevice.Id,
                 ModelType = SyncModelType.Device,
                 ChangeType = SyncChangeType.Created
             });
-            await service.EnqueueDeferredAsync(new SyncItem
+            await service.Queue.EnqueueDeferredAsync(new SyncItem
             {
                 ModelId = SyncIdentityUtil.BuildUserDeviceModelId(seeded.User.UId, newDevice.Id),
                 ModelType = SyncModelType.UserDevice,
@@ -214,7 +215,7 @@ public sealed class SyncQueueServiceIntegrationTests
             await transaction.CommitAsync();
         }
 
-        await service.ActivatePendingSyncsAsync();
+        await service.Activation.ActivatePendingAsync();
 
         MSTestAssert.IsTrue(syncIdentities.ContainsId(existingDevice.Id));
         MSTestAssert.IsTrue(syncIdentities.ContainsId(newDevice.Id));
@@ -235,7 +236,7 @@ public sealed class SyncQueueServiceIntegrationTests
         var source = seeded.EnabledRemotes[0];
         var target = seeded.EnabledRemotes[1];
 
-        await service.EnqueuePropagationAsync(new SyncItem
+        await service.Queue.EnqueuePropagationAsync(new SyncItem
         {
             ModelId = seeded.User.UId,
             ModelType = SyncModelType.User,
@@ -267,7 +268,7 @@ public sealed class SyncQueueServiceIntegrationTests
         await database.Db.SaveChangesAsync();
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
 
-        await service.EnqueueAsync(new SyncItem
+        await service.Queue.EnqueueAsync(new SyncItem
         {
             ModelId = SyncIdentityUtil.BuildUserDeviceModelId(seeded.User.UId, removed.Id),
             ModelType = SyncModelType.UserDevice,
@@ -297,7 +298,7 @@ public sealed class SyncQueueServiceIntegrationTests
         await database.Db.SaveChangesAsync();
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
 
-        await service.EnqueuePropagationAsync(new SyncItem
+        await service.Queue.EnqueuePropagationAsync(new SyncItem
         {
             ModelId = SyncIdentityUtil.BuildUserDeviceModelId(seeded.User.UId, removed.Id),
             ModelType = SyncModelType.UserDevice,
@@ -327,7 +328,7 @@ public sealed class SyncQueueServiceIntegrationTests
         await database.Db.SaveChangesAsync();
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
 
-        await service.EnqueueAsync(new SyncItem
+        await service.Queue.EnqueueAsync(new SyncItem
         {
             ModelId = group.Id,
             ModelType = SyncModelType.Group,
@@ -354,7 +355,7 @@ public sealed class SyncQueueServiceIntegrationTests
         var authorization = new FakeSyncAuthorizationService { CanSend = false };
         var service = CreateService(database, seeded.Identity, authorization);
 
-        await service.EnqueueForDeviceAsync(new SyncItem
+        await service.Queue.EnqueueForDeviceAsync(new SyncItem
         {
             ModelId = seeded.User.UId,
             ModelType = SyncModelType.User,
@@ -384,13 +385,13 @@ public sealed class SyncQueueServiceIntegrationTests
         await database.Db.SaveChangesAsync();
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
 
-        await service.EnqueueAsync(new SyncItem
+        await service.Queue.EnqueueAsync(new SyncItem
         {
             ModelId = group.Id,
             ModelType = SyncModelType.Group,
             ChangeType = SyncChangeType.Created
         });
-        await service.EnqueueAsync(new SyncItem
+        await service.Queue.EnqueueAsync(new SyncItem
         {
             ModelId = group.Id,
             ModelType = SyncModelType.Group,
@@ -400,7 +401,7 @@ public sealed class SyncQueueServiceIntegrationTests
         var syncItem = await database.Db.SyncItems.SingleAsync();
         MSTestAssert.AreEqual(SyncChangeType.Created, syncItem.ChangeType);
 
-        await service.EnqueueAsync(new SyncItem
+        await service.Queue.EnqueueAsync(new SyncItem
         {
             ModelId = group.Id,
             ModelType = SyncModelType.Group,
@@ -420,14 +421,14 @@ public sealed class SyncQueueServiceIntegrationTests
         var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 1, disabledRemoteCount: 0);
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
 
-        await service.EnqueueAsync(new SyncItem
+        await service.Queue.EnqueueAsync(new SyncItem
         {
             ModelId = seeded.User.UId,
             ModelType = SyncModelType.User,
             ChangeType = SyncChangeType.Updated
         });
 
-        await MSTestAssert.ThrowsExactlyAsync<InvalidOperationException>(() => service.EnqueueAsync(new SyncItem
+        await MSTestAssert.ThrowsExactlyAsync<InvalidOperationException>(() => service.Queue.EnqueueAsync(new SyncItem
         {
             ModelId = seeded.User.UId,
             ModelType = SyncModelType.User,
@@ -442,7 +443,7 @@ public sealed class SyncQueueServiceIntegrationTests
         MSTestAssert.AreEqual(1, await database.Db.SyncQueueItems.CountAsync());
     }
 
-    private static SyncQueueService CreateService(
+    private static (ISyncChangeQueueService Queue, IPendingSyncActivationService Activation) CreateService(
         SqliteIntegrationTestDatabase database,
         FakeDeviceIdentityService identity,
         FakeSyncAuthorizationService authorization,
@@ -487,8 +488,7 @@ public sealed class SyncQueueServiceIntegrationTests
             authorization,
             database.UnitOfWork);
         var changes = new SyncChangeQueueService(writer);
-        var catchUp = new UserSyncCatchUpService(database.Users, database.Devices, writer);
-        return new SyncQueueService(changes, catchUp, activation);
+        return (changes, activation);
     }
 
     private static async Task<SeededUserRoutes> SeedUserRoutesAsync(

@@ -215,14 +215,6 @@ public static class UserControlOperationEnvelopeUtil
             throw new InvalidDataException("The device-removal payload size is invalid.");
         var payload = JsonSerializer.Deserialize(bytes, BackendJsonSerializerContext.Default.DeviceRemovalPayload)
             ?? throw new InvalidDataException("The device-removal payload is invalid.");
-        // Historical genesis cutoffs used an empty blob for an absent addition hash.
-        // The signed integrity hash encodes null and empty identically. Keep the signed
-        // envelope bytes intact and verify the genesis authorization at the caller.
-        if (payload.Origins is null)
-            throw new InvalidDataException("The device-removal origin cutoffs are invalid.");
-        foreach (var origin in payload.Origins)
-            if (origin.AdditionOperationId is null && origin.AdditionOperationHash is { Length: 0 })
-                origin.AdditionOperationHash = null;
         ValidateDeviceRemovalPayload(payload);
         return payload;
     }
@@ -262,10 +254,10 @@ public static class UserControlOperationEnvelopeUtil
             KeyEpoch = user.KeyEpoch,
             MembershipEpoch = user.MembershipEpoch,
             KnownMembers = authorizations
-                .OrderBy(UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId)
+                .OrderBy(row => row.AuthorizationId)
                 .Select(row => new AccountDeletionKnownMember
                 {
-                    AuthorizationId = UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(row),
+                    AuthorizationId = row.AuthorizationId,
                     DeviceId = row.DeviceId,
                     OriginInstanceId = row.OriginInstanceId,
                     StartedMembershipEpoch = row.StartedMembershipEpoch,
@@ -307,7 +299,10 @@ public static class UserControlOperationEnvelopeUtil
                 (member.EndedMembershipEpoch is long ended && ended <= member.StartedMembershipEpoch) ||
                 member.MinimumKeyEpoch <= 0 ||
                 (member.MaximumKeyEpoch is long maximum && maximum < member.MinimumKeyEpoch) ||
-                member.SignPublicKeyHash.Length != SyncConstants.SyncDeltaPayloadHashBytes) ||
+                member.SignPublicKeyHash.Length != SyncConstants.SyncDeltaPayloadHashBytes ||
+                (member.StartedMembershipEpoch == 1
+                    ? member.AdditionOperationId is not null
+                    : member.AdditionOperationId != member.AuthorizationId)) ||
             payload.KnownMembers.Select(member => member.AuthorizationId).Distinct().Count() != payload.KnownMembers.Count ||
             payload.KnownMembers.Select(member => (member.DeviceId, member.OriginInstanceId)).Distinct().Count() != payload.KnownMembers.Count)
         {
@@ -372,6 +367,7 @@ public static class UserControlOperationEnvelopeUtil
                 origin.UserKeyEpoch <= 0 || origin.HighestAcceptedSnapshotRevision < 0 || origin.HighestAcceptedControlSequence < 0 ||
                 origin.SignPublicKeyHash.Length != SyncConstants.SyncDeltaPayloadHashBytes ||
                 (origin.AdditionOperationId is null) != (origin.AdditionOperationHash is null) ||
+                (origin.AdditionOperationId is Guid additionOperationId && additionOperationId != origin.AuthorizationId) ||
                 (origin.AdditionOperationHash is not null && origin.AdditionOperationHash.Length != SyncConstants.SyncDeltaPayloadHashBytes)) ||
             payload.Origins.Select(origin => (origin.AuthorizationId, origin.UserKeyEpoch)).Distinct().Count() != payload.Origins.Count)
             throw new InvalidDataException("The device-removal origin cutoffs are invalid or duplicated.");

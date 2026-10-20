@@ -32,7 +32,7 @@ public sealed class DeviceServiceTests
         var service = host.Services.GetRequiredService<IDeviceService>();
         var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
         var localUsers = (FakeLocalUserDeviceRepository)host.Services.GetRequiredService<ILocalUserDeviceRepository>();
-        var queue = (FakeSyncQueueService)host.Services.GetRequiredService<ISyncQueueService>();
+        var queue = host.Services.GetRequiredService<FakeSyncQueueService>();
         var runtime = (FakeSyncRuntimeService)host.Services.GetRequiredService<ISyncRuntimeService>();
         var identity = (FakeDeviceIdentityService)host.Services.GetRequiredService<IDeviceIdentityService>();
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("device_sync_toggle"));
@@ -239,7 +239,7 @@ public sealed class DeviceServiceTests
         var service = host.Services.GetRequiredService<IDeviceService>();
         var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
         var devices = (FakeDeviceRepository)host.Services.GetRequiredService<IDeviceRepository>();
-        var queue = (FakeSyncQueueService)host.Services.GetRequiredService<ISyncQueueService>();
+        var queue = host.Services.GetRequiredService<FakeSyncQueueService>();
         var syncIdentities = (FakeSyncDeviceIdentityService)host.Services.GetRequiredService<ISyncDeviceIdentityService>();
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("remote_sync_toggle"));
         var userId = users.GetUidFromToken(token);
@@ -275,7 +275,7 @@ public sealed class DeviceServiceTests
         var service = host.Services.GetRequiredService<IDeviceService>();
         var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
         var devices = (FakeDeviceRepository)host.Services.GetRequiredService<IDeviceRepository>();
-        var queue = (FakeSyncQueueService)host.Services.GetRequiredService<ISyncQueueService>();
+        var queue = host.Services.GetRequiredService<FakeSyncQueueService>();
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("unblock_device"));
         var userId = users.GetUidFromToken(token);
         var remote = CreateRemoteDevice();

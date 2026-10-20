@@ -20,12 +20,6 @@ internal sealed class WindowsFirewallPermissionManager : IFirewallPermissionMana
     private const string TcpOutboundAppRuleName = "PasswordManagerLocal Sync TCP Outbound App";
     private const string MdnsOutboundAppRuleName = "PasswordManagerLocal mDNS UDP Outbound App";
 
-    private static readonly string[] LegacyRuleNames =
-    [
-        "PasswordManagerLocal Sync TCP",
-        "PasswordManagerLocal mDNS UDP"
-    ];
-
     private const string CheckScriptTemplate = """
 param([string]$AppExe)
 $ErrorActionPreference = 'Stop'
@@ -533,7 +527,7 @@ exit 0
             MdnsPortRuleName,
             TcpOutboundAppRuleName,
             MdnsOutboundAppRuleName
-        }.Concat(LegacyRuleNames);
+        };
 
     private static async Task<(int ExitCode, string Output, string Error)> RunPowerShellScriptAsync(
         string script,

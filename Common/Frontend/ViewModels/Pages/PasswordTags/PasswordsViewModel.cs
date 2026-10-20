@@ -717,14 +717,4 @@ public sealed partial class PasswordsViewModel
         ApplyPasswordTagFiltersAndSorting();
     }
 
-    private void ResetPasswordTagManagementState()
-    {
-        ExitPasswordTagMultiSelection();
-        ResetPasswordTagDeleteState();
-        ClearManagedPasswordTagItems();
-        PasswordTagSearchQuery = string.Empty;
-        _passwordTagSortKey = "name-asc";
-        RaisePasswordTagSortMenuLabelProperties();
-        ResetPasswordTagEditorDraft();
-    }
 }

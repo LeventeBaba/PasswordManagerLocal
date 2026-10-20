@@ -71,19 +71,15 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
         var existing = await _authorizations.GetActiveAsync(payload.UserId, payload.NewDeviceId, payload.NewOriginInstanceId, ct);
         if (existing is not null)
         {
-            if (existing.AdditionOperationId == operationId &&
+            if (!existing.IsGenesis &&
+                existing.AuthorizationId == operationId &&
+                existing.StartedMembershipEpoch == payload.ResultingMembershipEpoch &&
+                existing.AdditionOperationId == operationId &&
                 existing.AdditionOperationHash is not null &&
                 Hashing.Verify(existing.AdditionOperationHash, operationHash))
             {
-                // Older builds stamped relayed additions with receiver-local time. The signed
-                // control envelope is the authoritative enrollment time, so repair that legacy
-                // metadata whenever the exact addition is observed again.
                 if (UtcDateTimeUtil.ToUtc(existing.CreatedAtUtc) != createdAtUtc)
-                {
-                    existing.CreatedAtUtc = createdAtUtc;
-                    existing.Version = checked(existing.Version + 1);
-                    _authorizations.Update(existing);
-                }
+                    throw new InvalidDataException("The retained authorization enrollment time does not match the signed addition operation.");
                 return existing;
             }
             throw new InvalidOperationException("The exact target installation already has a different active authorization.");
@@ -134,9 +130,17 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
         if (payload.UserId != authorization.UserId || payload.RemovedDeviceId != authorization.DeviceId)
             throw new InvalidDataException("The removal operation targets a different membership authorization.");
 
-        var canonicalAuthorizationId = UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(authorization);
+        if (authorization.AuthorizationId == Guid.Empty ||
+            (authorization.IsGenesis
+                ? authorization.StartedMembershipEpoch != 1 || authorization.AdditionOperationId is not null ||
+                  authorization.AdditionOperationHash is not null
+                : authorization.StartedMembershipEpoch <= 1 || authorization.AdditionOperationId != authorization.AuthorizationId ||
+                  authorization.AdditionOperationHash is not { Length: SyncConstants.SyncDeltaPayloadHashBytes }))
+            throw new InvalidDataException("The membership authorization does not satisfy the current identity invariant.");
+
+        var authorizationId = authorization.AuthorizationId;
         var origins = payload.Origins
-            .Where(item => item.AuthorizationId == canonicalAuthorizationId)
+            .Where(item => item.AuthorizationId == authorizationId)
             .OrderBy(item => item.UserKeyEpoch)
             .ToList();
         if (origins.Count == 0)
@@ -183,7 +187,7 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
                 ct);
             if (existingCutoff is not null)
             {
-                if (existingCutoff.AuthorizationId == canonicalAuthorizationId &&
+                if (existingCutoff.AuthorizationId == authorizationId &&
                     existingCutoff.RemovalOperationId == operationId &&
                     Hashing.Verify(existingCutoff.RemovalOperationHash, operationHash) &&
                     existingCutoff.HighestAcceptedSnapshotRevision == origin.HighestAcceptedSnapshotRevision &&
@@ -201,7 +205,7 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
                 HighestAcceptedSnapshotRevision = origin.HighestAcceptedSnapshotRevision,
                 HighestAcceptedControlSequence = origin.HighestAcceptedControlSequence,
                 ResultingMembershipEpoch = payload.ResultingMembershipEpoch,
-                AuthorizationId = canonicalAuthorizationId,
+                AuthorizationId = authorizationId,
                 RemovalOperationId = operationId,
                 RemovalOperationHash = operationHash.ToArray(),
                 CreatedAtUtc = createdAtUtc

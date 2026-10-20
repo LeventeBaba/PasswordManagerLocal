@@ -129,16 +129,6 @@ public sealed class OutgoingDeltaBuilderService : IOutgoingDeltaBuilderService
         return BuildEncryptedDelta(payload, device, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
     }
 
-    private Device BuildLocalOriginDevice() =>
-        new()
-        {
-            Id = _identity.LocalDeviceId,
-            SignPublicKey = _identity.SignPublicKey.ToArray(),
-            PublicKey = _identity.AgreementPublicKey.ToArray(),
-            TlsCertFingerprint = _identity.FingerprintHex,
-            IsTrusted = true,
-            IsBlocked = false
-        };
 
 
     private NetworkDelta BuildEncryptedDelta(SyncDeltaPayload payload, Device device, long timestamp)

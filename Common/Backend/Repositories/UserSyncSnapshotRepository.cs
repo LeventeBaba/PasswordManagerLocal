@@ -78,12 +78,12 @@ public sealed class UserSyncSnapshotRepository : IUserSyncSnapshotRepository
             .ToArray();
     }
 
-    public Task<bool> HasQuarantinedAsync(Guid userId, long userKeyEpoch, long membershipEpoch, CancellationToken ct = default) =>
+    public Task<bool> HasIsolatedForkAsync(Guid userId, long userKeyEpoch, long membershipEpoch, CancellationToken ct = default) =>
         _snapshots.AnyAsync(snapshot =>
             snapshot.UserId == userId &&
             snapshot.UserKeyEpoch == userKeyEpoch &&
             snapshot.MembershipEpoch == membershipEpoch &&
-            snapshot.Status == UserSyncSnapshotStatus.Quarantined, ct);
+            snapshot.Status == UserSyncSnapshotStatus.IsolatedFork, ct);
 
     public Task<UserSyncSnapshot?> GetLatestLocalAsync(Guid userId, Guid originDeviceId, Guid originInstanceId, long userKeyEpoch, CancellationToken ct = default) =>
         _snapshots.FirstOrDefaultAsync(snapshot =>

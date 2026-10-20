@@ -103,7 +103,7 @@ public sealed class UserSnapshotAntiEntropyServiceTests
             Knowledge(user.UId, olderReceiptOriginId, olderReceiptInstance, stored: 20, merged: 20, marker: 0x20));
         database.Db.AddRange(
             Snapshot(user, retainedOriginId, retainedInstance, 16, UserSyncSnapshotStatus.MergedReceipt, 0x16),
-            Snapshot(user, quarantinedOriginId, quarantinedInstance, 9, UserSyncSnapshotStatus.Quarantined, 0x31, 0x32),
+            Snapshot(user, quarantinedOriginId, quarantinedInstance, 9, UserSyncSnapshotStatus.IsolatedFork, 0x31, 0x32),
             Snapshot(user, historicalOriginId, historicalInstance, 7, UserSyncSnapshotStatus.MergedReceipt, 0x07, membershipEpoch: 1),
             Snapshot(user, olderReceiptOriginId, olderReceiptInstance, 15, UserSyncSnapshotStatus.MergedReceipt, 0x15));
         await database.UnitOfWork.SaveChangesAsync();

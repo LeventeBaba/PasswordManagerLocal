@@ -45,25 +45,6 @@ public sealed class FileApplicationPreferencesStoreTests
     }
 
     [TestMethod]
-    public async Task SchemaV3MigratesToThemeIdSchemaWithoutLosingPreferences()
-    {
-        var fileSystem = new FakeApplicationPreferencesFileSystem();
-        fileSystem.SetFile(
-            PreferencesPath(),
-            "{\"schemaVersion\":3,\"language\":\"Hungarian\",\"theme\":\"Light\",\"interfaceAnimationsEnabled\":false}");
-        var store = CreateStore(fileSystem);
-
-        var preferences = await store.ReadAsync();
-
-        Assert.AreEqual(ApplicationPreferences.CurrentSchemaVersion, preferences.SchemaVersion);
-        Assert.AreEqual(AppLanguage.Hungarian, preferences.Language);
-        Assert.AreEqual(AppThemeId.Light, preferences.Theme);
-        Assert.IsFalse(preferences.InterfaceAnimationsEnabled);
-        Assert.AreEqual(1, fileSystem.ReplaceCount);
-        AssertValidCurrentSchema(fileSystem.GetFile(PreferencesPath()));
-    }
-
-    [TestMethod]
     [DataRow("")]
     [DataRow("   ")]
     [DataRow("{")]
@@ -125,7 +106,7 @@ public sealed class FileApplicationPreferencesStoreTests
         var fileSystem = new FakeApplicationPreferencesFileSystem();
         fileSystem.SetFile(
             PreferencesPath(),
-            $"{{\"schemaVersion\":1,\"language\":\"{language}\",\"theme\":\"{theme}\"}}");
+            $"{{\"schemaVersion\":4,\"language\":\"{language}\",\"theme\":\"{theme}\",\"interfaceAnimationsEnabled\":true}}");
         var store = CreateStore(fileSystem);
 
         var preferences = await store.ReadAsync();
@@ -158,7 +139,7 @@ public sealed class FileApplicationPreferencesStoreTests
         var fileSystem = new FakeApplicationPreferencesFileSystem();
         fileSystem.SetFile(
             PreferencesPath(),
-            "{\"schemaVersion\":1,\"language\":\"English\",\"theme\":\"Dark\",\"windowsFirewallConfigured\":true}");
+            "{\"schemaVersion\":4,\"language\":\"English\",\"theme\":\"Dark\",\"interfaceAnimationsEnabled\":true,\"windowsFirewallConfigured\":true}");
         var store = CreateStore(fileSystem);
 
         var preferences = await store.ReadAsync();

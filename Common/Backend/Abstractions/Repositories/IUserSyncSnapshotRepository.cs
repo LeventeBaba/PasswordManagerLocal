@@ -10,7 +10,7 @@ public interface IUserSyncSnapshotRepository
     Task<IReadOnlyList<UserSyncSnapshot>> ListPendingForKeyEpochAsync(Guid userId, long userKeyEpoch, CancellationToken ct = default);
     Task<IReadOnlyList<UserSyncSnapshot>> ListForUserAsync(Guid userId, CancellationToken ct = default);
     Task<IReadOnlyList<UserSyncSnapshot>> ListRecoveryEvidenceAsync(Guid userId, long userKeyEpoch, CancellationToken ct = default);
-    Task<bool> HasQuarantinedAsync(Guid userId, long userKeyEpoch, long membershipEpoch, CancellationToken ct = default);
+    Task<bool> HasIsolatedForkAsync(Guid userId, long userKeyEpoch, long membershipEpoch, CancellationToken ct = default);
     Task<UserSyncSnapshot?> GetLatestLocalAsync(Guid userId, Guid originDeviceId, Guid originInstanceId, long userKeyEpoch, CancellationToken ct = default);
     Task AddAsync(UserSyncSnapshot snapshot, CancellationToken ct = default);
     void Update(UserSyncSnapshot snapshot);

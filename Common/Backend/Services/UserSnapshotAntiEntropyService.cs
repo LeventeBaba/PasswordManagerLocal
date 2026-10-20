@@ -530,16 +530,6 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
             throw new InvalidDataException("The requested user snapshot hash is invalid.");
     }
 
-    private Device BuildLocalOriginDevice() =>
-        new()
-        {
-            Id = _identity.LocalDeviceId,
-            SignPublicKey = _identity.SignPublicKey.ToArray(),
-            PublicKey = _identity.AgreementPublicKey.ToArray(),
-            TlsCertFingerprint = _identity.FingerprintHex,
-            IsTrusted = true,
-            IsBlocked = false
-        };
 
 
     private UserSnapshotEnvelope Deserialize(UserSyncSnapshot snapshot)

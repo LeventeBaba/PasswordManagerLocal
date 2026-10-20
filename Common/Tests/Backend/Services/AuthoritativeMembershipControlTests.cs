@@ -98,6 +98,7 @@ public sealed class AuthoritativeMembershipControlTests
         var additionOperationId = Guid.NewGuid();
         var additionOperationHash = Enumerable.Repeat((byte)0x25, 32).ToArray();
         var targetAuthorization = CreateAuthorization(user.UId, target, startedMembershipEpoch: 2, isGenesis: false);
+        targetAuthorization.AuthorizationId = additionOperationId;
         targetAuthorization.AdditionOperationId = additionOperationId;
         targetAuthorization.AdditionOperationHash = additionOperationHash;
 
@@ -126,7 +127,7 @@ public sealed class AuthoritativeMembershipControlTests
             [
                 new DeviceRemovalOriginCutoffPayload
                 {
-                    AuthorizationId = UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(targetAuthorization),
+                    AuthorizationId = targetAuthorization.AuthorizationId,
                     OriginInstanceId = target.OriginInstanceId,
                     UserKeyEpoch = 1,
                     HighestAcceptedSnapshotRevision = 6,
@@ -195,6 +196,7 @@ public sealed class AuthoritativeMembershipControlTests
 
     private static UserMembershipAuthorization CreateAuthorization(Guid userId, FakeDeviceIdentityService identity, long startedMembershipEpoch, bool isGenesis) => new()
     {
+        AuthorizationId = Guid.NewGuid(),
         UserId = userId, DeviceId = identity.LocalDeviceId, OriginInstanceId = identity.OriginInstanceId,
         SignPublicKey = identity.SignPublicKey.ToArray(), SignPublicKeyHash = Hashing.SHA256Hash(identity.SignPublicKey),
         AgreementPublicKeyHash = Hashing.SHA256Hash(identity.AgreementPublicKey), TlsCertFingerprint = identity.FingerprintHex,

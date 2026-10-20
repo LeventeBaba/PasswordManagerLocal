@@ -344,7 +344,7 @@ public sealed class AuthServiceTests
             EnvelopePayload = [0x01],
             CreatedAtUtc = DateTimeOffset.UtcNow,
             ReceivedAtUtc = DateTimeOffset.UtcNow,
-            Status = UserSyncSnapshotStatus.Quarantined
+            Status = UserSyncSnapshotStatus.IsolatedFork
         });
 
         await ExpectThrowsAsync<InvalidOperationException>(() => auth.ChangeMasterPasswordAsync(new MasterPasswordChangeRequest

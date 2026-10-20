@@ -177,7 +177,7 @@ public sealed class UserSnapshotInboxServiceTests
         MSTestAssert.AreEqual(UserSnapshotReceiptState.Quarantined, forkReceipt.State);
         MSTestAssert.AreEqual(UserSnapshotReceiptState.Quarantined, laterReceipt.State);
         MSTestAssert.IsNotNull(row);
-        MSTestAssert.AreEqual(UserSyncSnapshotStatus.Quarantined, row.Status);
+        MSTestAssert.AreEqual(UserSyncSnapshotStatus.IsolatedFork, row.Status);
         MSTestAssert.AreEqual(9L, row.OriginRevision);
         CollectionAssert.AreEqual(original.SnapshotHash, row.SnapshotHash);
         CollectionAssert.AreEqual(fork.SnapshotHash, row.ConflictingSnapshotHash);
@@ -226,7 +226,7 @@ public sealed class UserSnapshotInboxServiceTests
 
         MSTestAssert.AreEqual(UserSnapshotReceiptState.Quarantined, receipt.State);
         MSTestAssert.IsNotNull(quarantine);
-        MSTestAssert.AreEqual(UserSyncSnapshotStatus.Quarantined, quarantine.Status);
+        MSTestAssert.AreEqual(UserSyncSnapshotStatus.IsolatedFork, quarantine.Status);
         CollectionAssert.AreEqual(fork.SnapshotHash, quarantine.SnapshotHash);
         CollectionAssert.AreEqual(merged.SnapshotHash, quarantine.ConflictingSnapshotHash);
     }
@@ -461,7 +461,7 @@ public sealed class UserSnapshotInboxServiceTests
         MSTestAssert.AreEqual(UserSnapshotReceiptState.StoredMergedReceipt, stored.State);
         MSTestAssert.AreEqual(UserSnapshotReceiptState.Quarantined, conflicting.State);
         MSTestAssert.IsNotNull(row);
-        MSTestAssert.AreEqual(UserSyncSnapshotStatus.Quarantined, row.Status);
+        MSTestAssert.AreEqual(UserSyncSnapshotStatus.IsolatedFork, row.Status);
         CollectionAssert.AreEqual(original.SnapshotHash, row.SnapshotHash);
         CollectionAssert.AreEqual(fork.SnapshotHash, row.ConflictingSnapshotHash);
     }
@@ -532,7 +532,7 @@ public sealed class UserSnapshotInboxServiceTests
         MSTestAssert.AreEqual(UserSnapshotReceiptState.StoredMergedReceipt, first.State);
         MSTestAssert.AreEqual(UserSnapshotReceiptState.Quarantined, second.State);
         MSTestAssert.IsNotNull(row);
-        MSTestAssert.AreEqual(UserSyncSnapshotStatus.Quarantined, row.Status);
+        MSTestAssert.AreEqual(UserSyncSnapshotStatus.IsolatedFork, row.Status);
         MSTestAssert.AreEqual(15L, row.OriginRevision);
         CollectionAssert.AreEqual(retained.SnapshotHash, row.SnapshotHash);
         CollectionAssert.AreEqual(nonDominating.SnapshotHash, row.ConflictingSnapshotHash);

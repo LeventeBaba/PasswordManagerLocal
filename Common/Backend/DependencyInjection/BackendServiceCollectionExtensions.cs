@@ -203,7 +203,6 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<ISyncQueueWriterService, SyncQueueWriterService>();
         services.AddScoped<ISyncChangeQueueService, SyncChangeQueueService>();
         services.AddScoped<IUserSyncCatchUpService, UserSyncCatchUpService>();
-        services.AddScoped<ISyncQueueService, SyncQueueService>();
         services.AddScoped<ISyncService, SyncService>();
 
         services.AddSingleton<SyncPeerProtocolHandler>();

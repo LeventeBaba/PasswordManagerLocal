@@ -188,6 +188,8 @@ public sealed class AuthoritativeAccountDeletionTests
         var local = CreateIdentity(localSigningKey, Guid.NewGuid(), Guid.NewGuid(), 'C');
         var relayPeer = CreateIdentity(relayPeerSigningKey, Guid.NewGuid(), Guid.NewGuid(), 'D');
         var detachedUser = CreateUser(Guid.NewGuid(), savedKey: null);
+        detachedUser.MembershipEpoch = 2;
+        detachedUser.GenerateIntegrityHash();
         var sourceAuthorization = CreateAuthorization(detachedUser.UId, source, isGenesis: true);
         var relayAuthorization = CreateAuthorization(detachedUser.UId, relayPeer, isGenesis: false);
         var relayPeerDevice = CreateDevice(relayPeer);
@@ -607,9 +609,12 @@ public sealed class AuthoritativeAccountDeletionTests
     private static UserMembershipAuthorization CreateAuthorization(
         Guid userId,
         FakeDeviceIdentityService identity,
-        bool isGenesis) =>
-        new()
+        bool isGenesis)
+    {
+        var additionOperationId = isGenesis ? (Guid?)null : Guid.NewGuid();
+        return new UserMembershipAuthorization
         {
+            AuthorizationId = additionOperationId ?? Guid.NewGuid(),
             UserId = userId,
             DeviceId = identity.LocalDeviceId,
             OriginInstanceId = identity.OriginInstanceId,
@@ -618,11 +623,14 @@ public sealed class AuthoritativeAccountDeletionTests
             AgreementPublicKeyHash = Hashing.SHA256Hash(identity.AgreementPublicKey),
             TlsCertFingerprint = identity.FingerprintHex,
             DeviceType = identity.DeviceType,
-            StartedMembershipEpoch = 1,
+            StartedMembershipEpoch = isGenesis ? 1 : 2,
             MinimumKeyEpoch = 1,
             IsActive = true,
-            IsGenesis = isGenesis
+            IsGenesis = isGenesis,
+            AdditionOperationId = additionOperationId,
+            AdditionOperationHash = isGenesis ? null : Hashing.SHA256Hash([0x7A])
         };
+    }
 
     private static FakeDeviceIdentityService CreateIdentity(
         Key key,

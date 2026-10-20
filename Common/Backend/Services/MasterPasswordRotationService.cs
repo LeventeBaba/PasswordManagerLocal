@@ -102,7 +102,7 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
             await _snapshotMerge.TryMergePendingAsync(userId, currentKey, UserSyncKeyConfidence.AuthenticatedSession, ct);
 
         var user = await _userLookup.GetAndVerifyUserByUidAsync(userId, ct);
-        if (await _snapshots.HasQuarantinedAsync(user.UId, user.KeyEpoch, user.MembershipEpoch, ct))
+        if (await _snapshots.HasIsolatedForkAsync(user.UId, user.KeyEpoch, user.MembershipEpoch, ct))
         {
             throw new InvalidOperationException(
                 "The master password cannot be changed while a current-epoch snapshot origin is quarantined or unresolved.");

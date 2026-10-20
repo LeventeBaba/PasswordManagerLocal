@@ -4,7 +4,6 @@ using PasswordManagerLocal.Common.Backend.Models;
 namespace PasswordManagerLocal.Common.Tests.Fakes;
 
 public sealed class FakeSyncQueueService :
-    ISyncQueueService,
     ISyncChangeQueueService,
     IUserSyncCatchUpService,
     IPendingSyncActivationService
@@ -55,8 +54,6 @@ public sealed class FakeSyncQueueService :
         return Task.CompletedTask;
     }
 
-    public Task EnqueueUserCatchUpAsync(Guid userId, Guid targetDeviceId, CancellationToken ct = default) =>
-        EnqueueAsync(userId, targetDeviceId, ct);
 
     public void ActivateDevices(IReadOnlyList<Device> devices)
     {
@@ -69,6 +66,4 @@ public sealed class FakeSyncQueueService :
         return Task.CompletedTask;
     }
 
-    public Task ActivatePendingSyncsAsync(CancellationToken ct = default) =>
-        ActivatePendingAsync(ct);
 }

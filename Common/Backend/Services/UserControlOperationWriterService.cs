@@ -163,7 +163,7 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         var active = await _authorizationRows.ListActiveForDeviceAsync(user.UId, payload.RemovedDeviceId, ct);
         if (active.Count == 0)
             throw new InvalidOperationException("The device has no active installation authorization.");
-        if (active.Any(row => payload.Origins.All(origin => origin.AuthorizationId != UserMembershipAuthorizationIdentity.GetCanonicalAuthorizationId(row))))
+        if (active.Any(row => payload.Origins.All(origin => origin.AuthorizationId != row.AuthorizationId)))
             throw new InvalidDataException("The removal payload does not cover every active installation origin.");
 
         var state = await GetOrCreateStateAsync(user, user.KeyEpoch, user.MembershipEpoch, ct);
