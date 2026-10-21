@@ -3,6 +3,9 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Diagnostics;
 using PasswordManagerLocal.Common.Backend.Persistence;
+using PasswordManagerLocal.Common.Backend.Configuration;
+using PasswordManagerLocal.Common.Backend.Abstractions.Security;
+using PasswordManagerLocal.Common.Backend.Security;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
 
@@ -10,18 +13,35 @@ public sealed class BackendInitializationService : IBackendInitializationService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDeviceIdentityService _deviceIdentity;
+    private readonly BackendStoragePaths _storagePaths;
+    private readonly IKeyProtector _keyProtector;
 
     public BackendInitializationService(
         IServiceScopeFactory scopeFactory,
-        IDeviceIdentityService deviceIdentity)
+        IDeviceIdentityService deviceIdentity,
+        BackendStoragePaths storagePaths,
+        IKeyProtector keyProtector)
     {
         _scopeFactory = scopeFactory;
         _deviceIdentity = deviceIdentity;
+        _storagePaths = storagePaths;
+        _keyProtector = keyProtector;
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         BackendDebugLog.OperationStarted("Backend database and device identity initialization", "Initialization");
+
+        var dbPassword = DbConfigManager.GetOrCreateDatabasePassword(_storagePaths, _keyProtector);
+        if (await DatabaseEncryptionMigrator.MigrateIfRequiredAsync(
+                _storagePaths,
+                dbPassword,
+                cancellationToken))
+        {
+            BackendDebugLog.Info(
+                "The existing SQLCipher database was migrated to the SQLite3MC ChaCha20 cipher.",
+                "Initialization");
+        }
 
         using (var scope = _scopeFactory.CreateScope())
         {

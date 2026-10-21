@@ -240,14 +240,34 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             try
             {
                 var hasPending = await HasPendingAsync(targetDevice.Id, CancellationToken.None);
-                if (hasPending && pendingStart is not null && _identity.IsSyncOn)
+                // A remembered start is also used for anti-entropy-only work, such as
+                // acquiring authenticated endpoint hints after a relayed membership
+                // addition. That work may have no durable queue item, so always honor the
+                // requested rerun instead of dropping it when the ordinary queue is empty.
+                var rerunRequested = false;
+                if (pendingStart is not null && _identity.IsSyncOn)
+                {
+                    rerunRequested = true;
                     TryStart(pendingStart.Endpoint, pendingStart.Device);
+                }
                 else if (!hasPending)
-                    _syncDeviceIdentities.TryRemove(targetDevice);
+                {
+                    // A new worker can start after this worker releases its running-device
+                    // slot but while the asynchronous pending-work check is in progress.
+                    // Do not remove the identity underneath that replacement worker.
+                    lock (_runtimeLock)
+                    {
+                        if (!_runningDeviceIds.ContainsKey(targetDevice.Id) &&
+                            !_pendingStarts.ContainsKey(targetDevice.Id))
+                        {
+                            _syncDeviceIdentities.TryRemove(targetDevice);
+                        }
+                    }
+                }
 
                 BackendDebugLog.Info(
                     $"Outgoing synchronization worker session finished. TargetDeviceId={targetDevice.Id:N}, " +
-                    $"PendingWork={hasPending}, RestartScheduled={hasPending && pendingStart is not null && _identity.IsSyncOn}.",
+                    $"PendingWork={hasPending}, RerunRequested={rerunRequested}.",
                     "Synchronization");
             }
             catch (Exception ex)

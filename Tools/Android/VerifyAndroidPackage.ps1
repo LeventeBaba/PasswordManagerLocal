@@ -250,8 +250,8 @@ foreach ($abi in $ExpectedAbis) {
     })
     Assert-Package ($abiEntries.Count -gt 0) "No native libraries were found for expected ABI: $abi"
     Assert-Package (($abiEntries | Where-Object {
-        $_ -match '(sqlite|sqlcipher|e_sqlcipher)'
-    }).Count -gt 0) "No SQLite/SQLCipher native dependency was found for ABI: $abi"
+        $_ -match '(sqlite3mc|sqlite|sqlcipher|e_sqlcipher)'
+    }).Count -gt 0) "No SQLite3MC/SQLite native dependency was found for ABI: $abi"
 }
 
 foreach ($abi in $ExpectedAbis) {

@@ -60,14 +60,14 @@
           "libsodium": "[1.0.22, 1.0.23)"
         }
       },
-      "SQLitePCLRaw.bundle_e_sqlcipher": {
+      "SQLite3MC.PCLRaw.bundle": {
         "type": "Direct",
-        "requested": "[2.1.11, )",
-        "resolved": "2.1.11",
-        "contentHash": "NFuxa/rD3Ah88jbFOgsoUjuWcLiBkj3iqgO2gJXola9NtjtCTRI3HMQtVjQDnrhCvdBOAJ4RqbwnqoEMLht8GQ==",
+        "requested": "[2.6.1, )",
+        "resolved": "2.6.1",
+        "contentHash": "ideIAAaHiy9OX0u2A+UFvDUPFm2BGERax3EXEhKHrLQJDuGA+pGicarhNjIoohM0a0YjFi8MdlKIZuv3ftp7Vw==",
         "dependencies": {
-          "SQLitePCLRaw.lib.e_sqlcipher": "2.1.11",
-          "SQLitePCLRaw.provider.e_sqlcipher": "2.1.11"
+          "SQLite3MC.PCLRaw.lib": "2.6.1",
+          "SQLite3MC.PCLRaw.provider": "2.6.1"
         }
       },
       "Microsoft.Data.Sqlite.Core": {
@@ -168,23 +168,23 @@
         "resolved": "10.0.13",
         "contentHash": "ZjTwxzhiw2TMEzIbUDkMF0dfDB2I4NQgIfKD0ELu9/5Mk+SRGdKZcD0/lvBrRCAPo6KN2r0BW86MRancoyJkoA=="
       },
+      "SQLite3MC.PCLRaw.lib": {
+        "type": "Transitive",
+        "resolved": "2.6.1",
+        "contentHash": "X1XqnN35+/53ZryMSR/ogqSBcHJ+iUwCTkXP6GDHoxWZbbGz31j1Xi1HSvfsjS5V2iRuloUBDrdev0gvhqQGJg=="
+      },
+      "SQLite3MC.PCLRaw.provider": {
+        "type": "Transitive",
+        "resolved": "2.6.1",
+        "contentHash": "JKfx7q5Gha9LGZShmB3N+4rcr816MssWR4ZGrortYTDx9G+RbWzJGItT6ZUJlDnd8ElQXjYcjXF0zNWmeTUs6g==",
+        "dependencies": {
+          "SQLitePCLRaw.core": "3.0.2"
+        }
+      },
       "SQLitePCLRaw.core": {
         "type": "Transitive",
-        "resolved": "2.1.13",
-        "contentHash": "2joofoinuHBFs0nMX3nKuXgxpXryRkCOdM2Ua6HBqQLLy6IW+5f28ZI+HAvMyF8vG7XfNz/lwfBfE6V4juru8Q=="
-      },
-      "SQLitePCLRaw.lib.e_sqlcipher": {
-        "type": "Transitive",
-        "resolved": "2.1.11",
-        "contentHash": "Cg6UPeDbH8jyaOs1vqXYIgeewH0wYrBnmbC5Ml3GYBo+GKzNmyxrWSO52JV68bfB7Addt/PZLMekJV1RH2ftWQ=="
-      },
-      "SQLitePCLRaw.provider.e_sqlcipher": {
-        "type": "Transitive",
-        "resolved": "2.1.11",
-        "contentHash": "5L7YXWtPzKYHeXBHmj63QsHbLQmy0SYvhQp3xWA2yzSq1SvlnGFViveLfUDr/GEmePrqzXQ9tOJG9iQnFspfBA==",
-        "dependencies": {
-          "SQLitePCLRaw.core": "2.1.11"
-        }
+        "resolved": "3.0.2",
+        "contentHash": "tnbRf0muOOSJK1RLCfyYK13jynFScgL4xMj7yC3oy8lrrGKXTKmOoWjfdV+cFfBRdppm4qST31hvp8ihgIgvMQ=="
       },
       "passwordmanagerlocal.common.contracts": {
         "type": "Project"

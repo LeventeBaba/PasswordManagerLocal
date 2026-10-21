@@ -16,11 +16,11 @@ public sealed class DbConfigManagerTests
         var paths = new BackendStoragePaths(directory.Path);
         var protector = new SwitchableKeyProtector();
 
-        _ = DbConfigManager.GetOrCreateSqlCipherPassword(paths, protector);
+        _ = DbConfigManager.GetOrCreateDatabasePassword(paths, protector);
         protector.IsTemporarilyUnavailable = true;
 
         Assert.Throws<KeyProtectorUnavailableException>(
-            () => DbConfigManager.GetOrCreateSqlCipherPassword(paths, protector));
+            () => DbConfigManager.GetOrCreateDatabasePassword(paths, protector));
     }
 
     private sealed class TemporaryDirectory : IDisposable

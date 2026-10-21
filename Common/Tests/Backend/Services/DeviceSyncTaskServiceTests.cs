@@ -130,6 +130,28 @@ public sealed class DeviceSyncTaskServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
+    public async Task TryStart_WhileRunning_RerunsAntiEntropyWhenQueueBecomesEmpty()
+    {
+        var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var setup = CreateSetup(sendResult: true, sendGate: gate, enableAntiEntropy: true);
+        setup.Queue.Seed(CreateQueueItem(setup.Device.Id));
+
+        MSTestAssert.IsTrue(setup.Service.TryStart(setup.Endpoint, setup.Device));
+        await WaitUntilAsync(() => setup.Transport.SendCalls == 1);
+
+        // Endpoint-hint catch-up uses the same pending-start path but does not add a
+        // durable queue item. The requested second session must still run anti-entropy.
+        MSTestAssert.IsFalse(setup.Service.TryStart(setup.Endpoint, setup.Device));
+        gate.SetResult(true);
+
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(2, setup.Transport.InventoryCalls);
+        MSTestAssert.AreEqual(0, setup.Queue.Items.Count(item => item.ProcessedAt is null));
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
     public async Task TryStart_WhenWorkIsRefreshedDuringSend_DoesNotAcknowledgeTheNewGeneration()
     {
         var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -149,7 +171,10 @@ public sealed class DeviceSyncTaskServiceTests
         MSTestAssert.AreEqual(0, setup.Queue.Items.Count(item => item.ProcessedAt is null));
     }
 
-    private static DeviceSyncTaskSetup CreateSetup(bool sendResult = true, TaskCompletionSource<bool>? sendGate = null)
+    private static DeviceSyncTaskSetup CreateSetup(
+        bool sendResult = true,
+        TaskCompletionSource<bool>? sendGate = null,
+        bool enableAntiEntropy = false)
     {
         var device = new Device
         {
@@ -199,6 +224,12 @@ public sealed class DeviceSyncTaskServiceTests
         services.AddSingleton<IUnitOfWork>(unitOfWork);
         services.AddSingleton<IDeviceRepository>(devices);
         services.AddSingleton<IUserDeviceRepository>(new FakeUserDeviceRepository());
+        if (enableAntiEntropy)
+        {
+            services.AddSingleton<ILocalUserDeviceRepository>(new FakeLocalUserDeviceRepository());
+            services.AddSingleton<ISyncRouteRepository>(new AlwaysEligibleSyncRouteRepository());
+            services.AddSingleton<IUserSnapshotAntiEntropyService>(new EmptyUserSnapshotAntiEntropyService());
+        }
         services.AddSingleton<ISyncTombstoneRepository>(new FakeSyncTombstoneRepository());
         var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {
@@ -262,6 +293,53 @@ public sealed class DeviceSyncTaskServiceTests
 
             await Task.Delay(10);
         }
+    }
+
+    private sealed class AlwaysEligibleSyncRouteRepository : ISyncRouteRepository
+    {
+        public Task<bool> IsEligibleAsync(Guid userId, Guid remoteDeviceId, CancellationToken ct = default) =>
+            Task.FromResult(true);
+
+        public Task<bool> HasAnyEligibleAsync(
+            IReadOnlyCollection<Guid> userIds,
+            Guid remoteDeviceId,
+            CancellationToken ct = default) => Task.FromResult(true);
+
+        public Task<IReadOnlyList<Guid>> ListEligibleUserIdsAsync(
+            IReadOnlyCollection<Guid> userIds,
+            Guid remoteDeviceId,
+            CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<Guid>>(userIds.ToArray());
+
+        public Task<IReadOnlyList<Guid>> ListAllEligibleUserIdsAsync(
+            Guid remoteDeviceId,
+            CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<Guid>>(Array.Empty<Guid>());
+
+        public Task<bool> HasEligibleUserForDeviceAsync(Guid deviceId, CancellationToken ct = default) =>
+            Task.FromResult(true);
+    }
+
+    private sealed class EmptyUserSnapshotAntiEntropyService : IUserSnapshotAntiEntropyService
+    {
+        public Task<UserSnapshotInventoryExchangeRequest> BuildInventoryAsync(
+            Guid peerDeviceId,
+            CancellationToken ct = default) => Task.FromResult(new UserSnapshotInventoryExchangeRequest());
+
+        public Task<UserSnapshotInventoryExchangeReply> BuildInventoryReplyAsync(
+            Guid peerDeviceId,
+            UserSnapshotInventoryExchangeRequest remoteInventory,
+            CancellationToken ct = default) => Task.FromResult(new UserSnapshotInventoryExchangeReply());
+
+        public IReadOnlyList<UserSnapshotRequest> FindMissingSnapshots(
+            UserSnapshotInventoryExchangeRequest localInventory,
+            IEnumerable<UserSnapshotUserInventory> remoteInventory) => Array.Empty<UserSnapshotRequest>();
+
+        public Task<IReadOnlyList<NetworkDelta>> BuildRequestedSnapshotDeltasAsync(
+            Guid peerDeviceId,
+            IEnumerable<UserSnapshotRequest> requests,
+            CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<NetworkDelta>>(Array.Empty<NetworkDelta>());
     }
 
 }

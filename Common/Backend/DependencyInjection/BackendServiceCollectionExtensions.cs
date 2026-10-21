@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
@@ -76,13 +75,11 @@ public static class BackendServiceCollectionExtensions
         {
             var paths = sp.GetRequiredService<BackendStoragePaths>();
             var protector = sp.GetRequiredService<IKeyProtector>();
-            var dbPassword = DbConfigManager.GetOrCreateSqlCipherPassword(paths, protector);
+            var dbPassword = DbConfigManager.GetOrCreateDatabasePassword(paths, protector);
 
-            var connStr = new SqliteConnectionStringBuilder
-            {
-                DataSource = paths.DatabasePath,
-                Password = dbPassword
-            }.ToString();
+            var connStr = DatabaseEncryptionMigrator.CreateRuntimeConnectionString(
+                paths.DatabasePath,
+                dbPassword);
 
             opts.UseSqlite(connStr);
             opts.AddInterceptors(sp.GetRequiredService<RelationshipIntegrityMaterializationInterceptor>());

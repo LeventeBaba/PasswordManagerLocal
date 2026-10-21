@@ -50,8 +50,8 @@ Assert-Files @(
     'Microsoft.Data.Sqlite.dll',
     'SQLitePCLRaw.core.dll',
     'SQLitePCLRaw.batteries_v2.dll',
-    'SQLitePCLRaw.provider.e_sqlcipher.dll',
-    'e_sqlcipher.dll',
+    'SQLite3MC.PCLRaw.provider.dll',
+    'sqlite3mc.dll',
     'NSec.Cryptography.dll',
     'libsodium.dll',
     'Google.Protobuf.dll'

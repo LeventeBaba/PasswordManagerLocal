@@ -48,12 +48,12 @@
       },
       "SkiaSharp": {
         "type": "Direct",
-        "requested": "[3.119.4, )",
-        "resolved": "3.119.4",
-        "contentHash": "53NOSUZ1Us+91Sm0uCkIivh/k7jOowRErZT2sIWwPFN9mLUvdxnE6rS4sWo4255+Rd2MWUSF+j0NMZHD6Cke+Q==",
+        "requested": "[4.153.1, )",
+        "resolved": "4.153.1",
+        "contentHash": "TghYLOUaP3q6rTjQw7U9uQaaXh8lEs9rfA1U7/VtmyAptVDtj/SmjtcWzFWmcC/VMWxe3QgbV9uyvqDL7ySFtQ==",
         "dependencies": {
-          "SkiaSharp.NativeAssets.Win32": "3.119.4",
-          "SkiaSharp.NativeAssets.macOS": "3.119.4"
+          "SkiaSharp.NativeAssets.Win32": "4.153.1",
+          "SkiaSharp.NativeAssets.macOS": "4.153.1"
         }
       },
       "ZXing.Net": {
@@ -64,11 +64,11 @@
       },
       "ZXing.Net.Bindings.SkiaSharp": {
         "type": "Direct",
-        "requested": "[0.16.22, )",
-        "resolved": "0.16.22",
-        "contentHash": "jdlarXJKukpYjnNf6bS7/ncRSZQh7v4uwUMFsaIc3MPZtY+fcQS0ONGXI4BSEEcNhxb8UfrULtRuL9ToLPhn1g==",
+        "requested": "[0.16.24, )",
+        "resolved": "0.16.24",
+        "contentHash": "Y6yRZakc8FPWnMUCIaMDtaKzXfH2ItRVVfK2sD5Ys/I531dNEN6q0UlpoFmJgmtcro8BL0n8MzAWODlNRvIzeA==",
         "dependencies": {
-          "SkiaSharp": "3.119.1",
+          "SkiaSharp": "4.151.1",
           "ZXing.Net": "0.16.11"
         }
       },
@@ -172,8 +172,8 @@
       },
       "SkiaSharp.NativeAssets.macOS": {
         "type": "Transitive",
-        "resolved": "3.119.4",
-        "contentHash": "fgBOWEqbY012x7gMfJU4ezgz6dfhJb30Z6YdW35h85Zoe39+a8YNbAAwL29ihPfWoppg5AjvyKNzD1oCvlqWwA=="
+        "resolved": "4.153.1",
+        "contentHash": "YTojWeWIhnpF7uC8vpMxB5wRONKkDB2t3r/nNPA3DL2pgj9fqMXRevA/rIanYazWnco4jo1ufgp3HkXuh1Tz8A=="
       },
       "Splat": {
         "type": "Transitive",
@@ -222,9 +222,9 @@
       },
       "SkiaSharp.NativeAssets.Win32": {
         "type": "CentralTransitive",
-        "requested": "[3.119.4, )",
-        "resolved": "3.119.4",
-        "contentHash": "XOpbx/4CReO2wYsq2s6rbvdauc6dntG4Zv499sHGTJ87bwZaFXszFkwql3+FIZMc8kUPeaj3Mx2ezIJmo8a1Kg=="
+        "requested": "[4.153.1, )",
+        "resolved": "4.153.1",
+        "contentHash": "Yqg6rChTVh0BUE8QQxtOA3uUBnihfgID4yex/AvDa0+os2bVcBjmI3Qj9tnOB+R1hd/Jry1Gwl8qw5JI9HZG8Q=="
       }
     }
   }

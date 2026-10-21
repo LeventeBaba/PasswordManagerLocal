@@ -29,23 +29,23 @@
     <PackageVersion Include="Xamarin.AndroidX.Lifecycle.ViewModelSavedState.Android" Version="2.11.0.1" />
     <PackageVersion Include="Xamarin.AndroidX.Lifecycle.Process" Version="2.11.0.1" />
     <PackageVersion Include="Xamarin.AndroidX.Lifecycle.LiveData.Core" Version="2.11.0.1" />
-    <!-- Avalonia 12.1.x uses SkiaSharp 3.x; keep native assets aligned for Android 16 KB pages. -->
-    <PackageVersion Include="SkiaSharp" Version="3.119.4" />
-    <PackageVersion Include="SkiaSharp.NativeAssets.Android" Version="3.119.4" />
-    <PackageVersion Include="SkiaSharp.NativeAssets.Win32" Version="3.119.4" />
-    <PackageVersion Include="SkiaSharp.NativeAssets.Linux" Version="3.119.4" />
-    <PackageVersion Include="SkiaSharp.NativeAssets.WebAssembly" Version="3.119.4" />
+    <!-- Avalonia 12.1 supports explicitly pinned SkiaSharp 4.x; keep native assets on the same release. -->
+    <PackageVersion Include="SkiaSharp" Version="4.153.1" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Android" Version="4.153.1" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Win32" Version="4.153.1" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux" Version="4.153.1" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.WebAssembly" Version="4.153.1" />
     <PackageVersion Include="libsodium" Version="1.0.22" />
     <!-- Windows -->
     <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.13" />
     <!-- QR codes -->
     <PackageVersion Include="ZXing.Net" Version="0.16.11" />
-    <PackageVersion Include="ZXing.Net.Bindings.SkiaSharp" Version="0.16.22" />
+    <PackageVersion Include="ZXing.Net.Bindings.SkiaSharp" Version="0.16.24" />
     <!-- Backend -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite.Core" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
-    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlcipher" Version="2.1.11" />
+    <PackageVersion Include="SQLite3MC.PCLRaw.bundle" Version="2.6.1" />
     <PackageVersion Include="Grpc.Tools" Version="2.84.0" />
     <PackageVersion Include="NSec.Cryptography" Version="26.4.0" />
     <!-- Test -->

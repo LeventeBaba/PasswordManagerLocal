@@ -14,6 +14,8 @@ set "TOOLS_DIR=%~dp0"
 for %%I in ("%TOOLS_DIR%..") do set "ROOT_DIR=%%~fI"
 
 set "BACKEND_PROJECT=Common\Backend\PasswordManagerLocal.Common.Backend.csproj"
+set "BACKEND_HOSTING_PROJECT=Common\Backend.Hosting\PasswordManagerLocal.Common.Backend.Hosting.csproj"
+set "ANDROID_RUNTIME_PROJECT=Android\Runtime\PasswordManagerLocal.Android.Runtime.csproj"
 set "FRONTEND_PROJECT=Common\Frontend\PasswordManagerLocal.Common.Frontend.csproj"
 set "TESTS_PROJECT=Common\Tests\PasswordManagerLocal.Common.Tests.csproj"
 
@@ -40,6 +42,10 @@ if not exist "%ROOT_DIR%\global.json" (
 
 call :RequireProject "%BACKEND_PROJECT%"
 if errorlevel 1 exit /b 1
+call :RequireProject "%BACKEND_HOSTING_PROJECT%"
+if errorlevel 1 exit /b 1
+call :RequireProject "%ANDROID_RUNTIME_PROJECT%"
+if errorlevel 1 exit /b 1
 call :RequireProject "%FRONTEND_PROJECT%"
 if errorlevel 1 exit /b 1
 call :RequireProject "%TESTS_PROJECT%"
@@ -60,6 +66,10 @@ echo.
 
 call :Regenerate "%BACKEND_PROJECT%"
 if errorlevel 1 goto :Failed
+call :Regenerate "%BACKEND_HOSTING_PROJECT%"
+if errorlevel 1 goto :Failed
+call :Regenerate "%ANDROID_RUNTIME_PROJECT%"
+if errorlevel 1 goto :Failed
 call :Regenerate "%FRONTEND_PROJECT%"
 if errorlevel 1 goto :Failed
 call :Regenerate "%TESTS_PROJECT%"
@@ -70,6 +80,10 @@ echo [2/2] Verifying the regenerated lock files in locked mode...
 echo.
 
 call :Verify "%BACKEND_PROJECT%"
+if errorlevel 1 goto :Failed
+call :Verify "%BACKEND_HOSTING_PROJECT%"
+if errorlevel 1 goto :Failed
+call :Verify "%ANDROID_RUNTIME_PROJECT%"
 if errorlevel 1 goto :Failed
 call :Verify "%FRONTEND_PROJECT%"
 if errorlevel 1 goto :Failed

@@ -7,14 +7,14 @@ namespace PasswordManagerLocal.Common.Tests.Architecture;
 public sealed class Avalonia12AndroidSessionArchitectureTests
 {
     [TestMethod]
-    public void PackageBaselineUsesAvalonia12ReactiveUiAvaloniaAndSkia3()
+    public void PackageBaselineUsesAvalonia12ReactiveUiAvaloniaAndSkia4()
     {
         var root = GetRepositoryRoot();
         var packages = File.ReadAllText(Path.Combine(root, "Directory.Packages.props"));
 
         StringAssert.Contains(packages, "<PackageVersion Include=\"Avalonia\" Version=\"12.1.4\" />");
         StringAssert.Contains(packages, "<PackageVersion Include=\"ReactiveUI.Avalonia\" Version=\"12.1.6\" />");
-        StringAssert.Contains(packages, "<PackageVersion Include=\"SkiaSharp\" Version=\"3.119.4\" />");
+        StringAssert.Contains(packages, "<PackageVersion Include=\"SkiaSharp\" Version=\"4.153.1\" />");
         Assert.IsFalse(packages.Contains("Avalonia.ReactiveUI", StringComparison.Ordinal));
     }
 

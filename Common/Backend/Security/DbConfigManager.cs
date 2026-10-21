@@ -9,7 +9,7 @@ namespace PasswordManagerLocal.Common.Backend.Security;
 
 internal static class DbConfigManager
 {
-    internal static string GetOrCreateSqlCipherPassword(
+    internal static string GetOrCreateDatabasePassword(
         BackendStoragePaths paths,
         IKeyProtector protector)
     {
