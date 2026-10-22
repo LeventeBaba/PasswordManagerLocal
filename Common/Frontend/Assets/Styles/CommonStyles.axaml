@@ -92,6 +92,19 @@
       <Setter Property="Background" Value="{DynamicResource AppBrush.Action.Secondary.PressedSurface}" />
     </Style>
 
+    <Style Selector="Button.informationLink">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="16" />
+      <Setter Property="MinHeight" Value="64" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+
+    <Style Selector="Border.helpTip">
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBrush.Selection.Border}" />
+      <Setter Property="Background" Value="{DynamicResource AppBrush.Selection.Background}" />
+    </Style>
+
     <Style Selector="Button.ghost:pointerover">
       <Setter Property="Background" Value="{DynamicResource AppBrush.Surface.Hover}" />
       <Setter Property="BorderBrush" Value="Transparent" />

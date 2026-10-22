@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PasswordManagerLocal.Common.Frontend.Views.Information.HelpPageView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Information"
+    x:DataType="vm:HelpPageViewModel">
+  <ScrollViewer x:Name="PageScrollViewer"
+                HorizontalScrollBarVisibility="Disabled"
+                HorizontalContentAlignment="Stretch">
+    <StackPanel Margin="16,4,16,16" Spacing="14" HorizontalAlignment="Stretch">
+      <Border Classes="card">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+          <Button x:Name="BackButton" Classes="ghost iconButton"
+                  Command="{Binding NavigateBackCommand}"
+                  ToolTip.Tip="{Binding BackLabel}"
+                  AutomationProperties.Name="{Binding BackLabel}">
+            <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+          </Button>
+          <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+            <TextBlock Text="{Binding CategoryLabel}" Classes="subtleText"
+                       IsVisible="{Binding HasCategoryLabel}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Title}" Classes="pageTitle" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Summary}" Classes="subtleText" TextWrapping="Wrap" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Classes="card" IsVisible="{Binding IsTopicUnavailable}">
+        <TextBlock Text="{Binding TopicUnavailableText}" TextWrapping="Wrap" />
+      </Border>
+
+      <ItemsControl ItemsSource="{Binding Sections}" IsVisible="{Binding HasSections}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:HelpSectionViewModel">
+            <Border Classes="card" Classes.dangerZone="{Binding IsWarning}"
+                    Classes.helpTip="{Binding IsTip}" Margin="0,0,0,12">
+              <StackPanel Spacing="8">
+                <TextBlock Text="{Binding Label}" FontWeight="Bold"
+                           IsVisible="{Binding HasLabel}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding Heading}" Classes="sectionTitle" TextWrapping="Wrap" />
+                <SelectableTextBlock Text="{Binding Body}" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <TextBlock Text="{Binding CardsLabel}" Classes="sectionTitle"
+                 IsVisible="{Binding HasCards}" TextWrapping="Wrap" />
+      <ItemsControl ItemsSource="{Binding Cards}" IsVisible="{Binding HasCards}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:HelpLinkItemViewModel">
+            <Button Classes="secondary informationLink" Command="{Binding OpenCommand}"
+                    Tag="{Binding Id}" Margin="0,0,0,12"
+                    AutomationProperties.Name="{Binding Title}"
+                    AutomationProperties.HelpText="{Binding Summary}">
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" IsHitTestVisible="False">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding Summary}" Classes="subtleText" TextWrapping="Wrap" />
+                </StackPanel>
+                <PathIcon Grid.Column="1" Classes="mediumUiIcon"
+                          Data="{StaticResource ChevronRightIconGeometry}" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

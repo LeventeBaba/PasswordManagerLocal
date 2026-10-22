@@ -559,5 +559,15 @@
   "ScrollBar_Context_PageLeft": "Page left",
   "ScrollBar_Context_PageRight": "Page right",
   "ScrollBar_Context_ScrollLeft": "Scroll left",
-  "ScrollBar_Context_ScrollRight": "Scroll right"
+  "ScrollBar_Context_ScrollRight": "Scroll right",
+  "Help_Title": "Help & Guide",
+  "Settings_Help_Description": "Getting started, practical guides, and help with devices.",
+  "Help_Subtitle": "Choose a category. All guidance is available offline, without signing in.",
+  "Help_Categories": "Browse categories",
+  "Help_Topics": "Choose a topic",
+  "Help_RelatedTopics": "Related topics",
+  "Help_Warning": "Warning",
+  "Help_Tip": "Tip",
+  "Help_Step_Format": "{0}. {1}",
+  "Help_TopicUnavailable": "This help topic is unavailable. Choose a topic from the categories below."
 }

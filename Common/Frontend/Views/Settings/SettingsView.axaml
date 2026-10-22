@@ -261,6 +261,22 @@
                    Margin="4,8,4,0"
                    TextWrapping="Wrap" />
 
+        <Button Classes="secondary informationLink"
+                Command="{Binding NavigateToHelpCommand}"
+                AutomationProperties.Name="{Binding HelpTitle}"
+                AutomationProperties.HelpText="{Binding HelpDescription}">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" IsHitTestVisible="False">
+            <PathIcon Width="28" Height="28" Data="{StaticResource DocumentIconGeometry}"
+                      VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+              <TextBlock Text="{Binding HelpTitle}" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding HelpDescription}" Classes="subtleText" TextWrapping="Wrap" />
+            </StackPanel>
+            <PathIcon Grid.Column="2" Classes="mediumUiIcon"
+                      Data="{StaticResource ChevronRightIconGeometry}" VerticalAlignment="Center" />
+          </Grid>
+        </Button>
+
         <Border Classes="card"
                 HorizontalAlignment="Stretch">
           <Button Classes="ghost"

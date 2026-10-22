@@ -65,6 +65,10 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     private ChangeProfileViewModel? _changeProfileViewModel;
     private ViewModelBase? _observedPageStatusViewModel;
     private ViewModelBase? _settingsReturnPageViewModel;
+    private readonly HelpCatalog _helpCatalog = HelpCatalogLoader.Load();
+    private readonly ThirdPartyNoticeCatalog _noticeCatalog;
+    private readonly InformationNavigationHistory _informationNavigation = new();
+    private readonly Dictionary<InformationRoute, HelpPageViewModel> _helpPages = new();
     private IReadOnlyList<MobileMainPageViewModel>? _mobileMainPages;
     private int _currentMobileNavigationIndex;
 
@@ -117,6 +121,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         ObservePageStatus(_currentPageViewModel);
 
         var noticeCatalog = ThirdPartyNoticeCatalogLoader.Load();
+        _noticeCatalog = noticeCatalog;
         AboutViewModel = new AboutViewModel(
             uiPreferences,
             applicationVersion,
@@ -136,7 +141,8 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             uiPreferences,
             _deviceAppPreferences,
             NavigateBackFromSettings,
-            NavigateToAbout);
+            NavigateToAbout,
+            NavigateToHelp);
         SettingsViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
 
         ShowSettingsCommand = Own(ReactiveCommand.Create(NavigateToSettings));
@@ -171,6 +177,10 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         AboutViewModel.Dispose();
         ThirdPartyLicensesViewModel.Dispose();
         ThirdPartyLicenseDetailViewModel.Dispose();
+        foreach (var page in _helpPages.Values)
+            page.Dispose();
+        _helpPages.Clear();
+        _informationNavigation.Clear();
         _registrationViewModel?.Dispose();
         _passwordsViewModel?.Dispose();
         _profileViewModel?.Dispose();
@@ -294,7 +304,10 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
                 return;
             }
 
-            _currentPageViewModel.OnNavigatedFrom();
+            // A documentation visit suspends the current task. In particular, leaving
+            // Login normally cancels enrollment; opening Settings/help must not do that.
+            if (!ReferenceEquals(value, SettingsViewModel) && !IsInformationViewModel(value))
+                _currentPageViewModel.OnNavigatedFrom();
             StopObservingPageStatus();
             ClearStatusMessage();
             this.RaiseAndSetIfChanged(ref _currentPageViewModel, value);
@@ -436,9 +449,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     public bool IsSettingsPageVisible => ReferenceEquals(CurrentPageViewModel, SettingsViewModel);
 
     public bool IsInformationPageVisible =>
-        ReferenceEquals(CurrentPageViewModel, AboutViewModel) ||
-        ReferenceEquals(CurrentPageViewModel, ThirdPartyLicensesViewModel) ||
-        ReferenceEquals(CurrentPageViewModel, ThirdPartyLicenseDetailViewModel);
+        IsInformationViewModel(CurrentPageViewModel);
 
     public bool IsSettingsSectionVisible => IsSettingsPageVisible || IsInformationPageVisible;
 
@@ -890,21 +901,9 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             return true;
         }
 
-        if (ReferenceEquals(CurrentPageViewModel, ThirdPartyLicenseDetailViewModel))
+        if (IsInformationPageVisible)
         {
-            NavigateBackFromThirdPartyLicenseDetail();
-            return true;
-        }
-
-        if (ReferenceEquals(CurrentPageViewModel, ThirdPartyLicensesViewModel))
-        {
-            NavigateBackFromThirdPartyLicenses();
-            return true;
-        }
-
-        if (ReferenceEquals(CurrentPageViewModel, AboutViewModel))
-        {
-            NavigateBackFromAbout();
+            NavigateBackFromInformation();
             return true;
         }
 
@@ -1278,96 +1277,142 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         _registrationViewModel?.SetBackendInitialized(isInitialized);
     }
 
+    private bool IsInformationViewModel(ViewModelBase page) =>
+        ReferenceEquals(page, AboutViewModel) ||
+        ReferenceEquals(page, ThirdPartyLicensesViewModel) ||
+        ReferenceEquals(page, ThirdPartyLicenseDetailViewModel) ||
+        page is HelpPageViewModel;
+
     private void NavigateToSettings()
     {
         if (IsSettingsPageVisible)
             return;
-
-        if (IsInformationPageVisible)
-        {
-            IsPageTransitionReversed = true;
-            ClearStatusMessage();
-            CurrentPageViewModel = SettingsViewModel;
-            return;
-        }
-
-        _settingsReturnPageViewModel = CurrentPageViewModel;
-        IsPageTransitionReversed = false;
-        ClearStatusMessage();
-        CurrentPageViewModel = SettingsViewModel;
-        _ = SettingsViewModel.LoadBackgroundSyncStateAsync();
+        var fromInformation = IsInformationPageVisible;
+        if (!fromInformation)
+            _settingsReturnPageViewModel = CurrentPageViewModel;
+        var route = new InformationRoute(InformationDestination.Settings);
+        _informationNavigation.Reset(route);
+        ShowInformationRoute(route, fromInformation);
+        if (!fromInformation)
+            _ = SettingsViewModel.LoadBackgroundSyncStateAsync();
     }
 
-    private void NavigateBackFromSettings()
+    private void SetPageAfterSessionChange(ViewModelBase destination)
     {
-        if (!IsSettingsPageVisible)
-            return;
-
-        var returnPage = _settingsReturnPageViewModel ?? LoginViewModel;
-        _settingsReturnPageViewModel = null;
-        IsPageTransitionReversed = true;
-        CurrentPageViewModel = returnPage;
+        // Session cleanup still happens normally. Public documentation can remain
+        // open, and Back returns to the newly valid authentication destination.
+        if (IsSettingsSectionVisible)
+            _settingsReturnPageViewModel = destination;
+        else
+            CurrentPageViewModel = destination;
     }
+
+    private void NavigateBackFromSettings() => NavigateBackFromInformation();
+    private void NavigateBackFromAbout() => NavigateBackFromInformation();
+    private void NavigateBackFromThirdPartyLicenses() => NavigateBackFromInformation();
+    private void NavigateBackFromThirdPartyLicenseDetail() => NavigateBackFromInformation();
 
     private void NavigateToAbout()
     {
-        if (!IsSettingsPageVisible)
-            return;
-
-        IsPageTransitionReversed = false;
-        ClearStatusMessage();
-        CurrentPageViewModel = AboutViewModel;
+        if (IsSettingsPageVisible)
+            NavigateInformation(new InformationRoute(InformationDestination.About));
     }
 
-    private void NavigateBackFromAbout()
+    private void NavigateToHelp()
     {
-        if (!ReferenceEquals(CurrentPageViewModel, AboutViewModel))
-            return;
-
-        IsPageTransitionReversed = true;
-        ClearStatusMessage();
-        CurrentPageViewModel = SettingsViewModel;
+        if (IsSettingsPageVisible)
+            NavigateInformation(new InformationRoute(InformationDestination.Help));
     }
 
     private void NavigateToThirdPartyLicenses()
     {
-        if (!ReferenceEquals(CurrentPageViewModel, AboutViewModel))
-            return;
-
-        IsPageTransitionReversed = false;
-        ClearStatusMessage();
-        CurrentPageViewModel = ThirdPartyLicensesViewModel;
-    }
-
-    private void NavigateBackFromThirdPartyLicenses()
-    {
-        if (!ReferenceEquals(CurrentPageViewModel, ThirdPartyLicensesViewModel))
-            return;
-
-        IsPageTransitionReversed = true;
-        ClearStatusMessage();
-        CurrentPageViewModel = AboutViewModel;
+        if (ReferenceEquals(CurrentPageViewModel, AboutViewModel))
+            NavigateInformation(new InformationRoute(InformationDestination.Licenses));
     }
 
     private void NavigateToThirdPartyLicenseDetail(ThirdPartyNotice notice)
     {
-        if (!ReferenceEquals(CurrentPageViewModel, ThirdPartyLicensesViewModel))
-            return;
-
-        ThirdPartyLicenseDetailViewModel.SetNotice(notice);
-        IsPageTransitionReversed = false;
-        ClearStatusMessage();
-        CurrentPageViewModel = ThirdPartyLicenseDetailViewModel;
+        if (ReferenceEquals(CurrentPageViewModel, ThirdPartyLicensesViewModel))
+            NavigateInformation(new InformationRoute(InformationDestination.LicenseDetail, notice.Id));
     }
 
-    private void NavigateBackFromThirdPartyLicenseDetail()
-    {
-        if (!ReferenceEquals(CurrentPageViewModel, ThirdPartyLicenseDetailViewModel))
-            return;
+    /// <summary>Navigation-only entry point for stable guide IDs. Contextual screen buttons are added in Phase 7.</summary>
+    public void OpenHelpTopic(string? topicId) =>
+        NavigateInformation(new InformationRoute(InformationDestination.HelpTopic, topicId));
 
+    private void NavigateInformation(InformationRoute requested)
+    {
+        if (IsDisposed)
+            return;
+        var route = requested;
+        var missingTopic = route.Destination == InformationDestination.HelpTopic &&
+            (route.ContentId is null || !_helpCatalog.ForLanguage(CurrentLanguage).Topics.ContainsKey(route.ContentId));
+        if (missingTopic)
+            route = new InformationRoute(InformationDestination.Help);
+
+        if (!IsSettingsSectionVisible)
+        {
+            // Keep the existing caller itself; never copy a form or inspect its fields.
+            _settingsReturnPageViewModel = CurrentPageViewModel;
+            _informationNavigation.Reset(route);
+        }
+        else
+        {
+            _informationNavigation.Navigate(route);
+        }
+        ShowInformationRoute(route, reversed: false, missingTopic: missingTopic);
+    }
+
+    private void NavigateBackFromInformation()
+    {
+        if (!IsSettingsSectionVisible)
+            return;
+        if (_informationNavigation.TryGoBack(out var route))
+        {
+            ShowInformationRoute(route!, reversed: true);
+            return;
+        }
+        var caller = _settingsReturnPageViewModel ?? LoginViewModel;
+        _settingsReturnPageViewModel = null;
+        _informationNavigation.Clear();
+        if (!IsAuthenticated && (ReferenceEquals(caller, _profileViewModel) || ReferenceEquals(caller, _passwordsViewModel)))
+            caller = LoginViewModel;
         IsPageTransitionReversed = true;
+        CurrentPageViewModel = caller;
+    }
+
+    private void ShowInformationRoute(InformationRoute route, bool reversed, bool missingTopic = false)
+    {
+        ViewModelBase page;
+        switch (route.Destination)
+        {
+            case InformationDestination.Settings:
+                page = SettingsViewModel;
+                break;
+            case InformationDestination.About:
+                page = AboutViewModel;
+                break;
+            case InformationDestination.Licenses:
+                page = ThirdPartyLicensesViewModel;
+                break;
+            case InformationDestination.LicenseDetail:
+                ThirdPartyLicenseDetailViewModel.SetNotice(_noticeCatalog.Notices.Single(notice => notice.Id == route.ContentId));
+                page = ThirdPartyLicenseDetailViewModel;
+                break;
+            default:
+                if (!_helpPages.TryGetValue(route, out var helpPage))
+                {
+                    helpPage = new HelpPageViewModel(UiPreferences, _helpCatalog, route,
+                        NavigateBackFromInformation, NavigateInformation);
+                    _helpPages.Add(route, helpPage);
+                }
+                helpPage.SetTopicUnavailable(missingTopic);
+                page = helpPage;
+                break;
+        }
+        IsPageTransitionReversed = reversed;
         ClearStatusMessage();
-        CurrentPageViewModel = ThirdPartyLicensesViewModel;
+        CurrentPageViewModel = page;
     }
 
     private void NavigateToLogin()
@@ -1400,7 +1445,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         ChangeProfileViewModel.SetStartupSelectionMode(true);
         ConfigureAuthBackNavigation();
         await ChangeProfileViewModel.LoadAsync();
-        CurrentPageViewModel = ChangeProfileViewModel;
+        SetPageAfterSessionChange(ChangeProfileViewModel);
         ShowShellMessage(messageFactory, OperationMessageKind.Information);
     }
 
@@ -1838,7 +1883,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         var passwordsLoaded = await passwordsLoadTask;
         var profileLoaded = await profileLoadTask;
 
-        CurrentPageViewModel = passwordsViewModel;
+        SetPageAfterSessionChange(passwordsViewModel);
         SetCurrentMobileNavigationIndex(0);
 
         if (!passwordsLoaded)
@@ -1943,7 +1988,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         SetCurrentMobileNavigationIndex(0);
         LoginViewModel.Reset();
         _registrationViewModel?.Reset();
-        CurrentPageViewModel = LoginViewModel;
+        SetPageAfterSessionChange(LoginViewModel);
         ShowShellMessage(
             messageFactory ?? (() => GetTranslation("Shell_LoggedOut")),
             messageKind);

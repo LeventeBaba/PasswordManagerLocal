@@ -559,5 +559,15 @@
   "ScrollBar_Context_PageLeft": "Oldal balra",
   "ScrollBar_Context_PageRight": "Oldal jobbra",
   "ScrollBar_Context_ScrollLeft": "Görgetés balra",
-  "ScrollBar_Context_ScrollRight": "Görgetés jobbra"
+  "ScrollBar_Context_ScrollRight": "Görgetés jobbra",
+  "Help_Title": "Súgó és útmutató",
+  "Settings_Help_Description": "Első lépések, gyakorlati útmutatók és segítség az eszközökhöz.",
+  "Help_Subtitle": "Válassz kategóriát. Minden útmutató offline, bejelentkezés nélkül is elérhető.",
+  "Help_Categories": "Kategóriák",
+  "Help_Topics": "Válassz témát",
+  "Help_RelatedTopics": "Kapcsolódó témák",
+  "Help_Warning": "Figyelmeztetés",
+  "Help_Tip": "Tipp",
+  "Help_Step_Format": "{0}. {1}",
+  "Help_TopicUnavailable": "Ez a súgótéma nem érhető el. Válassz témát az alábbi kategóriákból."
 }

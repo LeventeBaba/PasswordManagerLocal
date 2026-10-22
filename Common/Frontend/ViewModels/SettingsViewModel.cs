@@ -22,7 +22,8 @@ public sealed class SettingsViewModel : ViewModelBase
         UiPreferencesService uiPreferences,
         DeviceAppPreferencesService deviceAppPreferences,
         Action navigateBack,
-        Action navigateToAbout)
+        Action navigateToAbout,
+        Action? navigateToHelp = null)
         : base(uiPreferences)
     {
         _deviceAppPreferences = deviceAppPreferences
@@ -32,6 +33,7 @@ public sealed class SettingsViewModel : ViewModelBase
 
         NavigateBackCommand = Own(ReactiveCommand.Create(navigateBack));
         NavigateToAboutCommand = Own(ReactiveCommand.Create(navigateToAbout));
+        NavigateToHelpCommand = Own(ReactiveCommand.Create(() => navigateToHelp?.Invoke()));
         ToggleAppearanceSectionCommand = Own(ReactiveCommand.Create(ToggleAppearanceSection));
         ToggleBackgroundSectionCommand = Own(ReactiveCommand.Create(ToggleBackgroundSection));
         LanguageOptions =
@@ -52,6 +54,7 @@ public sealed class SettingsViewModel : ViewModelBase
 
     public ReactiveCommand<RxVoid, RxVoid> NavigateBackCommand { get; }
     public ReactiveCommand<RxVoid, RxVoid> NavigateToAboutCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> NavigateToHelpCommand { get; }
     public ReactiveCommand<RxVoid, RxVoid> ToggleAppearanceSectionCommand { get; }
     public ReactiveCommand<RxVoid, RxVoid> ToggleBackgroundSectionCommand { get; }
 
@@ -193,6 +196,8 @@ public sealed class SettingsViewModel : ViewModelBase
     public string OnLabel => GetTranslation("Common_On");
     public string OffLabel => GetTranslation("Common_Off");
     public string InformationTitle => GetTranslation("Settings_Information_Title");
+    public string HelpTitle => GetTranslation("Help_Title");
+    public string HelpDescription => GetTranslation("Settings_Help_Description");
     public string AboutTitle => GetTranslation("About_Title");
     public string AboutDescription => GetTranslation("Settings_About_Description");
 
@@ -265,6 +270,8 @@ public sealed class SettingsViewModel : ViewModelBase
             nameof(OnLabel),
             nameof(OffLabel),
             nameof(InformationTitle),
+            nameof(HelpTitle),
+            nameof(HelpDescription),
             nameof(AboutTitle),
             nameof(AboutDescription)
         ]);
