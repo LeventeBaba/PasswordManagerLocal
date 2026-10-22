@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "reviewedDate": "2026-10-22",
+  "entries": [
+    { "name": "Avalonia.BuildServices", "reason": "build-time tooling" },
+    { "name": "Avalonia.Remote.Protocol", "reason": "designer/remote tooling removed by release publish optimization" },
+    { "name": "Grpc.Tools", "reason": "PrivateAssets=All protocol-buffer code generation tooling" },
+    { "name": "Microsoft.EntityFrameworkCore.Analyzers", "reason": "compile-time analyzer" },
+    { "name": "ReactiveUI.SourceGenerators", "reason": "compile-time source generator" },
+    { "name": "SkiaSharp.NativeAssets.macOS", "reason": "not selected by the Windows or Android release targets" }
+  ]
+}

@@ -8,6 +8,8 @@
     xmlns:pagesViews="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Pages"
     xmlns:pagesVm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
     xmlns:settingsViews="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Settings"
+    xmlns:informationViews="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Information"
+    xmlns:informationVm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Information"
     xmlns:controls="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Controls"
     xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels"
     x:DataType="vm:MainViewModel">
@@ -30,6 +32,15 @@
     </DataTemplate>
     <DataTemplate x:DataType="vm:SettingsViewModel">
       <settingsViews:SettingsView />
+    </DataTemplate>
+    <DataTemplate x:DataType="informationVm:AboutViewModel">
+      <informationViews:AboutView />
+    </DataTemplate>
+    <DataTemplate x:DataType="informationVm:ThirdPartyLicensesViewModel">
+      <informationViews:ThirdPartyLicensesView />
+    </DataTemplate>
+    <DataTemplate x:DataType="informationVm:ThirdPartyLicenseDetailViewModel">
+      <informationViews:ThirdPartyLicenseDetailView />
     </DataTemplate>
     <DataTemplate x:DataType="vm:MainPageContentViewModel">
       <ContentControl Content="{Binding PageViewModel}" />
@@ -126,7 +137,7 @@
 
           <Button Grid.Column="2"
                   Classes="ghost settingsNavigation"
-                  Classes.selected="{Binding IsSettingsPageVisible}"
+                  Classes.selected="{Binding IsSettingsSectionVisible}"
                   Width="48"
                   Height="48"
                   Padding="12"
@@ -245,7 +256,7 @@
 
             <Button Grid.Column="1"
                     Classes="ghost settingsNavigation"
-                    Classes.selected="{Binding IsSettingsPageVisible}"
+                    Classes.selected="{Binding IsSettingsSectionVisible}"
                     Width="44"
                     Height="44"
                     MinWidth="44"

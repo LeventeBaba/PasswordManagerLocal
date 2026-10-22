@@ -7,7 +7,9 @@ using PasswordManagerLocal.Common.Frontend.Exceptions;
 using PasswordManagerLocal.Common.Frontend.Services;
 using PasswordManagerLocal.Common.Frontend.Theming;
 using PasswordManagerLocal.Common.Frontend.ViewModels.Auth;
+using PasswordManagerLocal.Common.Frontend.ViewModels.Information;
 using PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
+using PasswordManagerLocal.Common.Frontend.Information;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Contracts.Errors;
 using PasswordManagerLocal.Common.Contracts.Devices;
@@ -73,14 +75,16 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         UiPreferencesService uiPreferences,
         IAuthSessionRegistry? authSessionRegistry = null,
         CancellationToken sessionLifetime = default,
-        IFrontendDeadlineScheduler? deadlineScheduler = null)
+        IFrontendDeadlineScheduler? deadlineScheduler = null,
+        string? applicationVersion = null)
         : this(
             endpoints,
             backendClient,
             authSessionRegistry ?? new AuthSessionRegistry(),
             uiPreferences,
             new DeviceAppPreferencesService(backgroundSyncSettingsClient, sessionLifetime),
-            deadlineScheduler ?? new AvaloniaFrontendDeadlineScheduler())
+            deadlineScheduler ?? new AvaloniaFrontendDeadlineScheduler(),
+            applicationVersion ?? ApplicationVersionInfo.GetDisplayVersion())
     {
     }
 
@@ -90,7 +94,8 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         IAuthSessionRegistry authSessionRegistry,
         UiPreferencesService uiPreferences,
         DeviceAppPreferencesService deviceAppPreferences,
-        IFrontendDeadlineScheduler deadlineScheduler)
+        IFrontendDeadlineScheduler deadlineScheduler,
+        string? applicationVersion)
         : base(uiPreferences)
     {
         _endpoints = endpoints ?? throw new ArgumentNullException(nameof(endpoints));
@@ -111,10 +116,27 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         _currentPageContentViewModel = new MainPageContentViewModel(LoginViewModel);
         ObservePageStatus(_currentPageViewModel);
 
+        var noticeCatalog = ThirdPartyNoticeCatalogLoader.Load();
+        AboutViewModel = new AboutViewModel(
+            uiPreferences,
+            applicationVersion,
+            NavigateBackFromAbout,
+            NavigateToThirdPartyLicenses,
+            noticeCatalog.Notices.Count != 0);
+        ThirdPartyLicensesViewModel = new ThirdPartyLicensesViewModel(
+            uiPreferences,
+            noticeCatalog,
+            NavigateBackFromThirdPartyLicenses,
+            NavigateToThirdPartyLicenseDetail);
+        ThirdPartyLicenseDetailViewModel = new ThirdPartyLicenseDetailViewModel(
+            uiPreferences,
+            NavigateBackFromThirdPartyLicenseDetail);
+
         SettingsViewModel = new SettingsViewModel(
             uiPreferences,
             _deviceAppPreferences,
-            NavigateBackFromSettings);
+            NavigateBackFromSettings,
+            NavigateToAbout);
         SettingsViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
 
         ShowSettingsCommand = Own(ReactiveCommand.Create(NavigateToSettings));
@@ -146,6 +168,9 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         _settingsReturnPageViewModel = null;
         LoginViewModel.Dispose();
         SettingsViewModel.Dispose();
+        AboutViewModel.Dispose();
+        ThirdPartyLicensesViewModel.Dispose();
+        ThirdPartyLicenseDetailViewModel.Dispose();
         _registrationViewModel?.Dispose();
         _passwordsViewModel?.Dispose();
         _profileViewModel?.Dispose();
@@ -183,6 +208,12 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     public event EventHandler? RefreshAuthenticationChanged;
 
     public SettingsViewModel SettingsViewModel { get; }
+
+    public AboutViewModel AboutViewModel { get; }
+
+    public ThirdPartyLicensesViewModel ThirdPartyLicensesViewModel { get; }
+
+    public ThirdPartyLicenseDetailViewModel ThirdPartyLicenseDetailViewModel { get; }
 
     public RegistrationViewModel RegistrationViewModel
     {
@@ -403,6 +434,13 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     public bool IsProfileMainPageSelected => IsAuthenticated && CurrentMainPageIndex == 2;
 
     public bool IsSettingsPageVisible => ReferenceEquals(CurrentPageViewModel, SettingsViewModel);
+
+    public bool IsInformationPageVisible =>
+        ReferenceEquals(CurrentPageViewModel, AboutViewModel) ||
+        ReferenceEquals(CurrentPageViewModel, ThirdPartyLicensesViewModel) ||
+        ReferenceEquals(CurrentPageViewModel, ThirdPartyLicenseDetailViewModel);
+
+    public bool IsSettingsSectionVisible => IsSettingsPageVisible || IsInformationPageVisible;
 
     private bool IsMainContentPageVisible =>
         ReferenceEquals(CurrentPageViewModel, _passwordsViewModel) ||
@@ -852,6 +890,24 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             return true;
         }
 
+        if (ReferenceEquals(CurrentPageViewModel, ThirdPartyLicenseDetailViewModel))
+        {
+            NavigateBackFromThirdPartyLicenseDetail();
+            return true;
+        }
+
+        if (ReferenceEquals(CurrentPageViewModel, ThirdPartyLicensesViewModel))
+        {
+            NavigateBackFromThirdPartyLicenses();
+            return true;
+        }
+
+        if (ReferenceEquals(CurrentPageViewModel, AboutViewModel))
+        {
+            NavigateBackFromAbout();
+            return true;
+        }
+
         if (IsSettingsPageVisible)
         {
             NavigateBackFromSettings();
@@ -1227,6 +1283,14 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         if (IsSettingsPageVisible)
             return;
 
+        if (IsInformationPageVisible)
+        {
+            IsPageTransitionReversed = true;
+            ClearStatusMessage();
+            CurrentPageViewModel = SettingsViewModel;
+            return;
+        }
+
         _settingsReturnPageViewModel = CurrentPageViewModel;
         IsPageTransitionReversed = false;
         ClearStatusMessage();
@@ -1243,6 +1307,67 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         _settingsReturnPageViewModel = null;
         IsPageTransitionReversed = true;
         CurrentPageViewModel = returnPage;
+    }
+
+    private void NavigateToAbout()
+    {
+        if (!IsSettingsPageVisible)
+            return;
+
+        IsPageTransitionReversed = false;
+        ClearStatusMessage();
+        CurrentPageViewModel = AboutViewModel;
+    }
+
+    private void NavigateBackFromAbout()
+    {
+        if (!ReferenceEquals(CurrentPageViewModel, AboutViewModel))
+            return;
+
+        IsPageTransitionReversed = true;
+        ClearStatusMessage();
+        CurrentPageViewModel = SettingsViewModel;
+    }
+
+    private void NavigateToThirdPartyLicenses()
+    {
+        if (!ReferenceEquals(CurrentPageViewModel, AboutViewModel))
+            return;
+
+        IsPageTransitionReversed = false;
+        ClearStatusMessage();
+        CurrentPageViewModel = ThirdPartyLicensesViewModel;
+    }
+
+    private void NavigateBackFromThirdPartyLicenses()
+    {
+        if (!ReferenceEquals(CurrentPageViewModel, ThirdPartyLicensesViewModel))
+            return;
+
+        IsPageTransitionReversed = true;
+        ClearStatusMessage();
+        CurrentPageViewModel = AboutViewModel;
+    }
+
+    private void NavigateToThirdPartyLicenseDetail(ThirdPartyNotice notice)
+    {
+        if (!ReferenceEquals(CurrentPageViewModel, ThirdPartyLicensesViewModel))
+            return;
+
+        ThirdPartyLicenseDetailViewModel.SetNotice(notice);
+        IsPageTransitionReversed = false;
+        ClearStatusMessage();
+        CurrentPageViewModel = ThirdPartyLicenseDetailViewModel;
+    }
+
+    private void NavigateBackFromThirdPartyLicenseDetail()
+    {
+        if (!ReferenceEquals(CurrentPageViewModel, ThirdPartyLicenseDetailViewModel))
+            return;
+
+        IsPageTransitionReversed = true;
+        ClearStatusMessage();
+        CurrentPageViewModel = ThirdPartyLicensesViewModel;
     }
 
     private void NavigateToLogin()
@@ -2337,6 +2462,8 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         this.RaisePropertyChanged(nameof(IsDevicesMainPageSelected));
         this.RaisePropertyChanged(nameof(IsProfileMainPageSelected));
         this.RaisePropertyChanged(nameof(IsSettingsPageVisible));
+        this.RaisePropertyChanged(nameof(IsInformationPageVisible));
+        this.RaisePropertyChanged(nameof(IsSettingsSectionVisible));
         this.RaisePropertyChanged(nameof(IsDesktopNavigationVisible));
         this.RaisePropertyChanged(nameof(IsMobilePageIndicatorVisible));
         this.RaisePropertyChanged(nameof(IsMobileMainContentVisible));

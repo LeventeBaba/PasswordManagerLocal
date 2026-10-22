@@ -255,6 +255,47 @@
             </StackPanel>
           </StackPanel>
         </Border>
+
+        <TextBlock Text="{Binding InformationTitle}"
+                   Classes="sectionTitle"
+                   Margin="4,8,4,0"
+                   TextWrapping="Wrap" />
+
+        <Border Classes="card"
+                HorizontalAlignment="Stretch">
+          <Button Classes="ghost"
+                  Command="{Binding NavigateToAboutCommand}"
+                  Padding="0"
+                  HorizontalAlignment="Stretch"
+                  HorizontalContentAlignment="Stretch"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  AutomationProperties.Name="{Binding AboutTitle}">
+            <Grid ColumnDefinitions="Auto,*,Auto"
+                  ColumnSpacing="14"
+                  IsHitTestVisible="False">
+              <PathIcon Width="28"
+                        Height="28"
+                        Data="{StaticResource InformationIconGeometry}"
+                        VerticalAlignment="Center" />
+              <StackPanel Grid.Column="1"
+                          Spacing="4"
+                          VerticalAlignment="Center">
+                <TextBlock Text="{Binding AboutTitle}"
+                           FontWeight="SemiBold"
+                           FontSize="16"
+                           TextWrapping="Wrap" />
+                <TextBlock Text="{Binding AboutDescription}"
+                           Classes="subtleText"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+              <PathIcon Grid.Column="2"
+                        Classes="mediumUiIcon"
+                        Data="{StaticResource ChevronRightIconGeometry}"
+                        VerticalAlignment="Center" />
+            </Grid>
+          </Button>
+        </Border>
       </StackPanel>
     </Grid>
   </ScrollViewer>

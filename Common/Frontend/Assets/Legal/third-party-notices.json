@@ -1,0 +1,282 @@
+{
+  "schemaVersion": 1,
+  "reviewedDate": "2026-10-22",
+  "entries": [
+    {
+      "id": "avalonia",
+      "name": "Avalonia UI",
+      "version": "12.1.4",
+      "licenseExpression": "MIT",
+      "copyrightNotice": "Copyright (c) AvaloniaUI OÜ All Rights Reserved",
+      "sourceUrl": "https://github.com/AvaloniaUI/Avalonia",
+      "platforms": ["Windows", "Android"],
+      "packages": [
+        { "name": "Avalonia", "version": "12.1.4" },
+        { "name": "Avalonia.Controls.ColorPicker", "version": "12.1.4" },
+        { "name": "Avalonia.Fonts.Inter", "version": "12.1.4" },
+        { "name": "Avalonia.HarfBuzz", "version": "12.1.4" },
+        { "name": "Avalonia.Skia", "version": "12.1.4" },
+        { "name": "Avalonia.Win32", "version": "12.1.4" },
+        { "name": "Avalonia.Android", "version": "12.1.4" }
+      ],
+      "requiredNotice": "Avalonia XPF is not used by this application and is not covered by this notice.",
+      "licenseTextId": "MIT"
+    },
+    {
+      "id": "inter",
+      "name": "Inter typeface",
+      "version": "Bundled with Avalonia.Fonts.Inter 12.1.4",
+      "licenseExpression": "OFL-1.1",
+      "copyrightNotice": "Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)",
+      "sourceUrl": "https://github.com/rsms/inter",
+      "platforms": ["Windows", "Android"],
+      "packages": [
+        { "name": "Avalonia.Fonts.Inter", "version": "12.1.4" }
+      ],
+      "licenseTextId": "OFL-1.1"
+    },
+    {
+      "id": "reactiveui",
+      "name": "ReactiveUI",
+      "version": "ReactiveUI 26.0.1; Avalonia bridge 12.1.6; binding/primitives 9.x",
+      "licenseExpression": "MIT",
+      "copyrightNotice": "Copyright (c) .NET Foundation and Contributors.\nCopyright (c) 2019-2026 ReactiveUI and Avalonia Teams, and Contributors.",
+      "sourceUrl": "https://github.com/reactiveui/ReactiveUI",
+      "platforms": ["Windows", "Android"],
+      "packages": [
+        { "name": "ReactiveUI.Avalonia", "version": "12.1.6" },
+        { "name": "ReactiveUI", "version": "26.0.1" },
+        { "name": "ReactiveUI.Core", "version": "26.0.1" },
+        { "name": "ReactiveUI.Binding", "version": "9.1.0" },
+        { "name": "ReactiveUI.Binding.Avalonia", "version": "9.1.0" },
+        { "name": "ReactiveUI.Disposables", "version": "9.0.0" },
+        { "name": "ReactiveUI.Primitives", "version": "9.0.0" },
+        { "name": "ReactiveUI.Primitives.Avalonia", "version": "9.0.0" },
+        { "name": "ReactiveUI.Primitives.Core", "version": "9.0.0" }
+      ],
+      "licenseTextId": "MIT"
+    },
+    {
+      "id": "splat",
+      "name": "Splat",
+      "version": "21.0.0",
+      "licenseExpression": "MIT",
+      "copyrightNotice": "Copyright (c) ReactiveUI 2018 - 2025. All rights reserved.",
+      "sourceUrl": "https://github.com/reactiveui/splat",
+      "platforms": ["Windows", "Android"],
+      "packages": [
+        { "name": "Splat", "version": "21.0.0" },
+        { "name": "Splat.Builder", "version": "21.0.0" },
+        { "name": "Splat.Core", "version": "21.0.0" },
+        { "name": "Splat.Logging", "version": "21.0.0" }
+      ],
+      "licenseTextId": "MIT"
+    },
+    {
+      "id": "microcom",
+      "name": "MicroCom Runtime",
+      "version": "0.11.6",
+      "licenseExpression": "MIT",
+      "copyrightNotice": "Copyright (c) 2021 Nikita Tsukanov",
+      "sourceUrl": "https://github.com/AvaloniaUI/MicroCom",
+      "platforms": ["Windows"],
+      "packages": [
+        { "name": "MicroCom.Runtime", "version": "0.11.6" }
+      ],
+      "licenseTextId": "MIT"
+    },
+    {
+      "id": "skiasharp",
+      "name": "SkiaSharp",
+      "version": "4.153.1",
+      "licenseExpression": "MIT",
+      "copyrightNotice": "Copyright (c) 2015-2016 Xamarin, Inc.\nCopyright (c) 2017-2018 Microsoft Corporation.",
+      "sourceUrl": "https://github.com/mono/SkiaSharp",
+      "platforms": ["Windows", "Android"],
+      "packages": [
+        { "name": "SkiaSharp", "version": "4.153.1" },
+        { "name": "SkiaSharp.NativeAssets.Win32", "version": "4.153.1" },
+        { "name": "SkiaSharp.NativeAssets.Android", "version": "4.153.1" }
+      ],
+      "requiredNotice": "SkiaSharp native assets include the Skia graphics engine and its own third-party components; the separate Skia notice in this list applies.",
+      "licenseTextId": "MIT"
+    },
+    {
+      "id": "skia",
+      "name": "Skia graphics engine",
+      "version": "Bundled with SkiaSharp 4.153.1 and Avalonia.Skia 12.1.4",
+      "licenseExpression": "BSD-3-Clause",
+      "copyrightNotice": "Copyright (c) 2011 Google Inc. All rights reserved.",
+      "sourceUrl": "https://skia.googlesource.com/skia/",
+      "platforms": ["Windows", "Android"],
+      "packages": [],
+      "requiredNotice": "Skia incorporates additional third-party code. Release packaging must retain the third-party notices shipped with the selected native Skia build.",
+      "licenseTextId": "BSD-3-Clause"
+    },
+    {
+      "id": "harfbuzz",
+      "name": "HarfBuzz",
+      "version": "Bundled with Avalonia.HarfBuzz 12.1.4",
+      "licenseExpression": "Old-MIT",
+      "copyrightNotice": "Copyright © 2010-2022 Google, Inc.\nCopyright © 2015-2020 Ebrahim Byagowi\nCopyright © 2019,2020 Facebook, Inc.\nCopyright © 2012,2015 Mozilla Foundation\nCopyright © 2011 Codethink Limited\nCopyright © 2008,2010 Nokia Corporation and/or its subsidiary(-ies)\nCopyright © 2009 Keith Stribley\nCopyright © 2011 Martin Hosken and SIL International\nCopyright © 2007 Chris Wilson\nCopyright © 2005,2006,2020,2021,2022,2023 Behdad Esfahbod\nCopyright © 2004,2007,2008,2009,2010,2013,2021,2022,2023 Red Hat, Inc.\nCopyright © 1998-2005 David Turner and Werner Lemberg\nCopyright © 2016 Igalia S.L.\nCopyright © 2022 Matthias Clasen\nCopyright © 2018,2021 Khaled Hosny\nCopyright © 2018,2019,2020 Adobe, Inc\nCopyright © 2013-2015 Alexei Podtelezhnikov\nFor full copyright notices consult the individual files in the package.",
+      "sourceUrl": "https://github.com/harfbuzz/harfbuzz",
+      "platforms": ["Windows", "Android"],
+      "packages": [],
+      "licenseTextId": "Old-MIT"
+    },
+    {
+      "id": "zxing-net",
+      "name": "ZXing.Net",
+      "version": "0.16.11; SkiaSharp binding 0.16.24",
+      "licenseExpression": "Apache-2.0",
+      "copyrightNotice": "Copyright (c) ZXing authors and ZXing.Net contributors.",
+      "sourceUrl": "https://github.com/micjahn/ZXing.Net",
+      "platforms": ["Windows", "Android"],
+      "packages": [
+        { "name": "ZXing.Net", "version": "0.16.11" },
+        { "name": "ZXing.Net.Bindings.SkiaSharp", "version": "0.16.24" }
+      ],
+      "licenseTextId": "Apache-2.0"
+    },
+    {
+      "id": "google-protobuf",
+      "name": "Protocol Buffers",
+      "version": "3.36.2",
+      "licenseExpression": "BSD-3-Clause",
+      "copyrightNotice": "Copyright (c) 2008 Google Inc. All rights reserved.",
+      "sourceUrl": "https://github.com/protocolbuffers/protobuf",
+      "platforms": ["Windows", "Android"],
+      "packages": [
+        { "name": "Google.Protobuf", "version": "3.36.2" }
+      ],
+      "licenseTextId": "BSD-3-Clause"
+    },
+    {
+      "id": "entity-framework-core",
+      "name": "Entity Framework Core and Microsoft.Data.Sqlite",
+      "version": "10.0.13",
+      "licenseExpression": "MIT",
+      "copyrightNotice": "Copyright (c) .NET Foundation and Contributors.",
+      "sourceUrl": "https://github.com/dotnet/efcore",
+      "platforms": ["Windows", "Android"],
+      "packages": [
+        { "name": "Microsoft.Data.Sqlite.Core", "version": "10.0.13" },
+        { "name": "Microsoft.EntityFrameworkCore", "version": "10.0.13" },
+        { "name": "Microsoft.EntityFrameworkCore.Abstractions", "version": "10.0.13" },
+        { "name": "Microsoft.EntityFrameworkCore.Relational", "version": "10.0.13" },
+        { "name": "Microsoft.EntityFrameworkCore.Sqlite.Core", "version": "10.0.13" }
+      ],
+      "licenseTextId": "MIT"
+    },
+    {
+      "id": "microsoft-dotnet-libraries",
+      "name": "Microsoft .NET runtime libraries",
+      "version": "10.0.13",
+      "licenseExpression": "MIT",
+      "copyrightNotice": "Copyright (c) .NET Foundation and Contributors.",
+      "sourceUrl": "https://github.com/dotnet/runtime",
+      "platforms": ["Windows", "Android"],
+      "packages": [
+        { "name": "Microsoft.Extensions.Caching.Abstractions", "version": "10.0.13" },
+        { "name": "Microsoft.Extensions.Caching.Memory", "version": "10.0.13" },
+        { "name": "Microsoft.Extensions.Configuration.Abstractions", "version": "10.0.13" },
+        { "name": "Microsoft.Extensions.DependencyInjection", "version": "10.0.13" },
+        { "name": "Microsoft.Extensions.DependencyInjection.Abstractions", "version": "10.0.13" },
+        { "name": "Microsoft.Extensions.DependencyModel", "version": "10.0.13" },
+        { "name": "Microsoft.Extensions.Logging", "version": "10.0.13" },
+        { "name": "Microsoft.Extensions.Logging.Abstractions", "version": "10.0.13" },
+        { "name": "Microsoft.Extensions.Options", "version": "10.0.13" },
+        { "name": "Microsoft.Extensions.Primitives", "version": "10.0.13" },
+        { "name": "System.Security.Cryptography.ProtectedData", "version": "10.0.13" }
+      ],
+      "requiredNotice": "Published .NET runtimes can include additional third-party components. The release artifact must retain the runtime's corresponding ThirdPartyNotices file.",
+      "licenseTextId": "MIT"
+    },
+    {
+      "id": "sqlitepclraw",
+      "name": "SQLitePCLRaw",
+      "version": "3.0.2",
+      "licenseExpression": "Apache-2.0",
+      "copyrightNotice": "Copyright 2014-2026 SourceGear, LLC. Portions copyright Microsoft Open Technologies, Inc.",
+      "sourceUrl": "https://github.com/ericsink/SQLitePCL.raw",
+      "platforms": ["Windows", "Android"],
+      "packages": [
+        { "name": "SQLitePCLRaw.core", "version": "3.0.2" }
+      ],
+      "licenseTextId": "Apache-2.0"
+    },
+    {
+      "id": "sqlite3mc-bindings",
+      "name": "SQLite3 Multiple Ciphers .NET bindings",
+      "version": "2.6.1",
+      "licenseExpression": "MIT",
+      "copyrightNotice": "Copyright (c) 2019-2026 Ulrich Telle.",
+      "sourceUrl": "https://github.com/utelle/SQLite3MultipleCiphers-NuGet",
+      "platforms": ["Windows", "Android"],
+      "packages": [
+        { "name": "SQLite3MC.PCLRaw.bundle", "version": "2.6.1" },
+        { "name": "SQLite3MC.PCLRaw.lib", "version": "2.6.1" },
+        { "name": "SQLite3MC.PCLRaw.provider", "version": "2.6.1" }
+      ],
+      "licenseTextId": "MIT"
+    },
+    {
+      "id": "sqlite3mc",
+      "name": "SQLite3 Multiple Ciphers",
+      "version": "2.6.1 (SQLite 3.54.0 base)",
+      "licenseExpression": "MIT AND Blessing",
+      "copyrightNotice": "Copyright (c) 2019-2026 Ulrich Telle. SQLite source code is in the public domain.",
+      "sourceUrl": "https://github.com/utelle/SQLite3MultipleCiphers",
+      "platforms": ["Windows", "Android"],
+      "packages": [],
+      "requiredNotice": "The SQLite3 Multiple Ciphers native library contains SQLite public-domain code and cryptographic implementations with their own retained source notices.",
+      "licenseTextId": "MIT-and-SQLite-Blessing"
+    },
+    {
+      "id": "nsec",
+      "name": "NSec.Cryptography",
+      "version": "26.4.0",
+      "licenseExpression": "MIT",
+      "copyrightNotice": "Copyright (c) 2026 Klaus Hartke",
+      "sourceUrl": "https://github.com/ektrah/nsec",
+      "platforms": ["Windows", "Android"],
+      "packages": [
+        { "name": "NSec.Cryptography", "version": "26.4.0" }
+      ],
+      "requiredNotice": "NSec uses libsodium and includes code derived from RFC 6234; their notices are retained separately where applicable.",
+      "licenseTextId": "MIT"
+    },
+    {
+      "id": "libsodium",
+      "name": "libsodium",
+      "version": "1.0.22",
+      "licenseExpression": "ISC",
+      "copyrightNotice": "Copyright (c) 2013-2026 Frank Denis.",
+      "sourceUrl": "https://github.com/jedisct1/libsodium",
+      "platforms": ["Windows", "Android"],
+      "packages": [
+        { "name": "libsodium", "version": "1.0.22" }
+      ],
+      "licenseTextId": "ISC"
+    },
+    {
+      "id": "androidx",
+      "name": "AndroidX libraries",
+      "version": "Core 1.19.0.1; SplashScreen 1.2.0.3; Lifecycle 2.11.0.1",
+      "licenseExpression": "Apache-2.0",
+      "copyrightNotice": "Copyright (c) The Android Open Source Project.",
+      "sourceUrl": "https://android.googlesource.com/platform/frameworks/support/",
+      "platforms": ["Android"],
+      "packages": [
+        { "name": "Xamarin.AndroidX.Core", "version": "1.19.0.1" },
+        { "name": "Xamarin.AndroidX.Core.Core.Ktx", "version": "1.19.0.1" },
+        { "name": "Xamarin.AndroidX.Core.SplashScreen", "version": "1.2.0.3" },
+        { "name": "Xamarin.AndroidX.Lifecycle.ViewModelSavedState", "version": "2.11.0.1" },
+        { "name": "Xamarin.AndroidX.Lifecycle.ViewModelSavedState.Android", "version": "2.11.0.1" },
+        { "name": "Xamarin.AndroidX.Lifecycle.Process", "version": "2.11.0.1" },
+        { "name": "Xamarin.AndroidX.Lifecycle.LiveData.Core", "version": "2.11.0.1" }
+      ],
+      "licenseTextId": "Apache-2.0"
+    }
+  ]
+}

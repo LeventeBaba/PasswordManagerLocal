@@ -21,14 +21,17 @@ public sealed class SettingsViewModel : ViewModelBase
     public SettingsViewModel(
         UiPreferencesService uiPreferences,
         DeviceAppPreferencesService deviceAppPreferences,
-        Action navigateBack)
+        Action navigateBack,
+        Action navigateToAbout)
         : base(uiPreferences)
     {
         _deviceAppPreferences = deviceAppPreferences
             ?? throw new ArgumentNullException(nameof(deviceAppPreferences));
         ArgumentNullException.ThrowIfNull(navigateBack);
+        ArgumentNullException.ThrowIfNull(navigateToAbout);
 
         NavigateBackCommand = Own(ReactiveCommand.Create(navigateBack));
+        NavigateToAboutCommand = Own(ReactiveCommand.Create(navigateToAbout));
         ToggleAppearanceSectionCommand = Own(ReactiveCommand.Create(ToggleAppearanceSection));
         ToggleBackgroundSectionCommand = Own(ReactiveCommand.Create(ToggleBackgroundSection));
         LanguageOptions =
@@ -48,6 +51,7 @@ public sealed class SettingsViewModel : ViewModelBase
     }
 
     public ReactiveCommand<RxVoid, RxVoid> NavigateBackCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> NavigateToAboutCommand { get; }
     public ReactiveCommand<RxVoid, RxVoid> ToggleAppearanceSectionCommand { get; }
     public ReactiveCommand<RxVoid, RxVoid> ToggleBackgroundSectionCommand { get; }
 
@@ -188,6 +192,9 @@ public sealed class SettingsViewModel : ViewModelBase
     public string BackgroundSyncDescription => GetTranslation("Settings_BackgroundSync_Description");
     public string OnLabel => GetTranslation("Common_On");
     public string OffLabel => GetTranslation("Common_Off");
+    public string InformationTitle => GetTranslation("Settings_Information_Title");
+    public string AboutTitle => GetTranslation("About_Title");
+    public string AboutDescription => GetTranslation("Settings_About_Description");
 
     public async Task LoadBackgroundSyncStateAsync(
         CancellationToken cancellationToken = default)
@@ -256,7 +263,10 @@ public sealed class SettingsViewModel : ViewModelBase
             nameof(BackgroundSyncDescription),
             nameof(BackgroundSyncStatus),
             nameof(OnLabel),
-            nameof(OffLabel)
+            nameof(OffLabel),
+            nameof(InformationTitle),
+            nameof(AboutTitle),
+            nameof(AboutDescription)
         ]);
     }
 

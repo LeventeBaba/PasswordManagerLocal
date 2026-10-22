@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PasswordManagerLocal.Common.Frontend.Views.Information.AboutView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Information"
+    x:DataType="vm:AboutViewModel">
+
+  <ScrollViewer x:Name="PageScrollViewer"
+                HorizontalScrollBarVisibility="Disabled"
+                HorizontalContentAlignment="Stretch">
+    <Grid Margin="16,4,16,16"
+          HorizontalAlignment="Stretch">
+      <StackPanel Spacing="14"
+                  HorizontalAlignment="Stretch">
+        <Border Classes="card">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+            <Button Classes="ghost iconButton"
+                    Command="{Binding NavigateBackCommand}"
+                    ToolTip.Tip="{Binding BackLabel}"
+                    AutomationProperties.Name="{Binding BackLabel}">
+              <PathIcon Classes="smallUiIcon"
+                        Data="{StaticResource BackIconGeometry}" />
+            </Button>
+            <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+              <TextBlock Text="{Binding Title}"
+                         Classes="pageTitle"
+                         TextWrapping="Wrap" />
+              <TextBlock Text="{Binding Subtitle}"
+                         Classes="subtleText"
+                         TextWrapping="Wrap" />
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <Border Classes="card">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="18">
+            <Border Width="72"
+                    Height="72"
+                    CornerRadius="18"
+                    Background="{DynamicResource AppBrush.Selection.Background}"
+                    BorderBrush="{DynamicResource AppBrush.Selection.Border}"
+                    BorderThickness="1"
+                    VerticalAlignment="Top">
+              <PathIcon Width="38"
+                        Height="38"
+                        Data="{StaticResource LockIconGeometry}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center" />
+            </Border>
+            <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Center">
+              <TextBlock Text="{Binding ApplicationName}"
+                         Classes="sectionTitle"
+                         TextWrapping="Wrap" />
+              <TextBlock Text="{Binding VersionText}"
+                         FontWeight="SemiBold"
+                         TextWrapping="Wrap" />
+              <TextBlock Text="{Binding ProductDescription}"
+                         Classes="subtleText"
+                         TextWrapping="Wrap" />
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <Border Classes="card"
+                IsVisible="{Binding AreLicensesAvailable}">
+          <Button Classes="ghost"
+                  Command="{Binding NavigateToLicensesCommand}"
+                  Padding="0"
+                  HorizontalAlignment="Stretch"
+                  HorizontalContentAlignment="Stretch"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  AutomationProperties.Name="{Binding LicensesTitle}">
+            <Grid ColumnDefinitions="Auto,*,Auto"
+                  ColumnSpacing="14"
+                  IsHitTestVisible="False">
+              <PathIcon Width="28"
+                        Height="28"
+                        Data="{StaticResource DocumentIconGeometry}"
+                        VerticalAlignment="Center" />
+              <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                <TextBlock Text="{Binding LicensesTitle}"
+                           FontWeight="SemiBold"
+                           FontSize="16"
+                           TextWrapping="Wrap" />
+                <TextBlock Text="{Binding LicensesDescription}"
+                           Classes="subtleText"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+              <PathIcon Grid.Column="2"
+                        Classes="mediumUiIcon"
+                        Data="{StaticResource ChevronRightIconGeometry}"
+                        VerticalAlignment="Center" />
+            </Grid>
+          </Button>
+        </Border>
+      </StackPanel>
+    </Grid>
+  </ScrollViewer>
+</UserControl>

@@ -118,6 +118,7 @@ public sealed class SettingsViewModelBackgroundSyncTests
         new(
             await TestUiPreferencesFactory.CreateAsync(),
             new DeviceAppPreferencesService(client),
+            () => { },
             () => { });
 
     private static async Task WaitUntilAsync(Func<bool> condition)
