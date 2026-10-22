@@ -40,6 +40,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     private bool _isAuthenticated;
     private bool _isBackendInitialized;
     private string _currentUserDisplayName = string.Empty;
+    private string _currentUserFirstName = string.Empty;
     private string _currentUserSubtitle = string.Empty;
     private readonly IFrontendDeadlineScheduler _deadlineScheduler;
     private readonly Dictionary<Guid, IDisposable> _sessionDeadlineTimers = new();
@@ -204,6 +205,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         _sessionRenewalPromptShownForToken = Guid.Empty;
         _sessionRenewalDialogProfileName = string.Empty;
         CurrentUserDisplayName = string.Empty;
+        CurrentUserFirstName = string.Empty;
         CurrentUserSubtitle = string.Empty;
         IsAuthenticated = false;
         _currentPageViewModel = LoginViewModel;
@@ -512,6 +514,21 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         private set => this.RaiseAndSetIfChanged(ref _currentUserDisplayName, value);
     }
 
+    public string CurrentUserFirstName
+    {
+        get => _currentUserFirstName;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _currentUserFirstName, value);
+            this.RaisePropertyChanged(nameof(AccountMenuLabel));
+        }
+    }
+
+    public string AccountMenuLabel => string.IsNullOrWhiteSpace(CurrentUserFirstName)
+        ? ProfileLabel
+        : string.Format(System.Globalization.CultureInfo.CurrentCulture,
+            GetTranslation("Shell_AccountMenu_Format"), CurrentUserFirstName);
+
     public string CurrentUserSubtitle
     {
         get => _currentUserSubtitle;
@@ -627,7 +644,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             ? GetTranslation("Common_Back")
             : GetTranslation("DatabaseVersion_DoNotReset_Button");
 
-    public string AppTitle => GetTranslation("AppTitle");
+    public string AppTitle => ApplicationBranding.DisplayName;
 
     public string SettingsLabel => GetTranslation("Settings");
 
@@ -1077,6 +1094,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         this.RaisePropertyChanged(nameof(SettingsLabel));
         this.RaisePropertyChanged(nameof(PasswordVaultLabel));
         this.RaisePropertyChanged(nameof(ProfileLabel));
+        this.RaisePropertyChanged(nameof(AccountMenuLabel));
         this.RaisePropertyChanged(nameof(DevicesLabel));
         this.RaisePropertyChanged(nameof(LogoutLabel));
         this.RaisePropertyChanged(nameof(ChangeProfileLabel));
@@ -1445,6 +1463,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         ApplyRememberMeFromSession(false);
         IsAuthenticated = false;
         CurrentUserDisplayName = string.Empty;
+        CurrentUserFirstName = string.Empty;
         CurrentUserSubtitle = string.Empty;
         _passwordsViewModel?.Reset();
         _profileViewModel?.Reset();
@@ -1875,6 +1894,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             this.RaisePropertyChanged(nameof(CurrentUserId));
         IsAuthenticated = true;
         CurrentUserDisplayName = BuildDisplayName(profile);
+        CurrentUserFirstName = profile.FirstName?.Trim() ?? string.Empty;
         CurrentUserSubtitle = BuildSubtitle(profile);
         ApplyRememberMeFromSession(profile.IsRememberMeEnabled);
 
@@ -1923,6 +1943,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         var profile = await _endpoints.GetUserProfileInfoAsync(token);
 
         CurrentUserDisplayName = BuildDisplayName(profile);
+        CurrentUserFirstName = profile.FirstName?.Trim() ?? string.Empty;
         CurrentUserSubtitle = BuildSubtitle(profile);
         ApplyRememberMeFromSession(profile.IsRememberMeEnabled);
         SetSessionProfile(token, profile);
@@ -1987,6 +2008,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         IsAuthenticated = false;
         NotifyRefreshAuthenticationChanged();
         CurrentUserDisplayName = string.Empty;
+        CurrentUserFirstName = string.Empty;
         CurrentUserSubtitle = string.Empty;
         ApplyRememberMeFromSession(false);
         _passwordsViewModel?.Reset();
@@ -2745,6 +2767,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         ProfileViewModel.ApplyAutomaticProfileProjection(profile);
         SetSessionProfile(token, profile);
         CurrentUserDisplayName = BuildDisplayName(profile);
+        CurrentUserFirstName = profile.FirstName?.Trim() ?? string.Empty;
         CurrentUserSubtitle = BuildSubtitle(profile);
         ApplyRememberMeFromSession(profile.IsRememberMeEnabled);
         return true;

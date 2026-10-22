@@ -1,5 +1,5 @@
 {
-  "AppTitle": "Jelszókezelő",
+  "AppTitle": "Password Manager Local",
   "Settings": "Beállítások",
   "Settings_Language": "Nyelv",
   "Settings_Theme": "Téma",
@@ -413,7 +413,7 @@
   "Error_DeviceEnrollment_LocalNetworkUnavailable": "Hiba: Ezen az eszközön nem található használható helyi hálózati kapcsolat. Csatlakoztasd Wi-Fihez vagy Ethernet-hálózathoz, majd próbáld újra.",
   "Error_DeviceEnrollment_LocalEnrollmentListenerUnavailable": "Hiba: A helyi eszközhozzáadási szolgáltatás nem tudta elindítani vagy ellenőrizni a hálózati figyelőt. Hagyd nyitva az alkalmazást, csatlakozz újra a helyi hálózathoz, majd próbáld újra.",
   "Firewall_Title": "Tűzfalengedély szükséges",
-  "Firewall_Message": "A helyi eszközszinkronizáláshoz és az új eszköz hozzáadásához a PasswordManagerLocal-nak helyi hálózati hozzáférésre van szüksége. A program hatályos Windows Defender tűzfalszabályokat kér: bejövő TCP 26688, bejövő mDNS UDP 5353, valamint az alkalmazáshoz kötött kimenő TCP/UDP szabályokat ugyanehhez a forgalomhoz. Az ehhez az exe-hez tartozó ütköző tiltó szabályokat is lecseréli. Engedélyezed ezt a Windows tűzfalon? A következő ablak egy Windows rendszergazdai engedélykérés lesz.",
+  "Firewall_Message": "A helyi eszközszinkronizáláshoz és az új eszköz hozzáadásához a Password Manager Local alkalmazásnak helyi hálózati hozzáférésre van szüksége. A program hatályos Windows Defender tűzfalszabályokat kér: bejövő TCP 26688, bejövő mDNS UDP 5353, valamint az alkalmazáshoz kötött kimenő TCP/UDP szabályokat ugyanehhez a forgalomhoz. Az ehhez az exe-hez tartozó ütköző tiltó szabályokat is lecseréli. Engedélyezed ezt a Windows tűzfalon? A következő ablak egy Windows rendszergazdai engedélykérés lesz.",
   "Firewall_Allow": "Engedélyezés",
   "Firewall_Failed": "Nem sikerült beállítani a Windows tűzfalat, vagy az új szabályok nem hatályosak az aktív hálózati profilnál. Próbáld újra az engedélyezést. Az alkalmazás mappájából rendszergazdaként a ConfigureWindowsFirewall.bat fájlt is futtathatod. Ellenőrizd, hogy az aktív Windows tűzfalprofilnál nincs bekapcsolva az összes bejövő kapcsolat tiltása, és nincs hatályos bejövő vagy kimenő Tiltás/Block szabály a PasswordManagerLocal.exe, a TCP 26688 vagy az UDP 5353 forgalmára.",
   "Firewall_RequiredForLocalNetwork": "Az eszközfelvétel és a helyi szinkronizáció elindításához Windows tűzfalengedély szükséges. Válaszd az Engedélyezés lehetőséget, hagyd jóvá a rendszergazdai kérést, majd próbáld újra.",
@@ -465,7 +465,7 @@
   "Profile_Device_Add_QrNotFound": "Nem található olvasható QR-kód a kiválasztott képen.",
   "Profile_Device_Add_QrDecodeFailed": "A QR-kódot tartalmazó képet nem sikerült beolvasni. Próbálj meg egy élesebb képet, vagy írd be kézzel a kódot.",
   "Profile_Device_Add_QrScanner_Title": "Enrollment QR-kód beolvasása",
-  "Profile_Device_Add_QrScanner_Description": "Irányítsd a kamerát az új eszközön látható QR-kódra. Csak a PasswordManagerLocal enrollment QR-kódjait fogadja el az alkalmazás.",
+  "Profile_Device_Add_QrScanner_Description": "Irányítsd a kamerát az új eszközön látható QR-kódra. Csak a Password Manager Local csatlakoztatási QR-kódjait fogadja el az alkalmazás.",
   "DatabaseVersion_Error_Title": "Nem támogatott adatbázis-verzió",
   "DatabaseVersion_Error_Message": "A mentett adatbázis verziója {0}, ez az alkalmazás azonban csak a(z) {1} és {2} közötti verziókat támogatja. Az adatbázis nem nyitható meg, ezért az alkalmazás nem használható. A folytatáshoz alaphelyzetbe állíthatod az adatbázist, de ezzel véglegesen törlődik minden helyben mentett profil, jelszó, eszközkapcsolat, szinkronizációs adat és beállítás. Szeretnéd most alaphelyzetbe állítani az adatbázist?",
   "DatabaseVersion_InvalidHeader_Message": "Az adatbázis konfigurációs fejléce hiányzik, sérült vagy nem támogatott formátumú. Az adatbázis nem nyitható meg, ezért az alkalmazás nem használható. A folytatáshoz alaphelyzetbe állíthatod az adatbázist, de ezzel véglegesen törlődik minden helyben mentett profil, jelszó, eszközkapcsolat, szinkronizációs adat és beállítás. Szeretnéd most alaphelyzetbe állítani az adatbázist?",
@@ -570,5 +570,6 @@
   "Help_Tip": "Tipp",
   "Help_Step_Format": "{0}. {1}",
   "Help_TopicUnavailable": "Ez a súgótéma nem érhető el. Válassz témát az alábbi kategóriákból.",
-  "Security_RememberMe_Warning": "A megjegyzett profil mesterjelszó nélkül is újra megnyitható. Aki használhatja a feloldott eszközödet, hozzáférhet. Csak megbízható saját eszközön, erős képernyőzárral használd. Az automatikus belépés megszüntetéséhez kijelentkezés előtt kapcsold ki."
+  "Security_RememberMe_Warning": "A megjegyzett profil mesterjelszó nélkül is újra megnyitható. Aki használhatja a feloldott eszközödet, hozzáférhet. Csak megbízható saját eszközön, erős képernyőzárral használd. Az automatikus belépés megszüntetéséhez kijelentkezés előtt kapcsold ki.",
+  "Shell_AccountMenu_Format": "{0} fiókmenüje"
 }

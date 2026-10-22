@@ -170,7 +170,7 @@ public sealed class EnrollmentQrScannerActivity : Activity, TextureView.ISurface
             CreateHeaderText(
                 ResolveIntentText(
                     DescriptionExtra,
-                    "Point the camera at the QR code shown on the new device. Only PasswordManagerLocal enrollment QR codes are accepted."),
+                    $"Point the camera at the QR code shown on the new device. Only {ApplicationBranding.DisplayName} enrollment QR codes are accepted."),
                 14,
                 0,
                 18),
@@ -501,7 +501,7 @@ public sealed class EnrollmentQrScannerActivity : Activity, TextureView.ISurface
                 if (now - _lastForeignQrStatusAt > 1500)
                 {
                     _lastForeignQrStatusAt = now;
-                    RunOnUiThread(() => SetStatus("QR code found, but it is not a PasswordManagerLocal enrollment QR code."));
+                    RunOnUiThread(() => SetStatus($"QR code found, but it is not a {ApplicationBranding.DisplayName} enrollment QR code."));
                 }
 
                 return;

@@ -1,5 +1,5 @@
 {
-  "AppTitle": "Password Manager",
+  "AppTitle": "Password Manager Local",
   "Settings": "Settings",
   "Settings_Language": "Language",
   "Settings_Theme": "Theme",
@@ -413,7 +413,7 @@
   "Error_DeviceEnrollment_LocalNetworkUnavailable": "Error: No usable local network connection was found on this device. Connect it to Wi-Fi or Ethernet, then try again.",
   "Error_DeviceEnrollment_LocalEnrollmentListenerUnavailable": "Error: The local enrollment service could not start or verify its network listener. Keep the app open, reconnect to the local network, and try again.",
   "Firewall_Title": "Firewall permission required",
-  "Firewall_Message": "PasswordManagerLocal needs local-network access for device synchronization and enrollment. The app will ask Windows to add effective Windows Defender Firewall rules for PasswordManagerLocal: inbound TCP port 26688, inbound mDNS UDP port 5353, and application-specific outbound TCP/UDP rules for the same traffic. It will also replace conflicting block rules that target this executable. Do you want to allow this in Windows Firewall? The next window will be a Windows administrator permission prompt.",
+  "Firewall_Message": "Password Manager Local needs local-network access for device synchronization and enrollment. The app will ask Windows to add effective Windows Defender Firewall rules for Password Manager Local: inbound TCP port 26688, inbound mDNS UDP port 5353, and application-specific outbound TCP/UDP rules for the same traffic. It will also replace conflicting block rules that target this executable. Do you want to allow this in Windows Firewall? The next window will be a Windows administrator permission prompt.",
   "Firewall_Allow": "Allow",
   "Firewall_Failed": "Windows Firewall could not be configured or the new rules are not effective for the active network profile. Try allowing it again. You can also run ConfigureWindowsFirewall.bat as administrator from the application folder. Check that Block all incoming connections is disabled for the active Windows Firewall profile and that no effective inbound or outbound Block rule targets PasswordManagerLocal.exe, TCP 26688, or UDP 5353.",
   "Firewall_RequiredForLocalNetwork": "Windows Firewall access is required before device enrollment or local synchronization can start. Choose Allow and approve the administrator prompt, then try again.",
@@ -465,7 +465,7 @@
   "Profile_Device_Add_QrNotFound": "No readable QR code was found in the selected image.",
   "Profile_Device_Add_QrDecodeFailed": "The QR code image could not be read. Try a clearer image or enter the code manually.",
   "Profile_Device_Add_QrScanner_Title": "Scan enrollment QR code",
-  "Profile_Device_Add_QrScanner_Description": "Point the camera at the QR code shown on the new device. Only PasswordManagerLocal enrollment QR codes are accepted.",
+  "Profile_Device_Add_QrScanner_Description": "Point the camera at the QR code shown on the new device. Only Password Manager Local enrollment QR codes are accepted.",
   "DatabaseVersion_Error_Title": "Database version not supported",
   "DatabaseVersion_Error_Message": "The saved database uses version {0}, but this app supports versions {1} through {2}. The database cannot be opened and the app cannot be used. You can reset the database to continue, but resetting permanently deletes every locally saved profile, password, device relationship, synchronization record, and setting. Do you want to reset the database now?",
   "DatabaseVersion_InvalidHeader_Message": "The database configuration header is missing, damaged, or uses an unsupported format. The database cannot be opened and the app cannot be used. You can reset the database to continue, but resetting permanently deletes every locally saved profile, password, device relationship, synchronization record, and setting. Do you want to reset the database now?",
@@ -570,5 +570,6 @@
   "Help_Tip": "Tip",
   "Help_Step_Format": "{0}. {1}",
   "Help_TopicUnavailable": "This help topic is unavailable. Choose a topic from the categories below.",
-  "Security_RememberMe_Warning": "Remember me can reopen this profile without your master password. Anyone using your unlocked device may access it. Use only on a trusted personal device with a strong screen lock. Turn it off before signing out to stop automatic sign-in."
+  "Security_RememberMe_Warning": "Remember me can reopen this profile without your master password. Anyone using your unlocked device may access it. Use only on a trusted personal device with a strong screen lock. Turn it off before signing out to stop automatic sign-in.",
+  "Shell_AccountMenu_Format": "Account menu for {0}"
 }

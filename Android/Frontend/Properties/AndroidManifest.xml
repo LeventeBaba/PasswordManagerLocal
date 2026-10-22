@@ -11,7 +11,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
-    <application android:label="PasswordManagerLocal" android:icon="@drawable/icon">
+    <application android:label="Password Manager Local" android:icon="@drawable/icon">
         <service
             android:name="com.levibaba.passwordmanagerlocal.PasswordManagerBackgroundService"
             android:exported="false"

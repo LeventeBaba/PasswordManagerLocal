@@ -187,7 +187,8 @@ public partial class MainView : UserControl, IDisposable
     {
         var loggedOut = e.PropertyName == nameof(MainViewModel.IsAuthenticated)
             && sender is MainViewModel { IsAuthenticated: false };
-        if (loggedOut || e.PropertyName == nameof(MainViewModel.CurrentUserDisplayName))
+        if (loggedOut ||
+            e.PropertyName is nameof(MainViewModel.CurrentUserDisplayName) or nameof(MainViewModel.CurrentUserFirstName))
             HideAccountMenuFlyout();
 
         if (e.PropertyName == nameof(MainViewModel.IsMobileMainPageAnimationEnabled))

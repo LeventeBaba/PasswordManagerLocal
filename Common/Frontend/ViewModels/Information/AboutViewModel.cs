@@ -34,7 +34,7 @@ public sealed class AboutViewModel : ViewModelBase
     public string Title => GetTranslation("About_Title");
     public string Subtitle => GetTranslation("About_Subtitle");
     public string BackLabel => GetTranslation("Common_Back");
-    public string ApplicationName => GetTranslation("AppTitle");
+    public string ApplicationName => ApplicationBranding.DisplayName;
     public string ProductDescription => GetTranslation("About_ProductDescription");
     public string VersionText => _applicationVersion is null
         ? GetTranslation("About_Version_Unavailable")

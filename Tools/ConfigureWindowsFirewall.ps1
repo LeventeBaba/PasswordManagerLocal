@@ -77,7 +77,7 @@ if ([string]::IsNullOrWhiteSpace($AppExe)) {
     $AppExe = Join-Path $PSScriptRoot 'PasswordManagerLocal.Windows.Agent.exe'
 }
 
-Write-Host 'Configuring Windows Firewall for PasswordManagerLocal local sync.'
+Write-Host 'Configuring Windows Firewall for Password Manager Local local sync.'
 Write-Host "Application path: $AppExe"
 Write-Host
 

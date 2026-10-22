@@ -219,7 +219,7 @@ public sealed class AndroidForegroundServiceController : IAndroidForegroundServi
 
         return new Notification.Builder(_service, NotificationChannelId)
             .SetSmallIcon(Resource.Drawable.ic_stat_password_manager)
-            .SetContentTitle("Password Manager")
+            .SetContentTitle(ApplicationBranding.DisplayName)
             .SetContentText(state switch
             {
                 AndroidForegroundNotificationState.WaitingForDeviceUnlock =>

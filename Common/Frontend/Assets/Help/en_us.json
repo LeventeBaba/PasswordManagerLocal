@@ -26,7 +26,7 @@
     {
       "id": "getting-started/first-run",
       "categoryId": "getting-started",
-      "title": "Start using PasswordManagerLocal",
+      "title": "Start using Password Manager Local",
       "summary": "Choose whether to create a profile or bring an existing one to this device.",
       "keywords": [
         "first run",

@@ -14,7 +14,7 @@ using PasswordManagerLocal.Common.Frontend.Views;
 namespace PasswordManagerLocal.Android.Frontend;
 
 [Activity(
-Label = "PasswordManagerLocal.Android.Frontend",
+Label = ApplicationBranding.DisplayName,
 Theme = "@style/MyTheme.NoActionBar",
 Icon = "@drawable/icon",
 MainLauncher = true,
@@ -114,7 +114,7 @@ public class MainActivity : AvaloniaMainActivity
             // the Builder instance itself remains valid regardless of a returned null.
             using var builder = new AlertDialog.Builder(this);
             builder.SetTitle("Application startup problem");
-            builder.SetMessage("PasswordManagerLocal could not initialize. Check Android Logcat for the PasswordManagerLocal tag.");
+            builder.SetMessage($"{ApplicationBranding.DisplayName} could not initialize. Check Android Logcat for the PasswordManagerLocal tag.");
             builder.SetPositiveButton("OK", (_, _) => { });
             if (builder.Create() is not { } dialog)
             {
