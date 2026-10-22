@@ -31,6 +31,8 @@ public sealed class ThirdPartyLicenseDetailViewModel : ViewModelBase
     public string RequiredNoticeLabel => GetTranslation("Licenses_RequiredNotice_Label");
     public string FullLicenseLabel => GetTranslation("Licenses_FullText_Label");
     public string OpenSourcePageLabel => GetTranslation("Licenses_OpenSourcePage");
+    public string OpenPackagePageLabel => GetTranslation("Licenses_OpenPackagePage");
+    public string OpenPackageSourceLabel => GetTranslation("Licenses_OpenPackageSource");
     public string Version => _notice?.Version ?? string.Empty;
     public string LicenseExpression => _notice?.LicenseExpression ?? string.Empty;
     public string PlatformText => _notice is null
@@ -41,6 +43,14 @@ public sealed class ThirdPartyLicenseDetailViewModel : ViewModelBase
         : string.Join(
             Environment.NewLine,
             _notice.Packages.Select(package => $"{package.Name} {package.Version}"));
+    public bool HasPackages => _notice is { Packages.Count: > 0 };
+    public bool ShowGeneralSourceLink => !HasPackages;
+    public IReadOnlyList<ThirdPartyPackageLinkItem> PackageLinks => _notice is null
+        ? Array.Empty<ThirdPartyPackageLinkItem>()
+        : _notice.Packages.Select(package => new ThirdPartyPackageLinkItem(
+            $"{package.Name} {package.Version}",
+            package.PackagePageUri,
+            package.SourceUri)).ToArray();
     public string CopyrightNotice => _notice?.CopyrightNotice ?? string.Empty;
     public string? RequiredNotice => _notice?.RequiredNotice;
     public bool HasRequiredNotice => !string.IsNullOrWhiteSpace(RequiredNotice);
@@ -68,8 +78,11 @@ public sealed class ThirdPartyLicenseDetailViewModel : ViewModelBase
             nameof(RequiredNoticeLabel),
             nameof(FullLicenseLabel),
             nameof(OpenSourcePageLabel),
+            nameof(OpenPackagePageLabel),
+            nameof(OpenPackageSourceLabel),
             nameof(PlatformText),
-            nameof(PackageText)
+            nameof(PackageText),
+            nameof(PackageLinks)
         ]);
     }
 
@@ -81,6 +94,9 @@ public sealed class ThirdPartyLicenseDetailViewModel : ViewModelBase
             nameof(LicenseExpression),
             nameof(PlatformText),
             nameof(PackageText),
+            nameof(HasPackages),
+            nameof(ShowGeneralSourceLink),
+            nameof(PackageLinks),
             nameof(CopyrightNotice),
             nameof(RequiredNotice),
             nameof(HasRequiredNotice),

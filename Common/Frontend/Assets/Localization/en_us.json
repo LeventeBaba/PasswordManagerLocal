@@ -55,6 +55,8 @@
   "Licenses_RequiredNotice_Label": "Additional notice",
   "Licenses_FullText_Label": "Full license text",
   "Licenses_OpenSourcePage": "Open project source page",
+  "Licenses_OpenPackagePage": "NuGet package page",
+  "Licenses_OpenPackageSource": "Source code",
   "Licenses_Packages_BundledComponent": "Bundled native or platform component",
   "Licenses_Platform_Windows": "Windows",
   "Licenses_Platform_Android": "Android",

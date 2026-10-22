@@ -67,6 +67,11 @@ public sealed class InformationViewModelTests
         Assert.AreEqual("MIT", viewModel.LicenseExpression);
         Assert.IsTrue(viewModel.LicenseText.Contains("Permission is hereby granted", StringComparison.Ordinal));
         Assert.IsTrue(viewModel.SourceUri?.Scheme == Uri.UriSchemeHttps);
+        Assert.AreEqual(3, viewModel.PackageLinks.Count);
+        Assert.AreEqual(
+            "https://www.nuget.org/packages/SQLite3MC.PCLRaw.bundle/2.6.1",
+            viewModel.PackageLinks[0].PackagePageUri.AbsoluteUri);
+        Assert.IsTrue(viewModel.PackageLinks.All(item => item.SourceUri.Scheme == Uri.UriSchemeHttps));
     }
 
     private static Task<PasswordManagerLocal.Common.Frontend.Services.UiPreferencesService>

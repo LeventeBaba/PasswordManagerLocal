@@ -53,7 +53,12 @@
             <Border Classes="divider" />
             <StackPanel Spacing="4">
               <TextBlock Text="{Binding PackagesLabel}" FontWeight="SemiBold" />
-              <SelectableTextBlock Text="{Binding PackageText}" TextWrapping="Wrap" />
+              <SelectableTextBlock Text="{Binding PackageText}"
+                                   TextWrapping="Wrap"
+                                   IsVisible="{Binding ShowGeneralSourceLink}" />
+              <StackPanel x:Name="PackageLinksPanel"
+                          Spacing="8"
+                          IsVisible="{Binding HasPackages}" />
             </StackPanel>
             <Border Classes="divider" />
             <StackPanel Spacing="4">
@@ -68,6 +73,7 @@
             <controls:ExternalLinkButton Classes="secondary"
                                          ExternalUri="{Binding SourceUri}"
                                          Content="{Binding OpenSourcePageLabel}"
+                                         IsVisible="{Binding ShowGeneralSourceLink}"
                                          HorizontalAlignment="Left"
                                          AutomationProperties.Name="{Binding OpenSourcePageLabel}" />
           </StackPanel>

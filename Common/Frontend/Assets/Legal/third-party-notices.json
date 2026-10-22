@@ -44,7 +44,11 @@
       "sourceUrl": "https://github.com/reactiveui/ReactiveUI",
       "platforms": ["Windows", "Android"],
       "packages": [
-        { "name": "ReactiveUI.Avalonia", "version": "12.1.6" },
+        {
+          "name": "ReactiveUI.Avalonia",
+          "version": "12.1.6",
+          "sourceUrl": "https://github.com/reactiveui/ReactiveUI.Avalonia"
+        },
         { "name": "ReactiveUI", "version": "26.0.1" },
         { "name": "ReactiveUI.Core", "version": "26.0.1" },
         { "name": "ReactiveUI.Binding", "version": "9.1.0" },

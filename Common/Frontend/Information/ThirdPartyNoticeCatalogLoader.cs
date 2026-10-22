@@ -77,7 +77,7 @@ public static class ThirdPartyNoticeCatalogLoader
                 copyrightNotice,
                 sourceUri,
                 ReadPlatforms(entry.GetProperty("platforms"), id),
-                ReadPackages(entry.GetProperty("packages"), id),
+                ReadPackages(entry.GetProperty("packages"), id, sourceUri),
                 ReadOptionalString(entry, "requiredNotice"),
                 $"{copyrightNotice}{Environment.NewLine}{Environment.NewLine}{licenseText}"));
         }
@@ -117,7 +117,10 @@ public static class ThirdPartyNoticeCatalogLoader
         return result;
     }
 
-    private static IReadOnlyList<ThirdPartyPackage> ReadPackages(JsonElement packages, string id)
+    private static IReadOnlyList<ThirdPartyPackage> ReadPackages(
+        JsonElement packages,
+        string id,
+        Uri defaultSourceUri)
     {
         if (packages.ValueKind != JsonValueKind.Array)
             throw new InvalidDataException($"The package list for '{id}' is invalid.");
@@ -130,10 +133,31 @@ public static class ThirdPartyNoticeCatalogLoader
             var version = ReadRequiredString(package, "version");
             if (!names.Add(name))
                 throw new InvalidDataException($"The package '{name}' is duplicated in '{id}'.");
-            result.Add(new ThirdPartyPackage(name, version));
+
+            var sourceUri = ReadOptionalSourceUri(package, id, name) ?? defaultSourceUri;
+            var packagePageUri = new Uri(
+                $"https://www.nuget.org/packages/{Uri.EscapeDataString(name)}/{Uri.EscapeDataString(version)}",
+                UriKind.Absolute);
+            result.Add(new ThirdPartyPackage(name, version, packagePageUri, sourceUri));
         }
 
         return result;
+    }
+
+    private static Uri? ReadOptionalSourceUri(JsonElement package, string noticeId, string packageName)
+    {
+        var sourceText = ReadOptionalString(package, "sourceUrl");
+        if (sourceText is null)
+            return null;
+
+        if (!Uri.TryCreate(sourceText, UriKind.Absolute, out var sourceUri) ||
+            !sourceUri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                $"The source for package '{packageName}' in '{noticeId}' must use HTTPS.");
+        }
+
+        return sourceUri;
     }
 
     private static ThirdPartyPlatform ReadPlatforms(JsonElement platforms, string id)

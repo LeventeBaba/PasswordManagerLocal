@@ -29,6 +29,19 @@ public sealed class ThirdPartyNoticeCatalogTests
             Assert.IsTrue(notice.SourceUri.Scheme.Equals(
                 Uri.UriSchemeHttps,
                 StringComparison.OrdinalIgnoreCase), notice.Id);
+            foreach (var package in notice.Packages)
+            {
+                Assert.AreEqual("www.nuget.org", package.PackagePageUri.Host, package.Name);
+                Assert.IsTrue(package.PackagePageUri.AbsolutePath.Contains(
+                    Uri.EscapeDataString(package.Name),
+                    StringComparison.OrdinalIgnoreCase), package.Name);
+                Assert.IsTrue(package.PackagePageUri.Scheme.Equals(
+                    Uri.UriSchemeHttps,
+                    StringComparison.OrdinalIgnoreCase), package.Name);
+                Assert.IsTrue(package.SourceUri.Scheme.Equals(
+                    Uri.UriSchemeHttps,
+                    StringComparison.OrdinalIgnoreCase), package.Name);
+            }
             Assert.IsTrue(notice.LicenseText.Length > 200, notice.Id);
             Assert.AreNotEqual(ThirdPartyPlatform.None, notice.Platforms, notice.Id);
         }
