@@ -292,6 +292,10 @@ public sealed class RegistrationViewModel : ViewModelBase
 
     public string RememberMeLabel => GetTranslation("Register_RememberMe_Label");
 
+    public string RememberMeWarningLabel => GetTranslation("Help_Warning");
+
+    public string RememberMeWarningText => GetTranslation("Security_RememberMe_Warning");
+
     public string RememberMeOnLabel => GetTranslation("Common_On");
 
     public string RememberMeOffLabel => GetTranslation("Common_Off");
@@ -340,6 +344,8 @@ public sealed class RegistrationViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(PasswordLabel));
         this.RaisePropertyChanged(nameof(ConfirmPasswordLabel));
         this.RaisePropertyChanged(nameof(RememberMeLabel));
+        this.RaisePropertyChanged(nameof(RememberMeWarningLabel));
+        this.RaisePropertyChanged(nameof(RememberMeWarningText));
         this.RaisePropertyChanged(nameof(RememberMeOnLabel));
         this.RaisePropertyChanged(nameof(RememberMeOffLabel));
         this.RaisePropertyChanged(nameof(RegisterButtonLabel));

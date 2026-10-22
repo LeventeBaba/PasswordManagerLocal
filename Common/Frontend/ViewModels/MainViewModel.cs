@@ -643,6 +643,10 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
 
     public string RememberMeDropdownLabel => GetTranslation("Shell_RememberMeSwitch");
 
+    public string RememberMeWarningLabel => GetTranslation("Help_Warning");
+
+    public string RememberMeWarningText => GetTranslation("Security_RememberMe_Warning");
+
     public string RememberMeOnLabel => GetTranslation("Common_On");
 
     public string RememberMeOffLabel => GetTranslation("Common_Off");
@@ -1077,6 +1081,8 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         this.RaisePropertyChanged(nameof(LogoutLabel));
         this.RaisePropertyChanged(nameof(ChangeProfileLabel));
         this.RaisePropertyChanged(nameof(RememberMeDropdownLabel));
+        this.RaisePropertyChanged(nameof(RememberMeWarningLabel));
+        this.RaisePropertyChanged(nameof(RememberMeWarningText));
         this.RaisePropertyChanged(nameof(RememberMeOnLabel));
         this.RaisePropertyChanged(nameof(RememberMeOffLabel));
         this.RaisePropertyChanged(nameof(WelcomeLabel));

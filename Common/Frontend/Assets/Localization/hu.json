@@ -569,5 +569,6 @@
   "Help_Warning": "Figyelmeztetés",
   "Help_Tip": "Tipp",
   "Help_Step_Format": "{0}. {1}",
-  "Help_TopicUnavailable": "Ez a súgótéma nem érhető el. Válassz témát az alábbi kategóriákból."
+  "Help_TopicUnavailable": "Ez a súgótéma nem érhető el. Válassz témát az alábbi kategóriákból.",
+  "Security_RememberMe_Warning": "A megjegyzett profil mesterjelszó nélkül is újra megnyitható. Aki használhatja a feloldott eszközödet, hozzáférhet. Csak megbízható saját eszközön, erős képernyőzárral használd. Az automatikus belépés megszüntetéséhez kijelentkezés előtt kapcsold ki."
 }

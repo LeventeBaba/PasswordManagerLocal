@@ -19,4 +19,24 @@ public static class HelpTopicIds
     public const string SyncProblems = "devices/sync-problems";
     public const string MasterPassword = "security/master-password";
     public const string EnrollmentCodeSafety = "devices/enrollment-code-safety";
+    public const string RememberMe = "security/remember-me";
+    public const string RecoveryBackup = "security/recovery-backup";
+    public const string LostDevice = "security/lost-device";
+    public const string AccountDeletionSafety = "security/account-deletion";
+    public const string MoveVsCopy = "security/move-vs-copy";
+    public const string Clipboard = "security/clipboard";
+    public const string ScreenPrivacy = "security/screen-privacy";
+    public const string DeviceProtection = "security/device-protection";
+    public const string EverydayPasswords = "security/everyday-passwords";
+    public const string SafeSupport = "security/safe-support";
+    public const string LoginProblems = "troubleshooting/login";
+    public const string EnrollmentProblems = "troubleshooting/enrollment";
+    public const string EnrollmentCodeProblems = "troubleshooting/enrollment-code";
+    public const string EnrollmentDataProblems = "troubleshooting/enrollment-data";
+    public const string QrProblems = "troubleshooting/qr";
+    public const string Diagnostics = "troubleshooting/diagnostics";
+    public const string BackgroundSyncProblems = "troubleshooting/background-sync";
+    public const string TransferProblems = "troubleshooting/transfer";
+    public const string DatabaseProblems = "troubleshooting/database";
+    public const string Faq = "troubleshooting/faq";
 }

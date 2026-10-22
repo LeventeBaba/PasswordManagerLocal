@@ -101,39 +101,52 @@
             </StackPanel>
             <Button.Flyout>
               <Flyout>
-                <Border Padding="10">
-                  <StackPanel Spacing="8">
-                    <Grid ColumnDefinitions="Auto,Auto"
-                          ColumnSpacing="8"
-                          HorizontalAlignment="Center">
-                      <TextBlock
-                          Text="{Binding RememberMeDropdownLabel}"
-                          VerticalAlignment="Center"
-                          TextWrapping="NoWrap" />
-                      <ToggleSwitch
-                          Grid.Column="1"
-                          IsChecked="{Binding IsCurrentRememberMeEnabled, Mode=TwoWay}"
-                          IsEnabled="{Binding CanChangeRememberMe}"
-                          MinWidth="0"
-                          OnContent="{Binding RememberMeOnLabel}"
-                          OffContent="{Binding RememberMeOffLabel}"
-                          AutomationProperties.Name="{Binding RememberMeDropdownLabel}" />
-                    </Grid>
-                    <Border Classes="divider" />
-                    <Button Classes="ghost"
-                            HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Center"
-                            Command="{Binding ShowChangeProfileCommand}"
-                            Click="HandleAccountMenuActionClick"
-                            Content="{Binding ChangeProfileLabel}" />
-                    <Button Classes="ghost"
-                            HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Center"
-                            Command="{Binding LogoutCommand}"
-                            Click="HandleAccountMenuActionClick"
-                            Content="{Binding LogoutLabel}" />
-                  </StackPanel>
-                </Border>
+                <ScrollViewer MaxHeight="420"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalContentAlignment="Stretch">
+                  <Border Padding="10">
+                    <StackPanel Spacing="8">
+                      <Grid ColumnDefinitions="Auto,Auto"
+                            ColumnSpacing="8"
+                            HorizontalAlignment="Center">
+                        <TextBlock
+                            Text="{Binding RememberMeDropdownLabel}"
+                            VerticalAlignment="Center"
+                            TextWrapping="NoWrap" />
+                        <ToggleSwitch
+                            Grid.Column="1"
+                            IsChecked="{Binding IsCurrentRememberMeEnabled, Mode=TwoWay}"
+                            IsEnabled="{Binding CanChangeRememberMe}"
+                            MinWidth="0"
+                            OnContent="{Binding RememberMeOnLabel}"
+                            OffContent="{Binding RememberMeOffLabel}"
+                            AutomationProperties.Name="{Binding RememberMeDropdownLabel}"
+                            AutomationProperties.HelpText="{Binding RememberMeWarningText}" />
+                      </Grid>
+                      <Border Classes="toolbarGroup dangerZone" Padding="12" MaxWidth="280"
+                              HorizontalAlignment="Stretch">
+                        <StackPanel Spacing="6">
+                          <TextBlock Text="{Binding RememberMeWarningLabel}" FontWeight="Bold" TextWrapping="Wrap" />
+                          <TextBlock Text="{Binding RememberMeWarningText}" TextWrapping="Wrap" />
+                        </StackPanel>
+                      </Border>
+                      <Border Classes="divider" />
+                      <Button Classes="ghost"
+                              HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Center"
+                              Command="{Binding ShowChangeProfileCommand}"
+                              Click="HandleAccountMenuActionClick"
+                              Content="{Binding ChangeProfileLabel}" />
+                      <Button Classes="ghost"
+                              HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Center"
+                              Command="{Binding LogoutCommand}"
+                              Click="HandleAccountMenuActionClick"
+                              Content="{Binding LogoutLabel}" />
+                    </StackPanel>
+                  </Border>
+                </ScrollViewer>
               </Flyout>
             </Button.Flyout>
           </Button>
@@ -220,39 +233,52 @@
               </StackPanel>
               <Button.Flyout>
                 <Flyout>
-                  <Border Padding="10">
-                    <StackPanel Spacing="8">
-                      <Grid ColumnDefinitions="Auto,Auto"
-                            ColumnSpacing="8"
-                            HorizontalAlignment="Center">
-                        <TextBlock
-                            Text="{Binding RememberMeDropdownLabel}"
-                            VerticalAlignment="Center"
-                            TextWrapping="NoWrap" />
-                        <ToggleSwitch
-                            Grid.Column="1"
-                            IsChecked="{Binding IsCurrentRememberMeEnabled, Mode=TwoWay}"
-                            IsEnabled="{Binding CanChangeRememberMe}"
-                            MinWidth="0"
-                            OnContent="{Binding RememberMeOnLabel}"
-                            OffContent="{Binding RememberMeOffLabel}"
-                            AutomationProperties.Name="{Binding RememberMeDropdownLabel}" />
-                      </Grid>
-                      <Border Classes="divider" />
-                      <Button Classes="ghost"
-                              HorizontalAlignment="Stretch"
-                              HorizontalContentAlignment="Center"
-                              Command="{Binding ShowChangeProfileCommand}"
-                              Click="HandleAccountMenuActionClick"
-                              Content="{Binding ChangeProfileLabel}" />
-                      <Button Classes="ghost"
-                              HorizontalAlignment="Stretch"
-                              HorizontalContentAlignment="Center"
-                              Command="{Binding LogoutCommand}"
-                              Click="HandleAccountMenuActionClick"
-                              Content="{Binding LogoutLabel}" />
-                    </StackPanel>
-                  </Border>
+                  <ScrollViewer MaxHeight="420"
+                                HorizontalScrollBarVisibility="Disabled"
+                                VerticalScrollBarVisibility="Auto"
+                                HorizontalContentAlignment="Stretch">
+                    <Border Padding="10">
+                      <StackPanel Spacing="8">
+                        <Grid ColumnDefinitions="Auto,Auto"
+                              ColumnSpacing="8"
+                              HorizontalAlignment="Center">
+                          <TextBlock
+                              Text="{Binding RememberMeDropdownLabel}"
+                              VerticalAlignment="Center"
+                              TextWrapping="NoWrap" />
+                          <ToggleSwitch
+                              Grid.Column="1"
+                              IsChecked="{Binding IsCurrentRememberMeEnabled, Mode=TwoWay}"
+                              IsEnabled="{Binding CanChangeRememberMe}"
+                              MinWidth="0"
+                              OnContent="{Binding RememberMeOnLabel}"
+                              OffContent="{Binding RememberMeOffLabel}"
+                              AutomationProperties.Name="{Binding RememberMeDropdownLabel}"
+                              AutomationProperties.HelpText="{Binding RememberMeWarningText}" />
+                        </Grid>
+                        <Border Classes="toolbarGroup dangerZone" Padding="12" MaxWidth="280"
+                                HorizontalAlignment="Stretch">
+                          <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding RememberMeWarningLabel}" FontWeight="Bold" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding RememberMeWarningText}" TextWrapping="Wrap" />
+                          </StackPanel>
+                        </Border>
+                        <Border Classes="divider" />
+                        <Button Classes="ghost"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                Command="{Binding ShowChangeProfileCommand}"
+                                Click="HandleAccountMenuActionClick"
+                                Content="{Binding ChangeProfileLabel}" />
+                        <Button Classes="ghost"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                Command="{Binding LogoutCommand}"
+                                Click="HandleAccountMenuActionClick"
+                                Content="{Binding LogoutLabel}" />
+                      </StackPanel>
+                    </Border>
+                  </ScrollViewer>
                 </Flyout>
               </Button.Flyout>
             </Button>

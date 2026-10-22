@@ -150,6 +150,68 @@ public sealed class HelpNavigationTests
         Assert.IsFalse(page.Sections.Any(section => section.Label == "Android"));
     }
 
+    [TestMethod]
+    public async Task SecurityAndTroubleshootingAreReadableWithoutBackendAndReturnToUnfinishedLogin()
+    {
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync();
+        var endpoints = DispatchProxy.Create<IEndpoints, RejectAllEndpoints>();
+        await using var runtime = new UnavailableRuntime();
+        using var shell = new MainViewModel(endpoints, runtime, new FakeBackgroundSyncSettingsClient(), preferences);
+        var caller = shell.LoginViewModel;
+        caller.Username = "unfinished-local-name";
+        caller.Password = "unfinished-form-value";
+        caller.RememberMe = true;
+        var content = HelpCatalogLoader.Load().ForLanguage(AppLanguage.English);
+
+        foreach (var topic in content.Topics.Values.Where(topic =>
+                     topic.CategoryId is "security-tips" or "troubleshooting"))
+        {
+            shell.OpenHelpTopic(topic.Id);
+            var page = (HelpPageViewModel)shell.CurrentPageViewModel;
+            Assert.AreEqual(topic.Id, page.Route.ContentId);
+            Assert.IsTrue(page.HasSections, topic.Id);
+            Assert.IsFalse(page.IsTopicUnavailable, topic.Id);
+            Assert.IsTrue(await shell.TryNavigateBackAsync());
+            Assert.AreSame(caller, shell.CurrentPageViewModel);
+            Assert.AreEqual("unfinished-local-name", caller.Username);
+            Assert.AreEqual("unfinished-form-value", caller.Password);
+            Assert.IsTrue(caller.RememberMe);
+        }
+
+        Assert.AreEqual(0, ((RejectAllEndpoints)(object)endpoints).Calls);
+    }
+
+    [TestMethod]
+    public async Task RememberMeWarningsRefreshInAllThreeViewModelsWithoutChangingTheChoice()
+    {
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync(
+            resourceLoader: new ShippedLocalizationLoader());
+        var endpoints = DispatchProxy.Create<IEndpoints, RejectAllEndpoints>();
+        await using var runtime = new UnavailableRuntime();
+        using var shell = new MainViewModel(endpoints, runtime, new FakeBackgroundSyncSettingsClient(), preferences);
+        shell.LoginViewModel.RememberMe = true;
+        shell.RegistrationViewModel.RememberMe = true;
+        var notifications = new List<(ViewModelBase ViewModel, string? Property)>();
+        foreach (var viewModel in new ViewModelBase[] { shell, shell.LoginViewModel, shell.RegistrationViewModel })
+            viewModel.PropertyChanged += (_, args) => notifications.Add((viewModel, args.PropertyName));
+        var english = shell.RememberMeWarningText;
+        Assert.AreEqual(english, shell.LoginViewModel.RememberMeWarningText);
+        Assert.AreEqual(english, shell.RegistrationViewModel.RememberMeWarningText);
+
+        var result = await preferences.SetLanguageAsync(AppLanguage.Hungarian);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreNotEqual(english, shell.RememberMeWarningText);
+        Assert.AreEqual(shell.RememberMeWarningText, shell.LoginViewModel.RememberMeWarningText);
+        Assert.AreEqual(shell.RememberMeWarningText, shell.RegistrationViewModel.RememberMeWarningText);
+        Assert.IsTrue(shell.LoginViewModel.RememberMe);
+        Assert.IsTrue(shell.RegistrationViewModel.RememberMe);
+        foreach (var viewModel in new ViewModelBase[] { shell, shell.LoginViewModel, shell.RegistrationViewModel })
+            foreach (var property in new[] { "RememberMeWarningText", "RememberMeWarningLabel" })
+                Assert.IsTrue(notifications.Contains((viewModel, property)), property);
+        Assert.AreEqual(0, ((RejectAllEndpoints)(object)endpoints).Calls);
+    }
+
     public class RejectAllEndpoints : DispatchProxy
     {
         public int Calls { get; private set; }

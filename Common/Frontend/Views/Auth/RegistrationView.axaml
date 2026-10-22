@@ -178,8 +178,17 @@
                 OnContent="{Binding RememberMeOnLabel}"
                 OffContent="{Binding RememberMeOffLabel}"
                 AutomationProperties.Name="{Binding RememberMeLabel}"
+                AutomationProperties.HelpText="{Binding RememberMeWarningText}"
                 VerticalAlignment="Center" />
           </Grid>
+
+          <Border Classes="toolbarGroup dangerZone" Padding="12"
+                  HorizontalAlignment="Stretch">
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Binding RememberMeWarningLabel}" FontWeight="Bold" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding RememberMeWarningText}" TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
 
           <TextBlock Text="{Binding StatusMessage}"
                      Classes="errorText"

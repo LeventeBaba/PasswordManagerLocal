@@ -2021,7 +2021,7 @@ public sealed class Phase21ControlThemeArchitectureTests
         var scrollViewers = Directory.EnumerateFiles(viewRoot, "*.axaml", SearchOption.AllDirectories)
             .SelectMany(path => XDocument.Load(path).Descendants(avalonia + "ScrollViewer"))
             .ToArray();
-        Assert.AreEqual(26, scrollViewers.Length,
+        Assert.AreEqual(28, scrollViewers.Length,
             "The application-owned default theme should cover all existing view ScrollViewers.");
         var codeScrollerSource = File.ReadAllText(Path.Combine(
             viewRoot, "Controls", "PasswordStrengthInfoButton.axaml.cs"));

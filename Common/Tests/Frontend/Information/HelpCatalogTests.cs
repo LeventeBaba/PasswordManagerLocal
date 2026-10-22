@@ -43,6 +43,39 @@ public sealed class HelpCatalogTests
     }
 
     [TestMethod]
+    public void TroubleshootingProvidesSymptomsReasonsAndActionableNextStepsInBothLanguages()
+    {
+        var catalog = HelpCatalogLoader.Load();
+        foreach (var language in new[] { AppLanguage.English, AppLanguage.Hungarian })
+        {
+            var content = catalog.ForLanguage(language);
+            foreach (var topic in content.Topics.Values.Where(topic =>
+                         topic.CategoryId == "troubleshooting" && topic.Id != HelpTopicIds.Faq))
+            {
+                Assert.IsTrue(topic.Sections.Any(section => section.Id == "symptom" &&
+                    section.Kind == HelpSectionKind.Explanation), $"{language}: {topic.Id} symptom");
+                Assert.IsTrue(topic.Sections.Any(section => section.Id == "reason" &&
+                    section.Kind == HelpSectionKind.Explanation), $"{language}: {topic.Id} reason");
+                Assert.IsTrue(topic.Sections.Any(section => section.Id == "next" &&
+                    section.Kind == HelpSectionKind.Step && section.Platform == HelpPlatform.All),
+                    $"{language}: {topic.Id} next step");
+            }
+
+            foreach (var id in new[]
+                     {
+                         HelpTopicIds.RememberMe, HelpTopicIds.RecoveryBackup, HelpTopicIds.LostDevice,
+                         HelpTopicIds.AccountDeletionSafety, HelpTopicIds.MoveVsCopy, HelpTopicIds.Clipboard,
+                         HelpTopicIds.ScreenPrivacy, HelpTopicIds.DeviceProtection, HelpTopicIds.EverydayPasswords,
+                         HelpTopicIds.SafeSupport, HelpTopicIds.Blocked, HelpTopicIds.Diagnostics,
+                         HelpTopicIds.EnrollmentDataProblems, HelpTopicIds.TransferProblems, HelpTopicIds.DatabaseProblems
+                     })
+                Assert.IsTrue(content.Topics[id].Sections.Any(section =>
+                    section.Kind == HelpSectionKind.Warning && section.Platform == HelpPlatform.All),
+                    $"{language}: {id} must retain its safety warning on either platform");
+        }
+    }
+
+    [TestMethod]
     public void RelatedTopicHistoryReturnsToTheExactPreviousRoute()
     {
         var history = new InformationNavigationHistory();
