@@ -42,7 +42,8 @@ public partial class ThirdPartyLicenseDetailView : UserControl
         if (e.PropertyName is null ||
             e.PropertyName == nameof(ThirdPartyLicenseDetailViewModel.PackageLinks) ||
             e.PropertyName == nameof(ThirdPartyLicenseDetailViewModel.OpenPackagePageLabel) ||
-            e.PropertyName == nameof(ThirdPartyLicenseDetailViewModel.OpenPackageSourceLabel))
+            e.PropertyName == nameof(ThirdPartyLicenseDetailViewModel.OpenPackageSourceLabel) ||
+            e.PropertyName == nameof(ThirdPartyLicenseDetailViewModel.OpenSourcePageLabel))
         {
             RebuildPackageLinks();
         }
@@ -80,11 +81,41 @@ public partial class ThirdPartyLicenseDetailView : UserControl
         var button = new ExternalLinkButton
         {
             ExternalUri = uri,
-            Content = label,
+            Content = CreateLinkContent(label),
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+            HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Left,
             Margin = new Thickness(0, 0, 8, 6)
         };
         button.Classes.Add("secondary");
         return button;
+    }
+
+    private static StackPanel CreateLinkContent(string label)
+    {
+        var labelText = new TextBlock
+        {
+            Text = label,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+        };
+        labelText.Classes.Add("descriptionLink");
+
+        var externalLinkMark = new TextBlock
+        {
+            Text = "↗",
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Thickness(4, 0, 0, 0)
+        };
+        externalLinkMark.Classes.Add("descriptionLink");
+
+        var content = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 2
+        };
+        content.Children.Add(labelText);
+        content.Children.Add(externalLinkMark);
+        return content;
     }
 }

@@ -33,6 +33,7 @@ public sealed class ThirdPartyLicenseDetailViewModel : ViewModelBase
     public string OpenSourcePageLabel => GetTranslation("Licenses_OpenSourcePage");
     public string OpenPackagePageLabel => GetTranslation("Licenses_OpenPackagePage");
     public string OpenPackageSourceLabel => GetTranslation("Licenses_OpenPackageSource");
+    public string PackageLinksHint => GetTranslation("Licenses_PackageLinks_Hint");
     public string Version => _notice?.Version ?? string.Empty;
     public string LicenseExpression => _notice?.LicenseExpression ?? string.Empty;
     public string PlatformText => _notice is null
@@ -80,6 +81,7 @@ public sealed class ThirdPartyLicenseDetailViewModel : ViewModelBase
             nameof(OpenSourcePageLabel),
             nameof(OpenPackagePageLabel),
             nameof(OpenPackageSourceLabel),
+            nameof(PackageLinksHint),
             nameof(PlatformText),
             nameof(PackageText),
             nameof(PackageLinks)
