@@ -129,8 +129,6 @@ public sealed class Phase5AgentLocalizationArchitectureTests
             foreach (var property in document.RootElement.EnumerateObject())
             {
                 var value = property.Value.GetString()!;
-                if (value == "PasswordManagerLocal")
-                    continue;
                 var escapedValue = value
                     .Replace("\\", "\\\\", StringComparison.Ordinal)
                     .Replace("\"", "\\\"", StringComparison.Ordinal);
@@ -217,6 +215,13 @@ public sealed class Phase5AgentLocalizationArchitectureTests
         string.Join(
             Environment.NewLine,
             Directory.EnumerateFiles(directory, "*.cs", SearchOption.AllDirectories)
+                // SDK-generated AssemblyInfo files echo Product and Title metadata from the project.
+                // Those generated literals are not authored Agent UI strings.
+                .Where(path => !Path.GetRelativePath(directory, path)
+                    .Split(Path.DirectorySeparatorChar)
+                    .Any(segment =>
+                        string.Equals(segment, "bin", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(segment, "obj", StringComparison.OrdinalIgnoreCase)))
                 .Select(File.ReadAllText));
 
     private static string GetRepositoryRoot([CallerFilePath] string sourceFilePath = "") =>

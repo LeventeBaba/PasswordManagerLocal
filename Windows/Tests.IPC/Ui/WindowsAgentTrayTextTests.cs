@@ -14,9 +14,9 @@ public sealed class WindowsAgentTrayTextTests
         var localizer = await AgentLocalizer.CreateAsync(AppLanguage.English);
         var text = WindowsAgentTrayText.Create(localizer);
 
-        Assert.AreEqual("Open PasswordManagerLocal", text.OpenLabel);
+        Assert.AreEqual("Open Password Manager Local", text.OpenLabel);
         Assert.AreEqual("Exit", text.ExitLabel);
-        Assert.AreEqual("The PasswordManagerLocal agent could not start.", text.StartupFailureMessage);
+        Assert.AreEqual("The Password Manager Local agent could not start.", text.StartupFailureMessage);
     }
 
     [TestMethod]
@@ -25,10 +25,10 @@ public sealed class WindowsAgentTrayTextTests
         var localizer = await AgentLocalizer.CreateAsync(AppLanguage.Hungarian);
         var text = WindowsAgentTrayText.Create(localizer);
 
-        Assert.AreEqual("PasswordManagerLocal megnyitása", text.OpenLabel);
+        Assert.AreEqual("Password Manager Local megnyitása", text.OpenLabel);
         Assert.AreEqual("Kilépés", text.ExitLabel);
         Assert.AreEqual(
-            "A PasswordManagerLocal háttérügynöke nem tudott elindulni.",
+            "A Password Manager Local háttérügynöke nem tudott elindulni.",
             text.StartupFailureMessage);
     }
 }

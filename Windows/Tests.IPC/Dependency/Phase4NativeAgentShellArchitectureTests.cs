@@ -144,8 +144,8 @@ public sealed class Phase4NativeAgentShellArchitectureTests
         Assert.IsFalse(reader.Contains("Theme", StringComparison.Ordinal));
         StringAssert.Contains(program, "ReadLanguageAsync");
         StringAssert.Contains(text, "IAgentLocalizer");
-        StringAssert.Contains(english, "Open PasswordManagerLocal");
-        StringAssert.Contains(hungarian, "PasswordManagerLocal megnyitása");
+        StringAssert.Contains(english, "Open Password Manager Local");
+        StringAssert.Contains(hungarian, "Password Manager Local megnyitása");
         StringAssert.Contains(hungarian, "Kilépés");
     }
 
