@@ -6,6 +6,10 @@
       <Setter Property="Foreground" Value="{DynamicResource AppBrush.Text.Primary}" />
     </Style>
 
+    <Style Selector="SelectableTextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AppBrush.Text.Primary}" />
+    </Style>
+
     <Style Selector="Border.card">
       <Setter Property="Padding" Value="20" />
       <Setter Property="CornerRadius" Value="{StaticResource AppMetric.CornerRadius.Card}" />

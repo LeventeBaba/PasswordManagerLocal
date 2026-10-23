@@ -100,25 +100,51 @@
               <PathIcon Classes="mediumUiIcon" Data="{StaticResource ProfileIconGeometry}" VerticalAlignment="Center" />
               <TextBlock Grid.Column="1" Text="{Binding CurrentUserFirstName}" MaxWidth="180"
                          TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" VerticalAlignment="Center" />
-              <PathIcon Grid.Column="2" Classes="smallUiIcon" Data="{StaticResource ChevronDownIconGeometry}" VerticalAlignment="Center" />
+              <PathIcon x:Name="DesktopAccountMenuChevron"
+                        Grid.Column="2"
+                        Classes="smallUiIcon"
+                        Data="{StaticResource ChevronDownIconGeometry}"
+                        VerticalAlignment="Center"
+                        RenderTransformOrigin="50%,50%">
+                <PathIcon.RenderTransform>
+                  <RotateTransform Angle="0" />
+                </PathIcon.RenderTransform>
+              </PathIcon>
             </Grid>
             <Button.Flyout>
-              <Flyout>
-                <ScrollViewer MaxHeight="420"
+              <Flyout Opened="HandleDesktopAccountMenuFlyoutOpened"
+                      Closed="HandleDesktopAccountMenuFlyoutClosed">
+                <ScrollViewer MaxHeight="420" MaxWidth="360"
                               HorizontalScrollBarVisibility="Disabled"
                               VerticalScrollBarVisibility="Auto"
                               HorizontalContentAlignment="Stretch">
                   <Border Padding="10">
                     <StackPanel Spacing="8">
-                      <Grid ColumnDefinitions="Auto,Auto"
+                      <Grid ColumnDefinitions="*,Auto,Auto"
                             ColumnSpacing="8"
-                            HorizontalAlignment="Center">
+                            HorizontalAlignment="Stretch">
                         <TextBlock
                             Text="{Binding RememberMeDropdownLabel}"
                             VerticalAlignment="Center"
-                            TextWrapping="NoWrap" />
+                            TextWrapping="Wrap" />
+                        <Button Grid.Column="1"
+                                Classes="ghost iconButton"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Command="{Binding ShowRememberMeSecurityAdviceCommand}"
+                                Click="HandleAccountMenuActionClick"
+                                ToolTip.Tip="{Binding RememberMeWarningText}"
+                                ToolTip.ShouldUseOverlayLayer="True"
+                                AttachedToVisualTree="HandleAccountMenuToolTipButtonAttached"
+                                DetachedFromVisualTree="HandleAccountMenuToolTipButtonDetached"
+                                PointerCaptureLost="HandleAccountMenuToolTipPointerCaptureLost"
+                                AutomationProperties.Name="{Binding RememberMeWarningLabel}"
+                                AutomationProperties.HelpText="{Binding RememberMeWarningText}">
+                          <PathIcon Classes="mediumUiIcon"
+                                    Data="{StaticResource InformationIconGeometry}" />
+                        </Button>
                         <ToggleSwitch
-                            Grid.Column="1"
+                            Grid.Column="2"
                             IsChecked="{Binding IsCurrentRememberMeEnabled, Mode=TwoWay}"
                             IsEnabled="{Binding CanChangeRememberMe}"
                             MinWidth="0"
@@ -127,13 +153,6 @@
                             AutomationProperties.Name="{Binding RememberMeDropdownLabel}"
                             AutomationProperties.HelpText="{Binding RememberMeWarningText}" />
                       </Grid>
-                      <Border Classes="toolbarGroup dangerZone" Padding="12" MaxWidth="280"
-                              HorizontalAlignment="Stretch">
-                        <StackPanel Spacing="6">
-                          <TextBlock Text="{Binding RememberMeWarningLabel}" FontWeight="Bold" TextWrapping="Wrap" />
-                          <TextBlock Text="{Binding RememberMeWarningText}" TextWrapping="Wrap" />
-                        </StackPanel>
-                      </Border>
                       <Border Classes="divider" />
                       <Button Classes="ghost"
                               HorizontalAlignment="Stretch"
@@ -232,25 +251,51 @@
                 <PathIcon Classes="mediumUiIcon" Data="{StaticResource ProfileIconGeometry}" VerticalAlignment="Center" />
                 <TextBlock Grid.Column="1" Text="{Binding CurrentUserFirstName}" MaxWidth="104"
                            TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" VerticalAlignment="Center" />
-                <PathIcon Grid.Column="2" Classes="smallUiIcon" Data="{StaticResource ChevronDownIconGeometry}" VerticalAlignment="Center" />
+                <PathIcon x:Name="MobileAccountMenuChevron"
+                          Grid.Column="2"
+                          Classes="smallUiIcon"
+                          Data="{StaticResource ChevronDownIconGeometry}"
+                          VerticalAlignment="Center"
+                          RenderTransformOrigin="50%,50%">
+                  <PathIcon.RenderTransform>
+                    <RotateTransform Angle="0" />
+                  </PathIcon.RenderTransform>
+                </PathIcon>
               </Grid>
               <Button.Flyout>
-                <Flyout>
-                  <ScrollViewer MaxHeight="420"
+                <Flyout Opened="HandleMobileAccountMenuFlyoutOpened"
+                        Closed="HandleMobileAccountMenuFlyoutClosed">
+                  <ScrollViewer MaxHeight="420" MaxWidth="360"
                                 HorizontalScrollBarVisibility="Disabled"
                                 VerticalScrollBarVisibility="Auto"
                                 HorizontalContentAlignment="Stretch">
                     <Border Padding="10">
                       <StackPanel Spacing="8">
-                        <Grid ColumnDefinitions="Auto,Auto"
+                        <Grid ColumnDefinitions="*,Auto,Auto"
                               ColumnSpacing="8"
-                              HorizontalAlignment="Center">
+                              HorizontalAlignment="Stretch">
                           <TextBlock
                               Text="{Binding RememberMeDropdownLabel}"
                               VerticalAlignment="Center"
-                              TextWrapping="NoWrap" />
+                              TextWrapping="Wrap" />
+                          <Button Grid.Column="1"
+                                  Classes="ghost iconButton"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"
+                                  Command="{Binding ShowRememberMeSecurityAdviceCommand}"
+                                  Click="HandleAccountMenuActionClick"
+                                  ToolTip.Tip="{Binding RememberMeWarningText}"
+                                  ToolTip.ShouldUseOverlayLayer="True"
+                                  AttachedToVisualTree="HandleAccountMenuToolTipButtonAttached"
+                                  DetachedFromVisualTree="HandleAccountMenuToolTipButtonDetached"
+                                  PointerCaptureLost="HandleAccountMenuToolTipPointerCaptureLost"
+                                  AutomationProperties.Name="{Binding RememberMeWarningLabel}"
+                                  AutomationProperties.HelpText="{Binding RememberMeWarningText}">
+                            <PathIcon Classes="mediumUiIcon"
+                                      Data="{StaticResource InformationIconGeometry}" />
+                          </Button>
                           <ToggleSwitch
-                              Grid.Column="1"
+                              Grid.Column="2"
                               IsChecked="{Binding IsCurrentRememberMeEnabled, Mode=TwoWay}"
                               IsEnabled="{Binding CanChangeRememberMe}"
                               MinWidth="0"
@@ -259,13 +304,6 @@
                               AutomationProperties.Name="{Binding RememberMeDropdownLabel}"
                               AutomationProperties.HelpText="{Binding RememberMeWarningText}" />
                         </Grid>
-                        <Border Classes="toolbarGroup dangerZone" Padding="12" MaxWidth="280"
-                                HorizontalAlignment="Stretch">
-                          <StackPanel Spacing="6">
-                            <TextBlock Text="{Binding RememberMeWarningLabel}" FontWeight="Bold" TextWrapping="Wrap" />
-                            <TextBlock Text="{Binding RememberMeWarningText}" TextWrapping="Wrap" />
-                          </StackPanel>
-                        </Border>
                         <Border Classes="divider" />
                         <Button Classes="ghost"
                                 HorizontalAlignment="Stretch"

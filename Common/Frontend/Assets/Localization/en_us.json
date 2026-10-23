@@ -571,5 +571,6 @@
   "Help_Step_Format": "{0}. {1}",
   "Help_TopicUnavailable": "This help topic is unavailable. Choose a topic from the categories below.",
   "Security_RememberMe_Warning": "Remember me can reopen this profile without your master password. Anyone using your unlocked device may access it. Use only on a trusted personal device with a strong screen lock. Turn it off before signing out to stop automatic sign-in.",
-  "Shell_AccountMenu_Format": "Account menu for {0}"
+  "Shell_AccountMenu_Format": "Account menu for {0}",
+  "Security_RememberMe_Advice": "Remember me: security advice"
 }

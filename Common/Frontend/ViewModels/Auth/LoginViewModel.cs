@@ -16,6 +16,7 @@ public sealed class LoginViewModel : ViewModelBase
 {
     private readonly IEndpoints _endpoints;
     private readonly Action _navigateToRegistration;
+    private readonly Action _showRememberMeSecurityAdvice;
     private readonly Func<Guid, Task> _onAuthenticationSucceededAsync;
     private readonly IFrontendDeadlineScheduler _deadlineScheduler;
     private Func<Task>? _navigateBackAsync;
@@ -43,11 +44,13 @@ public sealed class LoginViewModel : ViewModelBase
         IEndpoints endpoints,
         Action navigateToRegistration,
         Func<Guid, Task> onAuthenticationSucceededAsync,
-        IFrontendDeadlineScheduler? deadlineScheduler = null)
+        IFrontendDeadlineScheduler? deadlineScheduler = null,
+        Action? showRememberMeSecurityAdvice = null)
         : base(uiPreferences)
     {
         _endpoints = endpoints;
         _navigateToRegistration = navigateToRegistration;
+        _showRememberMeSecurityAdvice = showRememberMeSecurityAdvice ?? (() => { });
         _onAuthenticationSucceededAsync = onAuthenticationSucceededAsync;
         _deadlineScheduler = deadlineScheduler ?? new AvaloniaFrontendDeadlineScheduler();
 
@@ -61,6 +64,7 @@ public sealed class LoginViewModel : ViewModelBase
         CancelDeviceTransferCommand = Own(ReactiveCommand.CreateFromTask(CancelDeviceTransferAsync));
         FinishDeviceTransferCommand = Own(ReactiveCommand.Create(FinishDeviceTransfer));
         CopyDeviceTransferCodeCommand = Own(ReactiveCommand.CreateFromTask(CopyDeviceTransferCodeAsync));
+        ShowRememberMeSecurityAdviceCommand = Own(ReactiveCommand.Create(_showRememberMeSecurityAdvice));
     }
 
     public string Username
@@ -274,13 +278,15 @@ public sealed class LoginViewModel : ViewModelBase
 
     public string RememberMeLabel => GetTranslation("Login_RememberMe_Label");
 
-    public string RememberMeWarningLabel => GetTranslation("Help_Warning");
+    public string RememberMeWarningLabel => GetTranslation("Security_RememberMe_Advice");
 
     public string RememberMeWarningText => GetTranslation("Security_RememberMe_Warning");
 
     public string RememberMeOnLabel => GetTranslation("Common_On");
 
     public string RememberMeOffLabel => GetTranslation("Common_Off");
+
+    public ReactiveCommand<RxVoid, RxVoid> ShowRememberMeSecurityAdviceCommand { get; }
 
     public string LoginButtonLabel => GetTranslation("Login_Button");
 

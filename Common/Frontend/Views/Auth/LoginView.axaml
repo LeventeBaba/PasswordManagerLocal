@@ -63,13 +63,23 @@
               </Grid>
             </StackPanel>
 
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBlock
                   Text="{Binding RememberMeLabel}"
                   VerticalAlignment="Center"
                   TextWrapping="Wrap" />
+              <Button Grid.Column="1"
+                      Classes="ghost iconButton"
+                      Command="{Binding ShowRememberMeSecurityAdviceCommand}"
+                      ToolTip.Tip="{Binding RememberMeWarningText}"
+                      AutomationProperties.Name="{Binding RememberMeWarningLabel}"
+                      AutomationProperties.HelpText="{Binding RememberMeWarningText}"
+                      VerticalAlignment="Center">
+                <PathIcon Classes="mediumUiIcon"
+                          Data="{StaticResource InformationIconGeometry}" />
+              </Button>
               <ToggleSwitch
-                  Grid.Column="1"
+                  Grid.Column="2"
                   IsChecked="{Binding RememberMe, Mode=TwoWay}"
                   MinWidth="0"
                   OnContent="{Binding RememberMeOnLabel}"
@@ -78,14 +88,6 @@
                   AutomationProperties.HelpText="{Binding RememberMeWarningText}"
                   VerticalAlignment="Center" />
             </Grid>
-
-            <Border Classes="toolbarGroup dangerZone" Padding="12"
-                    HorizontalAlignment="Stretch">
-              <StackPanel Spacing="6">
-                <TextBlock Text="{Binding RememberMeWarningLabel}" FontWeight="Bold" TextWrapping="Wrap" />
-                <TextBlock Text="{Binding RememberMeWarningText}" TextWrapping="Wrap" />
-              </StackPanel>
-            </Border>
 
             <TextBlock Text="{Binding StatusMessage}" Classes="errorText" IsVisible="{Binding HasStatusMessage}" TextWrapping="Wrap" />
 

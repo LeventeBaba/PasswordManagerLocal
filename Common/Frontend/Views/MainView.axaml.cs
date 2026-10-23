@@ -5,11 +5,13 @@ using Avalonia.Controls;
 using Avalonia.Controls.Platform;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using PasswordManagerLocal.Common.Frontend.Services;
 using PasswordManagerLocal.Common.Frontend.ViewModels;
 using PasswordManagerLocal.Common.Frontend.Views.Behaviors;
+using System.Collections.Generic;
 using System.ComponentModel;
 
 namespace PasswordManagerLocal.Common.Frontend.Views;
@@ -21,6 +23,8 @@ public partial class MainView : UserControl, IDisposable
     private readonly MainViewTapOutsideKeyboardDismissHandler _tapOutsideKeyboardDismissHandler;
     private readonly MainViewLongPressToolTipHandler _longPressToolTipHandler;
     private readonly PageSlide _mobileMainPageTransition;
+    private readonly Dictionary<Button, TopLevel> _accountMenuToolTipInputRoots = new();
+    private readonly Dictionary<TopLevel, int> _accountMenuToolTipInputRootReferences = new();
     private bool _disposed;
     private IInputPane? _inputPane;
     internal FrontendPlatformServices? PlatformServices => (DataContext as MainViewModel)?.PlatformServices;
@@ -41,7 +45,7 @@ public partial class MainView : UserControl, IDisposable
         _keyboardHandler = new MainViewKeyboardHandler(this);
         _swipeNavigationHandler = new MainViewSwipeNavigationHandler(this);
         _tapOutsideKeyboardDismissHandler = new MainViewTapOutsideKeyboardDismissHandler(this);
-        _longPressToolTipHandler = new MainViewLongPressToolTipHandler(this);
+        _longPressToolTipHandler = new MainViewLongPressToolTipHandler();
         RegisterLocalInputHandlers();
         RegisterLifecycleHandlers();
         HandleDataContextChanged(this, EventArgs.Empty);
@@ -208,6 +212,120 @@ public partial class MainView : UserControl, IDisposable
 
     private void HandleAccountMenuActionClick(object? sender, RoutedEventArgs e) =>
         Dispatcher.UIThread.Post(HideAccountMenuFlyout);
+
+    private void HandleDesktopAccountMenuFlyoutOpened(object? sender, EventArgs e) =>
+        SetAccountMenuChevronAngle("DesktopAccountMenuChevron", 180);
+
+    private void HandleDesktopAccountMenuFlyoutClosed(object? sender, EventArgs e) =>
+        SetAccountMenuChevronAngle("DesktopAccountMenuChevron", 0);
+
+    private void HandleMobileAccountMenuFlyoutOpened(object? sender, EventArgs e) =>
+        SetAccountMenuChevronAngle("MobileAccountMenuChevron", 180);
+
+    private void HandleMobileAccountMenuFlyoutClosed(object? sender, EventArgs e) =>
+        SetAccountMenuChevronAngle("MobileAccountMenuChevron", 0);
+
+    private void SetAccountMenuChevronAngle(string iconName, double angle)
+    {
+        if (this.FindControl<PathIcon>(iconName)?.RenderTransform is RotateTransform rotation)
+            rotation.Angle = angle;
+    }
+
+    private void HandleAccountMenuToolTipButtonAttached(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        if (sender is not Button button)
+            return;
+
+        var topLevel = TopLevel.GetTopLevel(button);
+        if (topLevel is null)
+            return;
+
+        if (_accountMenuToolTipInputRoots.TryGetValue(button, out var previousTopLevel))
+        {
+            if (ReferenceEquals(previousTopLevel, topLevel))
+                return;
+
+            RemoveAccountMenuToolTipInputRoot(previousTopLevel);
+            _accountMenuToolTipInputRoots.Remove(button);
+        }
+
+        if (ReferenceEquals(topLevel, _inputTopLevel))
+            return;
+
+        _accountMenuToolTipInputRoots.Add(button, topLevel);
+        AddAccountMenuToolTipInputRoot(topLevel);
+    }
+
+    private void HandleAccountMenuToolTipButtonDetached(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        if (sender is not Button button || !_accountMenuToolTipInputRoots.Remove(button, out var topLevel))
+            return;
+
+        RemoveAccountMenuToolTipInputRoot(topLevel);
+    }
+
+    private void HandleAccountMenuToolTipPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e) =>
+        _longPressToolTipHandler.HandlePointerCaptureLost(e);
+
+    private void HandleAccountMenuPopupPointerPressed(object? sender, PointerPressedEventArgs e) =>
+        _longPressToolTipHandler.HandlePointerPressed(e);
+
+    private void HandleAccountMenuPopupPointerMoved(object? sender, PointerEventArgs e) =>
+        _longPressToolTipHandler.HandlePointerMoved(e);
+
+    private void HandleAccountMenuPopupPointerReleased(object? sender, PointerReleasedEventArgs e) =>
+        _longPressToolTipHandler.HandlePointerReleased(e);
+
+    private void AddAccountMenuToolTipInputRoot(TopLevel topLevel)
+    {
+        if (_accountMenuToolTipInputRootReferences.TryGetValue(topLevel, out var references))
+        {
+            _accountMenuToolTipInputRootReferences[topLevel] = references + 1;
+            return;
+        }
+
+        // Flyout content can live under a separate popup root. Observe that root's
+        // tunnel so long-press help runs before the button can interpret release as a tap.
+        _accountMenuToolTipInputRootReferences.Add(topLevel, 1);
+        topLevel.AddHandler(
+            PointerPressedEvent,
+            HandleAccountMenuPopupPointerPressed,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true);
+        topLevel.AddHandler(
+            PointerMovedEvent,
+            HandleAccountMenuPopupPointerMoved,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true);
+        topLevel.AddHandler(
+            PointerReleasedEvent,
+            HandleAccountMenuPopupPointerReleased,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true);
+    }
+
+    private void RemoveAccountMenuToolTipInputRoot(TopLevel topLevel)
+    {
+        if (!_accountMenuToolTipInputRootReferences.TryGetValue(topLevel, out var references))
+            return;
+
+        if (references > 1)
+        {
+            _accountMenuToolTipInputRootReferences[topLevel] = references - 1;
+            return;
+        }
+
+        _accountMenuToolTipInputRootReferences.Remove(topLevel);
+        topLevel.RemoveHandler(
+            PointerPressedEvent,
+            HandleAccountMenuPopupPointerPressed);
+        topLevel.RemoveHandler(
+            PointerMovedEvent,
+            HandleAccountMenuPopupPointerMoved);
+        topLevel.RemoveHandler(
+            PointerReleasedEvent,
+            HandleAccountMenuPopupPointerReleased);
+    }
 
     private void HideAccountMenuFlyout()
     {

@@ -26,13 +26,28 @@ public sealed class HelpNavigationTests
         caller.Username = "unfinished-local-name";
         caller.Password = "unfinished-form-value";
 
-        shell.OpenHelpTopic(HelpTopicIds.AddDevice);
+        ExecuteCommand(caller.ShowRememberMeSecurityAdviceCommand);
+        var loginHelp = (HelpPageViewModel)shell.CurrentPageViewModel;
+        Assert.AreEqual(HelpTopicIds.RememberMe, loginHelp.Route.ContentId);
         Assert.IsTrue(shell.IsInformationPageVisible);
-        Assert.IsInstanceOfType<HelpPageViewModel>(shell.CurrentPageViewModel);
         Assert.IsTrue(await shell.TryNavigateBackAsync());
         Assert.AreSame(caller, shell.CurrentPageViewModel);
         Assert.AreEqual("unfinished-local-name", caller.Username);
         Assert.AreEqual("unfinished-form-value", caller.Password);
+
+        ExecuteCommand(shell.ShowRegistrationCommand);
+        var registration = shell.RegistrationViewModel;
+        registration.Username = "unfinished-registration";
+        registration.Password = "unfinished-registration-password";
+        registration.RememberMe = true;
+        ExecuteCommand(registration.ShowRememberMeSecurityAdviceCommand);
+        var registrationHelp = (HelpPageViewModel)shell.CurrentPageViewModel;
+        Assert.AreEqual(HelpTopicIds.RememberMe, registrationHelp.Route.ContentId);
+        Assert.IsTrue(await shell.TryNavigateBackAsync());
+        Assert.AreSame(registration, shell.CurrentPageViewModel);
+        Assert.AreEqual("unfinished-registration", registration.Username);
+        Assert.AreEqual("unfinished-registration-password", registration.Password);
+        Assert.IsTrue(registration.RememberMe);
 
         shell.OpenHelpTopic("unknown/topic");
         var fallback = (HelpPageViewModel)shell.CurrentPageViewModel;
@@ -40,7 +55,7 @@ public sealed class HelpNavigationTests
         Assert.IsTrue(fallback.IsTopicUnavailable);
         Assert.AreEqual(4, fallback.Cards.Count);
         Assert.IsTrue(await shell.TryNavigateBackAsync());
-        Assert.AreSame(caller, shell.CurrentPageViewModel);
+        Assert.AreSame(registration, shell.CurrentPageViewModel);
         Assert.AreEqual(0, ((RejectAllEndpoints)(object)endpoints).Calls);
     }
 
@@ -166,7 +181,10 @@ public sealed class HelpNavigationTests
         foreach (var topic in content.Topics.Values.Where(topic =>
                      topic.CategoryId is "security-tips" or "troubleshooting"))
         {
-            shell.OpenHelpTopic(topic.Id);
+            if (topic.Id == HelpTopicIds.RememberMe)
+                ExecuteCommand(shell.ShowRememberMeSecurityAdviceCommand);
+            else
+                shell.OpenHelpTopic(topic.Id);
             var page = (HelpPageViewModel)shell.CurrentPageViewModel;
             Assert.AreEqual(topic.Id, page.Route.ContentId);
             Assert.IsTrue(page.HasSections, topic.Id);
@@ -195,15 +213,21 @@ public sealed class HelpNavigationTests
         foreach (var viewModel in new ViewModelBase[] { shell, shell.LoginViewModel, shell.RegistrationViewModel })
             viewModel.PropertyChanged += (_, args) => notifications.Add((viewModel, args.PropertyName));
         var english = shell.RememberMeWarningText;
+        var englishAdviceLabel = shell.RememberMeWarningLabel;
         Assert.AreEqual(english, shell.LoginViewModel.RememberMeWarningText);
         Assert.AreEqual(english, shell.RegistrationViewModel.RememberMeWarningText);
+        Assert.AreEqual(englishAdviceLabel, shell.LoginViewModel.RememberMeWarningLabel);
+        Assert.AreEqual(englishAdviceLabel, shell.RegistrationViewModel.RememberMeWarningLabel);
 
         var result = await preferences.SetLanguageAsync(AppLanguage.Hungarian);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreNotEqual(english, shell.RememberMeWarningText);
+        Assert.AreNotEqual(englishAdviceLabel, shell.RememberMeWarningLabel);
         Assert.AreEqual(shell.RememberMeWarningText, shell.LoginViewModel.RememberMeWarningText);
         Assert.AreEqual(shell.RememberMeWarningText, shell.RegistrationViewModel.RememberMeWarningText);
+        Assert.AreEqual(shell.RememberMeWarningLabel, shell.LoginViewModel.RememberMeWarningLabel);
+        Assert.AreEqual(shell.RememberMeWarningLabel, shell.RegistrationViewModel.RememberMeWarningLabel);
         Assert.IsTrue(shell.LoginViewModel.RememberMe);
         Assert.IsTrue(shell.RegistrationViewModel.RememberMe);
         foreach (var viewModel in new ViewModelBase[] { shell, shell.LoginViewModel, shell.RegistrationViewModel })

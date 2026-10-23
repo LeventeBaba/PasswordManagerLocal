@@ -571,5 +571,6 @@
   "Help_Step_Format": "{0}. {1}",
   "Help_TopicUnavailable": "Ez a súgótéma nem érhető el. Válassz témát az alábbi kategóriákból.",
   "Security_RememberMe_Warning": "A megjegyzett profil mesterjelszó nélkül is újra megnyitható. Aki használhatja a feloldott eszközödet, hozzáférhet. Csak megbízható saját eszközön, erős képernyőzárral használd. Az automatikus belépés megszüntetéséhez kijelentkezés előtt kapcsold ki.",
-  "Shell_AccountMenu_Format": "{0} fiókmenüje"
+  "Shell_AccountMenu_Format": "{0} fiókmenüje",
+  "Security_RememberMe_Advice": "Emlékezz rám: biztonsági tanácsok"
 }

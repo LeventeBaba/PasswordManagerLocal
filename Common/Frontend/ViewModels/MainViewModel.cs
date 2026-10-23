@@ -114,7 +114,8 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             _endpoints,
             NavigateToRegistration,
             OnAuthenticationSucceededAsync,
-            _deadlineScheduler);
+            _deadlineScheduler,
+            () => OpenHelpTopic(HelpTopicIds.RememberMe));
         LoginViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
 
         _currentPageViewModel = LoginViewModel;
@@ -156,6 +157,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         ShowLoginCommand = Own(ReactiveCommand.Create(NavigateToLogin));
         ShowRegistrationCommand = Own(ReactiveCommand.Create(NavigateToRegistration));
         ShowChangeProfileCommand = Own(ReactiveCommand.CreateFromTask(ShowChangeProfileAsync));
+        ShowRememberMeSecurityAdviceCommand = Own(ReactiveCommand.Create(() => OpenHelpTopic(HelpTopicIds.RememberMe)));
         LogoutCommand = Own(ReactiveCommand.CreateFromTask(LogoutAsync));
         ConfirmSessionRenewalCommand = Own(ReactiveCommand.CreateFromTask(ConfirmSessionRenewalAsync));
         DeclineSessionRenewalCommand = Own(ReactiveCommand.Create(DeclineSessionRenewal));
@@ -237,7 +239,8 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
                     UiPreferences,
                     _endpoints,
                     NavigateToLogin,
-                    OnAuthenticationSucceededAsync);
+                    OnAuthenticationSucceededAsync,
+                    () => OpenHelpTopic(HelpTopicIds.RememberMe));
                 _registrationViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
                 _registrationViewModel.SetBackendInitialized(_isBackendInitialized);
             }
@@ -587,6 +590,8 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
 
     public ReactiveCommand<RxVoid, RxVoid> ShowChangeProfileCommand { get; }
 
+    public ReactiveCommand<RxVoid, RxVoid> ShowRememberMeSecurityAdviceCommand { get; }
+
     public ReactiveCommand<RxVoid, RxVoid> LogoutCommand { get; }
 
     public ReactiveCommand<RxVoid, RxVoid> ConfirmSessionRenewalCommand { get; }
@@ -660,7 +665,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
 
     public string RememberMeDropdownLabel => GetTranslation("Shell_RememberMeSwitch");
 
-    public string RememberMeWarningLabel => GetTranslation("Help_Warning");
+    public string RememberMeWarningLabel => GetTranslation("Security_RememberMe_Advice");
 
     public string RememberMeWarningText => GetTranslation("Security_RememberMe_Warning");
 
@@ -1360,7 +1365,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             NavigateInformation(new InformationRoute(InformationDestination.LicenseDetail, notice.Id));
     }
 
-    /// <summary>Navigation-only entry point for stable guide IDs. Contextual screen buttons are added in Phase 7.</summary>
+    /// <summary>Navigation-only entry point for stable guide IDs.</summary>
     public void OpenHelpTopic(string? topicId) =>
         NavigateInformation(new InformationRoute(InformationDestination.HelpTopic, topicId));
 
