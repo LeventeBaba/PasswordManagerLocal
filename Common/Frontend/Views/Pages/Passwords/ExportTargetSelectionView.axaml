@@ -2,6 +2,8 @@
 <UserControl
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:info="clr-namespace:PasswordManagerLocal.Common.Frontend.Information"
+    xmlns:controls="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Controls"
     xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
     x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Passwords.ExportTargetSelectionView"
     x:DataType="vm:PasswordsViewModel">
@@ -22,6 +24,16 @@
           <TextBlock Text="{Binding ExportTargetSubtitle}" Classes="subtleText" TextWrapping="Wrap" />
         </StackPanel>
       </Grid>
+
+      <controls:ContextHelpButton Classes="secondary" MinHeight="44"
+                                  HorizontalContentAlignment="Stretch"
+                                  TopicId="{x:Static info:HelpTopicIds.TransferBetweenProfiles}"
+                                  AutomationProperties.Name="{Binding TransferHelpLabel}">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
+          <PathIcon Classes="smallUiIcon" Data="{StaticResource InformationIconGeometry}" />
+          <TextBlock Grid.Column="1" Text="{Binding TransferHelpLabel}" TextWrapping="Wrap" />
+        </Grid>
+      </controls:ContextHelpButton>
 
       <TextBlock Text="{Binding ExportTargetAccountsLabel}" Classes="sectionTitle" TextWrapping="Wrap" />
 

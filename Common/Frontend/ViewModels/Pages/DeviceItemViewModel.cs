@@ -98,6 +98,7 @@ public sealed class DeviceItemViewModel : ReactiveObject
         {
             this.RaiseAndSetIfChanged(ref _isSyncOn, value);
             this.RaisePropertyChanged(nameof(SyncStateText));
+            this.RaisePropertyChanged(nameof(ShowSyncHelp));
         }
     }
 
@@ -116,6 +117,9 @@ public sealed class DeviceItemViewModel : ReactiveObject
     public bool IsCurrentDevice { get; }
 
     public bool IsRemoteDevice => !IsCurrentDevice;
+
+    public bool ShowSyncHelp => IsRemoteDevice && !IsBlocked &&
+        (!IsTrusted || IsOffline || HasInvalidSyncAttempts || !IsSyncOn);
 
     public bool ShowNotTrustedStatus => IsRemoteDevice && !IsTrusted;
 

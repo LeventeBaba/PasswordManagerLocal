@@ -340,8 +340,8 @@ public sealed class Phase21ControlThemeArchitectureTests
             .Sum(dictionary => dictionary.Root!.Elements(avalonia + "ControlTheme")
                 .Count(theme => ((string?)theme.Attribute(xaml + "Key"))
                     ?.StartsWith("{x:Type ", StringComparison.Ordinal) == true));
-        Assert.AreEqual(27, appOwnedDefaultThemeCount,
-            "Twenty-seven app-owned default control themes should cover the migrated control families and Android popup root.");
+        Assert.AreEqual(28, appOwnedDefaultThemeCount,
+            "Twenty-eight app-owned default control themes should cover the migrated control families and desktop/Android popup roots.");
     }
 
     [TestMethod]
@@ -778,7 +778,8 @@ public sealed class Phase21ControlThemeArchitectureTests
 
         var viewFiles = Directory.GetFiles(
             Path.Combine(root, "Common", "Frontend", "Views"), "*.axaml", SearchOption.AllDirectories);
-        Assert.AreEqual(3, viewFiles.Sum(path =>
+        // Includes the contextual-help overlay alongside the three existing content hosts.
+        Assert.AreEqual(4, viewFiles.Sum(path =>
             XDocument.Load(path).Descendants().Count(element => element.Name.LocalName == "ContentControl")),
             "All current view-level content hosts should use the shared app-owned theme.");
     }
@@ -855,7 +856,7 @@ public sealed class Phase21ControlThemeArchitectureTests
         var viewFiles = Directory.EnumerateFiles(viewRoot, "*.axaml", SearchOption.AllDirectories).ToArray();
         var viewItemsControls = viewFiles.SelectMany(file =>
             XDocument.Load(file).Descendants(avalonia + "ItemsControl")).ToArray();
-        Assert.AreEqual(12, viewItemsControls.Length,
+        Assert.AreEqual(13, viewItemsControls.Length,
             "All current view ItemsControls should receive the application-owned default theme.");
         Assert.IsTrue(viewItemsControls.All(control => control.Attribute("Theme") is null),
             "View ItemsControls should inherit the application-owned default theme.");
@@ -870,7 +871,7 @@ public sealed class Phase21ControlThemeArchitectureTests
             .Where(panel => panel is not null).ToArray();
         Assert.AreEqual(4, customPanels.Count(panel => panel == "VirtualizingStackPanel"));
         Assert.AreEqual(2, customPanels.Count(panel => panel == "WrapPanel"));
-        Assert.AreEqual(6, viewItemsControls.Length - customPanels.Length,
+        Assert.AreEqual(7, viewItemsControls.Length - customPanels.Length,
             "ItemsControls without an explicit panel should retain ItemsControl's default panel.");
     }
 
@@ -1661,7 +1662,7 @@ public sealed class Phase21ControlThemeArchitectureTests
         var textBoxes = Directory.EnumerateFiles(viewRoot, "*.axaml", SearchOption.AllDirectories)
             .SelectMany(path => XDocument.Load(path).Descendants(avalonia + "TextBox"))
             .ToArray();
-        Assert.AreEqual(28, textBoxes.Length,
+        Assert.AreEqual(29, textBoxes.Length,
             "The app's existing editable and password TextBoxes are the scope of this template increment.");
         Assert.AreEqual(9, textBoxes.Count(textBox => textBox.Attribute("PasswordChar") is not null),
             "Keep the password-masking usages connected to TextPresenter.PasswordChar.");
@@ -2021,7 +2022,7 @@ public sealed class Phase21ControlThemeArchitectureTests
         var scrollViewers = Directory.EnumerateFiles(viewRoot, "*.axaml", SearchOption.AllDirectories)
             .SelectMany(path => XDocument.Load(path).Descendants(avalonia + "ScrollViewer"))
             .ToArray();
-        Assert.AreEqual(28, scrollViewers.Length,
+        Assert.AreEqual(30, scrollViewers.Length,
             "The application-owned default theme should cover all existing view ScrollViewers.");
         var codeScrollerSource = File.ReadAllText(Path.Combine(
             viewRoot, "Controls", "PasswordStrengthInfoButton.axaml.cs"));

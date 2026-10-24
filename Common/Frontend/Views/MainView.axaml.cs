@@ -11,6 +11,7 @@ using Avalonia.VisualTree;
 using PasswordManagerLocal.Common.Frontend.Services;
 using PasswordManagerLocal.Common.Frontend.ViewModels;
 using PasswordManagerLocal.Common.Frontend.Views.Behaviors;
+using PasswordManagerLocal.Common.Frontend.Views.Controls;
 using System.Collections.Generic;
 using System.ComponentModel;
 
@@ -26,6 +27,7 @@ public partial class MainView : UserControl, IDisposable
     private readonly Dictionary<Button, TopLevel> _accountMenuToolTipInputRoots = new();
     private readonly Dictionary<TopLevel, int> _accountMenuToolTipInputRootReferences = new();
     private bool _disposed;
+    private WeakReference<Control>? _contextHelpTrigger;
     private IInputPane? _inputPane;
     internal FrontendPlatformServices? PlatformServices => (DataContext as MainViewModel)?.PlatformServices;
     private TopLevel? _inputTopLevel;
@@ -63,6 +65,7 @@ public partial class MainView : UserControl, IDisposable
     private void RegisterLocalInputHandlers()
     {
         AddHandler(KeyDownEvent, HandleKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(ContextHelpButton.ContextHelpRequestedEvent, HandleContextHelpRequested);
         AddHandler(
             TextBox.CopyingToClipboardEvent,
             HandleCopyingToClipboard,
@@ -71,6 +74,34 @@ public partial class MainView : UserControl, IDisposable
             TextBox.CuttingToClipboardEvent,
             HandleCuttingToClipboard,
             RoutingStrategies.Tunnel | RoutingStrategies.Bubble | RoutingStrategies.Direct);
+    }
+
+    private void HandleContextHelpRequested(object? sender, ContextHelpRequestedEventArgs e)
+    {
+        if (DataContext is not MainViewModel viewModel)
+            return;
+        if (!viewModel.IsContextHelpOpen && e.Source is Control trigger)
+            _contextHelpTrigger = new WeakReference<Control>(trigger);
+        e.Handled = true;
+        viewModel.OpenContextHelp(e.TopicId);
+    }
+
+    private void RestoreContextHelpFocus()
+    {
+        var trigger = _contextHelpTrigger;
+        _contextHelpTrigger = null;
+        var viewModel = _observedViewModel;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_disposed || viewModel is null || !ReferenceEquals(DataContext, viewModel) ||
+                viewModel.IsContextHelpOpen || !viewModel.IsContextHelpInteractive)
+                return;
+            if (trigger is not null && trigger.TryGetTarget(out var control) && control.IsEffectivelyEnabled &&
+                control.IsEffectivelyVisible && TopLevel.GetTopLevel(control) == TopLevel.GetTopLevel(this) &&
+                control.Focus(NavigationMethod.Directional))
+                return;
+            ApplicationSurface.Focus(NavigationMethod.Directional);
+        }, DispatcherPriority.Loaded);
     }
 
     private void RegisterLifecycleHandlers()
@@ -185,6 +216,7 @@ public partial class MainView : UserControl, IDisposable
 
         _observedViewModel.PropertyChanged -= HandleViewModelPropertyChanged;
         _observedViewModel = null;
+        _contextHelpTrigger = null;
     }
 
     private void HandleViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -194,6 +226,10 @@ public partial class MainView : UserControl, IDisposable
         if (loggedOut ||
             e.PropertyName is nameof(MainViewModel.CurrentUserDisplayName) or nameof(MainViewModel.CurrentUserFirstName))
             HideAccountMenuFlyout();
+
+        if (e.PropertyName == nameof(MainViewModel.IsContextHelpOpen) &&
+            sender is MainViewModel { IsContextHelpOpen: false })
+            RestoreContextHelpFocus();
 
         if (e.PropertyName == nameof(MainViewModel.IsMobileMainPageAnimationEnabled))
             UpdateMobileMainPageTransition();
@@ -455,6 +491,7 @@ public partial class MainView : UserControl, IDisposable
         DetachedFromVisualTree -= HandleDetachedFromVisualTree;
         DataContextChanged -= HandleDataContextChanged;
         RemoveHandler(KeyDownEvent, HandleKeyDown);
+        RemoveHandler(ContextHelpButton.ContextHelpRequestedEvent, HandleContextHelpRequested);
         RemoveHandler(TextBox.CopyingToClipboardEvent, HandleCopyingToClipboard);
         RemoveHandler(TextBox.CuttingToClipboardEvent, HandleCuttingToClipboard);
         DataContext = null;

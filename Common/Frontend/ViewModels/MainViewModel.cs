@@ -24,7 +24,7 @@ using ReactiveUI.Primitives;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels;
 
-public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarget
+public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 {
     private static readonly TimeSpan SessionRenewalWarningLeadTime = TimeSpan.FromMinutes(1);
     private readonly IEndpoints _endpoints;
@@ -41,7 +41,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     private bool _isBackendInitialized;
     private string _currentUserDisplayName = string.Empty;
     private string _currentUserFirstName = string.Empty;
-    private string _currentUserSubtitle = string.Empty;
     private readonly IFrontendDeadlineScheduler _deadlineScheduler;
     private readonly Dictionary<Guid, IDisposable> _sessionDeadlineTimers = new();
     private readonly Dictionary<Guid, DateTimeOffset> _failedRememberedRenewalExpiries = new();
@@ -70,6 +69,9 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     private readonly ThirdPartyNoticeCatalog _noticeCatalog;
     private readonly InformationNavigationHistory _informationNavigation = new();
     private readonly Dictionary<InformationRoute, HelpPageViewModel> _helpPages = new();
+    private readonly InformationNavigationHistory _contextHelpNavigation = new();
+    private readonly Dictionary<InformationRoute, HelpPageViewModel> _contextHelpPages = new();
+    private HelpPageViewModel? _contextHelpPage;
     private IReadOnlyList<MobileMainPageViewModel>? _mobileMainPages;
     private int _currentMobileNavigationIndex;
 
@@ -139,12 +141,16 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             uiPreferences,
             NavigateBackFromThirdPartyLicenseDetail);
 
+        PrivacyPolicyViewModel = new PrivacyPolicyViewModel(
+            uiPreferences, PrivacyPolicyCatalog.Load(), NavigateBackFromInformation, ReturnToAppFromInformation);
+
         SettingsViewModel = new SettingsViewModel(
             uiPreferences,
             _deviceAppPreferences,
             NavigateBackFromSettings,
             NavigateToAbout,
-            NavigateToHelp);
+            NavigateToHelp,
+            OpenPrivacyPolicy);
         SettingsViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
 
         ShowSettingsCommand = Own(ReactiveCommand.Create(NavigateToSettings));
@@ -178,11 +184,13 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         LoginViewModel.Dispose();
         SettingsViewModel.Dispose();
         AboutViewModel.Dispose();
+        PrivacyPolicyViewModel.Dispose();
         ThirdPartyLicensesViewModel.Dispose();
         ThirdPartyLicenseDetailViewModel.Dispose();
         foreach (var page in _helpPages.Values)
             page.Dispose();
         _helpPages.Clear();
+        DisposeContextHelp();
         _informationNavigation.Clear();
         _registrationViewModel?.Dispose();
         _passwordsViewModel?.Dispose();
@@ -208,7 +216,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         _sessionRenewalDialogProfileName = string.Empty;
         CurrentUserDisplayName = string.Empty;
         CurrentUserFirstName = string.Empty;
-        CurrentUserSubtitle = string.Empty;
         IsAuthenticated = false;
         _currentPageViewModel = LoginViewModel;
         _currentPageContentViewModel = new MainPageContentViewModel(LoginViewModel);
@@ -225,6 +232,8 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
 
     public AboutViewModel AboutViewModel { get; }
 
+    public PrivacyPolicyViewModel PrivacyPolicyViewModel { get; }
+
     public ThirdPartyLicensesViewModel ThirdPartyLicensesViewModel { get; }
 
     public ThirdPartyLicenseDetailViewModel ThirdPartyLicenseDetailViewModel { get; }
@@ -240,7 +249,8 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
                     _endpoints,
                     NavigateToLogin,
                     OnAuthenticationSucceededAsync,
-                    () => OpenHelpTopic(HelpTopicIds.RememberMe));
+                    () => OpenHelpTopic(HelpTopicIds.RememberMe),
+                    OpenPrivacyPolicy);
                 _registrationViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
                 _registrationViewModel.SetBackendInitialized(_isBackendInitialized);
             }
@@ -378,6 +388,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
                 return;
 
             this.RaiseAndSetIfChanged(ref _isSessionRenewalDialogOpen, value);
+            this.RaisePropertyChanged(nameof(IsContextHelpInteractive));
             RaiseMobileSwipeEligibilityProperties();
         }
     }
@@ -436,6 +447,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         IsAuthenticated &&
         IsMainContentPageVisible &&
         IsApplicationInteractionEnabled &&
+        !IsContextHelpOpen &&
         !HasConfirmableDialogOpen &&
         IsCurrentMainPageAtSwipeRoot();
 
@@ -531,16 +543,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         ? ProfileLabel
         : string.Format(System.Globalization.CultureInfo.CurrentCulture,
             GetTranslation("Shell_AccountMenu_Format"), CurrentUserFirstName);
-
-    public string CurrentUserSubtitle
-    {
-        get => _currentUserSubtitle;
-        private set
-        {
-            this.RaiseAndSetIfChanged(ref _currentUserSubtitle, value);
-            RaiseHeaderSubtitleProperties();
-        }
-    }
 
     public bool IsCurrentRememberMeEnabled
     {
@@ -709,13 +711,13 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             if (TryGetCurrentPageHeaderStatus(out var pageMessage, out _))
                 return pageMessage;
 
-            return IsAuthenticated ? CurrentUserSubtitle : string.Empty;
+            return IsAuthenticated ? GetTranslation("Shell_SignedInIdle") : string.Empty;
         }
     }
 
     public bool HasHeaderSubtitle => !string.IsNullOrWhiteSpace(HeaderSubtitle);
 
-    public bool IsHeaderSubtitleUser => HasHeaderSubtitle && HeaderSubtitleKind == OperationMessageKind.None;
+    public bool IsHeaderSubtitleIdle => HasHeaderSubtitle && HeaderSubtitleKind == OperationMessageKind.None;
 
     public bool IsHeaderSubtitleInformation => HeaderSubtitleKind == OperationMessageKind.Information;
 
@@ -867,6 +869,9 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
                 return true;
             }
 
+            if (IsContextHelpOpen)
+                return false;
+
             if (_passwordsViewModel is not null
                 && ReferenceEquals(CurrentPageViewModel, _passwordsViewModel)
                 && _passwordsViewModel.HasConfirmableDialogOpen)
@@ -893,6 +898,9 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             await HandleDatabaseRecoveryPrimaryActionAsync();
             return;
         }
+
+        if (IsContextHelpOpen)
+            return;
 
         if (_passwordsViewModel is not null
             && ReferenceEquals(CurrentPageViewModel, _passwordsViewModel)
@@ -924,6 +932,12 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             if (!_isResettingDatabase)
                 HandleDatabaseRecoverySecondaryAction();
 
+            return true;
+        }
+
+        if (IsContextHelpOpen)
+        {
+            NavigateBackFromContextHelp();
             return true;
         }
 
@@ -1083,6 +1097,8 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     {
         this.RaisePropertyChanged(nameof(IsDatabaseRecoveryDialogOpen));
         this.RaisePropertyChanged(nameof(IsApplicationInteractionEnabled));
+        this.RaisePropertyChanged(nameof(IsApplicationSurfaceEnabled));
+        this.RaisePropertyChanged(nameof(IsContextHelpInteractive));
         this.RaisePropertyChanged(nameof(IsDatabaseResetInProgress));
         this.RaisePropertyChanged(nameof(IsDatabaseRecoverySecondaryButtonVisible));
         this.RaisePropertyChanged(nameof(IsDatabaseRecoveryPrimaryButtonVisible));
@@ -1133,7 +1149,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     {
         this.RaisePropertyChanged(nameof(HeaderSubtitle));
         this.RaisePropertyChanged(nameof(HasHeaderSubtitle));
-        this.RaisePropertyChanged(nameof(IsHeaderSubtitleUser));
+        this.RaisePropertyChanged(nameof(IsHeaderSubtitleIdle));
         this.RaisePropertyChanged(nameof(IsHeaderSubtitleInformation));
         this.RaisePropertyChanged(nameof(IsHeaderSubtitleSuccess));
         this.RaisePropertyChanged(nameof(IsHeaderSubtitleError));
@@ -1308,6 +1324,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
 
     private bool IsInformationViewModel(ViewModelBase page) =>
         ReferenceEquals(page, AboutViewModel) ||
+        ReferenceEquals(page, PrivacyPolicyViewModel) ||
         ReferenceEquals(page, ThirdPartyLicensesViewModel) ||
         ReferenceEquals(page, ThirdPartyLicenseDetailViewModel) ||
         page is HelpPageViewModel;
@@ -1369,6 +1386,9 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
     public void OpenHelpTopic(string? topicId) =>
         NavigateInformation(new InformationRoute(InformationDestination.HelpTopic, topicId));
 
+    public void OpenPrivacyPolicy() =>
+        NavigateInformation(new InformationRoute(InformationDestination.Privacy));
+
     private void NavigateInformation(InformationRoute requested)
     {
         if (IsDisposed)
@@ -1401,6 +1421,13 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             ShowInformationRoute(route!, reversed: true);
             return;
         }
+        ReturnToAppFromInformation();
+    }
+
+    private void ReturnToAppFromInformation()
+    {
+        if (!IsSettingsSectionVisible)
+            return;
         var caller = _settingsReturnPageViewModel ?? LoginViewModel;
         _settingsReturnPageViewModel = null;
         _informationNavigation.Clear();
@@ -1418,6 +1445,9 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             case InformationDestination.Settings:
                 page = SettingsViewModel;
                 break;
+            case InformationDestination.Privacy:
+                page = PrivacyPolicyViewModel;
+                break;
             case InformationDestination.About:
                 page = AboutViewModel;
                 break;
@@ -1432,7 +1462,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
                 if (!_helpPages.TryGetValue(route, out var helpPage))
                 {
                     helpPage = new HelpPageViewModel(UiPreferences, _helpCatalog, route,
-                        NavigateBackFromInformation, NavigateInformation);
+                        NavigateBackFromInformation, NavigateInformation, ReturnToAppFromInformation);
                     _helpPages.Add(route, helpPage);
                 }
                 helpPage.SetTopicUnavailable(missingTopic);
@@ -1442,6 +1472,96 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         IsPageTransitionReversed = reversed;
         ClearStatusMessage();
         CurrentPageViewModel = page;
+    }
+
+    public HelpPageViewModel? ContextHelpPage => _contextHelpPage;
+    public bool IsContextHelpOpen => _contextHelpPage is not null;
+    public bool IsApplicationSurfaceEnabled => IsApplicationInteractionEnabled && !IsContextHelpOpen;
+    public bool IsContextHelpInteractive => !IsDatabaseRecoveryDialogOpen && !IsSessionRenewalDialogOpen;
+
+    /// <summary>
+    /// Show only bundled public guidance. Keep the task page and its existing visual tree in place;
+    /// never navigate, submit, cancel, pause an enrollment, or copy sensitive state into help.
+    /// </summary>
+    public void OpenContextHelp(string? topicId)
+    {
+        if (IsDisposed)
+            return;
+        if (!IsContextHelpOpen)
+        {
+            _contextHelpNavigation.Clear();
+            foreach (var page in _contextHelpPages.Values)
+            {
+                page.SearchText = string.Empty;
+                page.ScrollOffset = 0;
+                page.FocusedCardId = null;
+            }
+        }
+        NavigateContextHelp(new InformationRoute(InformationDestination.HelpTopic, topicId));
+    }
+
+    public void CloseContextHelp()
+    {
+        if (!IsContextHelpOpen)
+            return;
+        _contextHelpPage = null;
+        _contextHelpNavigation.Clear();
+        RaiseContextHelpProperties();
+    }
+
+    private void NavigateContextHelp(InformationRoute requested)
+    {
+        var content = _helpCatalog.ForLanguage(CurrentLanguage);
+        var valid = requested.Destination switch
+        {
+            InformationDestination.Help => true,
+            InformationDestination.HelpCategory => content.Categories.Any(category => category.Id == requested.ContentId),
+            InformationDestination.HelpTopic => requested.ContentId is not null && content.Topics.ContainsKey(requested.ContentId),
+            _ => false
+        };
+        var route = valid ? requested : new InformationRoute(InformationDestination.Help);
+        _contextHelpNavigation.Navigate(route);
+        ShowContextHelpRoute(route, unavailable: !valid);
+    }
+
+    private void ShowContextHelpRoute(InformationRoute route, bool unavailable = false)
+    {
+        if (!_contextHelpPages.TryGetValue(route, out var page))
+        {
+            page = new HelpPageViewModel(UiPreferences, _helpCatalog, route,
+                NavigateBackFromContextHelp, NavigateContextHelp, CloseContextHelp);
+            _contextHelpPages.Add(route, page);
+        }
+        page.SetTopicUnavailable(unavailable);
+        _contextHelpPage = page;
+        RaiseContextHelpProperties();
+    }
+
+    private void NavigateBackFromContextHelp()
+    {
+        if (_contextHelpNavigation.TryGoBack(out var route))
+            ShowContextHelpRoute(route!);
+        else
+            CloseContextHelp();
+    }
+
+    private void RaiseContextHelpProperties()
+    {
+        this.RaisePropertyChanged(nameof(ContextHelpPage));
+        this.RaisePropertyChanged(nameof(IsContextHelpOpen));
+        this.RaisePropertyChanged(nameof(IsApplicationSurfaceEnabled));
+        this.RaisePropertyChanged(nameof(IsContextHelpInteractive));
+        this.RaisePropertyChanged(nameof(HasConfirmableDialogOpen));
+        RaiseMobileSwipeEligibilityProperties();
+    }
+
+    private void DisposeContextHelp()
+    {
+        foreach (var page in _contextHelpPages.Values)
+            page.Dispose();
+        _contextHelpPages.Clear();
+        _contextHelpNavigation.Clear();
+        _contextHelpPage = null;
     }
 
     private void NavigateToLogin()
@@ -1469,7 +1589,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         IsAuthenticated = false;
         CurrentUserDisplayName = string.Empty;
         CurrentUserFirstName = string.Empty;
-        CurrentUserSubtitle = string.Empty;
         _passwordsViewModel?.Reset();
         _profileViewModel?.Reset();
         ChangeProfileViewModel.SetStartupSelectionMode(true);
@@ -1900,7 +2019,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         IsAuthenticated = true;
         CurrentUserDisplayName = BuildDisplayName(profile);
         CurrentUserFirstName = profile.FirstName?.Trim() ?? string.Empty;
-        CurrentUserSubtitle = BuildSubtitle(profile);
         ApplyRememberMeFromSession(profile.IsRememberMeEnabled);
 
         var passwordsViewModel = PasswordsViewModel;
@@ -1949,7 +2067,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
 
         CurrentUserDisplayName = BuildDisplayName(profile);
         CurrentUserFirstName = profile.FirstName?.Trim() ?? string.Empty;
-        CurrentUserSubtitle = BuildSubtitle(profile);
         ApplyRememberMeFromSession(profile.IsRememberMeEnabled);
         SetSessionProfile(token, profile);
 
@@ -2014,7 +2131,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         NotifyRefreshAuthenticationChanged();
         CurrentUserDisplayName = string.Empty;
         CurrentUserFirstName = string.Empty;
-        CurrentUserSubtitle = string.Empty;
         ApplyRememberMeFromSession(false);
         _passwordsViewModel?.Reset();
         _profileViewModel?.Reset();
@@ -2455,7 +2571,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
             token,
             profile.UId,
             BuildDisplayName(profile),
-            BuildSubtitle(profile),
+            BuildProfileSelectorSubtitle(profile),
             profile.Username,
             profile.Email,
             profile.IsRememberMeEnabled);
@@ -2603,7 +2719,7 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         RaiseMobileSwipeEligibilityProperties();
     }
 
-    private static string BuildSubtitle(UserProfileInfoResponse profile) =>
+    private static string BuildProfileSelectorSubtitle(UserProfileInfoResponse profile) =>
         string.IsNullOrWhiteSpace(profile.Username)
             ? profile.Email
             : $"@{profile.Username}";
@@ -2773,7 +2889,6 @@ public sealed partial class MainViewModel : ViewModelBase, IFrontendRefreshTarge
         SetSessionProfile(token, profile);
         CurrentUserDisplayName = BuildDisplayName(profile);
         CurrentUserFirstName = profile.FirstName?.Trim() ?? string.Empty;
-        CurrentUserSubtitle = BuildSubtitle(profile);
         ApplyRememberMeFromSession(profile.IsRememberMeEnabled);
         return true;
     }

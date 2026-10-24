@@ -31,6 +31,12 @@ public sealed class ProfileViewModel : ViewModelBase
     private static readonly string[] ProfileLocalizedPropertyNames =
     [
         nameof(Title),
+        nameof(AddDeviceHelpLabel),
+        nameof(DisconnectHelpLabel),
+        nameof(DeleteAccountHelpLabel),
+        nameof(BlockedDeviceHelpLabel),
+        nameof(SyncHelpLabel),
+        nameof(DiagnosticsHelpLabel),
         nameof(Subtitle),
         nameof(AccountOverviewLabel),
         nameof(BackToProfileLabel),
@@ -1032,6 +1038,13 @@ public sealed class ProfileViewModel : ViewModelBase
     public string LocalSyncConfirmLabel => PendingLocalSyncEnabled
         ? GetTranslation("Profile_LocalSync_TurnOn")
         : GetTranslation("Profile_LocalSync_TurnOff");
+
+    public string AddDeviceHelpLabel => GetTranslation("ContextHelp_AddDevice");
+    public string DisconnectHelpLabel => GetTranslation("ContextHelp_Disconnect");
+    public string DeleteAccountHelpLabel => GetTranslation("ContextHelp_DeleteAccount");
+    public string BlockedDeviceHelpLabel => GetTranslation("ContextHelp_Blocked");
+    public string SyncHelpLabel => GetTranslation("ContextHelp_SyncProblems");
+    public string DiagnosticsHelpLabel => GetTranslation("ContextHelp_Diagnostics");
 
     protected override void OnLanguageChanged()
     {

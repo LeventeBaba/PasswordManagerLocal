@@ -1,6 +1,8 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
+using PasswordManagerLocal.Common.Frontend.Views.Controls;
 using System.ComponentModel;
 using PasswordManagerLocal.Common.Frontend.ViewModels;
 using PasswordManagerLocal.Common.Frontend.Views;
@@ -83,6 +85,10 @@ internal sealed class MainViewKeyboardHandler
         {
             return false;
         }
+
+        if (e.Source is Control source &&
+            (source is ContextHelpButton || source.GetVisualAncestors().OfType<ContextHelpButton>().Any()))
+            return false;
 
         // Mark the routed event handled before awaiting so the focused control cannot
         // also process Enter while the confirmation operation is running.

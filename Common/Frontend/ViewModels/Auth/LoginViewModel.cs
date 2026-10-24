@@ -328,8 +328,19 @@ public sealed class LoginViewModel : ViewModelBase
 
     public string BusyText => GetTranslation("Common_Loading");
 
+    public string LoginHelpLabel => GetTranslation("ContextHelp_SignIn");
+    public string LoginTroubleshootingLabel => GetTranslation("ContextHelp_LoginProblems");
+    public string EnrollmentHelpLabel => GetTranslation("ContextHelp_Enrollment");
+    public string EnrollmentCodeHelpLabel => GetTranslation("ContextHelp_EnrollmentCode");
+    public string EnrollmentTroubleshootingLabel => GetTranslation("ContextHelp_EnrollmentProblems");
+
     protected override void OnLanguageChanged()
     {
+        this.RaisePropertyChanged(nameof(LoginHelpLabel));
+        this.RaisePropertyChanged(nameof(LoginTroubleshootingLabel));
+        this.RaisePropertyChanged(nameof(EnrollmentHelpLabel));
+        this.RaisePropertyChanged(nameof(EnrollmentCodeHelpLabel));
+        this.RaisePropertyChanged(nameof(EnrollmentTroubleshootingLabel));
         DeviceTransferStatus.Refresh();
         this.RaisePropertyChanged(nameof(Title));
         this.RaisePropertyChanged(nameof(BackLabel));

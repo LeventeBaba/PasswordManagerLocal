@@ -31,6 +31,8 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     private static readonly string[] LocalizedPropertyNames =
     [
         nameof(Title),
+        nameof(TransferHelpLabel),
+        nameof(MoveCopyHelpLabel),
         nameof(Subtitle),
         nameof(AddPasswordButtonLabel),
         nameof(AddPasswordIconLabel),
@@ -1384,6 +1386,9 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     public string EditorClosedTitle => GetTranslation("Passwords_Editor_Closed_Title");
 
     public string EditorClosedDescription => GetTranslation("Passwords_Editor_Closed_Description");
+
+    public string TransferHelpLabel => GetTranslation("ContextHelp_Transfer");
+    public string MoveCopyHelpLabel => GetTranslation("ContextHelp_MoveCopy");
 
     protected override void OnLanguageChanged()
     {

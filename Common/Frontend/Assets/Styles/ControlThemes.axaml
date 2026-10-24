@@ -47,6 +47,37 @@
     </Setter>
   </ControlTheme>
 
+  <!-- Desktop popups have their own native top-level. Keep its surface clear
+       so rounded presenters do not reveal PopupRoot's default white background. -->
+  <ControlTheme x:Key="{x:Type PopupRoot}" TargetType="PopupRoot">
+    <Setter Property="Background" Value="{x:Null}" />
+    <Setter Property="TransparencyLevelHint" Value="Transparent" />
+    <Setter Property="TransparencyBackgroundFallback" Value="{DynamicResource AppBrush.Surface.Elevated}" />
+    <Setter Property="Foreground" Value="{DynamicResource AppBrush.Text.Primary}" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="FontFamily" Value="fonts:Inter#Inter, $Default" />
+    <Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="FontStyle" Value="Normal" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <LayoutTransformControl LayoutTransform="{TemplateBinding Transform}">
+          <Panel>
+            <Border Name="PART_TransparencyFallback" IsHitTestVisible="False" />
+            <VisualLayerManager Name="PART_VisualLayerManager">
+              <ContentPresenter Name="PART_ContentPresenter"
+                                Background="{TemplateBinding Background}"
+                                Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                Padding="{TemplateBinding Padding}"
+                                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+            </VisualLayerManager>
+          </Panel>
+        </LayoutTransformControl>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
   <!-- Android uses an embeddable top-level, not Window. Give its content the
        same Avalonia-managed popup/adorner layers as the desktop window. -->
   <ControlTheme x:Key="{x:Type embedding:EmbeddableControlRoot}" TargetType="embedding:EmbeddableControlRoot">

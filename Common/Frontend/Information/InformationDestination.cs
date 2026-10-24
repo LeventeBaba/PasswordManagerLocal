@@ -8,5 +8,6 @@ public enum InformationDestination
     LicenseDetail,
     Help,
     HelpCategory,
-    HelpTopic
+    HelpTopic,
+    Privacy
 }

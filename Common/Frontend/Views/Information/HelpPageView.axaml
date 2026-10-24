@@ -5,68 +5,118 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Information"
     x:DataType="vm:HelpPageViewModel">
-  <ScrollViewer x:Name="PageScrollViewer"
-                HorizontalScrollBarVisibility="Disabled"
-                HorizontalContentAlignment="Stretch">
-    <StackPanel Margin="16,4,16,16" Spacing="14" HorizontalAlignment="Stretch">
-      <Border Classes="card">
-        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+  <Grid Margin="16,4,16,16" RowDefinitions="Auto,*" RowSpacing="14">
+    <Border Classes="card" Padding="12">
+      <StackPanel Spacing="8">
+        <WrapPanel Orientation="Horizontal">
           <Button x:Name="BackButton" Classes="ghost iconButton"
+                  Margin="0,0,8,0" VerticalAlignment="Center"
                   Command="{Binding NavigateBackCommand}"
                   ToolTip.Tip="{Binding BackLabel}"
                   AutomationProperties.Name="{Binding BackLabel}">
             <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
           </Button>
-          <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
-            <TextBlock Text="{Binding CategoryLabel}" Classes="subtleText"
-                       IsVisible="{Binding HasCategoryLabel}" TextWrapping="Wrap" />
+          <Button Classes="ghost" Margin="0,0,8,0" MinHeight="44"
+                  IsVisible="{Binding CanFindHelp}"
+                  Command="{Binding FindHelpCommand}"
+                  AutomationProperties.Name="{Binding FindHelpLabel}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <PathIcon Classes="smallUiIcon" Data="{StaticResource SearchIconGeometry}" />
+              <TextBlock Text="{Binding FindHelpLabel}" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="secondary" MinHeight="44"
+                  Command="{Binding ReturnToAppCommand}"
+                  Content="{Binding ReturnToAppLabel}"
+                  ToolTip.Tip="{Binding ReturnToAppHelpText}"
+                  AutomationProperties.HelpText="{Binding ReturnToAppHelpText}" />
+        </WrapPanel>
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding IsHelpHome}">
+          <TextBox x:Name="HelpSearchBox"
+                   Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   PlaceholderText="{Binding SearchPlaceholder}"
+                   AutomationProperties.Name="{Binding SearchLabel}"
+                   AutomationProperties.HelpText="{Binding SearchKeyboardHelpText}"
+                   TextInputOptions.ContentType="Search"
+                   TextInputOptions.AutoCapitalization="False"
+                   TextInputOptions.ReturnKeyType="Search" />
+          <Button x:Name="ClearSearchButton" Grid.Column="1" Classes="ghost" MinHeight="44"
+                  Click="HandleClearSearchClick"
+                  Content="{Binding ClearSearchLabel}"
+                  Command="{Binding ClearSearchCommand}"
+                  IsVisible="{Binding IsSearchActive}" />
+        </Grid>
+      </StackPanel>
+    </Border>
+    <ScrollViewer x:Name="PageScrollViewer" Grid.Row="1"
+                HorizontalScrollBarVisibility="Disabled"
+                HorizontalContentAlignment="Stretch">
+      <StackPanel Spacing="14" HorizontalAlignment="Stretch">
+        <Border Classes="card">
+          <StackPanel Spacing="6">
+            <Button Classes="secondary" HorizontalAlignment="Left" MinHeight="44" Padding="10,6"
+                    Command="{Binding NavigateToCategoryCommand}"
+                    IsVisible="{Binding HasCategoryLabel}"
+                    AutomationProperties.Name="{Binding CategoryNavigationLabel}">
+              <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+                <TextBlock Grid.Column="1" Text="{Binding CategoryLabel}" TextWrapping="Wrap" />
+              </Grid>
+            </Button>
             <TextBlock Text="{Binding Title}" Classes="pageTitle" TextWrapping="Wrap" />
             <TextBlock Text="{Binding Summary}" Classes="subtleText" TextWrapping="Wrap" />
           </StackPanel>
-        </Grid>
-      </Border>
+        </Border>
 
-      <Border Classes="card" IsVisible="{Binding IsTopicUnavailable}">
-        <TextBlock Text="{Binding TopicUnavailableText}" TextWrapping="Wrap" />
-      </Border>
+        <Border Classes="card" IsVisible="{Binding IsTopicUnavailable}">
+          <TextBlock Text="{Binding TopicUnavailableText}" TextWrapping="Wrap" />
+        </Border>
 
-      <ItemsControl ItemsSource="{Binding Sections}" IsVisible="{Binding HasSections}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="vm:HelpSectionViewModel">
-            <Border Classes="card" Classes.dangerZone="{Binding IsWarning}"
-                    Classes.helpTip="{Binding IsTip}" Margin="0,0,0,12">
-              <StackPanel Spacing="8">
-                <TextBlock Text="{Binding Label}" FontWeight="Bold"
-                           IsVisible="{Binding HasLabel}" TextWrapping="Wrap" />
-                <TextBlock Text="{Binding Heading}" Classes="sectionTitle" TextWrapping="Wrap" />
-                <SelectableTextBlock Text="{Binding Body}" TextWrapping="Wrap" />
-              </StackPanel>
-            </Border>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-
-      <TextBlock Text="{Binding CardsLabel}" Classes="sectionTitle"
-                 IsVisible="{Binding HasCards}" TextWrapping="Wrap" />
-      <ItemsControl ItemsSource="{Binding Cards}" IsVisible="{Binding HasCards}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="vm:HelpLinkItemViewModel">
-            <Button Classes="secondary informationLink" Command="{Binding OpenCommand}"
-                    Tag="{Binding Id}" Margin="0,0,0,12"
-                    AutomationProperties.Name="{Binding Title}"
-                    AutomationProperties.HelpText="{Binding Summary}">
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" IsHitTestVisible="False">
-                <StackPanel Spacing="6">
-                  <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
-                  <TextBlock Text="{Binding Summary}" Classes="subtleText" TextWrapping="Wrap" />
+        <ItemsControl ItemsSource="{Binding Sections}" IsVisible="{Binding HasSections}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:HelpSectionViewModel">
+              <Border Classes="card" Classes.dangerZone="{Binding IsWarning}"
+                      Classes.helpTip="{Binding IsTip}" Margin="0,0,0,12">
+                <StackPanel Spacing="8">
+                  <TextBlock Text="{Binding Label}" FontWeight="Bold"
+                             IsVisible="{Binding HasLabel}" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding Heading}" Classes="sectionTitle" TextWrapping="Wrap" />
+                  <SelectableTextBlock Text="{Binding Body}" TextWrapping="Wrap" />
                 </StackPanel>
-                <PathIcon Grid.Column="1" Classes="mediumUiIcon"
-                          Data="{StaticResource ChevronRightIconGeometry}" VerticalAlignment="Center" />
-              </Grid>
-            </Button>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-    </StackPanel>
-  </ScrollViewer>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock x:Name="SearchResultsStatus" Text="{Binding CardsLabel}" Classes="sectionTitle"
+                   Focusable="True"
+                   AutomationProperties.Name="{Binding SearchResultsStatusText}"
+                   IsVisible="{Binding ShowCardsLabel}" TextWrapping="Wrap" />
+        <Border Classes="card" IsVisible="{Binding HasNoSearchResults}">
+          <TextBlock Text="{Binding NoSearchResultsText}" TextWrapping="Wrap" />
+        </Border>
+        <ItemsControl ItemsSource="{Binding Cards}" IsVisible="{Binding HasCards}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:HelpLinkItemViewModel">
+              <Button Classes="secondary informationLink" Command="{Binding OpenCommand}"
+                      Tag="{Binding Id}" Margin="0,0,0,12"
+                      AutomationProperties.Name="{Binding Title}"
+                      AutomationProperties.HelpText="{Binding Summary}">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" IsHitTestVisible="False">
+                  <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding CategoryLabel}" Classes="subtleText" FontSize="12"
+                               IsVisible="{Binding HasCategoryLabel}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Summary}" Classes="subtleText" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <PathIcon Grid.Column="1" Classes="mediumUiIcon"
+                            Data="{StaticResource ChevronRightIconGeometry}" VerticalAlignment="Center" />
+                </Grid>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
 </UserControl>

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PasswordManagerLocal.Common.Frontend.Views.Information.PrivacyPolicyView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Information"
+    xmlns:controls="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Controls"
+    xmlns:info="clr-namespace:PasswordManagerLocal.Common.Frontend.Information"
+    x:DataType="vm:PrivacyPolicyViewModel">
+  <Grid Margin="16,4,16,16" RowDefinitions="Auto,*" RowSpacing="14">
+    <Border Classes="card" Padding="12">
+      <WrapPanel Orientation="Horizontal">
+        <Button x:Name="BackButton" Classes="ghost iconButton" Margin="0,0,8,0"
+                Command="{Binding NavigateBackCommand}" ToolTip.Tip="{Binding BackLabel}"
+                AutomationProperties.Name="{Binding BackLabel}">
+          <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+        </Button>
+        <Button Classes="secondary" MinHeight="44" Command="{Binding ReturnToAppCommand}"
+                Content="{Binding ReturnToAppLabel}" />
+      </WrapPanel>
+    </Border>
+    <ScrollViewer x:Name="PageScrollViewer" Grid.Row="1"
+                  HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+      <StackPanel Spacing="14" MaxWidth="900" HorizontalAlignment="Stretch">
+        <Border Classes="card">
+          <StackPanel Spacing="8">
+            <TextBlock Text="{Binding Title}" Classes="pageTitle" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding VersionText}" Classes="subtleText" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding DateText}" Classes="subtleText" TextWrapping="Wrap" />
+            <SelectableTextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+        <Border Classes="card helpTip">
+          <SelectableTextBlock Text="{Binding StatusText}" TextWrapping="Wrap" />
+        </Border>
+        <ItemsControl ItemsSource="{Binding Sections}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="info:PrivacyPolicySection">
+              <Border Classes="card" Margin="0,0,0,12">
+                <StackPanel Spacing="8">
+                  <TextBlock Text="{Binding Heading}" Classes="sectionTitle" TextWrapping="Wrap" />
+                  <SelectableTextBlock Text="{Binding Body}" TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <controls:ExternalLinkButton Classes="secondary" MinHeight="44"
+                                     ExternalUri="{Binding ComplaintAuthorityUri}"
+                                     AutomationProperties.Name="{Binding ComplaintAuthorityLabel}"
+                                     AutomationProperties.HelpText="{Binding ExternalLinkHelpText}">
+          <TextBlock Text="{Binding ComplaintAuthorityLabel}" Classes="descriptionLink" TextWrapping="Wrap" />
+        </controls:ExternalLinkButton>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

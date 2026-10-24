@@ -51,7 +51,8 @@ public sealed class RegistrationViewModel : ViewModelBase
         IEndpoints endpoints,
         Action navigateToLogin,
         Func<Guid, Task> onAuthenticationSucceededAsync,
-        Action? showRememberMeSecurityAdvice = null)
+        Action? showRememberMeSecurityAdvice = null,
+        Action? showPrivacyPolicy = null)
         : base(uiPreferences)
     {
         _endpoints = endpoints;
@@ -59,6 +60,11 @@ public sealed class RegistrationViewModel : ViewModelBase
         _showRememberMeSecurityAdvice = showRememberMeSecurityAdvice ?? (() => { });
         _onAuthenticationSucceededAsync = onAuthenticationSucceededAsync;
 
+        ShowPrivacyPolicyCommand = Own(ReactiveCommand.Create(() =>
+        {
+            RestorePrivacyPolicyFocus = true;
+            showPrivacyPolicy?.Invoke();
+        }));
         RegisterCommand = Own(ReactiveCommand.CreateFromTask(RegisterAsync));
         NavigateToLoginCommand = Own(ReactiveCommand.Create(_navigateToLogin));
         NavigateBackCommand = Own(ReactiveCommand.CreateFromTask(NavigateBackAsync));
@@ -306,6 +312,11 @@ public sealed class RegistrationViewModel : ViewModelBase
 
     public ReactiveCommand<RxVoid, RxVoid> ShowRememberMeSecurityAdviceCommand { get; }
 
+    public ReactiveCommand<RxVoid, RxVoid> ShowPrivacyPolicyCommand { get; }
+    public string PrivacyPolicyLabel => GetTranslation("Privacy_ReadPolicy");
+    public string PrivacySummary => GetTranslation("Register_PrivacySummary");
+    internal bool RestorePrivacyPolicyFocus { get; set; }
+
     public string RegisterButtonLabel => GetTranslation("Register_Button");
 
     public string AlreadyHaveAccountText => GetTranslation("Register_AlreadyHaveAccount_Text");
@@ -338,9 +349,16 @@ public sealed class RegistrationViewModel : ViewModelBase
 
     public string PasswordStrengthInfoAccessibleLabel => GetTranslation("PasswordStrength_Info_AccessibleLabel");
 
+    public string RegistrationHelpLabel => GetTranslation("ContextHelp_CreateAccount");
+    public string MasterPasswordHelpLabel => GetTranslation("ContextHelp_MasterPassword");
+
     protected override void OnLanguageChanged()
     {
+        this.RaisePropertyChanged(nameof(RegistrationHelpLabel));
+        this.RaisePropertyChanged(nameof(MasterPasswordHelpLabel));
         this.RaisePropertyChanged(nameof(Title));
+        this.RaisePropertyChanged(nameof(PrivacyPolicyLabel));
+        this.RaisePropertyChanged(nameof(PrivacySummary));
         this.RaisePropertyChanged(nameof(BackLabel));
         this.RaisePropertyChanged(nameof(Subtitle));
         this.RaisePropertyChanged(nameof(UsernameLabel));
@@ -377,6 +395,7 @@ public sealed class RegistrationViewModel : ViewModelBase
 
     public void Reset()
     {
+        RestorePrivacyPolicyFocus = false;
         Username = string.Empty;
         FirstName = string.Empty;
         LastName = string.Empty;

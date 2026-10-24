@@ -83,6 +83,138 @@ public sealed class HelpNavigationTests
     }
 
     [TestMethod]
+    public async Task ReturnToAppSkipsDeepHelpHistoryAndPreservesTheOriginalForm()
+    {
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync();
+        var endpoints = DispatchProxy.Create<IEndpoints, RejectAllEndpoints>();
+        await using var runtime = new UnavailableRuntime();
+        using var shell = new MainViewModel(endpoints, runtime, new FakeBackgroundSyncSettingsClient(), preferences);
+        ExecuteCommand(shell.ShowRegistrationCommand);
+        var caller = shell.RegistrationViewModel;
+        caller.Username = "unfinished-registration";
+        caller.Password = "unfinished-form-value";
+        ExecuteCommand(shell.ShowSettingsCommand);
+        ExecuteCommand(shell.SettingsViewModel.NavigateToHelpCommand);
+        for (var step = 0; step < 40; step++)
+            shell.OpenHelpTopic(step % 2 == 0 ? HelpTopicIds.Sync : HelpTopicIds.RememberMe);
+
+        ExecuteCommand(((HelpPageViewModel)shell.CurrentPageViewModel).ReturnToAppCommand);
+
+        Assert.AreSame(caller, shell.CurrentPageViewModel);
+        Assert.AreEqual("unfinished-registration", caller.Username);
+        Assert.AreEqual("unfinished-form-value", caller.Password);
+        shell.OpenHelpTopic(HelpTopicIds.CreateAccount);
+        Assert.IsTrue(await shell.TryNavigateBackAsync());
+        Assert.AreSame(caller, shell.CurrentPageViewModel, "A new visit must not inherit the previous Back stack.");
+        Assert.AreEqual(0, ((RejectAllEndpoints)(object)endpoints).Calls);
+    }
+
+    [TestMethod]
+    public async Task SearchResultsAndReadingPositionSurviveOpeningATopicAndGoingBack()
+    {
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync();
+        var endpoints = DispatchProxy.Create<IEndpoints, RejectAllEndpoints>();
+        await using var runtime = new UnavailableRuntime();
+        using var shell = new MainViewModel(endpoints, runtime, new FakeBackgroundSyncSettingsClient(), preferences);
+        shell.OpenHelpTopic(HelpTopicIds.RememberMe);
+        ExecuteCommand(((HelpPageViewModel)shell.CurrentPageViewModel).FindHelpCommand);
+        var hub = (HelpPageViewModel)shell.CurrentPageViewModel;
+        Assert.IsTrue(hub.IsHelpHome);
+        hub.SearchText = "clipboard";
+        Assert.IsTrue(hub.IsSearchActive);
+        Assert.IsTrue(hub.Cards.Count > 0);
+        Assert.IsTrue(hub.Cards.All(card => card.HasCategoryLabel));
+        var result = hub.Cards.First();
+        hub.ScrollOffset = 160;
+        hub.FocusedCardId = result.Id;
+
+        ExecuteCommand(result.OpenCommand);
+        var article = (HelpPageViewModel)shell.CurrentPageViewModel;
+        Assert.AreEqual(result.Id, article.Route.ContentId);
+        Assert.IsTrue(article.HasSections);
+        Assert.IsTrue(await shell.TryNavigateBackAsync());
+
+        Assert.AreSame(hub, shell.CurrentPageViewModel);
+        Assert.AreEqual("clipboard", hub.SearchText);
+        Assert.AreEqual(160d, hub.ScrollOffset);
+        Assert.AreEqual(result.Id, hub.FocusedCardId);
+        hub.SearchText = "no-such-guidance-zzzz";
+        Assert.IsTrue(hub.HasNoSearchResults);
+        ExecuteCommand(hub.ClearSearchCommand);
+        Assert.IsFalse(hub.IsSearchActive);
+        Assert.AreEqual(4, hub.Cards.Count);
+        Assert.AreEqual(0d, hub.ScrollOffset);
+        Assert.AreEqual(0, ((RejectAllEndpoints)(object)endpoints).Calls);
+    }
+
+    [TestMethod]
+    public async Task CategoryShortcutAndQuickReturnRemainValidAfterLogout()
+    {
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync();
+        var endpoints = DispatchProxy.Create<IEndpoints, RejectAllEndpoints>();
+        await using var runtime = new UnavailableRuntime();
+        using var shell = new MainViewModel(endpoints, runtime, new FakeBackgroundSyncSettingsClient(), preferences);
+        shell.OpenHelpTopic(HelpTopicIds.RememberMe);
+        ExecuteCommand(((HelpPageViewModel)shell.CurrentPageViewModel).NavigateToCategoryCommand);
+        var category = (HelpPageViewModel)shell.CurrentPageViewModel;
+        Assert.AreEqual(InformationDestination.HelpCategory, category.Route.Destination);
+        Assert.AreEqual("security-tips", category.Route.ContentId);
+        ExecuteCommand(category.Cards.First().OpenCommand);
+        var article = (HelpPageViewModel)shell.CurrentPageViewModel;
+
+        await shell.RequestLogoutAsync();
+        Assert.AreSame(article, shell.CurrentPageViewModel);
+        ExecuteCommand(article.ReturnToAppCommand);
+
+        Assert.AreSame(shell.LoginViewModel, shell.CurrentPageViewModel);
+        Assert.IsFalse(shell.IsAuthenticated);
+        Assert.AreEqual(0, ((RejectAllEndpoints)(object)endpoints).Calls);
+    }
+
+    [TestMethod]
+    public async Task ChangingLanguageRecomputesSearchWithoutLosingTheQuery()
+    {
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync(
+            resourceLoader: new ShippedLocalizationLoader());
+        var catalog = HelpCatalogLoader.Load();
+        using var hub = new HelpPageViewModel(preferences, catalog,
+            new InformationRoute(InformationDestination.Help), () => { }, _ => { }, () => { });
+        hub.SearchText = "offline";
+        var englishTitle = hub.Title;
+
+        var changed = await preferences.SetLanguageAsync(AppLanguage.Hungarian);
+
+        Assert.IsTrue(changed.IsSuccess);
+        Assert.AreEqual("offline", hub.SearchText);
+        Assert.AreNotEqual(englishTitle, hub.Title);
+        var expected = catalog.Search(AppLanguage.Hungarian, HelpPlatform.Windows, hub.SearchText);
+        CollectionAssert.AreEqual(expected.Select(result => result.Topic.Id).ToArray(),
+            hub.Cards.Select(card => card.Id).ToArray());
+    }
+
+    [TestMethod]
+    public async Task SearchResultStatusExplainsEmptyResultsAndRefreshesWithLanguage()
+    {
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync(
+            resourceLoader: new ShippedLocalizationLoader());
+        using var page = new HelpPageViewModel(preferences, HelpCatalogLoader.Load(),
+            new InformationRoute(InformationDestination.Help), () => { }, _ => { }, () => { });
+        page.SearchText = "no-such-help-topic-zzzz";
+        Assert.IsTrue(page.HasNoSearchResults);
+        StringAssert.Contains(page.SearchResultsStatusText, page.NoSearchResultsText);
+        var englishHint = page.SearchKeyboardHelpText;
+        var englishStatus = page.SearchResultsStatusText;
+        Assert.IsTrue((await preferences.SetLanguageAsync(AppLanguage.Hungarian)).IsSuccess);
+        Assert.AreNotEqual(englishHint, page.SearchKeyboardHelpText);
+        Assert.AreNotEqual(englishStatus, page.SearchResultsStatusText);
+        StringAssert.Contains(page.SearchResultsStatusText, page.NoSearchResultsText);
+        ExecuteCommand(page.ClearSearchCommand);
+        Assert.IsFalse(page.IsSearchActive);
+        Assert.AreEqual(4, page.Cards.Count);
+        Assert.AreEqual(page.CardsLabel, page.SearchResultsStatusText);
+    }
+
+    [TestMethod]
     public async Task SettingsHelpRelatedTopicsAndAboutKeepTheirBackPaths()
     {
         await using var preferences = await TestUiPreferencesFactory.CreateAsync();
@@ -146,7 +278,7 @@ public sealed class HelpNavigationTests
         await using var preferences = await TestUiPreferencesFactory.CreateAsync(
             resourceLoader: new ShippedLocalizationLoader());
         using var page = new HelpPageViewModel(preferences, HelpCatalogLoader.Load(),
-            new InformationRoute(InformationDestination.HelpTopic, HelpTopicIds.AddDevice), () => { }, _ => { });
+            new InformationRoute(InformationDestination.HelpTopic, HelpTopicIds.AddDevice), () => { }, _ => { }, () => { });
         var englishTitle = page.Title;
         var sectionCount = page.Sections.Count;
         page.ScrollOffset = 240;
@@ -234,6 +366,96 @@ public sealed class HelpNavigationTests
             foreach (var property in new[] { "RememberMeWarningText", "RememberMeWarningLabel" })
                 Assert.IsTrue(notifications.Contains((viewModel, property)), property);
         Assert.AreEqual(0, ((RejectAllEndpoints)(object)endpoints).Calls);
+    }
+
+    [TestMethod]
+    public async Task RegistrationPrivacyWorksWithoutBackendAndPreservesAllFormValues()
+    {
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync();
+        var endpoints = DispatchProxy.Create<IEndpoints, RejectAllEndpoints>();
+        await using var runtime = new UnavailableRuntime();
+        using var shell = new MainViewModel(endpoints, runtime, new FakeBackgroundSyncSettingsClient(), preferences);
+        ExecuteCommand(shell.ShowRegistrationCommand);
+        var form = shell.RegistrationViewModel;
+        form.Username = "unfinished-registration";
+        form.FirstName = "First";
+        form.LastName = "Last";
+        form.Email = "local@example.test";
+        form.Password = "unfinished-password";
+        form.ConfirmPassword = "unfinished-password";
+        form.RememberMe = true;
+        // Isolate the policy gate from backend readiness without calling any endpoint.
+        form.SetBackendInitialized(true);
+        Assert.IsTrue(form.CanRegister, "A valid form must not require a prior policy visit.");
+        form.SetBackendInitialized(false);
+        var canRegister = form.CanRegister;
+
+        ExecuteCommand(form.ShowPrivacyPolicyCommand);
+        Assert.AreSame(shell.PrivacyPolicyViewModel, shell.CurrentPageViewModel);
+        Assert.IsTrue(shell.IsInformationPageVisible);
+        Assert.IsTrue(shell.PrivacyPolicyViewModel.Sections.Count > 0);
+        Assert.IsTrue(await shell.TryNavigateBackAsync());
+
+        Assert.AreSame(form, shell.CurrentPageViewModel);
+        Assert.AreEqual("unfinished-registration", form.Username);
+        Assert.AreEqual("First", form.FirstName);
+        Assert.AreEqual("Last", form.LastName);
+        Assert.AreEqual("local@example.test", form.Email);
+        Assert.AreEqual("unfinished-password", form.Password);
+        Assert.AreEqual("unfinished-password", form.ConfirmPassword);
+        Assert.IsTrue(form.RememberMe);
+        Assert.AreEqual(canRegister, form.CanRegister, "Reading must not change existing registration availability.");
+        Assert.IsTrue(form.RestorePrivacyPolicyFocus);
+        Assert.AreEqual(0, ((RejectAllEndpoints)(object)endpoints).Calls);
+    }
+
+    [TestMethod]
+    public async Task SettingsPrivacyBackAndQuickReturnKeepTheOriginalCaller()
+    {
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync();
+        var endpoints = DispatchProxy.Create<IEndpoints, RejectAllEndpoints>();
+        await using var runtime = new UnavailableRuntime();
+        using var shell = new MainViewModel(endpoints, runtime, new FakeBackgroundSyncSettingsClient(), preferences);
+        var caller = shell.CurrentPageViewModel;
+        ExecuteCommand(shell.ShowSettingsCommand);
+        ExecuteCommand(shell.SettingsViewModel.NavigateToPrivacyCommand);
+        var policy = shell.PrivacyPolicyViewModel;
+        policy.ScrollOffset = 150;
+        Assert.AreSame(policy, shell.CurrentPageViewModel);
+        Assert.IsTrue(await shell.TryNavigateBackAsync());
+        Assert.AreSame(shell.SettingsViewModel, shell.CurrentPageViewModel);
+        ExecuteCommand(shell.SettingsViewModel.NavigateToPrivacyCommand);
+        Assert.AreSame(policy, shell.CurrentPageViewModel);
+        Assert.AreEqual(150d, policy.ScrollOffset);
+        ExecuteCommand(policy.ReturnToAppCommand);
+        Assert.AreSame(caller, shell.CurrentPageViewModel);
+        shell.OpenPrivacyPolicy();
+        Assert.IsTrue(await shell.TryNavigateBackAsync());
+        Assert.AreSame(caller, shell.CurrentPageViewModel, "A fresh visit must not inherit Settings history.");
+        Assert.AreEqual(0, ((RejectAllEndpoints)(object)endpoints).Calls);
+    }
+
+    [TestMethod]
+    public async Task PrivacyLanguageChangeRefreshesTheDocumentAndKeepsReadingPosition()
+    {
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync(
+            resourceLoader: new ShippedLocalizationLoader());
+        using var page = new PrivacyPolicyViewModel(preferences, PrivacyPolicyCatalog.Load(), () => { }, () => { });
+        var englishTitle = page.Title;
+        var englishDate = page.DateText;
+        var englishSections = page.Sections;
+        page.ScrollOffset = 260;
+
+        var result = await preferences.SetLanguageAsync(AppLanguage.Hungarian);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreNotEqual(englishTitle, page.Title);
+        Assert.AreNotEqual(englishDate, page.DateText);
+        Assert.IsTrue(page.Title.StartsWith("Adatvédelmi tájékoztató", StringComparison.Ordinal));
+        CollectionAssert.AreEqual(englishSections.Select(section => section.Id).ToArray(),
+            page.Sections.Select(section => section.Id).ToArray());
+        Assert.AreNotEqual(englishSections[0].Body, page.Sections[0].Body);
+        Assert.AreEqual(260d, page.ScrollOffset);
     }
 
     public class RejectAllEndpoints : DispatchProxy

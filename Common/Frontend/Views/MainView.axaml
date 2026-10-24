@@ -36,6 +36,9 @@
     <DataTemplate x:DataType="informationVm:HelpPageViewModel">
       <informationViews:HelpPageView />
     </DataTemplate>
+    <DataTemplate x:DataType="informationVm:PrivacyPolicyViewModel">
+      <informationViews:PrivacyPolicyView />
+    </DataTemplate>
     <DataTemplate x:DataType="informationVm:AboutViewModel">
       <informationViews:AboutView />
     </DataTemplate>
@@ -60,8 +63,8 @@
   </UserControl.DataTemplates>
 
   <Grid Background="{DynamicResource AppBrush.Background.Primary}">
-  <Grid RowDefinitions="Auto,Auto,*"
-        IsEnabled="{Binding IsApplicationInteractionEnabled}">
+  <Grid x:Name="ApplicationSurface" RowDefinitions="Auto,Auto,*" Focusable="True"
+        IsEnabled="{Binding IsApplicationSurfaceEnabled}">
     <Grid>
       <Border Classes="card"
               Margin="16,16,16,4"
@@ -71,7 +74,7 @@
             <TextBlock Text="{Binding AppTitle}" Classes="sectionTitle" />
             <Grid>
               <TextBlock Text="{Binding HeaderSubtitle}"
-                         IsVisible="{Binding IsHeaderSubtitleUser}"
+                         IsVisible="{Binding IsHeaderSubtitleIdle}"
                          Classes="subtleText"
                          TextWrapping="Wrap" />
               <TextBlock Text="{Binding HeaderSubtitle}"
@@ -206,7 +209,7 @@
                        TextWrapping="NoWrap" />
             <Grid ClipToBounds="True">
               <TextBlock Text="{Binding HeaderSubtitle}"
-                         IsVisible="{Binding IsHeaderSubtitleUser}"
+                         IsVisible="{Binding IsHeaderSubtitleIdle}"
                          Classes="subtleText"
                          FontSize="12"
                          TextTrimming="CharacterEllipsis"
@@ -434,6 +437,19 @@
                       IsVisible="{Binding IsDesktopContentVisible}" />
     </Grid>
   </Grid>
+
+    <Border x:Name="ContextHelpOverlay"
+            AutomationProperties.Name="{Binding ContextHelpPage.Title}"
+            Background="{DynamicResource AppBrush.Dialog.Overlay}"
+            IsVisible="{Binding IsContextHelpOpen}"
+            IsEnabled="{Binding IsContextHelpInteractive}"
+            KeyboardNavigation.TabNavigation="Cycle"
+            Padding="8">
+      <Border Background="{DynamicResource AppBrush.Background.Primary}"
+              MaxWidth="1000" HorizontalAlignment="Stretch">
+        <ContentControl Content="{Binding ContextHelpPage}" />
+      </Border>
+    </Border>
 
     <Border Background="{DynamicResource AppBrush.Dialog.Overlay}" IsVisible="{Binding IsSessionRenewalDialogOpen}" Padding="24">
       <Border Classes="card"

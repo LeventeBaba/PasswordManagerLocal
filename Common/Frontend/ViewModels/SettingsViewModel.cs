@@ -23,7 +23,8 @@ public sealed class SettingsViewModel : ViewModelBase
         DeviceAppPreferencesService deviceAppPreferences,
         Action navigateBack,
         Action navigateToAbout,
-        Action? navigateToHelp = null)
+        Action? navigateToHelp = null,
+        Action? navigateToPrivacy = null)
         : base(uiPreferences)
     {
         _deviceAppPreferences = deviceAppPreferences
@@ -34,6 +35,7 @@ public sealed class SettingsViewModel : ViewModelBase
         NavigateBackCommand = Own(ReactiveCommand.Create(navigateBack));
         NavigateToAboutCommand = Own(ReactiveCommand.Create(navigateToAbout));
         NavigateToHelpCommand = Own(ReactiveCommand.Create(() => navigateToHelp?.Invoke()));
+        NavigateToPrivacyCommand = Own(ReactiveCommand.Create(() => navigateToPrivacy?.Invoke()));
         ToggleAppearanceSectionCommand = Own(ReactiveCommand.Create(ToggleAppearanceSection));
         ToggleBackgroundSectionCommand = Own(ReactiveCommand.Create(ToggleBackgroundSection));
         LanguageOptions =
@@ -55,6 +57,7 @@ public sealed class SettingsViewModel : ViewModelBase
     public ReactiveCommand<RxVoid, RxVoid> NavigateBackCommand { get; }
     public ReactiveCommand<RxVoid, RxVoid> NavigateToAboutCommand { get; }
     public ReactiveCommand<RxVoid, RxVoid> NavigateToHelpCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> NavigateToPrivacyCommand { get; }
     public ReactiveCommand<RxVoid, RxVoid> ToggleAppearanceSectionCommand { get; }
     public ReactiveCommand<RxVoid, RxVoid> ToggleBackgroundSectionCommand { get; }
 
@@ -198,6 +201,8 @@ public sealed class SettingsViewModel : ViewModelBase
     public string InformationTitle => GetTranslation("Settings_Information_Title");
     public string HelpTitle => GetTranslation("Help_Title");
     public string HelpDescription => GetTranslation("Settings_Help_Description");
+    public string PrivacyTitle => GetTranslation("Privacy_Title");
+    public string PrivacyDescription => GetTranslation("Settings_Privacy_Description");
     public string AboutTitle => GetTranslation("About_Title");
     public string AboutDescription => GetTranslation("Settings_About_Description");
 
@@ -272,6 +277,8 @@ public sealed class SettingsViewModel : ViewModelBase
             nameof(InformationTitle),
             nameof(HelpTitle),
             nameof(HelpDescription),
+            nameof(PrivacyTitle),
+            nameof(PrivacyDescription),
             nameof(AboutTitle),
             nameof(AboutDescription)
         ]);

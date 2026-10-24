@@ -13,9 +13,11 @@ public sealed class HelpPageViewModel : ViewModelBase
     private readonly Action<InformationRoute> _navigate;
     private bool _isTopicUnavailable;
     private IReadOnlyList<HelpLinkItemViewModel> _cards = [];
+    private string _searchText = string.Empty;
+    private string? _categoryId;
 
     public HelpPageViewModel(UiPreferencesService preferences, HelpCatalog catalog, InformationRoute route,
-        Action navigateBack, Action<InformationRoute> navigate) : base(preferences)
+        Action navigateBack, Action<InformationRoute> navigate, Action returnToApp) : base(preferences)
     {
         _catalog = catalog;
         _navigate = navigate;
@@ -30,11 +32,55 @@ public sealed class HelpPageViewModel : ViewModelBase
         Route = valid ? route : new InformationRoute(InformationDestination.Help);
         _isTopicUnavailable = !valid;
         NavigateBackCommand = Own(ReactiveCommand.Create(navigateBack));
+        ReturnToAppCommand = Own(ReactiveCommand.Create(returnToApp));
+        FindHelpCommand = Own(ReactiveCommand.Create(() =>
+            _navigate(new InformationRoute(InformationDestination.Help))));
+        NavigateToCategoryCommand = Own(ReactiveCommand.Create(() =>
+        {
+            if (_categoryId is not null)
+                _navigate(new InformationRoute(InformationDestination.HelpCategory, _categoryId));
+        }));
+        ClearSearchCommand = Own(ReactiveCommand.Create(() => { SearchText = string.Empty; }));
         RefreshContent();
     }
 
     public InformationRoute Route { get; }
     public ReactiveCommand<RxVoid, RxVoid> NavigateBackCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ReturnToAppCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> FindHelpCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> NavigateToCategoryCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ClearSearchCommand { get; }
+    public bool IsHelpHome => Route.Destination == InformationDestination.Help;
+    public bool CanFindHelp => !IsHelpHome;
+    public string SearchText
+    {
+        get => _searchText;
+        set
+        {
+            value ??= string.Empty;
+            if (_searchText == value)
+                return;
+            this.RaiseAndSetIfChanged(ref _searchText, value);
+            ScrollOffset = 0;
+            FocusedCardId = null;
+            RefreshContent();
+        }
+    }
+    public bool IsSearchActive => IsHelpHome && !string.IsNullOrWhiteSpace(SearchText);
+    public bool HasNoSearchResults => IsSearchActive && !HasCards;
+    public bool ShowCardsLabel => HasCards || IsSearchActive;
+    public string FindHelpLabel => GetTranslation("Help_FindHelp");
+    public string ReturnToAppLabel => GetTranslation("Help_ReturnToApp");
+    public string ReturnToAppHelpText => GetTranslation("Help_ReturnToApp_Help");
+    public string SearchLabel => GetTranslation("Help_SearchLabel");
+    public string SearchPlaceholder => GetTranslation("Help_SearchPlaceholder");
+    public string SearchKeyboardHelpText => GetTranslation("Help_SearchKeyboardHelp");
+    public string SearchResultsStatusText => HasNoSearchResults
+        ? $"{CardsLabel}. {NoSearchResultsText}" : CardsLabel;
+    public string ClearSearchLabel => GetTranslation("Help_ClearSearch");
+    public string NoSearchResultsText => GetTranslation("Help_SearchNoResults");
+    public string CategoryNavigationLabel => string.Format(CultureInfo.CurrentCulture,
+        GetTranslation("Help_OpenCategory_Format"), CategoryLabel);
     public string Title { get; private set; } = string.Empty;
     public string Summary { get; private set; } = string.Empty;
     public string CategoryLabel { get; private set; } = string.Empty;
@@ -44,13 +90,15 @@ public sealed class HelpPageViewModel : ViewModelBase
     public bool HasCards => Cards.Count != 0;
     public bool HasCategoryLabel => CategoryLabel.Length != 0;
     public string BackLabel => GetTranslation("Common_Back");
-    public string CardsLabel => GetTranslation(Route.Destination switch
+    public string CardsLabel => IsSearchActive
+        ? string.Format(CultureInfo.CurrentCulture, GetTranslation("Help_ResultsCount_Format"), Cards.Count)
+        : GetTranslation(Route.Destination switch
     {
         InformationDestination.Help => "Help_Categories",
         InformationDestination.HelpCategory => "Help_Topics",
         _ => "Help_RelatedTopics"
     });
-    public bool IsTopicUnavailable => _isTopicUnavailable;
+    public bool IsTopicUnavailable => _isTopicUnavailable && !IsSearchActive;
     public string TopicUnavailableText => GetTranslation("Help_TopicUnavailable");
 
     // Volatile view state for this public-document route, not persisted or logged.
@@ -72,11 +120,17 @@ public sealed class HelpPageViewModel : ViewModelBase
             card.Dispose();
         Sections = [];
         CategoryLabel = string.Empty;
+        _categoryId = null;
         if (Route.Destination == InformationDestination.Help)
         {
             Title = GetTranslation("Help_Title");
             Summary = GetTranslation("Help_Subtitle");
-            _cards = content.Categories.Select(category => new HelpLinkItemViewModel(
+            _cards = IsSearchActive
+                ? _catalog.Search(CurrentLanguage, IsAndroidUi ? HelpPlatform.Android : HelpPlatform.Windows, SearchText)
+                    .Select(result => new HelpLinkItemViewModel(
+                        new InformationRoute(InformationDestination.HelpTopic, result.Topic.Id),
+                        result.Topic.Title, result.Excerpt, _navigate, result.CategoryTitle)).ToArray()
+                : content.Categories.Select(category => new HelpLinkItemViewModel(
                 new InformationRoute(InformationDestination.HelpCategory, category.Id),
                 category.Title, category.Summary, _navigate)).ToArray();
         }
@@ -93,6 +147,7 @@ public sealed class HelpPageViewModel : ViewModelBase
             Title = topic.Title;
             Summary = topic.Summary;
             CategoryLabel = content.Categories.Single(category => category.Id == topic.CategoryId).Title;
+            _categoryId = topic.CategoryId;
             var step = 0;
             Sections = topic.Sections.Where(section => section.Platform == HelpPlatform.All ||
                     section.Platform == (IsAndroidUi ? HelpPlatform.Android : HelpPlatform.Windows))
@@ -113,7 +168,12 @@ public sealed class HelpPageViewModel : ViewModelBase
         RaisePropertiesChanged([
             nameof(Title), nameof(Summary), nameof(CategoryLabel), nameof(HasCategoryLabel),
             nameof(Cards), nameof(Sections), nameof(HasCards), nameof(HasSections), nameof(CardsLabel),
-            nameof(BackLabel), nameof(TopicUnavailableText)
+            nameof(BackLabel), nameof(TopicUnavailableText), nameof(IsTopicUnavailable),
+            nameof(IsSearchActive), nameof(HasNoSearchResults), nameof(ShowCardsLabel),
+            nameof(FindHelpLabel), nameof(ReturnToAppLabel), nameof(ReturnToAppHelpText),
+            nameof(SearchLabel), nameof(SearchPlaceholder), nameof(ClearSearchLabel),
+            nameof(NoSearchResultsText), nameof(CategoryNavigationLabel),
+            nameof(SearchKeyboardHelpText), nameof(SearchResultsStatusText)
         ]);
     }
 

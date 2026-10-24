@@ -1,0 +1,96 @@
+{
+  "version": "0.1",
+  "reviewedOn": "2026-10-24",
+  "effectiveOn": null,
+  "isDraft": true,
+  "title": "Privacy Policy — Password Manager Local",
+  "summary": "Your profiles and passwords are stored on your devices. Enrolled devices exchange data directly, including in the background when enabled. The reviewed app has no developer-operated vault server or automatic analytics upload. Clipboard copies, saved images, logs, network discovery and system backups have separate privacy implications.",
+  "statusText": "Draft for testing — version 0.1. The data-handling description is based on the reviewed source. Publisher/contact details and legal review are still incomplete. This is an editable starting point, not the final publication notice.",
+  "sections": [
+    {
+      "id": "scope-contact",
+      "heading": "1. About this notice and privacy contact",
+      "body": "Password Manager Local is a password manager for Windows and Android. It works with local profiles and direct connections between devices; the reviewed app does not use a developer-operated account or vault server. This notice describes the installed app, not the separate practices of an app store, operating system, website host or service you open from a link.\n\nThis is a test draft. The publisher’s public legal identity, contact address and privacy inquiry channel have not yet been supplied for this notice. They must be added before public release. No privacy email address, response service or data protection officer is represented as already available here. Do not send a master password, stored password, enrollment code or database to someone claiming to provide support."
+    },
+    {
+      "id": "profile-data",
+      "heading": "2. Profile information and required fields",
+      "body": "The current registration form requires a username, first name, last name, email address, master password and password confirmation. Stay logged in is optional. Without the required fields, registration cannot complete; Settings and the information pages remain available without registration.\n\nThe app uses the username and master password for local sign-in and account protection. It stores the profile’s username, names, email, registration time, registration time zone, registration device type and update information on your devices. Names and email appear in profile information. The reviewed app does not send registration or verification emails, use that address for marketing, or offer an email-based master-password reset. The master password is used to derive authentication/key material; it is not a message sent to a developer account service."
+    },
+    {
+      "id": "vault-data",
+      "heading": "3. Passwords and other content you enter",
+      "body": "The app stores password entries, including their names, descriptions, password values, tags, colors and creation/update information, so that you can view, edit and organize them. A description may contain personal information you choose to enter. Data comes from your input, actions in the app and devices enrolled into the same profile; it is not obtained from public data brokers.\n\nThe feature called Export copies or moves selected entries and related tags/colors to another eligible local profile. It is not a general plaintext-file export. A copy in the destination becomes that profile’s data and may synchronize with its devices. Deleting the source does not delete a destination copy."
+    },
+    {
+      "id": "device-data",
+      "heading": "4. Device and synchronization information",
+      "body": "To enroll devices, authenticate peers and reconcile changes, the app processes app-generated account/device identifiers, device names and types, public keys and certificate fingerprints, network addresses/ports, membership history, timestamps, version information, and trust/block/error status. It also stores pending encrypted updates and records of deletions so that changes are not silently lost or resurrected.\n\nThese identifiers are synchronization identifiers, not an advertising profile. The reviewed app does not request an advertising ID, contacts, microphone recordings or GPS location. Network interfaces and local addresses are used to discover and connect devices, not to provide a location-tracking feature."
+    },
+    {
+      "id": "local-security",
+      "heading": "5. Local storage, encryption and Stay logged in",
+      "body": "Profile and vault data are held in a local encrypted database, with additional encrypted account payloads and key material. Windows uses protection tied to the current Windows user for protected keys; Android uses Android Keystore. App preferences such as language, theme and animations are stored locally outside the vault. Encryption does not make all app settings, logs or network metadata secret.\n\nStay logged in saves protected local key material so the app can restore access without you re-entering the master password. A person who can use your unlocked device or operating-system account may therefore be able to open your passwords. Turn it off and sign out when appropriate; protect the device itself. Usable data must be decrypted in memory while the relevant operation runs. Encryption cannot prevent every loss, malware attack, screenshot or disclosure on an unlocked device."
+    },
+    {
+      "id": "peer-network",
+      "heading": "6. Connections and who receives data",
+      "body": "Enrolling another device enables direct exchange of the profile’s information, encrypted password data and synchronization/control information with authorized peer devices. Account data is not uploaded to a developer-operated central vault or relay server in the reviewed implementation. Peer devices keep their own copies. Other enrolled devices can relay authenticated information about known peers.\n\nSynchronization connections use TLS and peer validation. Local discovery also sends signed or authenticated UDP messages; authentication does not encrypt those discovery messages. Nearby network observers can see traffic timing, IP addresses and discovery metadata such as app-generated device identifiers or enrollment-session identifiers. Do not assume all network metadata is hidden. Only enroll devices you control and trust."
+    },
+    {
+      "id": "background-permissions",
+      "heading": "7. Background operation and Android permissions",
+      "body": "When background operation is enabled and available, the Windows agent or Android service can continue discovery, peer connections and exchanging encrypted updates while the main window is closed. Encrypted updates may wait locally until an authorized session can apply them. This is device-to-device synchronization, not a telemetry upload to the publisher. Manage background operation in Settings; stopping it does not erase previously stored data or copies on peers.\n\nAndroid declares Internet, network/Wi-Fi state and multicast permissions for connectivity/discovery; camera permission for QR scanning; and foreground connected-device service, notification and boot-completed permissions for background service operation and restoration. A service notification can indicate background activity. The camera requires runtime permission. Denying camera access leaves manual code entry or image selection available. OS restrictions can limit background operation."
+    },
+    {
+      "id": "qr-files",
+      "heading": "8. Camera, QR images and selected files",
+      "body": "QR scanning reads camera preview frames locally to decode an enrollment code. The scanner does not implement a recording or developer upload service. Selecting a QR image reads the file you choose to decode it locally. Manual code entry is another option. An enrollment code authorizes a security-sensitive connection; keep it and any image containing it private.\n\nIf you save a QR image, the saved file is separate from the vault and follows the storage/backup rules of the location you choose. A system file picker or file provider may itself access a cloud-backed location if you select one. Deleting a profile does not automatically remove images you saved elsewhere."
+    },
+    {
+      "id": "clipboard",
+      "heading": "9. Clipboard and visible information",
+      "body": "Copying a password or other text writes it to the operating-system clipboard in readable form. Other applications, clipboard history or clipboard synchronization can retain or expose it according to your system settings. The current app does not implement a timed clipboard-clear guarantee. Clear sensitive clipboard content and review your system’s clipboard settings yourself.\n\nInformation you reveal on screen can be seen by people nearby or captured by system tools. Hiding a password or avoiding a username in the shell header does not hide all account information throughout the app."
+    },
+    {
+      "id": "retention-deletion",
+      "heading": "10. Retention, deletion and other copies",
+      "body": "Profile and vault data stay on your devices until you change or delete them or remove the relevant app storage. There is no account-inactivity expiry in the reviewed app. Sign out ends a session; it does not delete the profile. To delete an account, sign in to that profile, open Profile → Delete account, read the warning, enter the master password and confirm. This removes the local account’s mutable profile/vault and pending state and creates a signed deletion instruction for its other devices.\n\nDeletion is not an instant remote wipe. Offline or unreachable devices apply the deletion only when they receive and accept it. Disconnecting a device is also not a guarantee of erasing its existing copy. Previously copied passwords, destination profiles, saved images, logs and backups need separate attention.\n\nThe app deliberately retains account/device identifiers, signed deletion/control records and historical membership evidence to verify deletion and prevent resurrection. Permanent account-deletion barriers have no automatic expiry in the current implementation. Other synchronization deletion markers may be removed when the protocol’s acknowledgement conditions are met, rather than after a fixed number of days. Database reset removes local database/key files; it does not promise deletion of separate logs or external copies. Logical deletion does not guarantee forensic overwriting of every storage block."
+    },
+    {
+      "id": "diagnostics",
+      "heading": "11. Local diagnostics and logs",
+      "body": "Self-diagnostics checks and, where supported, repairs local account/synchronization state. Debug builds can write local backend log files and diagnostic output containing times, OS/build details, file paths, app-generated identifiers, network endpoints and exception details. These logs are separate from encrypted vault content. The reviewed debug logger does not impose an automatic file-retention limit; files remain until removed separately. Release builds omit calls to this debug logger, but the operating system may still produce crash/diagnostic records under its own settings.\n\nThe reviewed app has no automatic developer crash-report upload. If you choose to share a log or screenshot through another service, inspect and redact it first. That service and the recipient will process whatever you send. This draft does not establish a support inbox, its providers or a retention period for support correspondence."
+    },
+    {
+      "id": "backups",
+      "heading": "12. System backups and loss of access",
+      "body": "The app does not provide a developer-hosted cloud backup or master-password recovery service. Operating-system, device-transfer or backup tools may copy app files depending on the platform and your configuration. This draft does not claim that Android backup or device transfer is disabled. Protected keys may not be usable after a restore to another device or OS account.\n\nUninstalling, clearing app data, resetting the database or losing keys may permanently remove access. On Windows, uninstall behavior depends on the installer and may leave user data behind. Copies in backups or on other devices are not automatically erased by a local uninstall. Keep control of those copies and do not rely on another device or a backup as a guaranteed recovery method."
+    },
+    {
+      "id": "external-services",
+      "heading": "13. External links, libraries and international transfers",
+      "body": "The reviewed app contains no integrated advertising, usage-analytics or developer telemetry upload feature, and no feature for selling vault data. Reading the bundled help or this policy does not load a website. The third-party acknowledgements describe libraries included for app functions; listing a library does not mean its author receives your vault.\n\nOpening a web link hands the address to your browser/system launcher. The destination and its providers can receive connection information such as your IP address and browser details under their own policies. App stores, OS backups, cloud file providers and clipboard-sync services have their own data practices. Those services may process data outside your country or the EEA. The app has no developer-selected overseas vault host; it does not restrict where your peer devices or chosen external services operate. Any future publisher-operated website/support processing needs its own verified recipients, locations and transfer safeguards."
+    },
+    {
+      "id": "legal-basis",
+      "heading": "14. Legal scope and legal bases: draft status",
+      "body": "A local-only or direct peer-to-peer design does not by itself settle every legal responsibility. Purely personal/household use and processing for an organization can have different legal treatment. This draft does not designate the publisher as controller of all vault contents or claim that all processing is exempt from data protection law.\n\nBefore public release, the publisher must determine its role for each actual processing activity and, where the GDPR applies, state the purpose and corresponding legal basis. If relying on legitimate interests, it must identify them; if relying on consent, it must explain withdrawal; and if providing data is legally or contractually required, it must explain that requirement. No final legal basis for a publisher-operated service is asserted in this test draft. Reading this notice, registering or enabling an OS permission is not blanket consent to unrelated future processing."
+    },
+    {
+      "id": "rights",
+      "heading": "15. Your controls, rights and complaints",
+      "body": "You can read and change profile and password information through the app, choose Stay logged in, manage background operation, enroll/disconnect devices and delete an account. Camera and notification permissions can be managed in Android settings. The current cross-profile Export feature is not a general GDPR data-portability export or a developer request portal. A developer cannot remotely read, recover or erase copies held only on your devices through a central service that does not exist.\n\nWhere the GDPR applies to a controller’s processing of your data, rights may include access, rectification, erasure, restriction, portability and objection, subject to their legal conditions. Where processing relies on consent, you may withdraw it without affecting prior lawful processing. You may complain to a supervisory authority, particularly where you live or work or where an alleged infringement occurred; in Hungary this is the Nemzeti Adatvédelmi és Információszabadság Hatóság (NAIH), https://www.naih.hu/.\n\nThe public release must provide a real privacy contact and a workable request process for any data the publisher actually handles. Those details are still missing in this draft; the local controls above are not a replacement for applicable legal rights."
+    },
+    {
+      "id": "automation-children",
+      "heading": "16. Automated decisions and use by children",
+      "body": "The app does not implement advertising profiling or automated decisions with legal or similarly significant effects. Local password-strength estimates, synchronization conflict handling and device security checks are functional/security operations.\n\nThe reviewed app does not request a date of birth or implement parental consent or an age-verification service. This draft does not set a new age limit or certify suitability for children. The publisher must settle the intended audience and any applicable child-privacy or store obligations before public distribution."
+    },
+    {
+      "id": "changes",
+      "heading": "17. Revisions and how to find this notice",
+      "body": "This bundled notice can be read offline from Settings → Privacy Policy and from the registration form before creating a profile. It does not require sign-in or a checkbox accepting the policy. The draft has a review date, not an asserted legal effective date.\n\nUpdates must keep the in-app and public versions consistent. A future change in actual data practices must be explained before the new processing where required, with a separate permission or consent choice if applicable. This notice does not authorize such future changes. The public hosting address and final effective date have not yet been set."
+    }
+  ]
+}

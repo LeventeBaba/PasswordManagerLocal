@@ -106,8 +106,11 @@ public sealed class ChangeProfileViewModel : ViewModelBase
 
     public string BusyText => GetTranslation("Common_Loading");
 
+    public string ProfilesHelpLabel => GetTranslation("ContextHelp_Profiles");
+
     protected override void OnLanguageChanged()
     {
+        this.RaisePropertyChanged(nameof(ProfilesHelpLabel));
         this.RaisePropertyChanged(nameof(Title));
         this.RaisePropertyChanged(nameof(Subtitle));
         this.RaisePropertyChanged(nameof(BackLabel));
