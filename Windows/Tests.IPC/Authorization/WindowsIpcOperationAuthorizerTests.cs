@@ -216,7 +216,11 @@ public sealed class WindowsIpcOperationAuthorizerTests
     }
 
     [TestMethod]
-    public void RunningAgentWithResettableBackendFailureAllowsOnlyControlRecoveryOperations()
+    [DataRow(BackendRuntimeFailureKind.DatabaseCompatibility)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseConfigurationInvalid)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseKeyUnavailable)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseUnreadable)]
+    public void RunningAgentWithResettableBackendFailureAllowsOnlyControlRecoveryOperations(BackendRuntimeFailureKind kind)
     {
         var state = new WindowsAgentStateStore();
         state.MarkRunning(DateTimeOffset.UtcNow);
@@ -228,7 +232,7 @@ public sealed class WindowsIpcOperationAuthorizerTests
             Snapshot = FakeWindowsAgentBackendRuntimeOwner.CreateSnapshot(
                 ownerState: WindowsAgentBackendOwnerState.Failed,
                 runtimeState: BackendRuntimeState.Failed,
-                runtimeFailureKind: BackendRuntimeFailureKind.DatabaseCompatibility)
+                runtimeFailureKind: kind)
         };
         var authorizer = new WindowsAgentOperationAuthorizer(
             state,

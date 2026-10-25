@@ -373,6 +373,12 @@ public sealed class WindowsIpcContractValidator
             throw new IpcPayloadException("The IPC device-unlock state has an invalid failure kind.");
         }
 
+        if (status.FailureKind.RequiresDatabaseReset() &&
+            status.RuntimeState != BackendRuntimeStatusState.Failed)
+        {
+            throw new IpcPayloadException("The IPC database recovery failure requires a failed backend state.");
+        }
+
         var expectsDatabaseCompatibility =
             status.FailureKind == BackendRuntimeFailureStatusKind.DatabaseCompatibility;
         if ((status.DatabaseCompatibility is not null) != expectsDatabaseCompatibility)
@@ -396,6 +402,8 @@ public sealed class WindowsIpcContractValidator
         if (status.Failure is not null)
         {
             Validate(status.Failure);
+            if (status.FailureKind.RequiresDatabaseReset() && status.Failure.IsRetryable)
+                throw new IpcPayloadException("The IPC database recovery failure cannot be marked as retryable.");
             if (status.Failure.FailureKind != MapFailureKind(status.FailureKind))
                 throw new IpcPayloadException("The IPC backend failure kinds are inconsistent.");
         }
@@ -570,6 +578,9 @@ public sealed class WindowsIpcContractValidator
         failureKind switch
         {
             BackendRuntimeFailureStatusKind.DatabaseCompatibility => IpcFailureKind.Runtime,
+            BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid => IpcFailureKind.Runtime,
+            BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable => IpcFailureKind.PlatformKey,
+            BackendRuntimeFailureStatusKind.DatabaseUnreadable => IpcFailureKind.Runtime,
             BackendRuntimeFailureStatusKind.PlatformKeyUnavailable => IpcFailureKind.PlatformKey,
             BackendRuntimeFailureStatusKind.StorageUnavailable => IpcFailureKind.Storage,
             BackendRuntimeFailureStatusKind.StartupFailure => IpcFailureKind.Runtime,

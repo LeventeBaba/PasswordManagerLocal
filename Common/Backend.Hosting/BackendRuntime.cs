@@ -306,10 +306,10 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
                 throw new InvalidOperationException("A backend lifecycle operation is already in progress.");
 
             if (_snapshot.State != BackendRuntimeState.Failed ||
-                _snapshot.FailureKind != BackendRuntimeFailureKind.DatabaseCompatibility)
+                !_snapshot.FailureKind.RequiresDatabaseReset())
             {
                 throw new InvalidOperationException(
-                    "The database can only be reset after a database compatibility startup failure.");
+                    "The database can only be reset after a database recovery startup failure.");
             }
 
             starter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1158,6 +1158,12 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
                 (BackendRuntimeState.WaitingForDeviceUnlock, BackendRuntimeFailureKind.PlatformKeyUnavailable),
             DatabaseVersionNotSupportedException =>
                 (BackendRuntimeState.Failed, BackendRuntimeFailureKind.DatabaseCompatibility),
+            DatabaseConfigurationInvalidException =>
+                (BackendRuntimeState.Failed, BackendRuntimeFailureKind.DatabaseConfigurationInvalid),
+            DatabaseKeyUnavailableException =>
+                (BackendRuntimeState.Failed, BackendRuntimeFailureKind.DatabaseKeyUnavailable),
+            DatabaseUnreadableException =>
+                (BackendRuntimeState.Failed, BackendRuntimeFailureKind.DatabaseUnreadable),
             UnauthorizedAccessException or IOException =>
                 (BackendRuntimeState.Failed, BackendRuntimeFailureKind.StorageUnavailable),
             _ =>

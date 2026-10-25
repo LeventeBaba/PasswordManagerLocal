@@ -900,7 +900,7 @@
           "kind": "Warning",
           "platform": "All",
           "title": "Preserve your last working copy",
-          "body": "Do not uninstall, clear app data, reset the database, or delete the profile as a recovery experiment. There is no central vault copy or email reset. Recovery from another device depends on healthy available data and is not guaranteed."
+          "body": "Do not uninstall, clear app data, reset the database, or delete the profile as a recovery experiment. There is no central vault copy or email reset. Recovery from another device depends on healthy available data and is not guaranteed. On Android, a normal full uninstall removes the local vault and its Keystore key. Automatic cloud backup and device transfer of app data are disabled; reinstalling starts fresh. Enroll and verify another device before uninstalling if you need to retain access."
         }
       ],
       "relatedTopicIds": [
@@ -1720,14 +1720,14 @@
           "kind": "Explanation",
           "platform": "All",
           "title": "What you see",
-          "body": "The app reports an unsupported database version, a missing or damaged configuration header, a failed reset, or a backend startup failure. The database-version screen may offer Reset database and a second permanent-erasure confirmation."
+          "body": "The app distinguishes an unsupported database version, missing or damaged database configuration, an unavailable protected database key, and a database that cannot be read with its configured key. Each database recovery screen offers a reset with a separate permanent-erasure confirmation. A temporarily locked device or unavailable secure storage is a retry condition, not a reset condition."
         },
         {
           "id": "reason",
           "kind": "Explanation",
           "platform": "All",
           "title": "Why it can happen",
-          "body": "An incompatible app version, damaged local configuration, or startup/access problem can prevent opening the store. This is not evidence that your master password should be changed. Recreating a local store is different from recovering its contents."
+          "body": "An incompatible version, damaged configuration, a lost platform-protected key, a database/key mismatch or damaged encrypted data can prevent startup. Reinstalling on Android or copying files to another OS account can make protected keys unusable. This is different from an incorrect profile master password. Recreating a local database does not recover its old contents."
         },
         {
           "id": "next",

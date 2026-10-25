@@ -260,7 +260,7 @@ public sealed class AndroidRuntimeServiceHost : IAsyncDisposable
 
             if (!openResult.IsConnected)
             {
-                if (IsDatabaseCompatibilityFailure(openResult.Failure))
+                if (IsDatabaseRecoveryFailure(openResult.Failure))
                 {
                     client.ActivateDatabaseRecoveryFromHost(openResult.Failure!);
                     return client;
@@ -1038,33 +1038,33 @@ public sealed class AndroidRuntimeServiceHost : IAsyncDisposable
         IsCurrentInteractiveClient(client) &&
         client.HasMutationAuthority;
 
-    private static bool IsDatabaseCompatibilityFailure(Exception? failure)
+    private static bool IsDatabaseRecoveryFailure(Exception? failure)
     {
         if (failure is null)
             return false;
 
-        return IsDatabaseCompatibilityFailure(
+        return IsDatabaseRecoveryFailure(
             failure,
             new HashSet<Exception>(ReferenceEqualityComparer.Instance));
     }
 
-    private static bool IsDatabaseCompatibilityFailure(
+    private static bool IsDatabaseRecoveryFailure(
         Exception failure,
         ISet<Exception> visited)
     {
         if (!visited.Add(failure))
             return false;
-        if (failure is DatabaseVersionNotSupportedException)
+        if (failure is DatabaseRecoveryRequiredException)
             return true;
 
         if (failure is AggregateException aggregateFailure)
         {
             return aggregateFailure.InnerExceptions.Any(
-                innerFailure => IsDatabaseCompatibilityFailure(innerFailure, visited));
+                innerFailure => IsDatabaseRecoveryFailure(innerFailure, visited));
         }
 
         return failure.InnerException is not null &&
-            IsDatabaseCompatibilityFailure(failure.InnerException, visited);
+            IsDatabaseRecoveryFailure(failure.InnerException, visited);
     }
 
     private long ReserveNextAttachmentGenerationLocked() => ++_attachmentGeneration;

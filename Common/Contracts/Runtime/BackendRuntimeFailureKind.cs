@@ -8,5 +8,8 @@ public enum BackendRuntimeFailureKind
     StorageUnavailable,
     StartupFailure,
     InteractiveCleanupFailure,
-    ShutdownFailure
+    ShutdownFailure,
+    DatabaseConfigurationInvalid,
+    DatabaseKeyUnavailable,
+    DatabaseUnreadable
 }

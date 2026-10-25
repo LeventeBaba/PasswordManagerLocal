@@ -845,6 +845,15 @@ public sealed class WindowsNamedPipeFrontendBackendClient :
                 BackendRuntimeFailureStatusKind.DatabaseCompatibility =>
                     (CreateDatabaseCompatibilityException(status, original),
                      BackendRuntimeFailureKind.DatabaseCompatibility),
+                BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid =>
+                    (new DatabaseConfigurationInvalidException(innerException: original),
+                     BackendRuntimeFailureKind.DatabaseConfigurationInvalid),
+                BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable =>
+                    (new DatabaseKeyUnavailableException(original),
+                     BackendRuntimeFailureKind.DatabaseKeyUnavailable),
+                BackendRuntimeFailureStatusKind.DatabaseUnreadable =>
+                    (new DatabaseUnreadableException(original),
+                     BackendRuntimeFailureKind.DatabaseUnreadable),
                 BackendRuntimeFailureStatusKind.PlatformKeyUnavailable =>
                     (new KeyProtectorUnavailableException(
                         PasswordManagerLocal.Common.Contracts.Security.KeyProtectorUnavailableReason.PlatformKeyStoreUnavailable,

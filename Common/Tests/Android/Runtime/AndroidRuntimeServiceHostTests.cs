@@ -645,11 +645,21 @@ public sealed class AndroidRuntimeServiceHostTests
     }
 
     [TestMethod]
-    public async Task DatabaseCompatibilityFailureKeepsResetCapableRecoveryAttachment()
+    [DataRow(0)]
+    [DataRow(1)]
+    [DataRow(2)]
+    [DataRow(3)]
+    public async Task DatabaseRecoveryFailureKeepsResetCapableRecoveryAttachment(int failureCase)
     {
         using var fixture = CreateFixture(backgroundEnabled: false);
-        var compatibilityFailure = new DatabaseVersionNotSupportedException(99, 1, 1);
-        fixture.Runtime.StartupFailure = compatibilityFailure;
+        DatabaseRecoveryRequiredException recoveryFailure = failureCase switch
+        {
+            0 => new DatabaseVersionNotSupportedException(99, 1, 1),
+            1 => new DatabaseConfigurationInvalidException(),
+            2 => new DatabaseKeyUnavailableException(),
+            _ => new DatabaseUnreadableException()
+        };
+        fixture.Runtime.StartupFailure = recoveryFailure;
         fixture.Runtime.BeforeReset = () => fixture.Runtime.StartupFailure = null;
         await using var host = fixture.Host;
 
@@ -658,7 +668,7 @@ public sealed class AndroidRuntimeServiceHostTests
         Assert.AreEqual(
             AndroidInteractiveAttachmentState.DatabaseRecovery,
             client.AttachmentState);
-        await Assert.ThrowsExactlyAsync<DatabaseVersionNotSupportedException>(
+        await Assert.ThrowsAsync<DatabaseRecoveryRequiredException>(
             () => client.ConnectAsync());
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => client.GetEndpointsAsync());

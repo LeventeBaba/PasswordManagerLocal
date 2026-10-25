@@ -63,12 +63,16 @@ public sealed class WindowsAgentHealthValidatorTests
     }
 
     [TestMethod]
-    public void ResettableCompatibilityFailureAllowsControlRegistrationButNotEndpointReadiness()
+    [DataRow(BackendRuntimeFailureStatusKind.DatabaseCompatibility)]
+    [DataRow(BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid)]
+    [DataRow(BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable)]
+    [DataRow(BackendRuntimeFailureStatusKind.DatabaseUnreadable)]
+    public void ResettableDatabaseFailureAllowsControlRegistrationButNotEndpointReadiness(BackendRuntimeFailureStatusKind kind)
     {
         var agent = CreateAgentStatus();
         var backend = CreateBackendStatus(
             BackendRuntimeStatusState.Failed,
-            BackendRuntimeFailureStatusKind.DatabaseCompatibility);
+            kind);
 
         Assert.IsTrue(_validator.CanRegisterUi(agent, backend));
         Assert.IsFalse(_validator.IsHealthyForEndpoint(agent, backend));

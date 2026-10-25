@@ -1,5 +1,6 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Security;
 using PasswordManagerLocal.Common.Backend.Configuration;
+using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using System.Buffers.Binary;
 using System.Security.Cryptography;
@@ -33,11 +34,14 @@ internal static class DbConfigManager
             }
             catch (Exception exception) when (exception is CryptographicException or InvalidDataException)
             {
-                throw CreateUnsupportedException(null, "The protected database key could not be opened.", exception);
+                throw new DatabaseKeyUnavailableException(exception);
             }
 
             try
             {
+                if (keyBytes.Length != CryptographyConstants.Aes256KeySizeInBytes)
+                    throw new DatabaseKeyUnavailableException();
+
                 return Convert.ToBase64String(keyBytes);
             }
             finally
@@ -54,7 +58,7 @@ internal static class DbConfigManager
     private static void CreateDbConfig(BackendStoragePaths paths, IKeyProtector protector)
     {
         if (File.Exists(paths.DatabasePath))
-            throw CreateUnsupportedException(null, "The database configuration file is missing for the existing database.");
+            throw new DatabaseConfigurationInvalidException("The configuration file is missing for an existing database.");
 
         using var key = EncryptionKey.Create();
         var keyBytes = key.ExportCopy();
@@ -79,7 +83,7 @@ internal static class DbConfigManager
     private static void WriteDbConfig(string path, byte[] protectedBlob)
     {
         if (protectedBlob.Length == 0)
-            throw CreateUnsupportedException(null, "The protected database key is missing.");
+            throw new DatabaseConfigurationInvalidException("The protected database key is missing.");
 
         var header = CreateHeader();
         var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
@@ -116,20 +120,20 @@ internal static class DbConfigManager
         try
         {
             if (fileBytes.Length <= DbConfigHeaderLength)
-                throw CreateUnsupportedException(null, "The database configuration header or protected key is incomplete.");
+                throw new DatabaseConfigurationInvalidException("The configuration header or protected key is incomplete.");
 
             var header = fileBytes.AsSpan(0, DbConfigHeaderLength);
             if (header[0] != DbConfigMagicFirstByte || header[1] != DbConfigMagicSecondByte)
-                throw CreateUnsupportedException(null, "The database configuration header is invalid.");
+                throw new DatabaseConfigurationInvalidException("The configuration header is invalid.");
 
             var version = BinaryPrimitives.ReadInt32LittleEndian(header.Slice(DbConfigVersionOffset, sizeof(int)));
             var headerLength = BinaryPrimitives.ReadInt32LittleEndian(header.Slice(DbConfigHeaderLengthOffset, sizeof(int)));
 
             if (headerLength != DbConfigHeaderLength)
-                throw CreateUnsupportedException(version, "The database configuration header length is not supported.");
+                throw new DatabaseConfigurationInvalidException("The configuration header length is invalid.");
 
             if (version < OldestSupportedDbVersion || version > CurrentDbVersion)
-                throw CreateUnsupportedException(version);
+                throw new DatabaseVersionNotSupportedException(version, OldestSupportedDbVersion, CurrentDbVersion);
 
             return fileBytes.AsSpan(DbConfigHeaderLength).ToArray();
         }
@@ -149,14 +153,4 @@ internal static class DbConfigManager
         return header;
     }
 
-    private static DatabaseVersionNotSupportedException CreateUnsupportedException(
-        int? detectedVersion,
-        string? reason = null,
-        Exception? innerException = null) =>
-        new(
-            detectedVersion,
-            OldestSupportedDbVersion,
-            CurrentDbVersion,
-            reason,
-            innerException);
 }

@@ -156,6 +156,7 @@ public sealed class BackendRuntimeTests
 
         await Assert.ThrowsAsync<KeyProtectorUnavailableException>(async () => await runtime.EnsureStartedAsync());
         Assert.AreEqual(BackendRuntimeState.WaitingForDeviceUnlock, runtime.Snapshot.State);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.ResetDatabaseAndRestartAsync());
 
         keyAvailable = true;
         await runtime.EnsureStartedAsync();
@@ -667,19 +668,29 @@ public sealed class BackendRuntimeTests
     }
 
     [TestMethod]
-    public async Task ResetAfterCompatibilityFailure_DeletesStorageAndRestarts()
+    [DataRow(BackendRuntimeFailureKind.DatabaseCompatibility)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseConfigurationInvalid)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseKeyUnavailable)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseUnreadable)]
+    public async Task ResetAfterDatabaseRecoveryFailure_DeletesStorageOnlyAfterRequestAndRestarts(
+        BackendRuntimeFailureKind kind)
     {
         using var directory = new TemporaryDirectory();
         var attempts = 0;
+        DatabaseRecoveryRequiredException failure = kind switch
+        {
+            BackendRuntimeFailureKind.DatabaseCompatibility => new DatabaseVersionNotSupportedException(99, 1, 1),
+            BackendRuntimeFailureKind.DatabaseConfigurationInvalid => new DatabaseConfigurationInvalidException(),
+            BackendRuntimeFailureKind.DatabaseKeyUnavailable => new DatabaseKeyUnavailableException(),
+            _ => new DatabaseUnreadableException()
+        };
         var runtime = CreateRuntime(
             directory.Path,
             _ => ++attempts == 1
-                ? Task.FromException(new DatabaseVersionNotSupportedException(99, 1, 1))
+                ? Task.FromException(failure)
                 : Task.CompletedTask,
             new FakeSyncRuntimeService(),
             out _);
-
-        await Assert.ThrowsAsync<DatabaseVersionNotSupportedException>(async () => await runtime.EnsureStartedAsync());
 
         var paths = new BackendStoragePaths(directory.Path);
         foreach (var path in new[]
@@ -695,6 +706,11 @@ public sealed class BackendRuntimeTests
             await File.WriteAllTextAsync(path, "test");
         }
 
+        await Assert.ThrowsAsync<DatabaseRecoveryRequiredException>(async () => await runtime.EnsureStartedAsync());
+        Assert.AreEqual(kind, runtime.Snapshot.FailureKind);
+
+        Assert.AreEqual("test", await File.ReadAllTextAsync(paths.DatabasePath));
+        Assert.AreEqual("test", await File.ReadAllTextAsync(paths.DatabaseConfigPath));
         await runtime.ResetDatabaseAndRestartAsync();
 
         Assert.AreEqual(BackendRuntimeState.Ready, runtime.Snapshot.State);

@@ -15,7 +15,7 @@
   "Agent.Runtime.BackendRecreationUnsafe": "A Windows háttérfolyamat ebben a háttérügynök-folyamatban nem hozható létre újra biztonságosan.",
   "Agent.Runtime.InteractiveCleanupFailed": "Az interaktív háttérfolyamat-munkamenet nem tudott biztonságosan lezárulni.",
   "Agent.Runtime.BackgroundSyncDegraded": "A háttérszinkronizálás korlátozott állapotban van.",
-  "Agent.Runtime.PlatformKeyUnavailable": "A Windows platformkulcs az eszköz feloldásáig nem érhető el.",
+  "Agent.Runtime.PlatformKeyUnavailable": "A Windows biztonságos kulcstárolója átmenetileg nem érhető el. Oldd fel az operációs rendszer munkamenetét, majd próbáld újra.",
   "Agent.Runtime.StorageUnavailable": "A háttérfolyamat tárhelye nem érhető el.",
   "Agent.Runtime.DatabaseVersionUnsupported": "A helyi adatbázis verziója nem támogatott.",
   "Agent.Runtime.ShutdownShellCleanupFailed": "A Windows háttérügynök megszüntette a háttérfolyamat tulajdonjogát, de a felület takarítása nem fejeződött be.",
@@ -44,7 +44,7 @@
   "Agent.Background.SettingInvalid": "A háttérszinkronizálási beállítás érvénytelen.",
   "Agent.Database.ResetInProgress": "Az adatbázis visszaállítása már folyamatban van.",
   "Agent.Database.RestartRequired": "Az adatbázis visszaállítása előtt újra kell indítani a Windows háttérügynököt.",
-  "Agent.Database.CompatibilityRequired": "Az adatbázis csak kompatibilitási hiba után állítható vissza.",
+  "Agent.Database.RecoveryRequired": "Az adatbázis csak helyreállítást igénylő adatbázis-indítási hiba után állítható alaphelyzetbe.",
   "Agent.Database.ResetFailed": "Az adatbázis visszaállítása nem fejeződött be biztonságosan. A háttérügynököt újra kell indítani.",
   "Agent.Ui.Activated": "A Password Manager Local felülete aktiválva lett.",
   "Agent.Ui.ActivationRejected": "A Password Manager Local felülete elutasította az aktiválási kérést.",
@@ -68,5 +68,8 @@
   "Agent.Ipc.AdmissionClosed": "A Windows háttérügynök jelenleg nem fogadja ezt a műveletet.",
   "Agent.Ipc.UnauthorizedOperation": "Ez a művelet nincs engedélyezve a jelenlegi kapcsolat számára.",
   "Agent.Ipc.UiRegistrationRequired": "Interaktív felületként csak a Password Manager Local felülete regisztrálhat.",
-  "Agent.Ipc.RegisteredUiRequired": "Ehhez a művelethez a jelenleg regisztrált Password Manager Local felület szükséges."
+  "Agent.Ipc.RegisteredUiRequired": "Ehhez a művelethez a jelenleg regisztrált Password Manager Local felület szükséges.",
+  "Agent.Runtime.DatabaseConfigurationInvalid": "A helyi adatbázis konfigurációja hiányzik vagy sérült.",
+  "Agent.Runtime.DatabaseKeyUnavailable": "A védett helyi adatbáziskulcs ebben a telepítésben vagy operációsrendszer-fiókban nem állítható helyre.",
+  "Agent.Runtime.DatabaseUnreadable": "A helyi adatbázis nem olvasható a hozzá beállított titkosítási kulccsal."
 }

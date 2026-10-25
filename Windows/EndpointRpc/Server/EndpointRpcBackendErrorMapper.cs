@@ -116,6 +116,11 @@ public sealed class EndpointRpcBackendErrorMapper
                     EndpointRpcErrorCode.RuntimeUnavailable,
                     EndpointFailureKind.Generic,
                     "The backend runtime is temporarily unavailable."),
+            DatabaseRecoveryRequiredException =>
+                Error(
+                    EndpointRpcErrorCode.RuntimeUnavailable,
+                    EndpointFailureKind.Generic,
+                    "The local database requires recovery before it can be used."),
             InvalidDataIntegrityException =>
                 Error(
                     EndpointRpcErrorCode.BackendFailure,

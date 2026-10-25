@@ -57,7 +57,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
     private string _sessionRenewalDialogProfileName = string.Empty;
     private readonly HashSet<Guid> _autoRenewingSessionTokens = new();
     private DatabaseRecoveryStage _databaseRecoveryStage;
-    private DatabaseVersionNotSupportedException? _databaseVersionException;
+    private DatabaseRecoveryRequiredException? _databaseRecoveryException;
     private bool _isResettingDatabase;
     private RegistrationViewModel? _registrationViewModel;
     private PasswordsViewModel? _passwordsViewModel;
@@ -620,7 +620,13 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         DatabaseRecoveryStage.FinalConfirmation => GetTranslation("DatabaseVersion_ResetConfirm_Title"),
         DatabaseRecoveryStage.Declined => GetTranslation("DatabaseVersion_Blocked_Title"),
         DatabaseRecoveryStage.ResetFailed => GetTranslation("DatabaseVersion_ResetFailed_Title"),
-        _ => GetTranslation("DatabaseVersion_Error_Title")
+        _ => _databaseRecoveryException switch
+        {
+            DatabaseConfigurationInvalidException => GetTranslation("DatabaseConfiguration_Error_Title"),
+            DatabaseKeyUnavailableException => GetTranslation("DatabaseKey_Error_Title"),
+            DatabaseUnreadableException => GetTranslation("DatabaseUnreadable_Error_Title"),
+            _ => GetTranslation("DatabaseVersion_Error_Title")
+        }
     };
 
     public string DatabaseRecoveryMessage
@@ -635,7 +641,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
                 DatabaseRecoveryStage.FinalConfirmation => GetTranslation("DatabaseVersion_ResetConfirm_Message"),
                 DatabaseRecoveryStage.Declined => GetTranslation("DatabaseVersion_ResetDeclined_Message"),
                 DatabaseRecoveryStage.ResetFailed => GetTranslation("DatabaseVersion_ResetFailed_Message"),
-                _ => BuildDatabaseVersionErrorMessage()
+                _ => BuildDatabaseRecoveryErrorMessage()
             };
         }
     }
@@ -795,16 +801,16 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
             if (!snapshot.IsReady)
                 return;
         }
-        catch (DatabaseVersionNotSupportedException exception)
+        catch (DatabaseRecoveryRequiredException exception)
         {
             if (!IsAuthenticated)
                 ShowDatabaseRecoveryDialog(exception);
             return;
         }
-        catch (KeyProtectorUnavailableException)
+        catch (KeyProtectorUnavailableException exception)
         {
             if (!IsAuthenticated)
-                ShowLocalizedErrorMessage("Shell_DeviceUnlockRequired");
+                ShowPlatformKeyUnavailableMessage(exception);
             return;
         }
         catch
@@ -819,10 +825,10 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         {
             rememberedTokens = await _endpoints.RestoreRememberedSessionsAsync();
         }
-        catch (KeyProtectorUnavailableException)
+        catch (KeyProtectorUnavailableException exception)
         {
             if (!IsAuthenticated)
-                ShowLocalizedErrorMessage("Shell_DeviceUnlockRequired");
+                ShowPlatformKeyUnavailableMessage(exception);
             return;
         }
         catch
@@ -1019,10 +1025,15 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
     }
 
 
-    private void ShowDatabaseRecoveryDialog(DatabaseVersionNotSupportedException exception)
+    private void ShowPlatformKeyUnavailableMessage(KeyProtectorUnavailableException? exception) =>
+        ShowLocalizedErrorMessage(exception?.Reason == KeyProtectorUnavailableReason.DeviceLocked
+            ? "Shell_DeviceUnlockRequired"
+            : "Shell_PlatformKeyUnavailable");
+
+    private void ShowDatabaseRecoveryDialog(DatabaseRecoveryRequiredException exception)
     {
-        _databaseVersionException = exception;
-        _databaseRecoveryStage = DatabaseRecoveryStage.CompatibilityError;
+        _databaseRecoveryException = exception;
+        _databaseRecoveryStage = DatabaseRecoveryStage.RecoveryRequired;
         _isResettingDatabase = false;
         ClearStatusMessage();
         RaiseDatabaseRecoveryProperties();
@@ -1047,7 +1058,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         {
             await _backendClient.ResetDatabaseAndRestartAsync(LifetimeToken);
             LifetimeToken.ThrowIfCancellationRequested();
-            _databaseVersionException = null;
+            _databaseRecoveryException = null;
             _databaseRecoveryStage = DatabaseRecoveryStage.None;
             ClearStatusMessage();
             RaiseDatabaseRecoveryProperties();
@@ -1070,28 +1081,25 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
         _databaseRecoveryStage = _databaseRecoveryStage switch
         {
-            DatabaseRecoveryStage.FinalConfirmation => DatabaseRecoveryStage.CompatibilityError,
-            DatabaseRecoveryStage.ResetFailed => DatabaseRecoveryStage.CompatibilityError,
-            DatabaseRecoveryStage.CompatibilityError => DatabaseRecoveryStage.Declined,
+            DatabaseRecoveryStage.FinalConfirmation => DatabaseRecoveryStage.RecoveryRequired,
+            DatabaseRecoveryStage.ResetFailed => DatabaseRecoveryStage.RecoveryRequired,
+            DatabaseRecoveryStage.RecoveryRequired => DatabaseRecoveryStage.Declined,
             _ => _databaseRecoveryStage
         };
 
         RaiseDatabaseRecoveryProperties();
     }
 
-    private string BuildDatabaseVersionErrorMessage()
+    private string BuildDatabaseRecoveryErrorMessage() => _databaseRecoveryException switch
     {
-        if (_databaseVersionException?.DetectedVersion is int detectedVersion)
-        {
-            return string.Format(
-                GetTranslation("DatabaseVersion_Error_Message"),
-                detectedVersion,
-                _databaseVersionException.OldestSupportedVersion,
-                _databaseVersionException.CurrentVersion);
-        }
-
-        return GetTranslation("DatabaseVersion_InvalidHeader_Message");
-    }
+        DatabaseVersionNotSupportedException { DetectedVersion: int detectedVersion } version =>
+            string.Format(GetTranslation("DatabaseVersion_Error_Message"), detectedVersion,
+                version.OldestSupportedVersion, version.CurrentVersion),
+        DatabaseVersionNotSupportedException => GetTranslation("DatabaseVersion_Unknown_Message"),
+        DatabaseConfigurationInvalidException => GetTranslation("DatabaseConfiguration_Error_Message"),
+        DatabaseKeyUnavailableException => GetTranslation("DatabaseKey_Error_Message"),
+        _ => GetTranslation("DatabaseUnreadable_Error_Message")
+    };
 
     private void RaiseDatabaseRecoveryProperties()
     {
@@ -1291,11 +1299,11 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
                 ShowLocalizedInformationMessage("Shell_BackendStarting");
                 break;
             case BackendRuntimeState.WaitingForDeviceUnlock:
-                ShowLocalizedErrorMessage("Shell_DeviceUnlockRequired");
+                ShowPlatformKeyUnavailableMessage(snapshot.Failure as KeyProtectorUnavailableException);
                 break;
             case BackendRuntimeState.Failed
-                when snapshot.FailureKind == BackendRuntimeFailureKind.DatabaseCompatibility &&
-                     snapshot.Failure is DatabaseVersionNotSupportedException databaseException:
+                when snapshot.FailureKind.RequiresDatabaseReset() &&
+                     snapshot.Failure is DatabaseRecoveryRequiredException databaseException:
                 ShowDatabaseRecoveryDialog(databaseException);
                 break;
             case BackendRuntimeState.Failed:

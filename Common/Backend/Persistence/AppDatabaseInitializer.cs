@@ -30,8 +30,8 @@ internal static class AppDatabaseInitializer
             if (rows.Count != 1 || !string.Equals(rows[0], "ok", StringComparison.OrdinalIgnoreCase))
             {
                 var diagnostic = rows.Count == 0 ? "no-result" : string.Join(";", rows.Take(8));
-                throw new InvalidDataException(
-                    $"Database structural integrity verification failed ({diagnostic}). Normal writes are disabled.");
+                throw new DatabaseUnreadableException(new InvalidDataException(
+                    $"Database structural integrity verification failed ({diagnostic}). Normal writes are disabled."));
             }
         }
         finally

@@ -3,7 +3,7 @@ namespace PasswordManagerLocal.Common.Frontend.ViewModels;
 internal enum DatabaseRecoveryStage
 {
     None,
-    CompatibilityError,
+    RecoveryRequired,
     FinalConfirmation,
     Declined,
     ResetFailed

@@ -1,6 +1,6 @@
 namespace PasswordManagerLocal.Common.Contracts.Errors;
 
-public sealed class DatabaseVersionNotSupportedException : InvalidOperationException
+public sealed class DatabaseVersionNotSupportedException : DatabaseRecoveryRequiredException
 {
     public DatabaseVersionNotSupportedException(
         int? detectedVersion,

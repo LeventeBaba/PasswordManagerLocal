@@ -12,14 +12,18 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Agent;
 public sealed class WindowsAgentDatabaseResetCoordinatorTests
 {
     [TestMethod]
-    public async Task ResetSuspendsBackgroundBeforeEndpointAndRestoresAfterRuntimeReset()
+    [DataRow(BackendRuntimeFailureKind.DatabaseCompatibility)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseConfigurationInvalid)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseKeyUnavailable)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseUnreadable)]
+    public async Task ResetSuspendsBackgroundBeforeEndpointAndRestoresAfterRuntimeReset(BackendRuntimeFailureKind kind)
     {
         var operations = new List<string>();
         var endpoint = new FakeWindowsAgentEndpointHost { OperationLog = operations };
         var backend = new FakeWindowsAgentBackendRuntimeOwner
         {
             OperationLog = operations,
-            Snapshot = CreateResettableSnapshot()
+            Snapshot = CreateResettableSnapshot(kind)
         };
         var background = new FakeWindowsBackgroundSyncCoordinator
         {
@@ -211,7 +215,7 @@ public sealed class WindowsAgentDatabaseResetCoordinatorTests
         Assert.AreEqual(0, endpoint.StopCount);
         Assert.AreEqual(0, backend.ResetCount);
         Assert.IsNotNull(result.SafeMessage);
-        StringAssert.Contains(result.SafeMessage, "database compatibility failure");
+        StringAssert.Contains(result.SafeMessage, "database recovery startup failure");
     }
 
     private static WindowsAgentDatabaseResetCoordinator CreateCoordinator(
@@ -226,10 +230,10 @@ public sealed class WindowsAgentDatabaseResetCoordinatorTests
             transitions,
             AgentLocalizationTestFactory.CreateEnglish());
 
-    private static PasswordManagerLocal.Windows.Agent.Backend.WindowsAgentBackendOwnerSnapshot CreateResettableSnapshot() =>
+    private static PasswordManagerLocal.Windows.Agent.Backend.WindowsAgentBackendOwnerSnapshot CreateResettableSnapshot(BackendRuntimeFailureKind kind = BackendRuntimeFailureKind.DatabaseCompatibility) =>
         FakeWindowsAgentBackendRuntimeOwner.CreateSnapshot(
             runtimeState: BackendRuntimeState.Failed,
-            runtimeFailureKind: BackendRuntimeFailureKind.DatabaseCompatibility,
+            runtimeFailureKind: kind,
             failure: new InvalidOperationException("unsupported database"));
 
     private static async Task WaitUntilAsync(Func<bool> condition)

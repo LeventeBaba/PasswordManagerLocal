@@ -899,7 +899,7 @@
           "kind": "Warning",
           "platform": "All",
           "title": "Őrizd meg az utolsó működő példányt",
-          "body": "Ne próbálkozz helyreállításként eltávolítással, alkalmazásadat-törléssel, adatbázis-alaphelyzetbe állítással vagy profiltörléssel. Nincs központi jelszótárpéldány vagy e-mailes visszaállítás. Másik eszközről is csak rendelkezésre álló, ép adatokkal lehet helyreállítani, sikerre nincs garancia."
+          "body": "Ne próbálkozz helyreállításként eltávolítással, alkalmazásadat-törléssel, adatbázis-alaphelyzetbe állítással vagy profiltörléssel. Nincs központi jelszótárpéldány vagy e-mailes visszaállítás. Másik eszközről is csak rendelkezésre álló, ép adatokkal lehet helyreállítani, sikerre nincs garancia. Androidon a szokásos teljes eltávolítás törli a helyi széfet és annak Keystore-kulcsát. Az alkalmazásadatok automatikus felhőmentése és eszközköltöztetése le van tiltva; az újratelepítés tiszta állapotból indul. Ha meg szeretnéd őrizni a hozzáférést, eltávolítás előtt kapcsolj hozzá és ellenőrizz egy másik eszközt."
         }
       ],
       "relatedTopicIds": [
@@ -1721,14 +1721,14 @@
           "kind": "Explanation",
           "platform": "All",
           "title": "Amit látsz",
-          "body": "Az alkalmazás nem támogatott adatbázis-verziót, hiányzó vagy sérült konfigurációs fejlécet, sikertelen alaphelyzetbe állítást vagy háttérszolgáltatás-indítási hibát jelez. A verzióképernyő adatbázis-alaphelyzetbe állítást és külön végleges törlési megerősítést ajánlhat."
+          "body": "Az alkalmazás külön jelzi a nem támogatott adatbázis-verziót, a hiányzó vagy sérült adatbázis-konfigurációt, a nem elérhető védett adatbáziskulcsot és a beállított kulccsal nem olvasható adatbázist. A helyreállítási képernyők alaphelyzetbe állítást és külön végleges törlési megerősítést kínálnak. Az átmenetileg zárolt eszköz vagy nem elérhető biztonságos kulcstároló újrapróbálást igényel, nem alaphelyzetbe állítást."
         },
         {
           "id": "reason",
           "kind": "Explanation",
           "platform": "All",
           "title": "Mi okozhatja",
-          "body": "Nem kompatibilis alkalmazásverzió, sérült helyi konfiguráció vagy indítási, hozzáférési hiba akadályozhatja a tároló megnyitását. Ez nem bizonyítja, hogy mesterjelszót kell cserélned. Új helyi tároló létrehozása nem a tartalom helyreállítása."
+          "body": "Nem kompatibilis verzió, sérült konfiguráció, elveszett rendszerkulcs, az adatbázishoz nem illő kulcs vagy sérült titkosított adat akadályozhatja az indítást. Az androidos újratelepítés vagy a fájlok más rendszerfiókba másolása használhatatlanná teheti a védett kulcsokat. Ez nem azonos a profil hibás mesterjelszavával. Új helyi adatbázis létrehozása nem állítja helyre a régi tartalmát."
         },
         {
           "id": "next",

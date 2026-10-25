@@ -14,6 +14,32 @@ public sealed class DatabaseEncryptionMigratorTests
     static DatabaseEncryptionMigratorTests() => Batteries_V2.Init();
 
     [TestMethod]
+    public async Task MismatchedDatabaseKey_OffersUnreadableRecoveryWithoutErasingTheDatabase()
+    {
+        using var directory = new TemporaryDirectory();
+        var paths = new BackendStoragePaths(directory.Path);
+        var connectionString = DatabaseEncryptionMigrator.CreateRuntimeConnectionString(paths.DatabasePath, TestPassword);
+        await using (var connection = new SqliteConnection(connectionString))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "CREATE TABLE RetainedData (Value TEXT); INSERT INTO RetainedData VALUES ('retained');";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        await Assert.ThrowsExactlyAsync<DatabaseUnreadableException>(
+            () => DatabaseEncryptionMigrator.MigrateIfRequiredAsync(paths, "a-different-database-key"));
+
+        Assert.IsTrue(File.Exists(paths.DatabasePath));
+        Assert.IsFalse(File.Exists(paths.DatabaseMigrationTempPath));
+        await using var preserved = new SqliteConnection(connectionString);
+        await preserved.OpenAsync();
+        await using var read = preserved.CreateCommand();
+        read.CommandText = "SELECT Value FROM RetainedData;";
+        Assert.AreEqual("retained", await read.ExecuteScalarAsync());
+    }
+
+    [TestMethod]
     public async Task ExistingSqlCipherDatabase_IsMigratedToSqlite3McAndPreservesData()
     {
         using var directory = new TemporaryDirectory();

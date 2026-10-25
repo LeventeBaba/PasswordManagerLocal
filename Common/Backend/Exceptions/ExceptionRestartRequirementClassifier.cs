@@ -22,7 +22,7 @@ public static class ExceptionRestartRequirementClassifier
         if (!visited.Add(exception))
             return false;
 
-        if (exception is DatabaseVersionNotSupportedException)
+        if (exception is DatabaseRecoveryRequiredException)
             return true;
 
         if (exception is MutationPartiallyCommittedException partialCommitException &&

@@ -79,6 +79,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         nameof(CancelButtonLabel),
         nameof(BackToListLabel),
         nameof(EditorNamePlaceholder),
+        nameof(EditorNameValidationMessage),
         nameof(EditorDescriptionPlaceholder),
         nameof(EditorPasswordPlaceholder),
         nameof(EditorPasswordHint),
@@ -208,6 +209,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     private bool _isSavingCustomColor;
     private Guid? _editingCustomColorId;
     private string _editorName = string.Empty;
+    private string? _editorNameValidationKey;
     private string _editorDescription = string.Empty;
     private string _editorColor = PasswordColorUtility.DefaultColor;
     private string _editorPassword = string.Empty;
@@ -625,10 +627,21 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         get => _editorName;
         set
         {
+            value ??= string.Empty;
+            if (string.Equals(_editorName, value, StringComparison.Ordinal))
+                return;
+
             this.RaiseAndSetIfChanged(ref _editorName, value);
+            ClearEditorNameValidation();
             RefreshEditorPasswordStrength();
         }
     }
+
+    public bool HasEditorNameValidationError => _editorNameValidationKey is not null;
+
+    public string EditorNameValidationMessage => _editorNameValidationKey is { } key
+        ? GetTranslation(key)
+        : string.Empty;
 
     public string EditorDescription
     {
@@ -2397,6 +2410,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     private Task BeginEditPasswordAsync(PasswordItemViewModel password)
     {
+        ClearEditorNameValidation();
         SelectedPassword = password;
         IsCreateMode = false;
         ClearStatusMessage();
@@ -2762,6 +2776,13 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             if (await RefreshAsync())
                 ShowLocalizedSuccessMessage(successKey);
         }
+        catch (Exception exception) when (exception is DuplicatePasswordNameException or
+            EndpointFailureException { FailureKind: EndpointFailureKind.DuplicatePasswordName })
+        {
+            // The authoritative backend can reject a name added on another device
+            // after this editor loaded. Keep the draft and identify the name field.
+            ShowEditorNameValidationError("Error_DuplicatePasswordName");
+        }
         catch (Exception ex)
         {
             ShowSafeErrorMessage(ex);
@@ -2775,9 +2796,20 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     private bool ValidatePasswordEditor()
     {
         ClearStatusMessage();
+        ClearEditorNameValidation();
         if (string.IsNullOrWhiteSpace(EditorName))
         {
-            ShowLocalizedErrorMessage("Validation_PasswordName_Required");
+            ShowEditorNameValidationError("Validation_PasswordName_Required");
+            return false;
+        }
+
+        var normalizedName = EditorName.Trim();
+        Guid? editedPasswordId = IsCreateMode ? null : SelectedPassword?.Id;
+        if (_allPasswords.Any(password =>
+                (!editedPasswordId.HasValue || password.Id != editedPasswordId.Value) &&
+                string.Equals(password.Name.Trim(), normalizedName, StringComparison.OrdinalIgnoreCase)))
+        {
+            ShowEditorNameValidationError("Error_DuplicatePasswordName");
             return false;
         }
 
@@ -2788,6 +2820,27 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         }
 
         return true;
+    }
+
+    private void ShowEditorNameValidationError(string key)
+    {
+        _editorNameValidationKey = key;
+        this.RaisePropertyChanged(nameof(EditorNameValidationMessage));
+        this.RaisePropertyChanged(nameof(HasEditorNameValidationError));
+        ShowLocalizedErrorMessage(key);
+    }
+
+    private void ClearEditorNameValidation()
+    {
+        if (_editorNameValidationKey is null)
+            return;
+
+        var previousMessage = EditorNameValidationMessage;
+        _editorNameValidationKey = null;
+        this.RaisePropertyChanged(nameof(EditorNameValidationMessage));
+        this.RaisePropertyChanged(nameof(HasEditorNameValidationError));
+        if (IsStatusMessageError && string.Equals(StatusMessage, previousMessage, StringComparison.Ordinal))
+            ClearStatusMessage();
     }
 
     private async Task<string?> PersistPasswordEditorAsync()
@@ -2902,6 +2955,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     private void ResetEditorFields()
     {
+        ClearEditorNameValidation();
         EditorName = string.Empty;
         EditorDescription = string.Empty;
         ClearEditorTagSelection();

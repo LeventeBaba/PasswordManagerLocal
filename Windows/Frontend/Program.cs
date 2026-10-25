@@ -89,14 +89,14 @@ internal sealed class Program
             }
             catch
             {
-                if (backendClient.Snapshot.FailureKind != BackendRuntimeFailureKind.DatabaseCompatibility)
+                if (!backendClient.Snapshot.FailureKind.RequiresDatabaseReset())
                 {
                     startupNotification.ShowBackendUnavailable();
                     controlledExit = true;
                     return;
                 }
 
-                // The frontend owns the existing compatibility-reset dialog and will issue the agent reset over control IPC.
+                // The frontend owns the database recovery dialog and will issue the agent reset over control IPC.
             }
 
             var platformServices = new FrontendPlatformServices();

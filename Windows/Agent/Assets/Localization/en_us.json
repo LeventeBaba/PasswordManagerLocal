@@ -15,7 +15,7 @@
   "Agent.Runtime.BackendRecreationUnsafe": "The Windows backend cannot be recreated safely in this agent process.",
   "Agent.Runtime.InteractiveCleanupFailed": "The interactive backend session could not clean up safely.",
   "Agent.Runtime.BackgroundSyncDegraded": "Background synchronization is degraded.",
-  "Agent.Runtime.PlatformKeyUnavailable": "The Windows platform key is unavailable until the device is unlocked.",
+  "Agent.Runtime.PlatformKeyUnavailable": "Windows secure storage is temporarily unavailable. Unlock the operating-system session and try again.",
   "Agent.Runtime.StorageUnavailable": "Backend storage is unavailable.",
   "Agent.Runtime.DatabaseVersionUnsupported": "The local database version is not supported.",
   "Agent.Runtime.ShutdownShellCleanupFailed": "The Windows agent stopped backend ownership but could not finish shell cleanup.",
@@ -44,7 +44,7 @@
   "Agent.Background.SettingInvalid": "The background synchronization setting is invalid.",
   "Agent.Database.ResetInProgress": "A database reset is already in progress.",
   "Agent.Database.RestartRequired": "The Windows agent must restart before the database can be reset.",
-  "Agent.Database.CompatibilityRequired": "The database reset is only available after a database compatibility failure.",
+  "Agent.Database.RecoveryRequired": "The database reset is only available after a database recovery startup failure.",
   "Agent.Database.ResetFailed": "The database reset could not complete safely. The agent must restart.",
   "Agent.Ui.Activated": "The Password Manager Local UI was activated.",
   "Agent.Ui.ActivationRejected": "The Password Manager Local UI rejected the activation request.",
@@ -68,5 +68,8 @@
   "Agent.Ipc.AdmissionClosed": "The Windows agent is not accepting this operation.",
   "Agent.Ipc.UnauthorizedOperation": "This operation is not authorized for the current connection.",
   "Agent.Ipc.UiRegistrationRequired": "Only the Password Manager Local UI can register as the interactive UI.",
-  "Agent.Ipc.RegisteredUiRequired": "This operation requires the currently registered Password Manager Local UI."
+  "Agent.Ipc.RegisteredUiRequired": "This operation requires the currently registered Password Manager Local UI.",
+  "Agent.Runtime.DatabaseConfigurationInvalid": "The local database configuration is missing or damaged.",
+  "Agent.Runtime.DatabaseKeyUnavailable": "The protected local database key cannot be recovered in this installation or operating-system account.",
+  "Agent.Runtime.DatabaseUnreadable": "The local database cannot be read with its configured encryption key."
 }

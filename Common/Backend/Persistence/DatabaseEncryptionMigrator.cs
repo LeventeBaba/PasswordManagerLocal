@@ -11,6 +11,7 @@ namespace PasswordManagerLocal.Common.Backend.Persistence;
 internal static class DatabaseEncryptionMigrator
 {
     private const string TargetCipher = "chacha20";
+    private const int SqliteCorruptErrorCode = 11;
     private const int SqliteNotADatabaseErrorCode = 26;
     private static readonly int[] SqlCipherLegacyVersions = [4, 3, 2, 1];
 
@@ -69,9 +70,9 @@ internal static class DatabaseEncryptionMigrator
 
         if (legacyVersion is null)
         {
-            throw new InvalidDataException(
+            throw new DatabaseUnreadableException(new InvalidDataException(
                 "The database could not be opened with SQLite3MC or recognized as a compatible SQLCipher database. " +
-                "The original database was not modified.");
+                "The original database was not modified."));
         }
 
         // A previous interrupted attempt may have left a partial staged database. The source
@@ -209,7 +210,7 @@ internal static class DatabaseEncryptionMigrator
             await EnsureReadableAsync(databasePath, password, cipherOptions, cancellationToken);
             return true;
         }
-        catch (SqliteException exception) when (IsNotADatabase(exception))
+        catch (SqliteException exception) when (IsUnreadableWithCipher(exception))
         {
             return false;
         }
@@ -236,7 +237,8 @@ internal static class DatabaseEncryptionMigrator
         command.CommandText = "PRAGMA schema_version;";
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is null or DBNull)
-            throw new InvalidDataException("SQLite did not return a schema version for the database.");
+            throw new DatabaseUnreadableException(
+                new InvalidDataException("SQLite did not return a schema version for the database."));
     }
 
     private static async Task VerifyQuickCheckAsync(
@@ -253,8 +255,8 @@ internal static class DatabaseEncryptionMigrator
         if (rows.Count != 1 || !string.Equals(rows[0], "ok", StringComparison.OrdinalIgnoreCase))
         {
             var diagnostic = rows.Count == 0 ? "no-result" : string.Join(";", rows.Take(8));
-            throw new InvalidDataException(
-                $"Database structural integrity verification failed during encryption migration ({diagnostic}).");
+            throw new DatabaseUnreadableException(new InvalidDataException(
+                $"Database structural integrity verification failed during encryption migration ({diagnostic})."));
         }
     }
 
@@ -319,8 +321,8 @@ internal static class DatabaseEncryptionMigrator
 
     private static string EscapeSqlLiteral(string value) => value.Replace("'", "''", StringComparison.Ordinal);
 
-    private static bool IsNotADatabase(SqliteException exception) =>
-        exception.SqliteErrorCode == SqliteNotADatabaseErrorCode;
+    private static bool IsUnreadableWithCipher(SqliteException exception) =>
+        exception.SqliteErrorCode is SqliteCorruptErrorCode or SqliteNotADatabaseErrorCode;
 
     private static void RecoverMissingDatabaseFromBackup(string databasePath, string backupPath)
     {
