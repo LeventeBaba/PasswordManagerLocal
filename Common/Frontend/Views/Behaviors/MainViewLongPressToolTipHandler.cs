@@ -26,8 +26,8 @@ internal sealed class MainViewLongPressToolTipHandler
             && Equals(_trackedPointer, e.Pointer)
             && ReferenceEquals(_pressedButton, button))
         {
-            // A view transition can briefly expose the same pointer through
-            // both the main and popup input roots.
+            // A press may reach both the main input root and a popup button.
+            // Keep the first timer instead of restarting the same hold.
             return;
         }
 
@@ -62,9 +62,9 @@ internal sealed class MainViewLongPressToolTipHandler
             return;
 
         var movement = e.GetPosition(button) - _pressPosition;
-        var intent = TouchGestureIntentClassifier.Classify(movement);
-        if (intent == TouchGestureIntent.Undetermined &&
-            Math.Abs(movement.X) <= CancelDistance &&
+        // The page-swipe classifier locks after only 5 horizontal pixels. A hold
+        // needs its own tolerance so ordinary finger drift doesn't become a tap.
+        if (Math.Abs(movement.X) <= CancelDistance &&
             Math.Abs(movement.Y) <= CancelDistance)
         {
             return;
@@ -115,6 +115,18 @@ internal sealed class MainViewLongPressToolTipHandler
             ToolTip.SetIsOpen(_openToolTipButton, false);
 
         _openToolTipButton = null;
+    }
+
+    public void HandleButtonDetached(Button button)
+    {
+        if (ReferenceEquals(_pressedButton, button))
+        {
+            CancelPendingLongPress();
+            ResetTrackedPress();
+        }
+
+        if (ReferenceEquals(_openToolTipButton, button))
+            DismissOpenToolTip();
     }
 
     public void Reset()

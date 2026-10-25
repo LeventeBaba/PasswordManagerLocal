@@ -78,13 +78,18 @@
     </Setter>
   </ControlTheme>
 
-  <!-- Android uses an embeddable top-level, not Window. Give its content the
-       same Avalonia-managed popup/adorner layers as the desktop window. -->
+  <!-- Android uses an embeddable top-level, not Window. Paint its entire
+       surface (including safe-area padding) and keep system bars in sync with
+       the selected theme, alongside Avalonia-managed popup/adorner layers. -->
   <ControlTheme x:Key="{x:Type embedding:EmbeddableControlRoot}" TargetType="embedding:EmbeddableControlRoot">
+    <Setter Property="Background" Value="{DynamicResource AppBrush.Background.Primary}" />
+    <Setter Property="TransparencyBackgroundFallback" Value="{DynamicResource AppBrush.Background.Primary}" />
+    <Setter Property="TopLevel.SystemBarColor" Value="{DynamicResource AppBrush.Background.Primary}" />
     <Setter Property="Template">
       <ControlTemplate>
         <Panel>
           <Border Name="PART_TransparencyFallback" IsHitTestVisible="False" />
+          <Border Background="{TemplateBinding Background}" IsHitTestVisible="False" />
           <VisualLayerManager Name="PART_VisualLayerManager">
             <ContentPresenter Name="PART_ContentPresenter"
                               Content="{TemplateBinding Content}"

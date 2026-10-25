@@ -24,8 +24,7 @@ public partial class MainView : UserControl, IDisposable
     private readonly MainViewTapOutsideKeyboardDismissHandler _tapOutsideKeyboardDismissHandler;
     private readonly MainViewLongPressToolTipHandler _longPressToolTipHandler;
     private readonly PageSlide _mobileMainPageTransition;
-    private readonly Dictionary<Button, TopLevel> _accountMenuToolTipInputRoots = new();
-    private readonly Dictionary<TopLevel, int> _accountMenuToolTipInputRootReferences = new();
+    private readonly HashSet<Button> _accountMenuToolTipButtons = new();
     private bool _disposed;
     private WeakReference<Control>? _contextHelpTrigger;
     private IInputPane? _inputPane;
@@ -269,98 +268,63 @@ public partial class MainView : UserControl, IDisposable
 
     private void HandleAccountMenuToolTipButtonAttached(object? sender, VisualTreeAttachmentEventArgs e)
     {
-        if (sender is not Button button)
+        if (!OperatingSystem.IsAndroid() || sender is not Button button ||
+            !_accountMenuToolTipButtons.Add(button))
             return;
 
-        var topLevel = TopLevel.GetTopLevel(button);
-        if (topLevel is null)
-            return;
-
-        if (_accountMenuToolTipInputRoots.TryGetValue(button, out var previousTopLevel))
-        {
-            if (ReferenceEquals(previousTopLevel, topLevel))
-                return;
-
-            RemoveAccountMenuToolTipInputRoot(previousTopLevel);
-            _accountMenuToolTipInputRoots.Remove(button);
-        }
-
-        if (ReferenceEquals(topLevel, _inputTopLevel))
-            return;
-
-        _accountMenuToolTipInputRoots.Add(button, topLevel);
-        AddAccountMenuToolTipInputRoot(topLevel);
+        // An overlay popup belongs to the main TopLevel visually, but routes input
+        // through its logical Popup parent instead of its visual ancestors. The
+        // TopLevel need not be on that route. Observe the button before its click.
+        button.AddHandler(
+            PointerPressedEvent,
+            HandleAccountMenuToolTipPointerPressed,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true);
+        button.AddHandler(
+            PointerMovedEvent,
+            HandleAccountMenuToolTipPointerMoved,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true);
+        button.AddHandler(
+            PointerReleasedEvent,
+            HandleAccountMenuToolTipPointerReleased,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true);
     }
 
     private void HandleAccountMenuToolTipButtonDetached(object? sender, VisualTreeAttachmentEventArgs e)
     {
-        if (sender is not Button button || !_accountMenuToolTipInputRoots.Remove(button, out var topLevel))
-            return;
-
-        RemoveAccountMenuToolTipInputRoot(topLevel);
+        if (sender is Button button)
+            DetachAccountMenuToolTipButton(button);
     }
 
     private void HandleAccountMenuToolTipPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e) =>
         _longPressToolTipHandler.HandlePointerCaptureLost(e);
 
-    private void HandleAccountMenuPopupPointerPressed(object? sender, PointerPressedEventArgs e) =>
+    private void HandleAccountMenuToolTipPointerPressed(object? sender, PointerPressedEventArgs e) =>
         _longPressToolTipHandler.HandlePointerPressed(e);
 
-    private void HandleAccountMenuPopupPointerMoved(object? sender, PointerEventArgs e) =>
+    private void HandleAccountMenuToolTipPointerMoved(object? sender, PointerEventArgs e) =>
         _longPressToolTipHandler.HandlePointerMoved(e);
 
-    private void HandleAccountMenuPopupPointerReleased(object? sender, PointerReleasedEventArgs e) =>
+    private void HandleAccountMenuToolTipPointerReleased(object? sender, PointerReleasedEventArgs e) =>
         _longPressToolTipHandler.HandlePointerReleased(e);
 
-    private void AddAccountMenuToolTipInputRoot(TopLevel topLevel)
+    private void DetachAccountMenuToolTipButton(Button button)
     {
-        if (_accountMenuToolTipInputRootReferences.TryGetValue(topLevel, out var references))
-        {
-            _accountMenuToolTipInputRootReferences[topLevel] = references + 1;
+        if (!_accountMenuToolTipButtons.Remove(button))
             return;
-        }
 
-        // Flyout content can live under a separate popup root. Observe that root's
-        // tunnel so long-press help runs before the button can interpret release as a tap.
-        _accountMenuToolTipInputRootReferences.Add(topLevel, 1);
-        topLevel.AddHandler(
+        button.RemoveHandler(
             PointerPressedEvent,
-            HandleAccountMenuPopupPointerPressed,
-            RoutingStrategies.Tunnel,
-            handledEventsToo: true);
-        topLevel.AddHandler(
+            HandleAccountMenuToolTipPointerPressed);
+        button.RemoveHandler(
             PointerMovedEvent,
-            HandleAccountMenuPopupPointerMoved,
-            RoutingStrategies.Tunnel,
-            handledEventsToo: true);
-        topLevel.AddHandler(
+            HandleAccountMenuToolTipPointerMoved);
+        button.RemoveHandler(
             PointerReleasedEvent,
-            HandleAccountMenuPopupPointerReleased,
-            RoutingStrategies.Tunnel,
-            handledEventsToo: true);
-    }
-
-    private void RemoveAccountMenuToolTipInputRoot(TopLevel topLevel)
-    {
-        if (!_accountMenuToolTipInputRootReferences.TryGetValue(topLevel, out var references))
-            return;
-
-        if (references > 1)
-        {
-            _accountMenuToolTipInputRootReferences[topLevel] = references - 1;
-            return;
-        }
-
-        _accountMenuToolTipInputRootReferences.Remove(topLevel);
-        topLevel.RemoveHandler(
-            PointerPressedEvent,
-            HandleAccountMenuPopupPointerPressed);
-        topLevel.RemoveHandler(
-            PointerMovedEvent,
-            HandleAccountMenuPopupPointerMoved);
-        topLevel.RemoveHandler(
-            PointerReleasedEvent,
-            HandleAccountMenuPopupPointerReleased);
+            HandleAccountMenuToolTipPointerReleased);
+        _longPressToolTipHandler.HandleButtonDetached(button);
     }
 
     private void HideAccountMenuFlyout()
@@ -484,6 +448,8 @@ public partial class MainView : UserControl, IDisposable
         _disposed = true;
         TryDismissOpenFlyout();
         HideAccountMenuFlyout();
+        foreach (var button in _accountMenuToolTipButtons.ToArray())
+            DetachAccountMenuToolTipButton(button);
         SetActiveTopLevelForUiServices(null);
         DetachTopLevelInputHandlers();
         DetachObservedViewModel();
