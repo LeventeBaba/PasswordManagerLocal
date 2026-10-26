@@ -1,0 +1,9 @@
+<Project>
+  <!-- Only the product packager can publish Windows stages. Optional signing is
+       applied to the merged product; independently signed stages break deduplication. -->
+  <Target Name="RequireWindowsProductPublisher"
+          BeforeTargets="Publish"
+          Condition="('$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Frontend' or '$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Agent') and '$(PmlWindowsProductStaging)' != 'true'">
+    <Error Text="Publish Windows through publish.cmd -W or Tools\Windows\PublishWindowsProduct.ps1. The product publisher assembles the final DLLs and executables, with optional signing; standalone project publishing is not a release artifact." />
+  </Target>
+</Project>

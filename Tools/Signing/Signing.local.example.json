@@ -1,0 +1,9 @@
+{
+  "AndroidKeyStore": "PublishKeys/PasswordManagerLocal-release.jks",
+  "AndroidKeyAlias": "passwordmanagerlocal",
+  "AndroidCertificateSha256": "",
+  "WindowsCertificateThumbprint": "",
+  "WindowsCertificateStoreLocation": "CurrentUser",
+  "WindowsTimestampUrl": "",
+  "WindowsSignToolPath": ""
+}

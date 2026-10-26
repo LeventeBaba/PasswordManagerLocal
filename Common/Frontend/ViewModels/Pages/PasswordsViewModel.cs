@@ -2772,6 +2772,9 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
             HidePassword();
             ResetEditorFields();
+            // Refreshing a retained selection would open its details pane again.
+            // A completed save returns to the list; rejected saves keep the draft.
+            SelectedPassword = null;
             CurrentPane = ListPane;
             if (await RefreshAsync())
                 ShowLocalizedSuccessMessage(successKey);

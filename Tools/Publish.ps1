@@ -9,11 +9,16 @@ param(
     [Alias('f')]
     [switch]$Full,
 
+    [switch]$SignWindows,
+
     [Parameter(Position = 0)]
     [string]$AndroidVersion
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Signing\ReleaseSigning.Common.ps1')
+$script:OriginalSigningSecrets = @{}
+$script:AndroidSigningSettings = $null
 $script:AndroidTargetFramework = 'net10.0-android36.0'
 $script:AndroidTargetApiLevel = 36
 $script:DefaultAndroidVersion = 10
@@ -30,6 +35,7 @@ $script:AndroidApiLevels = @{
 function Write-Usage {
     Write-Host 'Usage:'
     Write-Host '  .\publish.cmd -W           Publish trimmed, self-contained Windows x64'
+    Write-Host '  .\publish.cmd -W -SignWindows  Publish Windows with verified Authenticode signatures'
     Write-Host '  .\publish.cmd -A           Publish Android APKs supporting Android 10 and later'
     Write-Host '  .\publish.cmd -A 16        Publish an ARM64 APK requiring Android 16 or later'
     Write-Host '  .\publish.cmd -F [10-16]   Publish Windows x64 and Android'
@@ -37,6 +43,61 @@ function Write-Usage {
     Write-Host 'The Android number selects the minimum installable Android version.'
     Write-Host 'All Android builds compile and target Android 16 (API 36).'
     Write-Host 'Android 10-15 builds produce ARM64 and ARM32 APKs; Android 16 produces ARM64.'
+    Write-Host 'Android publishing requires PublishKeys\PasswordManagerLocal-release.jks and securely prompts for passwords.'
+    Write-Host 'Windows publishing is unsigned for testing unless -SignWindows is supplied.'
+    Write-Host 'Signed Windows publishing requires a trusted code-signing certificate. See Docs\RELEASE_SIGNING.md.'
+}
+
+function Initialize-AndroidReleaseSigning {
+    $script:AndroidSigningSettings = Get-ReleaseSigningSettings
+    if (-not (Test-Path -LiteralPath $script:AndroidSigningSettings.AndroidKeyStore -PathType Leaf)) {
+        throw "Release keystore not found: $($script:AndroidSigningSettings.AndroidKeyStore)"
+    }
+    foreach ($name in @('PML_ANDROID_STORE_PASSWORD', 'PML_ANDROID_KEY_PASSWORD')) {
+        $script:OriginalSigningSecrets[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+    }
+    if ([string]::IsNullOrEmpty($env:PML_ANDROID_STORE_PASSWORD)) {
+        $secret = Read-Host 'Android release keystore password' -AsSecureString
+        try { $env:PML_ANDROID_STORE_PASSWORD = ConvertFrom-SigningSecureString $secret }
+        finally { $secret.Dispose() }
+    }
+    if ([string]::IsNullOrEmpty($env:PML_ANDROID_KEY_PASSWORD)) {
+        $secret = Read-Host 'Android key password (Enter = same as keystore password)' -AsSecureString
+        try {
+            if ($secret.Length -eq 0) { $env:PML_ANDROID_KEY_PASSWORD = $env:PML_ANDROID_STORE_PASSWORD }
+            else { $env:PML_ANDROID_KEY_PASSWORD = ConvertFrom-SigningSecureString $secret }
+        }
+        finally { $secret.Dispose() }
+    }
+    $null = Resolve-SigningPasswordReference 'env:PML_ANDROID_KEY_PASSWORD'
+
+    # Each invocation gets distinct native-tool references. A reused build
+    # process must never resolve a reference to a previous publish's password.
+    $secretSuffix = [Guid]::NewGuid().ToString('N')
+    $storeVariable = 'PML_PUBLISH_STORE_' + $secretSuffix
+    $keyVariable = 'PML_PUBLISH_KEY_' + $secretSuffix
+    $script:OriginalSigningSecrets[$storeVariable] = $null
+    $script:OriginalSigningSecrets[$keyVariable] = $null
+    [Environment]::SetEnvironmentVariable($storeVariable, $env:PML_ANDROID_STORE_PASSWORD, 'Process')
+    [Environment]::SetEnvironmentVariable($keyVariable, $env:PML_ANDROID_KEY_PASSWORD, 'Process')
+    $script:AndroidStorePassReference = 'env:' + $storeVariable
+    $script:AndroidKeyPassReference = 'env:' + $keyVariable
+    $script:AndroidSigningFingerprint = Get-AndroidReleaseCertificate `
+        -KeyStore $script:AndroidSigningSettings.AndroidKeyStore -KeyAlias $script:AndroidSigningSettings.AndroidKeyAlias `
+        -StorePassReference $script:AndroidStorePassReference `
+        -ExpectedCertificateSha256 $script:AndroidSigningSettings.AndroidCertificateSha256
+    $javaTool = Find-SigningJavaTool -Name 'java'
+    $javaBin = Split-Path -Parent $javaTool
+    $script:AndroidJavaSdkDirectory = Split-Path -Parent $javaBin
+    if ((Split-Path -Leaf $javaBin) -ine 'bin') { throw 'The JDK java executable must be inside its bin directory.' }
+    Assert-AndroidReleasePrivateKey -KeyStore $script:AndroidSigningSettings.AndroidKeyStore `
+        -KeyAlias $script:AndroidSigningSettings.AndroidKeyAlias `
+        -StorePassReference $script:AndroidStorePassReference -KeyPassReference $script:AndroidKeyPassReference `
+        -JavaSdkDirectory $script:AndroidJavaSdkDirectory
+    $script:AndroidApkSignerJar = Find-SigningApkSignerJar
+    Write-Host 'Validated Android private signing key access.'
+    Write-Host "Android release signer SHA-256: $script:AndroidSigningFingerprint"
+    Write-Host "APK signature verifier: $script:AndroidApkSignerJar"
 }
 
 function Resolve-AndroidPublishSettings {
@@ -238,7 +299,7 @@ function Publish-WindowsApp {
     $script = Join-Path $script:Root 'Tools\Windows\PublishWindowsProduct.ps1'
 
     Invoke-CommandChecked 'Publishing minimal shared Windows x64 product' {
-        & $script -Configuration Release -RuntimeIdentifier win-x64
+        & $script -Configuration Release -RuntimeIdentifier win-x64 -Sign:$SignWindows
     }
 }
 
@@ -273,10 +334,21 @@ function Publish-AndroidArchitecture {
     $buildArguments = @(
         'build',
         $Project,
+        '--disable-build-servers',
+        '--verbosity', 'normal',
         '-c', 'Release',
         '-f', $script:AndroidTargetFramework,
         '-r', $Architecture.RuntimeIdentifier,
         '-t:SignAndroidPackage',
+        '-p:AndroidKeyStore=true',
+        '-p:AndroidUseApkSigner=true',
+        "-p:JavaSdkDirectory=$script:AndroidJavaSdkDirectory",
+        "-p:ApkSignerJar=$script:AndroidApkSignerJar",
+        "-p:AndroidSigningKeyStore=$($script:AndroidSigningSettings.AndroidKeyStore)",
+        "-p:AndroidSigningKeyAlias=$($script:AndroidSigningSettings.AndroidKeyAlias)",
+        "-p:AndroidSigningStorePass=$script:AndroidStorePassReference",
+        "-p:AndroidSigningKeyPass=$script:AndroidKeyPassReference",
+        "-p:PmlAndroidCertificateSha256=$script:AndroidSigningFingerprint",
         "-p:SupportedOSPlatformVersion=$($Settings.MinimumApiLevel).0",
         "-p:AndroidMinimumVersion=$($Settings.Version)",
         "-p:AndroidArtifactsPublishDir=$architectureOutput",
@@ -305,11 +377,13 @@ function Publish-AndroidArchitecture {
 
     $finalName = "PasswordManagerLocal-android-$($Settings.Version)-plus-$($Architecture.Abi)-signed.apk"
     $finalPath = Join-Path $OutputRoot $finalName
-    Copy-Item -Path $signedApk.FullName -Destination $finalPath -Force
 
     Write-Host ''
     Write-Host "Validating APK: $finalName"
-    Test-AndroidPackage -ApkPath $finalPath -ExpectedMinimumApiLevel $Settings.MinimumApiLevel -ExpectedAbi $Architecture.Abi
+    Assert-AndroidReleaseApk -ApkPath $signedApk.FullName -ExpectedCertificateSha256 $script:AndroidSigningFingerprint `
+        -JavaSdkDirectory $script:AndroidJavaSdkDirectory -ApkSignerJar $script:AndroidApkSignerJar
+    Test-AndroidPackage -ApkPath $signedApk.FullName -ExpectedMinimumApiLevel $Settings.MinimumApiLevel -ExpectedAbi $Architecture.Abi
+    Copy-Item -LiteralPath $signedApk.FullName -Destination $finalPath -Force
 
     return $finalPath
 }
@@ -385,6 +459,12 @@ if (-not [string]::IsNullOrWhiteSpace($AndroidVersion) -and -not ($Android.IsPre
     exit 2
 }
 
+if ($SignWindows.IsPresent -and -not ($Windows.IsPresent -or $Full.IsPresent)) {
+    Write-Host '-SignWindows can only be supplied with -W or -F.' -ForegroundColor Red
+    Write-Usage
+    exit 2
+}
+
 $androidSettings = $null
 if ($Android.IsPresent -or $Full.IsPresent) {
     try {
@@ -401,6 +481,7 @@ if ($Android.IsPresent -or $Full.IsPresent) {
 }
 
 try {
+    if ($Android.IsPresent -or $Full.IsPresent) { Initialize-AndroidReleaseSigning }
     if ($Full.IsPresent) {
         Publish-WindowsApp
         Publish-AndroidApp -Settings $androidSettings
@@ -419,4 +500,9 @@ catch {
     Write-Host ''
     Write-Host $_.Exception.Message -ForegroundColor Red
     exit 1
+}
+finally {
+    foreach ($entry in $script:OriginalSigningSecrets.GetEnumerator()) {
+        [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
+    }
 }

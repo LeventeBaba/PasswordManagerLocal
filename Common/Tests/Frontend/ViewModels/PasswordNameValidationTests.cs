@@ -42,13 +42,17 @@ public sealed class PasswordNameValidationTests
         Assert.AreEqual("unfinished description", editor.EditorDescription);
         Assert.AreEqual("unfinished password", editor.EditorPassword);
 
-        editor.EditorName = "A different name";
+        // Keep the corrected name in the active search results so refreshing an
+        // edited entry cannot hide an accidental navigation back to its details.
+        editor.EditorName = "Bank - personal";
         Assert.IsFalse(editor.HasEditorNameValidationError);
         Assert.IsFalse(editor.HasStatusMessage);
         await SaveAsync(editor);
         Assert.AreEqual(1, backend.SaveCalls);
-        Assert.AreEqual("A different name", backend.LastSavedName);
+        Assert.AreEqual("Bank - personal", backend.LastSavedName);
         Assert.IsTrue(editor.IsListPaneVisible);
+        Assert.IsFalse(editor.HasSelection);
+        Assert.IsTrue(editor.Passwords.Any(item => item.Name == "Bank - personal"));
     }
 
     [TestMethod]
@@ -99,6 +103,8 @@ public sealed class PasswordNameValidationTests
         Assert.AreEqual("bAnK", backend.LastSavedName);
         Assert.IsFalse(editor.HasEditorNameValidationError);
         Assert.IsTrue(editor.IsListPaneVisible);
+        Assert.IsFalse(editor.HasSelection);
+        Assert.IsTrue(editor.Passwords.Any(item => item.Name == "bAnK"));
     }
 
     [TestMethod]
@@ -168,13 +174,28 @@ public sealed class PasswordNameValidationTests
             if (method?.Name is nameof(IEndpoints.AddNewPasswordAsync) or nameof(IEndpoints.UpdatePasswordAsync))
             {
                 SaveCalls++;
-                LastSavedName = args![1] switch
+                var savedRequest = args![1];
+                LastSavedName = savedRequest switch
                 {
                     NewPasswordRequest request => request.Name,
                     UpdatePasswordRequest request => request.Name,
                     _ => throw new InvalidOperationException("Unexpected password request.")
                 };
-                return SaveFailure is { } failure ? Task.FromException(failure) : Task.CompletedTask;
+                if (SaveFailure is { } failure)
+                    return Task.FromException(failure);
+
+                // Return the saved state on refresh, as the real endpoints do.
+                if (savedRequest is NewPasswordRequest added)
+                {
+                    _passwords.Passwords = [.. _passwords.Passwords, new PasswordInfoResponse { Name = added.Name }];
+                }
+                else if (savedRequest is UpdatePasswordRequest updated)
+                {
+                    var saved = _passwords.Passwords.Single(item => item.Id == updated.Id);
+                    saved.Name = updated.Name ?? saved.Name;
+                }
+
+                return Task.CompletedTask;
             }
             throw new NotSupportedException($"Unexpected endpoint call: {method?.Name}.");
         }

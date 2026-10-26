@@ -22,6 +22,13 @@ internal static class ProgramEntry
                 return RunCollisionAnalysis(values);
             if (command.Equals("prune-unowned-dlls", StringComparison.OrdinalIgnoreCase))
                 return RunPruneUnownedDlls(values);
+            if (command.Equals("refresh-signed-report", StringComparison.OrdinalIgnoreCase))
+            {
+                var report = new SignedProductReportRefresher().Refresh(
+                    Required(values, "output"), Required(values, "report"));
+                Console.WriteLine($"Signed product report refreshed: {report.Summary.FinalFileCount} files, {report.Summary.FinalSizeBytes} bytes.");
+                return 0;
+            }
 
             PrintUsage();
             return 2;
@@ -131,6 +138,7 @@ internal static class ProgramEntry
             "  analyze-collisions --frontend <dir> --agent <dir> " +
             "--report <json-file> --assembly-list <text-file>\n" +
             "  prune-unowned-dlls --directory <dir> --manifest <deps-json> " +
-            "[--report <text-file>]");
+            "[--report <text-file>]\n" +
+            "  refresh-signed-report --output <dir> --report <dir>");
     }
 }

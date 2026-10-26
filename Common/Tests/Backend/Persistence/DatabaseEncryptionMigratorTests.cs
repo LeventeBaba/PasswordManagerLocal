@@ -18,7 +18,7 @@ public sealed class DatabaseEncryptionMigratorTests
     {
         using var directory = new TemporaryDirectory();
         var paths = new BackendStoragePaths(directory.Path);
-        var connectionString = DatabaseEncryptionMigrator.CreateRuntimeConnectionString(paths.DatabasePath, TestPassword);
+        var connectionString = CreateUnpooledRuntimeConnectionString(paths.DatabasePath);
         await using (var connection = new SqliteConnection(connectionString))
         {
             await connection.OpenAsync();
@@ -56,9 +56,7 @@ public sealed class DatabaseEncryptionMigratorTests
         Assert.IsFalse(File.Exists(paths.DatabaseMigrationBackupPath));
 
         await using (var migratedConnection = new SqliteConnection(
-                         DatabaseEncryptionMigrator.CreateRuntimeConnectionString(
-                             paths.DatabasePath,
-                             TestPassword)))
+                         CreateUnpooledRuntimeConnectionString(paths.DatabasePath)))
         {
             await migratedConnection.OpenAsync();
             await using var command = migratedConnection.CreateCommand();
@@ -121,6 +119,15 @@ public sealed class DatabaseEncryptionMigratorTests
             """;
         await command.ExecuteNonQueryAsync();
     }
+
+    private static string CreateUnpooledRuntimeConnectionString(string databasePath) =>
+        new SqliteConnectionStringBuilder(
+            DatabaseEncryptionMigrator.CreateRuntimeConnectionString(databasePath, TestPassword))
+        {
+            // Disposing a fixture connection must release the file immediately;
+            // production runtime connections deliberately retain pooling.
+            Pooling = false
+        }.ToString();
 
     private static string CreateLegacySqlCipherConnectionString(
         string databasePath,

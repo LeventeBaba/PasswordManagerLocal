@@ -6,10 +6,10 @@ namespace PasswordManagerLocal.Windows.Packaging;
 
 internal static class PackageReportWriter
 {
-    public static void Write(PackageReport report, string reportDirectory)
+    public static void Write(PackageReport report, string reportDirectory, bool clearDirectory = true)
     {
         var root = Path.GetFullPath(reportDirectory);
-        if (Directory.Exists(root))
+        if (clearDirectory && Directory.Exists(root))
             Directory.Delete(root, recursive: true);
         Directory.CreateDirectory(root);
 

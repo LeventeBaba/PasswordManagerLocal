@@ -5,6 +5,7 @@
       "passwordmanagerlocal.common.contracts": {
         "type": "Project"
       }
-    }
+    },
+    "net10.0/android-arm": {}
   }
 }

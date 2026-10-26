@@ -12,11 +12,20 @@ param(
 
     [Nullable[long]]$BaselineTotalBytes,
 
-    [switch]$RunSmokeTests
+    [switch]$RunSmokeTests,
+
+    [switch]$Sign
 )
 
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+. (Join-Path $PSScriptRoot 'WindowsReleaseSigning.ps1')
+# Testing publishes need no certificate, signing provider, or SignTool. An
+# explicitly signed publish still fails before deleting output if signing is unavailable.
+$windowsSigningContext = $null
+if ($Sign) {
+    $windowsSigningContext = Get-WindowsReleaseSigningContext
+}
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $repositoryRoot 'artifacts\publish\PasswordManagerLocal.Windows'
 }
@@ -57,6 +66,7 @@ $commonPublishArguments = @(
     '-p:DebugSymbols=false',
     '-p:CopyOutputSymbolsToPublishDirectory=false',
     '-p:PublishReferencesSymbols=false'
+    '-p:PmlWindowsProductStaging=true'
 )
 
 $frontendStageRequiredFiles = @(
@@ -486,6 +496,26 @@ Write-Host 'Validating isolated outputs, hashing, merging, and deduplicating...'
 if ($LASTEXITCODE -ne 0) { throw "Windows packaging failed with exit code $LASTEXITCODE." }
 
 & $verificationScript -PublishDirectory $productRoot -RuntimeIdentifier $RuntimeIdentifier -RepositoryRoot $repositoryRoot
+
+if ($Sign) {
+    # Sign once after all trimming, optimization and deduplication. The signed
+    # product directory is also the input for a future installer; ZIP is incidental.
+    Invoke-WindowsProductSigning -ProductDirectory $productRoot -Context $windowsSigningContext `
+        -ReportPath (Join-Path $reportRoot 'windows-signing-report.json')
+    & dotnet run --project $packagingProject --configuration $Configuration -- `
+        refresh-signed-report --output $productRoot --report $reportRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Could not refresh the packaging report for signed files.' }
+}
+else {
+    $unsignedReport = [PSCustomObject]@{
+        SigningMode = 'UnsignedTesting'
+        CertificateThumbprint = $null
+        Files = @()
+    }
+    [IO.File]::WriteAllText((Join-Path $reportRoot 'windows-signing-report.json'),
+        ($unsignedReport | ConvertTo-Json -Depth 3), [Text.UTF8Encoding]::new($false))
+    Write-Host 'Windows signing skipped: unsigned testing publish.'
+}
 
 if ($RunSmokeTests) {
     if (-not $IsWindows -and $PSVersionTable.PSEdition -eq 'Core') {
