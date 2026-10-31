@@ -5,7 +5,7 @@ using System.Xml.Linq;
 namespace PasswordManagerLocal.Windows.Tests.IPC.Packaging;
 
 [TestClass]
-public sealed class Phase6PublicationArchitectureTests
+public sealed class WindowsPublicationArchitectureTests
 {
     [TestMethod]
     public void BothReleaseProjectsUseExplicitCompatibleMultiFileTrimSettings()

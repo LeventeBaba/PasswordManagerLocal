@@ -57,7 +57,7 @@ public sealed class WindowsNamedPipeEndpointRpcIntegrationTests
         await blocked.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.AreEqual(EndpointRpcTestData.ItemId, device.DeviceId);
-        Assert.AreEqual("phase9-real-pipe", device.TlsCertFingerprint);
+        Assert.AreEqual("endpoint-rpc-test-fingerprint", device.TlsCertFingerprint);
     }
 
     [TestMethod]
@@ -151,7 +151,7 @@ public sealed class WindowsNamedPipeEndpointRpcIntegrationTests
     }
 
     private static string UniquePipeName() =>
-        $"PasswordManagerLocal.Phase9.Endpoint.{Guid.NewGuid():N}";
+        $"PasswordManagerLocal.Tests.EndpointRpc.Endpoint.{Guid.NewGuid():N}";
 
     private static void EnsureWindows()
     {

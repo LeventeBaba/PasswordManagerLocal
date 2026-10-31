@@ -7,7 +7,7 @@ using System.Xml.Linq;
 namespace PasswordManagerLocal.Common.Tests.Architecture;
 
 [TestClass]
-public sealed class Phase11AndroidArchitectureGuardTests
+public sealed class AndroidLifecycleSecurityArchitectureTests
 {
     [TestMethod]
     public void EveryEndpointInvocationPassesThroughCurrentAttachmentAuthority()
@@ -351,14 +351,14 @@ public sealed class Phase11AndroidArchitectureGuardTests
     }
 
     [TestMethod]
-    public void Phase11VerificationToolsAndReportsArePermanentRepositoryInputs()
+    public void AndroidVerificationToolsAndReportsArePermanentRepositoryInputs()
     {
         var root = GetRepositoryRoot();
         foreach (var relativePath in new[]
         {
             Path.Combine("Tools", "Android", "VerifyAndroidManifestAndResources.ps1"),
             Path.Combine("Tools", "Android", "VerifyAndroidPackage.ps1"),
-            Path.Combine("Tools", "Android", "InvokePhase11AndroidChecks.ps1")
+            Path.Combine("Tools", "Android", "InvokeAndroidIntegrationChecks.ps1")
         })
         {
             Assert.IsTrue(File.Exists(Path.Combine(root, relativePath)), relativePath);
@@ -370,13 +370,13 @@ public sealed class Phase11AndroidArchitectureGuardTests
 
         foreach (var reportName in new[]
         {
-            "PHASE11_ANDROID_INTEGRATION_PLATFORM_HARDENING_STATIC_VERIFICATION.md",
-            "PHASE11_IMPLEMENTATION_CHECKS.md",
-            "PHASE11_MODIFIED_FILES.md",
-            "PHASE11_ANDROID_AUTOMATED_TEST_MATRIX.md",
-            "PHASE11_ANDROID_EMULATOR_DEVICE_TEST_MATRIX.md",
-            "PHASE11_ANDROID_SECURITY_REVIEW.md",
-            "PHASE11_FINAL_ARCHITECTURE_AND_ACCEPTANCE.md"
+            "ANDROID_INTEGRATION_PLATFORM_HARDENING_STATIC_VERIFICATION.md",
+            "ANDROID_INTEGRATION_IMPLEMENTATION_CHECKS.md",
+            "ANDROID_INTEGRATION_MODIFIED_FILES.md",
+            "ANDROID_INTEGRATION_AUTOMATED_TEST_MATRIX.md",
+            "ANDROID_INTEGRATION_EMULATOR_DEVICE_TEST_MATRIX.md",
+            "ANDROID_INTEGRATION_SECURITY_REVIEW.md",
+            "ANDROID_INTEGRATION_ARCHITECTURE_AND_ACCEPTANCE.md"
         })
         {
             Assert.IsTrue(
@@ -408,7 +408,7 @@ public sealed class Phase11AndroidArchitectureGuardTests
             GetRepositoryRoot(),
             "Tools",
             "Android",
-            "InvokePhase11AndroidChecks.ps1"));
+            "InvokeAndroidIntegrationChecks.ps1"));
 
         StringAssert.Contains(source, "[Parameter(Mandatory)] [string]$PackageName");
         StringAssert.Contains(source, "[Parameter(Mandatory)] [string]$ActivityName");

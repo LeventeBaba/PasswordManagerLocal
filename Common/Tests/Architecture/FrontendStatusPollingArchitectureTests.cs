@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace PasswordManagerLocal.Common.Tests.Architecture;
 
 [TestClass]
-public sealed class Phase17FrontendStatusPollingArchitectureTests
+public sealed class FrontendStatusPollingArchitectureTests
 {
     [TestMethod]
     public void AuthenticationAndEnrollmentStatusHaveNoRecurringFrontendLoops()

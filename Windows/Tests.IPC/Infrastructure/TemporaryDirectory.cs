@@ -8,7 +8,7 @@ internal sealed class TemporaryDirectory : IDisposable
     {
         Path = System.IO.Path.Combine(
             System.IO.Path.GetTempPath(),
-            "PasswordManagerLocal.Phase9",
+            "PasswordManagerLocal.Tests.IPC",
             Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path);
     }
@@ -26,7 +26,7 @@ internal sealed class TemporaryDirectory : IDisposable
         }
         catch (Exception exception)
         {
-            throw new IOException($"Failed to remove the Phase 9 temporary directory '{Path}'.", exception);
+            throw new IOException($"Failed to remove the IPC test temporary directory '{Path}'.", exception);
         }
     }
 }

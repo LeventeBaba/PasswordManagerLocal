@@ -95,7 +95,7 @@ public sealed class WindowsAgentChangeNotificationAdapterTests
         Assert.IsNotNull(change);
         Assert.AreEqual(2, change.Sequence);
         // Event-hub sequence numbers are global, so user filtering can leave gaps.
-        // Phase 14 conservatively turns any observed gap into a full-refresh marker.
+        // Any observed notification gap conservatively becomes a full-refresh marker.
         Assert.IsTrue(change.RequiresAuthoritativeRefresh);
         Assert.AreEqual(FrontendChangeScope.Everything, change.Scope);
 

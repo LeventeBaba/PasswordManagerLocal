@@ -6,7 +6,7 @@ using System.Xml.Linq;
 namespace PasswordManagerLocal.Windows.Tests.IPC.Dependency;
 
 [TestClass]
-public sealed class Phase4NativeAgentShellArchitectureTests
+public sealed class NativeAgentShellArchitectureTests
 {
     [TestMethod]
     public void AgentProjectEnablesNoManagedUiFramework()

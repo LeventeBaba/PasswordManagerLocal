@@ -10,7 +10,7 @@ using PasswordManagerLocal.Common.Tests.Fakes;
 namespace PasswordManagerLocal.Common.Tests.Frontend.Settings;
 
 [TestClass]
-public sealed class UiPreferencesPhase18Tests
+public sealed class UiPreferencesTransactionTests
 {
     [TestMethod]
     public async Task PreferenceWritesAreSerializedAndPreserveEarlierFields()

@@ -199,7 +199,7 @@ if (-not [string]::IsNullOrWhiteSpace($ManagedAssemblyInventoryPath)) {
         throw 'Managed assemblies are stored in libassemblies.*.blob.so. Supply -StringsToolPath (GNU strings or llvm-strings) or -ManagedAssemblyInventoryPath to verify assembly names.'
     }
 
-    $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ("phase11-package-" + [Guid]::NewGuid().ToString('N'))
+    $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ("android-package-check-" + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $temporaryDirectory -Force | Out-Null
     $blobArchive = $null
     try {

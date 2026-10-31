@@ -11,7 +11,7 @@ using System.Xml.Linq;
 namespace PasswordManagerLocal.Common.Tests.Architecture;
 
 [TestClass]
-public sealed class Phase2ContractsArchitectureTests
+public sealed class ContractsArchitectureTests
 {
     [TestMethod]
     public void ContractsAssemblyHasNoForbiddenImplementationReferences()
@@ -79,7 +79,7 @@ public sealed class Phase2ContractsArchitectureTests
     {
         var source = new LoginRequest
         {
-            Username = "phase2-contract",
+            Username = "contracts-roundtrip",
             Password = [1, 2, 3, 4],
             RememberMe = true
         };

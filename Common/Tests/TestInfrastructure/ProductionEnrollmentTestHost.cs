@@ -210,7 +210,7 @@ public sealed class ProductionEnrollmentTestHost : IAsyncDisposable
         catch (TimeoutException)
         {
             // Do not wait for cancellation callbacks or for the blocked cleanup task. The purpose of
-            // this harness cleanup is to keep a failed phase from being replaced by MSTest's outer
+            // this harness cleanup is to keep a failed enrollment step from being replaced by MSTest's outer
             // timeout. The isolated provider/database can finish unwinding in the background.
             _ = Task.Run(() =>
             {

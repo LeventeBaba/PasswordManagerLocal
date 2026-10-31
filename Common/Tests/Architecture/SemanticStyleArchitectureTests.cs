@@ -8,7 +8,7 @@ using PasswordManagerLocal.Common.Frontend.Theming;
 namespace PasswordManagerLocal.Common.Tests.Architecture;
 
 [TestClass]
-public sealed class Phase20SemanticStyleArchitectureTests
+public sealed class SemanticStyleArchitectureTests
 {
     private static readonly HashSet<string> ColorPropertyNames = new(StringComparer.Ordinal)
     {

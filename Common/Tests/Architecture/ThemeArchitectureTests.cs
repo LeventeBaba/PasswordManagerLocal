@@ -6,7 +6,7 @@ using PasswordManagerLocal.Common.Contracts.Preferences;
 namespace PasswordManagerLocal.Common.Tests.Architecture;
 
 [TestClass]
-public sealed class Phase19ThemeArchitectureTests
+public sealed class ThemeArchitectureTests
 {
     [TestMethod]
     public void StableThemeContractContainsOnlyCompleteReleasedThemes()

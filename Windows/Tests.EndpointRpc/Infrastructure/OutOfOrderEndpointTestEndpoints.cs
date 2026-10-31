@@ -22,7 +22,7 @@ internal sealed class OutOfOrderEndpointTestEndpoints : ThrowingRecordingEndpoin
         Task.FromResult(new LocalDeviceInfoResponse
         {
             DeviceId = EndpointRpcTestData.ItemId,
-            TlsCertFingerprint = "phase9-real-pipe",
+            TlsCertFingerprint = "endpoint-rpc-test-fingerprint",
             DeviceType = PasswordManagerLocal.Common.Contracts.Devices.DeviceType.WindowsPc,
             CreatedAt = DateTimeOffset.UnixEpoch
         });

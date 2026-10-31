@@ -9,7 +9,7 @@ using PasswordManagerLocal.Common.Tests.Fakes;
 namespace PasswordManagerLocal.Common.Tests.Frontend.Settings;
 
 [TestClass]
-public sealed class UiPreferencesPhase19Tests
+public sealed class UiPreferencesThemeTransactionTests
 {
     [TestMethod]
     public async Task ThemePersistenceFailurePreservesActiveThemeAndRollsBackStore()

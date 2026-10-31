@@ -6,7 +6,7 @@ using System.Xml.Linq;
 namespace PasswordManagerLocal.Windows.Tests.IPC.Dependency;
 
 [TestClass]
-public sealed class Phase9ArchitectureGuardTests
+public sealed class RepositoryArchitectureGuardTests
 {
     [TestMethod]
     public void ContractsRemainsPlatformIndependentAndDependencyFree()
@@ -334,7 +334,7 @@ public sealed class Phase9ArchitectureGuardTests
         Assert.IsFalse(productionSources.Any(source =>
             source.Contains("PasswordManagerLocal.Windows.Tests.Host", StringComparison.Ordinal)));
         Assert.IsFalse(productionSources.Any(source =>
-            source.Contains("PHASE9_TEST_MODE", StringComparison.Ordinal)));
+            source.Contains("_TEST_MODE", StringComparison.Ordinal)));
     }
 
     private static void Visit(

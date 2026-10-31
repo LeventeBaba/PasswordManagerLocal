@@ -277,7 +277,7 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
         {
             // The worker receives its own endpoint copy. Remove the discovery cache entry so a
             // later test mutation cannot auto-start synchronization before the test explicitly
-            // kicks the next phase. This keeps data arrangement deterministic while preserving
+            // kicks the next synchronization step. This keeps data arrangement deterministic while preserving
             // the production queue activation and worker implementations.
             endpointRegistry.TryRemove(endpoint.TlsCertFingerprint);
         }

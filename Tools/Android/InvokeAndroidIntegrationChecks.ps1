@@ -105,7 +105,7 @@ function Save-Result([string]$Name, $Result) {
 
 $script:AdbPath = Resolve-Adb
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
-    $OutputDirectory = Join-Path (Get-Location) ("phase11-android-checks-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    $OutputDirectory = Join-Path (Get-Location) ("android-integration-checks-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 }
 $script:ResultsDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $script:ResultsDirectory -Force | Out-Null
@@ -181,4 +181,4 @@ $filteredLog | Set-Content -LiteralPath (Join-Path $script:ResultsDirectory '13-
     "CompletedAt=$([DateTimeOffset]::Now.ToString('O'))"
 ) | Set-Content -LiteralPath (Join-Path $script:ResultsDirectory 'summary.txt') -Encoding utf8
 
-Write-Host "Phase 11 Android diagnostics completed: $script:ResultsDirectory"
+Write-Host "Android integration diagnostics completed: $script:ResultsDirectory"

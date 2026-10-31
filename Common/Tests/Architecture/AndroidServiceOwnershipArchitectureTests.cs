@@ -5,7 +5,7 @@ using System.Xml.Linq;
 namespace PasswordManagerLocal.Common.Tests.Architecture;
 
 [TestClass]
-public sealed class Phase10AndroidArchitectureGuardTests
+public sealed class AndroidServiceOwnershipArchitectureTests
 {
     [TestMethod]
     public void ServiceCompositionIsTheOnlyAndroidRuntimeFactoryCaller()

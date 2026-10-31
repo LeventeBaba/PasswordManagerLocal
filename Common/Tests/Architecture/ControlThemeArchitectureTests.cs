@@ -6,7 +6,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace PasswordManagerLocal.Common.Tests.Architecture;
 
 [TestClass]
-public sealed class Phase21ControlThemeArchitectureTests
+public sealed class ControlThemeArchitectureTests
 {
     [TestMethod]
     public void ButtonUsesAnApplicationOwnedSemanticControlTheme()

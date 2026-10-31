@@ -375,9 +375,9 @@ public sealed class WindowsAutomaticUiRefreshTests
                 ExceptionDispatchInfo.Capture(failure).Throw();
         }
 
-        private async Task AwaitCleanupAsync(string phase, Func<Task> startCleanup)
+        private async Task AwaitCleanupAsync(string step, Func<Task> startCleanup)
         {
-            Progress.Record($"{phase} started.");
+            Progress.Record($"{step} started.");
             var cleanup = startCleanup();
             try { await cleanup.WaitAsync(TimeSpan.FromSeconds(5)); }
             catch
@@ -385,7 +385,7 @@ public sealed class WindowsAutomaticUiRefreshTests
                 BoundedUiTestRunner.ObserveFailure(cleanup);
                 throw;
             }
-            Progress.Record($"{phase} completed.");
+            Progress.Record($"{step} completed.");
         }
     }
 

@@ -19,9 +19,9 @@ public sealed class RegularSyncEndToEndTests
 {
     private const int TestTimeoutMilliseconds = 90_000;
     private const int ThreeDeviceTestTimeoutMilliseconds = 180_000;
-    private const int MaxOneWaySessionsPerPhase = 12;
-    private const int MaxBidirectionalSessionsPerPhase = 12;
-    private static readonly TimeSpan PhaseTimeout = TimeSpan.FromSeconds(20);
+    private const int MaxOneWaySessionsPerStep = 12;
+    private const int MaxBidirectionalSessionsPerStep = 12;
+    private static readonly TimeSpan StepTimeout = TimeSpan.FromSeconds(20);
 
     public TestContext TestContext { get; set; } = null!;
 
@@ -114,10 +114,10 @@ public sealed class RegularSyncEndToEndTests
         var sourceToken = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest(username));
         await source.EnableSyncAsync(sourceToken);
 
-        var enrollmentCode = await RunPhaseAsync(
+        var enrollmentCode = await RunStepAsync(
             "target enrollment listener startup before realistic post-enrollment synchronization",
             ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
-        await RunPhaseAsync(
+        await RunStepAsync(
             "production enrollment before either device reauthenticates",
             ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, enrollmentCode.Code, ct));
 
@@ -147,10 +147,10 @@ public sealed class RegularSyncEndToEndTests
             "Post-enrollment synchronization must not invalidate the imported username projection.");
 
         await source.Endpoints.LogoutAsync(sourceToken);
-        var sourceReloginToken = await RunPhaseAsync(
+        var sourceReloginToken = await RunStepAsync(
             "original device login after enrollment and post-enrollment synchronization",
             ct => source.Endpoints.LoginAsync(source.CreateLoginRequest(username), ct));
-        var targetFirstLoginToken = await RunPhaseAsync(
+        var targetFirstLoginToken = await RunStepAsync(
             "new device first login after post-enrollment synchronization",
             ct => target.Endpoints.LoginAsync(target.CreateLoginRequest(username), ct));
 
@@ -215,7 +215,7 @@ public sealed class RegularSyncEndToEndTests
         Assert.AreEqual(
             deltaSendsBeforeArrangement,
             pair.Source.Transport.DeltaSendCalls,
-            "Test data arrangement unexpectedly started regular synchronization before the explicit sync phase.");
+            "Test data arrangement unexpectedly started regular synchronization before the explicit sync step.");
 
         await SynchronizeOneWayUntilAsync(
             pair.Source,
@@ -820,14 +820,14 @@ public sealed class RegularSyncEndToEndTests
                 Encoding.UTF8.GetBytes("original-device-secret"));
             await original.EnableSyncAsync(originalToken);
 
-            var middleEnrollmentCode = await RunPhaseAsync(
+            var middleEnrollmentCode = await RunStepAsync(
                 "second device enrollment listener startup",
                 ct => middle.Endpoints.StartDeviceEnrollmentAsync(ct));
-            await RunPhaseAsync(
+            await RunStepAsync(
                 "first enrollment from original device to second device",
                 ct => original.Endpoints.AddDeviceByCodeAsync(originalToken, middleEnrollmentCode.Code, ct));
 
-            var middleToken = await RunPhaseAsync(
+            var middleToken = await RunStepAsync(
                 "second device first login after enrollment",
                 ct => middle.Endpoints.LoginAsync(middle.CreateLoginRequest(username), ct));
             await middle.EnableSyncAsync(middleToken);
@@ -837,14 +837,14 @@ public sealed class RegularSyncEndToEndTests
                 "Second device credential",
                 Encoding.UTF8.GetBytes("second-device-secret"));
 
-            var thirdEnrollmentCode = await RunPhaseAsync(
+            var thirdEnrollmentCode = await RunStepAsync(
                 "third device enrollment listener startup",
                 ct => newDevice.Endpoints.StartDeviceEnrollmentAsync(ct));
-            await RunPhaseAsync(
+            await RunStepAsync(
                 "second enrollment from second device to third device",
                 ct => middle.Endpoints.AddDeviceByCodeAsync(middleToken, thirdEnrollmentCode.Code, ct));
 
-            var newDeviceToken = await RunPhaseAsync(
+            var newDeviceToken = await RunStepAsync(
                 "third device first login after enrollment",
                 ct => newDevice.Endpoints.LoginAsync(newDevice.CreateLoginRequest(username), ct));
             await newDevice.ActivateImportedSynchronizationAsync();
@@ -962,13 +962,13 @@ public sealed class RegularSyncEndToEndTests
             var sourceToken = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest(username));
             await source.EnableSyncAsync(sourceToken);
 
-            var enrollmentCode = await RunPhaseAsync(
+            var enrollmentCode = await RunStepAsync(
                 "target enrollment listener startup for regular-sync test setup",
                 ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
-            await RunPhaseAsync(
+            await RunStepAsync(
                 "production enrollment setup before regular synchronization",
                 ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, enrollmentCode.Code, ct));
-            var targetToken = await RunPhaseAsync(
+            var targetToken = await RunStepAsync(
                 "first target login before regular synchronization",
                 ct => target.Endpoints.LoginAsync(target.CreateLoginRequest(username), ct));
             await target.EnableSyncAsync(targetToken);
@@ -993,10 +993,10 @@ public sealed class RegularSyncEndToEndTests
                     pair.Target.Transport.ControlOperationInventoryExchangeCalls > targetControlInventoryCalls &&
                     !await pair.Source.HasPendingForAsync(pair.Target.Identity.LocalDeviceId) &&
                     !await pair.Target.HasPendingForAsync(pair.Source.Identity.LocalDeviceId));
-            await RunPhaseAsync(
+            await RunStepAsync(
                 "stop initial source regular-sync worker",
                 ct => pair.Source.SyncTasks.StopAllAsync(ct));
-            await RunPhaseAsync(
+            await RunStepAsync(
                 "stop initial target regular-sync worker",
                 ct => pair.Target.SyncTasks.StopAllAsync(ct));
             source = null;
@@ -1016,18 +1016,18 @@ public sealed class RegularSyncEndToEndTests
     private async Task StartSyncAsync(
         ProductionSyncTestHost source,
         ProductionSyncTestHost target,
-        string phase,
+        string step,
         CancellationToken ct = default)
     {
-        TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] START: {phase}");
+        TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] START: {step}");
         var started = await source.StartSyncToAsync(target, ct);
         TestContext.WriteLine(
             started
-                ? $"[{DateTimeOffset.UtcNow:O}] STARTED: {phase}"
-                : $"[{DateTimeOffset.UtcNow:O}] PENDING KICK: {phase}");
+                ? $"[{DateTimeOffset.UtcNow:O}] STARTED: {step}"
+                : $"[{DateTimeOffset.UtcNow:O}] PENDING KICK: {step}");
 
         await source.WaitForSyncIdleAsync(target.Identity.LocalDeviceId, ct);
-        TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] COMPLETE: {phase}");
+        TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] COMPLETE: {step}");
     }
 
     private async Task SynchronizeOneWayUntilAsync(
@@ -1037,18 +1037,18 @@ public sealed class RegularSyncEndToEndTests
         Func<Task<bool>> condition)
     {
         TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] START: {description}");
-        using var cancellation = new CancellationTokenSource(PhaseTimeout);
+        using var cancellation = new CancellationTokenSource(StepTimeout);
         var sessionCount = 0;
 
         try
         {
             while (!await condition())
             {
-                if (sessionCount >= MaxOneWaySessionsPerPhase)
+                if (sessionCount >= MaxOneWaySessionsPerStep)
                 {
                     var pending = await source.HasPendingForAsync(target.Identity.LocalDeviceId);
                     Assert.Fail(
-                        $"Exceeded {MaxOneWaySessionsPerPhase} synchronization sessions while waiting for {description}. " +
+                        $"Exceeded {MaxOneWaySessionsPerStep} synchronization sessions while waiting for {description}. " +
                         $"Pending={pending}, DeltaSendCalls={source.Transport.DeltaSendCalls}, " +
                         $"SnapshotInventoryCalls={source.Transport.SnapshotInventoryExchangeCalls}, " +
                         $"ControlInventoryCalls={source.Transport.ControlOperationInventoryExchangeCalls}.");
@@ -1083,19 +1083,19 @@ public sealed class RegularSyncEndToEndTests
         Func<Task<bool>> condition)
     {
         TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] START: {description}");
-        using var cancellation = new CancellationTokenSource(PhaseTimeout);
+        using var cancellation = new CancellationTokenSource(StepTimeout);
         var bidirectionalSessionCount = 0;
 
         try
         {
             while (!await condition())
             {
-                if (bidirectionalSessionCount >= MaxBidirectionalSessionsPerPhase)
+                if (bidirectionalSessionCount >= MaxBidirectionalSessionsPerStep)
                 {
                     var sourcePending = await pair.Source.HasPendingForAsync(pair.Target.Identity.LocalDeviceId);
                     var targetPending = await pair.Target.HasPendingForAsync(pair.Source.Identity.LocalDeviceId);
                     Assert.Fail(
-                        $"Exceeded {MaxBidirectionalSessionsPerPhase} bidirectional synchronization sessions while waiting for {description}. " +
+                        $"Exceeded {MaxBidirectionalSessionsPerStep} bidirectional synchronization sessions while waiting for {description}. " +
                         $"SourcePending={sourcePending}, TargetPending={targetPending}, " +
                         $"SourceSnapshotInventoryCalls={pair.Source.Transport.SnapshotInventoryExchangeCalls}, " +
                         $"TargetSnapshotInventoryCalls={pair.Target.Transport.SnapshotInventoryExchangeCalls}, " +
@@ -1136,22 +1136,22 @@ public sealed class RegularSyncEndToEndTests
             $"completedBidirectionalSessionCount={bidirectionalSessionCount}");
     }
 
-    private async Task<T> RunPhaseAsync<T>(
-        string phase,
+    private async Task<T> RunStepAsync<T>(
+        string step,
         Func<CancellationToken, Task<T>> operation)
     {
-        TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] START: {phase}");
+        TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] START: {step}");
         using var cancellation = new CancellationTokenSource();
         var operationTask = Task.Run(() => operation(cancellation.Token));
-        var completed = await Task.WhenAny(operationTask, Task.Delay(PhaseTimeout));
+        var completed = await Task.WhenAny(operationTask, Task.Delay(StepTimeout));
         if (completed == operationTask || operationTask.IsCompleted)
         {
             var result = await operationTask;
-            TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] COMPLETE: {phase}");
+            TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] COMPLETE: {step}");
             return result;
         }
 
-        TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] TIMEOUT: {phase}; requesting cancellation.");
+        TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] TIMEOUT: {step}; requesting cancellation.");
         _ = Task.Run(() =>
         {
             try
@@ -1181,16 +1181,16 @@ public sealed class RegularSyncEndToEndTests
         }
 
         throw new AssertFailedException(
-            $"Regular synchronization end-to-end phase '{phase}' did not complete within " +
-            $"{PhaseTimeout.TotalSeconds:0} seconds.");
+            $"Regular synchronization end-to-end step '{step}' did not complete within " +
+            $"{StepTimeout.TotalSeconds:0} seconds.");
     }
 
-    private async Task RunPhaseAsync(
-        string phase,
+    private async Task RunStepAsync(
+        string step,
         Func<CancellationToken, Task> operation)
     {
-        await RunPhaseAsync<object?>(
-            phase,
+        await RunStepAsync<object?>(
+            step,
             async ct =>
             {
                 await operation(ct);

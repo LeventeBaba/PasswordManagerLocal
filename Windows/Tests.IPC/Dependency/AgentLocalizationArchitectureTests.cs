@@ -9,7 +9,7 @@ using System.Xml.Linq;
 namespace PasswordManagerLocal.Windows.Tests.IPC.Dependency;
 
 [TestClass]
-public sealed class Phase5AgentLocalizationArchitectureTests
+public sealed class AgentLocalizationArchitectureTests
 {
     [TestMethod]
     public void EverySupportedLanguageHasExactlyOneDeterministicallyMappedAgentResource()

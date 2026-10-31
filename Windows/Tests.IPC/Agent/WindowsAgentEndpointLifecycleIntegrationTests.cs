@@ -21,7 +21,7 @@ using System.Reflection;
 namespace PasswordManagerLocal.Windows.Tests.IPC.Agent;
 
 [TestClass]
-public sealed class Phase6RepresentativeFlowTests
+public sealed class WindowsAgentEndpointLifecycleIntegrationTests
 {
     [TestMethod]
     public async Task RegisteredUiAuthorizesEndpointOpensInteractiveBindingAndReturnsResponse()

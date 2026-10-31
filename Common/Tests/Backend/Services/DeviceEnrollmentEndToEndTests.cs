@@ -18,7 +18,7 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 public sealed class DeviceEnrollmentEndToEndTests
 {
     private const int TestTimeoutMilliseconds = 60_000;
-    private static readonly TimeSpan EnrollmentPhaseTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan EnrollmentStepTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan CancellationDrainTimeout = TimeSpan.FromSeconds(2);
 
     public TestContext TestContext { get; set; } = null!;
@@ -70,11 +70,11 @@ public sealed class DeviceEnrollmentEndToEndTests
             TagIds = [sourceTag.Id]
         });
         await source.Endpoints.SetLocalUserSyncOnAsync(sourceToken, true);
-        var enrollmentCode = await RunPhaseAsync(
+        var enrollmentCode = await RunStepAsync(
             "target enrollment listener startup and authenticated self-test",
             ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
 
-        await RunPhaseAsync(
+        await RunStepAsync(
             "source authoritative enrollment, snapshot transfer, and target import",
             ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, enrollmentCode.Code, ct));
 
@@ -88,7 +88,7 @@ public sealed class DeviceEnrollmentEndToEndTests
         Assert.AreEqual(UserLoginIdentityStatus.Active, sourceIdentity.Status);
 
         await source.Endpoints.LogoutAsync(sourceToken);
-        var sourceReloginToken = await RunPhaseAsync(
+        var sourceReloginToken = await RunStepAsync(
             "original device login after authoritative enrollment membership transition",
             ct => source.Endpoints.LoginAsync(source.CreateLoginRequest(username), ct));
         Assert.AreNotEqual(Guid.Empty, sourceReloginToken);
@@ -99,7 +99,7 @@ public sealed class DeviceEnrollmentEndToEndTests
             await GetOnlyCanonicalCheckpointAsync(target),
             "Enrollment import must create the target installation's canonical checkpoint before first login.");
 
-        var targetToken = await RunPhaseAsync(
+        var targetToken = await RunStepAsync(
             "first login on the newly enrolled backend",
             ct => target.Endpoints.LoginAsync(target.CreateLoginRequest(username), ct));
         var profile = await target.Endpoints.GetUserProfileInfoAsync(targetToken);
@@ -154,14 +154,14 @@ public sealed class DeviceEnrollmentEndToEndTests
         await source.Endpoints.SetLocalUserSyncOnAsync(sourceToken, true);
         await SetEmptyDiagnosticsOnHealthySnapshotAsync(source);
 
-        var enrollmentCode = await RunPhaseAsync(
+        var enrollmentCode = await RunStepAsync(
             "target enrollment listener startup and authenticated self-test",
             ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
-        await RunPhaseAsync(
+        await RunStepAsync(
             "source authoritative enrollment, snapshot transfer, and target import",
             ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, enrollmentCode.Code, ct));
 
-        var targetToken = await RunPhaseAsync(
+        var targetToken = await RunStepAsync(
             "first login on the newly enrolled backend",
             ct => target.Endpoints.LoginAsync(target.CreateLoginRequest(username), ct));
         Assert.AreNotEqual(Guid.Empty, targetToken);
@@ -194,13 +194,13 @@ public sealed class DeviceEnrollmentEndToEndTests
         var username = $"enrollretry{Guid.NewGuid().ToString("N")[..16]}";
         var sourceToken = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest(username));
         await source.Endpoints.SetLocalUserSyncOnAsync(sourceToken, true);
-        var firstCode = await RunPhaseAsync(
+        var firstCode = await RunStepAsync(
             "first target enrollment listener startup and authenticated self-test",
             ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
         source.Transport.ThrowAfterNextSuccessfulEnrollmentCompletion = true;
 
         var firstFailure = await Assert.ThrowsExactlyAsync<DeviceEnrollmentPartiallyCommittedException>(() =>
-            RunPhaseAsync(
+            RunStepAsync(
                 "first enrollment transfer with simulated lost success reply",
                 ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, firstCode.Code, ct)));
 
@@ -212,16 +212,16 @@ public sealed class DeviceEnrollmentEndToEndTests
         Assert.AreEqual(DeviceEnrollmentCommitStatus.TransferFailed,
             (await GetOnlyEnrollmentCommitAsync(source)).Status);
 
-        var retryCode = await RunPhaseAsync(
+        var retryCode = await RunStepAsync(
             "retry target enrollment listener startup and authenticated self-test",
             ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
-        await RunPhaseAsync(
+        await RunStepAsync(
             "retry enrollment transfer and idempotent target import",
             ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, retryCode.Code, ct));
 
         var commits = await GetEnrollmentCommitsAsync(source);
         var targetUserIds = await GetUserIdsAsync(target);
-        var targetToken = await RunPhaseAsync(
+        var targetToken = await RunStepAsync(
             "first login on the newly enrolled backend",
             ct => target.Endpoints.LoginAsync(target.CreateLoginRequest(username), ct));
         var devices = await target.Endpoints.GetUserDevicesAsync(targetToken);
@@ -247,13 +247,13 @@ public sealed class DeviceEnrollmentEndToEndTests
         var username = $"enrolltamper{Guid.NewGuid().ToString("N")[..16]}";
         var sourceToken = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest(username));
         await source.Endpoints.SetLocalUserSyncOnAsync(sourceToken, true);
-        var enrollmentCode = await RunPhaseAsync(
+        var enrollmentCode = await RunStepAsync(
             "target enrollment listener startup and authenticated self-test",
             ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
         source.Transport.TamperNextEnrollmentSnapshot = true;
 
         var failure = await Assert.ThrowsExactlyAsync<DeviceEnrollmentPartiallyCommittedException>(() =>
-            RunPhaseAsync(
+            RunStepAsync(
                 "tampered snapshot rejection and recoverable commit recording",
                 ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, enrollmentCode.Code, ct)));
 
@@ -281,13 +281,13 @@ public sealed class DeviceEnrollmentEndToEndTests
         var username = $"enrollcert{Guid.NewGuid().ToString("N")[..16]}";
         var sourceToken = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest(username));
         await source.Endpoints.SetLocalUserSyncOnAsync(sourceToken, true);
-        var enrollmentCode = await RunPhaseAsync(
+        var enrollmentCode = await RunStepAsync(
             "target enrollment listener startup and authenticated self-test",
             ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
         source.Transport.ClientCertificateFingerprintOverride = new string('F', 64);
 
         var failure = await Assert.ThrowsExactlyAsync<DeviceEnrollmentPartiallyCommittedException>(() =>
-            RunPhaseAsync(
+            RunStepAsync(
                 "client-certificate mismatch rejection and recoverable commit recording",
                 ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, enrollmentCode.Code, ct)));
 
@@ -297,14 +297,14 @@ public sealed class DeviceEnrollmentEndToEndTests
             (await GetOnlyEnrollmentCommitAsync(source)).Status);
     }
 
-    private async Task<T> RunPhaseAsync<T>(
-        string phase,
+    private async Task<T> RunStepAsync<T>(
+        string step,
         Func<CancellationToken, Task<T>> operation)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(phase);
+        ArgumentException.ThrowIfNullOrWhiteSpace(step);
         ArgumentNullException.ThrowIfNull(operation);
 
-        TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] START: {phase}");
+        TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] START: {step}");
         using var cancellation = new CancellationTokenSource();
 
         // Execute the endpoint call on a worker so a synchronous SQLite wait cannot block the
@@ -312,17 +312,17 @@ public sealed class DeviceEnrollmentEndToEndTests
         // into the real backend operation; unlike Task.WaitAsync(timeout), timing out here also asks
         // the underlying operation to unwind and release its enrollment/lifecycle/DbContext leases.
         var operationTask = Task.Run(() => operation(cancellation.Token));
-        var watchdog = Task.Delay(EnrollmentPhaseTimeout);
+        var watchdog = Task.Delay(EnrollmentStepTimeout);
         var completed = await Task.WhenAny(operationTask, watchdog);
         if (completed == operationTask || operationTask.IsCompleted)
         {
             var result = await operationTask;
-            TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] COMPLETE: {phase}");
+            TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] COMPLETE: {step}");
             return result;
         }
 
         TestContext.WriteLine(
-            $"[{DateTimeOffset.UtcNow:O}] TIMEOUT: {phase}; requesting cancellation.");
+            $"[{DateTimeOffset.UtcNow:O}] TIMEOUT: {step}; requesting cancellation.");
 
         // Cancellation callbacks can themselves block, so request cancellation on a worker and do
         // not let that request consume the remaining test timeout. The operation gets a short drain
@@ -345,7 +345,7 @@ public sealed class DeviceEnrollmentEndToEndTests
         catch
         {
             // The operation may finish by observing cancellation or may remain blocked. In either
-            // case report the phase that exceeded the deadline rather than allowing fixture cleanup
+            // case report the step that exceeded the deadline rather than allowing fixture cleanup
             // to replace it with the outer MSTest timeout.
         }
 
@@ -359,17 +359,17 @@ public sealed class DeviceEnrollmentEndToEndTests
         }
 
         throw new AssertFailedException(
-            $"Enrollment end-to-end phase '{phase}' did not complete within " +
-            $"{EnrollmentPhaseTimeout.TotalSeconds:0} seconds. Cancellation was requested and " +
+            $"Enrollment end-to-end step '{step}' did not complete within " +
+            $"{EnrollmentStepTimeout.TotalSeconds:0} seconds. Cancellation was requested and " +
             $"the operation was given {CancellationDrainTimeout.TotalSeconds:0} seconds to unwind.");
     }
 
-    private async Task RunPhaseAsync(
-        string phase,
+    private async Task RunStepAsync(
+        string step,
         Func<CancellationToken, Task> operation)
     {
-        await RunPhaseAsync<object?>(
-            phase,
+        await RunStepAsync<object?>(
+            step,
             async ct =>
             {
                 await operation(ct);

@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 namespace PasswordManagerLocal.Windows.Tests.IPC.Dependency;
 
 [TestClass]
-public sealed class Phase6DependencyBoundaryTests
+public sealed class WindowsRuntimeOwnershipArchitectureTests
 {
     [TestMethod]
     public void AgentReferencesBackendCompositionAndEndpointRpcButNoFrontendOrAvalonia()
