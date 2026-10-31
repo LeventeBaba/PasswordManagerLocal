@@ -37,14 +37,10 @@ public sealed class WindowsAgentLauncherTests
     }
 
     [TestMethod]
-    public async Task LegacyNestedAgentExecutableIsNotUsed()
+    public async Task MissingSiblingAgentDoesNotStartAProcess()
     {
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-        var legacyDirectory = Path.Combine(directory, "AgentRuntime");
-        Directory.CreateDirectory(legacyDirectory);
-        await File.WriteAllBytesAsync(
-            Path.Combine(legacyDirectory, WindowsExecutableNames.AgentExecutableFileName),
-            Array.Empty<byte>());
+        Directory.CreateDirectory(directory);
         try
         {
             var processLauncher = new FakeWindowsAgentProcessLauncher();

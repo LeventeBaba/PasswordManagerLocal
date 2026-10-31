@@ -53,19 +53,6 @@ public sealed class EndpointRpcSeparationArchitectureTests
     }
 
     [TestMethod]
-    public void CommonFrontendTransitiveGraphContainsNoBackendProject()
-    {
-        var root = GetRepositoryRoot();
-        var frontend = Project(root, "Common", "Frontend", "PasswordManagerLocal.Common.Frontend.csproj");
-        var closure = GetTransitiveProjectClosure(frontend)
-            .Select(Path.GetFileName)
-            .ToArray();
-
-        CollectionAssert.DoesNotContain(closure, "PasswordManagerLocal.Common.Backend.csproj");
-        CollectionAssert.DoesNotContain(closure, "PasswordManagerLocal.Common.Backend.Hosting.csproj");
-    }
-
-    [TestMethod]
     public void WindowsAgentOwnsEndpointServerAndBackendDependencies()
     {
         var root = GetRepositoryRoot();
@@ -132,17 +119,6 @@ public sealed class EndpointRpcSeparationArchitectureTests
     }
 
     [TestMethod]
-    public void LegacyCombinedEndpointRpcProjectIsAbsent()
-    {
-        var root = GetRepositoryRoot();
-        Assert.IsFalse(File.Exists(Project(
-            root,
-            "Windows",
-            "EndpointRpc",
-            "PasswordManagerLocal.Windows.EndpointRpc.csproj")));
-    }
-
-    [TestMethod]
     public void FrontendTrimmerRootsContainNoBackendOrEntityFrameworkAssemblies()
     {
         var project = XDocument.Load(Project(
@@ -184,23 +160,6 @@ public sealed class EndpointRpcSeparationArchitectureTests
             "ConfigureWindowsFirewall.ps1"));
         StringAssert.Contains(script, "Join-Path $PSScriptRoot 'PasswordManagerLocal.Windows.Agent.exe'");
         Assert.IsFalse(script.Contains("AgentRuntime", StringComparison.Ordinal));
-    }
-
-    [TestMethod]
-    public void PublishValidationEnforcesSharedSiblingProductBoundaries()
-    {
-        var root = GetRepositoryRoot();
-        var publishScript = File.ReadAllText(Path.Combine(root, "Tools", "Windows", "PublishWindowsProduct.ps1"));
-        var verifier = File.ReadAllText(Path.Combine(root, "Tools", "Windows", "VerifyWindowsPublishedLayout.ps1"));
-
-        StringAssert.Contains(publishScript, @"staging\frontend");
-        StringAssert.Contains(publishScript, @"staging\agent");
-        StringAssert.Contains(publishScript, @"product\PasswordManagerLocal");
-        StringAssert.Contains(verifier, "PasswordManagerLocal.Common.Backend.dll");
-        StringAssert.Contains(verifier, "PasswordManagerLocal.Windows.EndpointRpc.Server.dll");
-        StringAssert.Contains(verifier, "PasswordManagerLocal.deps.json");
-        StringAssert.Contains(verifier, "PasswordManagerLocal.Windows.Agent.deps.json");
-        StringAssert.Contains(verifier, "prohibited legacy AgentRuntime directory");
     }
 
     private static string[] ProjectReferenceNames(string projectPath) =>

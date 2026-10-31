@@ -23,17 +23,24 @@ public sealed class WindowsIpcHandshakeTests
     }
 
     [TestMethod]
-    public void HandshakeDtosDoNotDuplicateTheFrameProtocolVersion()
+    public void HandshakeJsonCarriesIdentityCapabilitiesAndAcceptanceWithoutFrameVersion()
     {
         var serializer = new WindowsIpcSerializer();
-        var requestJson = System.Text.Encoding.UTF8.GetString(serializer.Serialize(
-            CreateHandshakeRequest(IpcPeerRole.TestClient),
-            WindowsIpcJsonContext.Default.IpcHandshakeRequest));
-        var responseJson = System.Text.Encoding.UTF8.GetString(serializer.Serialize(
-            new IpcHandshakeResponse(true, IpcPeerRole.Agent, Guid.NewGuid(), IpcCapabilities.Control, null),
-            WindowsIpcJsonContext.Default.IpcHandshakeResponse));
-        Assert.IsFalse(requestJson.Contains("protocolVersion", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(responseJson.Contains("protocolVersion", StringComparison.OrdinalIgnoreCase));
+        var request = CreateHandshakeRequest(IpcPeerRole.TestClient);
+        var response = new IpcHandshakeResponse(true, IpcPeerRole.Agent, Guid.NewGuid(), IpcCapabilities.Control, null);
+        using var requestJson = System.Text.Json.JsonDocument.Parse(
+            serializer.Serialize(request, WindowsIpcJsonContext.Default.IpcHandshakeRequest));
+        using var responseJson = System.Text.Json.JsonDocument.Parse(
+            serializer.Serialize(response, WindowsIpcJsonContext.Default.IpcHandshakeResponse));
+
+        CollectionAssert.AreEquivalent(new[] { "clientRole", "processId", "windowsSessionId", "sessionId", "capabilities" },
+            requestJson.RootElement.EnumerateObject().Select(property => property.Name).ToArray());
+        CollectionAssert.AreEquivalent(new[] { "accepted", "serverRole", "connectionId", "capabilities" },
+            responseJson.RootElement.EnumerateObject().Select(property => property.Name).ToArray());
+        Assert.AreEqual(request.ProcessId, requestJson.RootElement.GetProperty("processId").GetInt32());
+        Assert.AreEqual(request.SessionId, requestJson.RootElement.GetProperty("sessionId").GetGuid());
+        Assert.IsTrue(responseJson.RootElement.GetProperty("accepted").GetBoolean());
+        Assert.AreEqual(response.ConnectionId, responseJson.RootElement.GetProperty("connectionId").GetGuid());
     }
 
     [TestMethod]
@@ -58,8 +65,6 @@ public sealed class WindowsIpcHandshakeTests
         Assert.AreEqual(IpcErrorCode.UnexpectedPeerRole, response.Error?.ErrorCode);
         await serverTask;
     }
-
-
 
     [TestMethod]
     public async Task CapabilityNotSupportedByServerIsRejectedWithStructuredError()

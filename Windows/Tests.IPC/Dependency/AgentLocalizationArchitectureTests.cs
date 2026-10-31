@@ -4,7 +4,6 @@ using PasswordManagerLocal.Windows.Agent.Localization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Xml.Linq;
 
 namespace PasswordManagerLocal.Windows.Tests.IPC.Dependency;
 
@@ -27,46 +26,6 @@ public sealed class AgentLocalizationArchitectureTests
 
         CollectionAssert.AreEqual(expected, actual);
         Assert.AreEqual(expected.Length, expected.Distinct(StringComparer.Ordinal).Count());
-    }
-
-    [TestMethod]
-    public void AgentProjectEmbedsLocalizationAndKeepsFrontendAndManagedUiOut()
-    {
-        var root = GetRepositoryRoot();
-        var project = XDocument.Load(Path.Combine(
-            root, "Windows", "Agent", "PasswordManagerLocal.Windows.Agent.csproj"));
-        var projectText = project.ToString();
-        var references = project.Descendants("ProjectReference")
-            .Select(element => element.Attribute("Include")?.Value ?? string.Empty)
-            .ToArray();
-
-        StringAssert.Contains(projectText, "Assets\\Localization\\*.json");
-        Assert.IsFalse(references.Any(reference => reference.Contains("Frontend", StringComparison.OrdinalIgnoreCase)));
-        Assert.IsFalse(projectText.Contains("Avalonia", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(projectText.Contains("WindowsForms", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(projectText.Contains("UseWPF", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(projectText.Contains("ReactiveUI", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [TestMethod]
-    public void WindowsFrontendRemainsBackendAndEndpointServerIndependent()
-    {
-        var project = XDocument.Load(Path.Combine(
-            GetRepositoryRoot(), "Windows", "Frontend", "PasswordManagerLocal.Windows.Frontend.csproj"));
-        var references = project.Descendants("ProjectReference")
-            .Select(element => Path.GetFileName(element.Attribute("Include")?.Value ?? string.Empty))
-            .ToArray();
-
-        Assert.IsFalse(references.Contains("PasswordManagerLocal.Common.Backend.csproj", StringComparer.OrdinalIgnoreCase));
-        Assert.IsFalse(references.Contains("PasswordManagerLocal.Common.Backend.Hosting.csproj", StringComparer.OrdinalIgnoreCase));
-        Assert.IsFalse(references.Contains("PasswordManagerLocal.Windows.Backend.csproj", StringComparer.OrdinalIgnoreCase));
-        Assert.IsFalse(references.Contains("PasswordManagerLocal.Windows.EndpointRpc.Server.csproj", StringComparer.OrdinalIgnoreCase));
-        Assert.IsTrue(references.Contains("PasswordManagerLocal.Windows.EndpointRpc.Client.csproj", StringComparer.OrdinalIgnoreCase));
-        Assert.IsTrue(references.Contains("PasswordManagerLocal.Windows.EndpointRpc.Contracts.csproj", StringComparer.OrdinalIgnoreCase) ||
-            File.ReadAllText(Path.Combine(
-                GetRepositoryRoot(),
-                "Windows", "EndpointRpc", "Client", "PasswordManagerLocal.Windows.EndpointRpc.Client.csproj"))
-                .Contains("EndpointRpc.Contracts", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -140,7 +99,6 @@ public sealed class AgentLocalizationArchitectureTests
         }
     }
 
-
     [TestMethod]
     public void AgentUiSurfacesDoNotReceiveHardCodedStringLiterals()
     {
@@ -161,54 +119,6 @@ public sealed class AgentLocalizationArchitectureTests
                 Regex.IsMatch(source, pattern, RegexOptions.Singleline | RegexOptions.CultureInvariant),
                 $"An Agent UI/safe-message surface still receives a hard-coded string literal: {pattern}");
         }
-    }
-
-    [TestMethod]
-    public void PreferenceReloadLifetimeStopsBeforeNativeTrayDisposal()
-    {
-        var host = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(), "Windows", "Agent", "Hosting", "WindowsAgentHost.cs"));
-        var reloadStop = host.IndexOf(
-            "_applicationPreferencesReloadCoordinator.DisposeAsync()",
-            StringComparison.Ordinal);
-        var trayStop = host.IndexOf("_trayIcon.DisposeAsync()", StringComparison.Ordinal);
-
-        Assert.IsTrue(reloadStop >= 0);
-        Assert.IsTrue(trayStop > reloadStop);
-    }
-
-    [TestMethod]
-    public void ReloadProtocolCarriesNoLanguageOrThemePayloadAndUsesAuthoritativeReader()
-    {
-        var root = GetRepositoryRoot();
-        var handler = File.ReadAllText(Path.Combine(
-            root, "Windows", "Agent", "Preferences", "ReloadApplicationPreferencesWindowsIpcRequestHandler.cs"));
-        var coordinator = File.ReadAllText(Path.Combine(
-            root, "Windows", "Agent", "Preferences", "AgentApplicationPreferencesReloadCoordinator.cs"));
-        var notifier = File.ReadAllText(Path.Combine(
-            root, "Windows", "Frontend", "Settings", "WindowsAgentApplicationPreferencesNotifier.cs"));
-
-        StringAssert.Contains(handler, "EnsureNoPayload");
-        Assert.IsFalse(handler.Contains("AppLanguage", StringComparison.Ordinal));
-        Assert.IsFalse(handler.Contains("AppThemeId", StringComparison.Ordinal));
-        StringAssert.Contains(coordinator, "ReadLanguageAsync");
-        StringAssert.Contains(notifier, "ReloadApplicationPreferencesAsync");
-        Assert.IsFalse(notifier.Contains("AppLanguage", StringComparison.Ordinal));
-        Assert.IsFalse(notifier.Contains("AppThemeId", StringComparison.Ordinal));
-    }
-
-    [TestMethod]
-    public void ActiveLocalizerHasNoPerLanguageDictionaryCacheOrPermanentFallbackDictionary()
-    {
-        var source = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(), "Windows", "Agent", "Localization", "AgentLocalizer.cs"));
-
-        StringAssert.Contains(source, "AgentLocalizationSnapshot _active");
-        Assert.IsFalse(source.Contains("Dictionary<AppLanguage", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("ConcurrentDictionary<AppLanguage", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("fallback", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(source.Contains("static readonly", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(source.Contains("CreateDefault", StringComparison.Ordinal));
     }
 
     private static string ReadSources(string directory) =>

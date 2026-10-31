@@ -8,9 +8,9 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Coordination;
 public sealed class FileProcessInstanceLockTests
 {
     [TestMethod]
-    public void FirstAgentOwnershipSucceedsAndSecondIsUnavailable()
+    public void SecondOwnerOfSamePathIsRejected()
     {
-        var path = CreateLockPath("agent");
+        var path = CreateLockPath("same-path");
         try
         {
             using var first = new FileProcessInstanceLock(path);
@@ -19,24 +19,6 @@ public sealed class FileProcessInstanceLockTests
             Assert.IsTrue(first.IsOwner);
             Assert.IsFalse(second.IsOwner);
             Assert.ThrowsExactly<ProcessInstanceAlreadyOwnedException>(second.EnsureOwnership);
-        }
-        finally
-        {
-            DeleteRoot(path);
-        }
-    }
-
-    [TestMethod]
-    public void FirstUiOwnershipSucceedsAndSecondIsUnavailable()
-    {
-        var path = CreateLockPath("ui");
-        try
-        {
-            using var first = new FileProcessInstanceLock(path);
-            using var second = new FileProcessInstanceLock(path);
-
-            Assert.IsTrue(first.IsOwner);
-            Assert.IsFalse(second.IsOwner);
         }
         finally
         {
@@ -146,7 +128,6 @@ public sealed class FileProcessInstanceLockTests
         Assert.ThrowsExactly<ProcessInstanceAlreadyOwnedException>(instanceLock.EnsureOwnership);
         DeleteRoot(path);
     }
-
 
     [TestMethod]
     public void FailedHandleDisposalLeavesOwnershipHandleStronglyReferenced()

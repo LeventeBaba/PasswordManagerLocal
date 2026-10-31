@@ -9,26 +9,18 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Ui;
 public sealed class WindowsAgentTrayTextTests
 {
     [TestMethod]
-    public async Task EnglishTextComesFromAgentResource()
+    [DataRow(AppLanguage.English, "Open Password Manager Local", "Exit", "The Password Manager Local agent could not start.")]
+    [DataRow(AppLanguage.Hungarian, "Password Manager Local megnyitása", "Kilépés", "A Password Manager Local háttérügynöke nem tudott elindulni.")]
+    public async Task EmbeddedLanguageMapsToExpectedTrayLabels(
+        AppLanguage language, string openLabel, string exitLabel, string startupFailure)
     {
-        var localizer = await AgentLocalizer.CreateAsync(AppLanguage.English);
+        var localizer = await AgentLocalizer.CreateAsync(language);
+
         var text = WindowsAgentTrayText.Create(localizer);
 
-        Assert.AreEqual("Open Password Manager Local", text.OpenLabel);
-        Assert.AreEqual("Exit", text.ExitLabel);
-        Assert.AreEqual("The Password Manager Local agent could not start.", text.StartupFailureMessage);
+        Assert.AreEqual(openLabel, text.OpenLabel);
+        Assert.AreEqual(exitLabel, text.ExitLabel);
+        Assert.AreEqual(startupFailure, text.StartupFailureMessage);
     }
 
-    [TestMethod]
-    public async Task HungarianTextComesFromAgentResourceAndPreservesUnicode()
-    {
-        var localizer = await AgentLocalizer.CreateAsync(AppLanguage.Hungarian);
-        var text = WindowsAgentTrayText.Create(localizer);
-
-        Assert.AreEqual("Password Manager Local megnyitása", text.OpenLabel);
-        Assert.AreEqual("Kilépés", text.ExitLabel);
-        Assert.AreEqual(
-            "A Password Manager Local háttérügynöke nem tudott elindulni.",
-            text.StartupFailureMessage);
-    }
 }

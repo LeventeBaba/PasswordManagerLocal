@@ -24,36 +24,39 @@ public sealed class WindowsUiSingleInstanceControllerTests
     }
 
     [TestMethod]
-    public async Task SecondUiRequestsActivationAndExitsSecondaryPath()
+    [DataRow(UiActivationResultKind.Activated)]
+    [DataRow(UiActivationResultKind.Rejected)]
+    public async Task ConclusiveActivationReplyKeepsExistingUiAuthoritative(UiActivationResultKind resultKind)
     {
+        var processLock = new FakeProcessInstanceLock(isOwner: false);
         var activation = new DelegateWindowsUiActivationClient((_, _) =>
-            Task.FromResult(new UiActivationResult(UiActivationResultKind.Activated, "Activated.")));
+            Task.FromResult(new UiActivationResult(resultKind, "Conclusive activation reply.")));
         var controller = new WindowsUiSingleInstanceController(
-            new FakeProcessInstanceLock(isOwner: false),
-            activation,
-            retryDelay: TimeSpan.Zero);
+            processLock, activation, maximumActivationAttempts: 3, retryDelay: TimeSpan.Zero);
 
         var role = await controller.EnterAsync();
 
         Assert.AreEqual(WindowsUiInstanceRole.SecondaryActivationRequested, role);
         Assert.AreEqual(1, activation.CallCount);
+        Assert.IsFalse(processLock.IsOwner);
     }
 
     [TestMethod]
-    public async Task MissingActivationServerUsesBoundedAttempts()
+    [DataRow(UiActivationResultKind.Unavailable)]
+    [DataRow(UiActivationResultKind.Failed)]
+    public async Task UnavailableOrFailedActivationRetriesWithoutBecomingPrimary(UiActivationResultKind resultKind)
     {
+        var processLock = new FakeProcessInstanceLock(isOwner: false);
         var activation = new DelegateWindowsUiActivationClient((_, _) =>
-            Task.FromResult(new UiActivationResult(UiActivationResultKind.Unavailable, "Unavailable.")));
+            Task.FromResult(new UiActivationResult(resultKind, "Activation unavailable.")));
         var controller = new WindowsUiSingleInstanceController(
-            new FakeProcessInstanceLock(isOwner: false),
-            activation,
-            maximumActivationAttempts: 3,
-            retryDelay: TimeSpan.Zero);
+            processLock, activation, maximumActivationAttempts: 3, retryDelay: TimeSpan.Zero);
 
         var role = await controller.EnterAsync();
 
         Assert.AreEqual(WindowsUiInstanceRole.SecondaryActivationUnavailable, role);
         Assert.AreEqual(3, activation.CallCount);
+        Assert.IsFalse(processLock.IsOwner);
     }
 
     [TestMethod]
@@ -83,37 +86,4 @@ public sealed class WindowsUiSingleInstanceControllerTests
         Assert.AreEqual(1, contender.EnsureOwnershipCount);
     }
 
-    [TestMethod]
-    public async Task PersistentActivationFailureUsesBoundedAttemptsWithoutStartingSecondUi()
-    {
-        var activation = new DelegateWindowsUiActivationClient((_, _) =>
-            Task.FromResult(new UiActivationResult(UiActivationResultKind.Failed, "Protocol failed.")));
-        var controller = new WindowsUiSingleInstanceController(
-            new FakeProcessInstanceLock(isOwner: false),
-            activation,
-            maximumActivationAttempts: 3,
-            retryDelay: TimeSpan.Zero);
-
-        var role = await controller.EnterAsync();
-
-        Assert.AreEqual(WindowsUiInstanceRole.SecondaryActivationUnavailable, role);
-        Assert.AreEqual(3, activation.CallCount);
-    }
-
-    [TestMethod]
-    public async Task RejectedActivationKeepsTheExistingUiAuthoritative()
-    {
-        var activation = new DelegateWindowsUiActivationClient((_, _) =>
-            Task.FromResult(new UiActivationResult(UiActivationResultKind.Rejected, "Rejected.")));
-        var controller = new WindowsUiSingleInstanceController(
-            new FakeProcessInstanceLock(isOwner: false),
-            activation,
-            maximumActivationAttempts: 3,
-            retryDelay: TimeSpan.Zero);
-
-        var role = await controller.EnterAsync();
-
-        Assert.AreEqual(WindowsUiInstanceRole.SecondaryActivationRequested, role);
-        Assert.AreEqual(1, activation.CallCount);
-    }
 }

@@ -39,45 +39,24 @@ public sealed class WindowsUiProcessShutdownCoordinatorTests
     }
 
     [TestMethod]
-    public async Task HangingActivationShutdownCannotRetainUiProcessCleanup()
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task HangingCleanupStageDoesNotBlockRemainingShutdown(bool blockActivation)
     {
-        var neverCompletes = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
+        var neverCompletes = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var host = new FakeWindowsIpcServerHost
         {
-            StopTaskOverride = neverCompletes.Task
+            StopTaskOverride = blockActivation ? neverCompletes.Task : null
         };
-        var activationServer = new WindowsUiActivationServer(host);
-        var processLock = new FakeProcessInstanceLock();
-        var backendClient = new FakeAsyncDisposable();
-        var coordinator = new WindowsUiProcessShutdownCoordinator(
-            TimeSpan.FromMilliseconds(20),
-            TimeSpan.FromSeconds(1));
-        var stopwatch = Stopwatch.StartNew();
-
-        await coordinator.ShutdownAsync(activationServer, processLock, backendClient);
-
-        stopwatch.Stop();
-        Assert.IsTrue(processLock.IsDisposed);
-        Assert.AreEqual(1, backendClient.DisposeCount);
-        Assert.IsTrue(stopwatch.Elapsed < TimeSpan.FromSeconds(1));
-    }
-
-    [TestMethod]
-    public async Task HangingBackendCleanupCannotRetainUiProcessCleanup()
-    {
-        var neverCompletes = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var host = new FakeWindowsIpcServerHost();
         var activationServer = new WindowsUiActivationServer(host);
         var processLock = new FakeProcessInstanceLock();
         var backendClient = new FakeAsyncDisposable
         {
-            DisposeTaskOverride = neverCompletes.Task
+            DisposeTaskOverride = blockActivation ? null : neverCompletes.Task
         };
         var coordinator = new WindowsUiProcessShutdownCoordinator(
-            TimeSpan.FromSeconds(1),
-            TimeSpan.FromMilliseconds(20));
+            blockActivation ? TimeSpan.FromMilliseconds(20) : TimeSpan.FromSeconds(1),
+            blockActivation ? TimeSpan.FromSeconds(1) : TimeSpan.FromMilliseconds(20));
         var stopwatch = Stopwatch.StartNew();
 
         await coordinator.ShutdownAsync(activationServer, processLock, backendClient);

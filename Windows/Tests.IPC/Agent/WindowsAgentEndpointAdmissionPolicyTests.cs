@@ -13,22 +13,13 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Agent;
 public sealed class WindowsAgentEndpointAdmissionPolicyTests
 {
     [TestMethod]
-    public void RunningHealthyOpenAgentAcceptsEndpointConnection()
-    {
-        var context = CreateContext();
-
-        Assert.IsTrue(context.Policy.CanAcceptConnection);
-        Assert.IsTrue(context.Policy.TryEnterRequest(out var lease));
-        lease!.Dispose();
-    }
-
-    [TestMethod]
-    public void StoppedRestartableRuntimeAcceptsEndpointConnection()
+    [DataRow(BackendRuntimeState.NotStarted)]
+    [DataRow(BackendRuntimeState.Stopped)]
+    public void RestartableRuntimeStatesAdmitEndpointRequests(BackendRuntimeState runtimeState)
     {
         var context = CreateContext();
         context.Owner.Snapshot = FakeWindowsAgentBackendRuntimeOwner.CreateSnapshot(
-            ownerState: WindowsAgentBackendOwnerState.Ready,
-            runtimeState: BackendRuntimeState.Stopped);
+            ownerState: WindowsAgentBackendOwnerState.Ready, runtimeState: runtimeState);
 
         Assert.IsTrue(context.Policy.CanAcceptConnection);
         Assert.IsTrue(context.Policy.TryEnterRequest(out var lease));

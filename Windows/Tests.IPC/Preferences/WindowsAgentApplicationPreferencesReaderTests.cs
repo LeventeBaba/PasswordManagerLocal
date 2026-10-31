@@ -1,7 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Contracts.Preferences;
-using PasswordManagerLocal.Common.Frontend.Services;
-using PasswordManagerLocal.Common.Preferences;
 using PasswordManagerLocal.Windows.Agent.Preferences;
 using PasswordManagerLocal.Windows.Tests.IPC.Infrastructure;
 
@@ -11,35 +9,19 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Preferences;
 public sealed class WindowsAgentApplicationPreferencesReaderTests
 {
     [TestMethod]
-    public async Task UiAndAgentFacingReadersResolveSameLanguageWhileAgentIgnoresTheme()
+    [DataRow(AppLanguage.English, AppThemeId.Light)]
+    [DataRow(AppLanguage.English, AppThemeId.Dark)]
+    [DataRow(AppLanguage.Hungarian, AppThemeId.Light)]
+    [DataRow(AppLanguage.Hungarian, AppThemeId.Dark)]
+    public async Task ReadLanguageReturnsStoredLanguageIndependentlyOfTheme(AppLanguage language, AppThemeId theme)
     {
-        var directory = Path.Combine(
-            Path.GetTempPath(),
-            $"PasswordManagerLocal-AgentPreferenceReader-{Guid.NewGuid():N}");
-        try
-        {
-            var writer = new FileApplicationPreferencesStore(directory);
-            await writer.WriteAsync(new ApplicationPreferences
-            {
-                SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
-                Language = AppLanguage.Hungarian,
-                Theme = AppThemeId.Light
-            });
+        var store = new MutableApplicationPreferencesStore(language, theme);
+        var reader = new WindowsAgentApplicationPreferencesReader(store);
 
-            await using var ui = await UiPreferencesService.CreateAsync(
-                new FileApplicationPreferencesStore(directory),
-                localizationResourceLoader: new TestFrontendLocalizationResourceLoader(),
-                themeManager: TestAppThemeManagerFactory.Create());
-            var agent = new WindowsAgentApplicationPreferencesReader(
-                new FileApplicationPreferencesStore(directory));
+        var actual = await reader.ReadLanguageAsync();
 
-            Assert.AreEqual(ui.CurrentLanguage, await agent.ReadLanguageAsync());
-            Assert.AreEqual(AppThemeId.Light, ui.CurrentThemeId);
-        }
-        finally
-        {
-            if (Directory.Exists(directory))
-                Directory.Delete(directory, recursive: true);
-        }
+        Assert.AreEqual(language, actual);
+        Assert.AreEqual(1, store.ReadCount);
+        Assert.AreEqual(0, store.WriteCount);
     }
 }

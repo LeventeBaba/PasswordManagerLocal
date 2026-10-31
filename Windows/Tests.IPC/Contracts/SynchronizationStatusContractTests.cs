@@ -35,62 +35,31 @@ public sealed class SynchronizationStatusContractTests
     }
 
     [TestMethod]
-    public void DisabledStartingRunningAndStoppingRoundTrip()
+    [DataRow(SynchronizationStatusState.Disabled)]
+    [DataRow(SynchronizationStatusState.Starting)]
+    [DataRow(SynchronizationStatusState.Running)]
+    [DataRow(SynchronizationStatusState.Stopping)]
+    [DataRow(SynchronizationStatusState.Degraded)]
+    public void RuntimeStatesRoundTripWithRequiredFailureMetadata(SynchronizationStatusState state)
     {
         var serializer = new WindowsIpcSerializer();
         var validator = new WindowsIpcContractValidator();
-        var states = new[]
-        {
-            SynchronizationStatusState.Disabled,
-            SynchronizationStatusState.Starting,
-            SynchronizationStatusState.Running,
-            SynchronizationStatusState.Stopping
-        };
+        var original = new SynchronizationStatusDto(state,
+            state == SynchronizationStatusState.Degraded
+                ? new IpcFailureDto(IpcFailureKind.Synchronization, "Synchronization is degraded.",
+                    DateTimeOffset.UtcNow, IsRetryable: true, RequiresProcessRestart: false)
+                : null);
+        validator.Validate(original);
 
-        foreach (var state in states)
-        {
-            var original = new SynchronizationStatusDto(
-                state,
-                null);
-            validator.Validate(original);
-            var payload = serializer.Serialize(
-                original,
-                WindowsIpcJsonContext.Default.SynchronizationStatusDto);
-            var roundTripped = serializer.Deserialize(
-                payload,
-                WindowsIpcJsonContext.Default.SynchronizationStatusDto);
-            validator.Validate(roundTripped);
-            Assert.AreEqual(original, roundTripped);
-        }
+        var payload = serializer.Serialize(original, WindowsIpcJsonContext.Default.SynchronizationStatusDto);
+        var restored = serializer.Deserialize(payload, WindowsIpcJsonContext.Default.SynchronizationStatusDto);
+
+        validator.Validate(restored);
+        Assert.AreEqual(original, restored);
     }
 
     [TestMethod]
-    public void DegradedStateRoundTripsWithSynchronizationFailure()
-    {
-        var serializer = new WindowsIpcSerializer();
-        var validator = new WindowsIpcContractValidator();
-        var original = new SynchronizationStatusDto(
-            SynchronizationStatusState.Degraded,
-            new IpcFailureDto(
-                IpcFailureKind.Synchronization,
-                "Synchronization is degraded.",
-                DateTimeOffset.UtcNow,
-                IsRetryable: true,
-                RequiresProcessRestart: false));
-
-        var payload = serializer.Serialize(
-            original,
-            WindowsIpcJsonContext.Default.SynchronizationStatusDto);
-        var roundTripped = serializer.Deserialize(
-            payload,
-            WindowsIpcJsonContext.Default.SynchronizationStatusDto);
-
-        validator.Validate(roundTripped);
-        Assert.AreEqual(original, roundTripped);
-    }
-
-    [TestMethod]
-    public void ContractContainsNoInventedSchedulingOrTransferTimestamps()
+    public void SynchronizationStatusExposesOnlyStateAndLastFailure()
     {
         var propertyNames = typeof(SynchronizationStatusDto)
             .GetProperties()

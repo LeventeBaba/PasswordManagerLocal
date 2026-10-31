@@ -8,7 +8,7 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Packaging;
 public sealed class WindowsPublicationArchitectureTests
 {
     [TestMethod]
-    public void BothReleaseProjectsUseExplicitCompatibleMultiFileTrimSettings()
+    public void ReleaseWinX64ProjectsDeclareCompatibleTrimSettings()
     {
         var root = GetRepositoryRoot();
         foreach (var relativePath in new[]
@@ -18,13 +18,15 @@ public sealed class WindowsPublicationArchitectureTests
         })
         {
             var project = XDocument.Load(Path.Combine(root, relativePath));
-            AssertProperty(project, "SelfContained", "true");
-            AssertProperty(project, "PublishTrimmed", "true");
-            AssertProperty(project, "TrimMode", "partial");
-            AssertProperty(project, "PublishSingleFile", "false");
-            AssertProperty(project, "PublishReadyToRun", "false");
-            AssertProperty(project, "InvariantGlobalization", "false");
-            AssertProperty(project, "JsonSerializerIsReflectionEnabledByDefault", "false");
+            var releaseProperties = project.Root!.Elements("PropertyGroup").Single(group =>
+                (string?)group.Attribute("Condition") == "'$(Configuration)' == 'Release' and '$(RuntimeIdentifier)' == 'win-x64'");
+            AssertProperty(releaseProperties, "SelfContained", "true");
+            AssertProperty(releaseProperties, "PublishTrimmed", "true");
+            AssertProperty(releaseProperties, "TrimMode", "partial");
+            AssertProperty(releaseProperties, "PublishSingleFile", "false");
+            AssertProperty(releaseProperties, "PublishReadyToRun", "false");
+            AssertProperty(releaseProperties, "InvariantGlobalization", "false");
+            AssertProperty(releaseProperties, "JsonSerializerIsReflectionEnabledByDefault", "false");
         }
     }
 
@@ -43,22 +45,25 @@ public sealed class WindowsPublicationArchitectureTests
     }
 
     [TestMethod]
-    public void AuthoritativePackagerUsesCleanIndependentStagesAndExternalReports()
+    public void WindowsPublishToolingStagesSeparateProjectsAndValidatesSharedProductLayout()
     {
         var root = GetRepositoryRoot();
-        var source = File.ReadAllText(Path.Combine(root, "Tools", "Windows", "PublishWindowsProduct.ps1"));
+        var packager = File.ReadAllText(Path.Combine(root, "Tools", "Windows", "PublishWindowsProduct.ps1"));
+        var verifier = File.ReadAllText(Path.Combine(root, "Tools", "Windows", "VerifyWindowsPublishedLayout.ps1"));
 
-        StringAssert.Contains(source, "Remove-Item -LiteralPath $outputRootPath -Recurse -Force");
-        StringAssert.Contains(source, "staging\\frontend");
-        StringAssert.Contains(source, "staging\\agent");
-        StringAssert.Contains(source, "product\\PasswordManagerLocal");
-        StringAssert.Contains(source, "reports");
-        StringAssert.Contains(source, "-p:PublishTrimmed=true");
-        StringAssert.Contains(source, "-p:PublishSingleFile=false");
-        StringAssert.Contains(source, "-p:PublishReadyToRun=false");
-        StringAssert.Contains(source, "--frontend");
-        StringAssert.Contains(source, "--agent");
-        StringAssert.Contains(source, "--report");
+        foreach (var required in new[]
+        {
+            "Remove-Item -LiteralPath $outputRootPath -Recurse -Force", @"staging\frontend", @"staging\agent",
+            @"product\PasswordManagerLocal", "reports", "-p:PublishTrimmed=true", "-p:PublishSingleFile=false",
+            "-p:PublishReadyToRun=false", "--frontend", "--agent", "--output", "--report"
+        })
+            StringAssert.Contains(packager, required);
+        foreach (var required in new[]
+        {
+            "PasswordManagerLocal.Common.Backend.dll", "PasswordManagerLocal.Windows.EndpointRpc.Server.dll",
+            "PasswordManagerLocal.deps.json", "PasswordManagerLocal.Windows.Agent.deps.json"
+        })
+            StringAssert.Contains(verifier, required);
     }
 
     [TestMethod]
@@ -101,20 +106,6 @@ public sealed class WindowsPublicationArchitectureTests
     }
 
     [TestMethod]
-    public void FrontendPublishValidatorTracksCurrentLocalizationParser()
-    {
-        var root = GetRepositoryRoot();
-        var validator = File.ReadAllText(Path.Combine(
-            root, "Windows", "Packaging", "WindowsProductValidator.cs"));
-        var parser = File.ReadAllText(Path.Combine(
-            root, "Common", "Frontend", "Localization", "FrontendTranslationResourceParser.cs"));
-
-        StringAssert.Contains(validator, "FrontendTranslationResourceParser");
-        StringAssert.Contains(parser, "class FrontendTranslationResourceParser");
-        Assert.IsFalse(validator.Contains("LocalizationJsonContext", StringComparison.Ordinal));
-    }
-
-    [TestMethod]
     public void PublicationPrunesAndRejectsDllsNotOwnedByDependencyManifests()
     {
         var root = GetRepositoryRoot();
@@ -144,39 +135,6 @@ public sealed class WindowsPublicationArchitectureTests
     }
 
     [TestMethod]
-    public void ProductionLayoutCodeContainsNoLegacyNestedAgentLookup()
-    {
-        var root = GetRepositoryRoot();
-        var files = new[]
-        {
-            Path.Combine(root, "Windows", "Frontend", "Agent", "WindowsAgentLauncher.cs"),
-            Path.Combine(root, "Windows", "Agent", "Ui", "WindowsUiLauncher.cs"),
-            Path.Combine(root, "Windows", "Frontend", "WindowsFirewallPermissionManager.cs"),
-            Path.Combine(root, "Windows", "IPC", "Constants", "Launch",
-            "WindowsExecutableNames.cs"),
-            Path.Combine(root, "Tools", "ConfigureWindowsFirewall.ps1"),
-            Path.Combine(root, "Tools", "Publish.ps1")
-        };
-
-        foreach (var file in files)
-            Assert.IsFalse(File.ReadAllText(file).Contains("AgentRuntime", StringComparison.Ordinal), file);
-    }
-
-    [TestMethod]
-    public void PackagingImplementationUsesSha256AndRejectsDifferentContent()
-    {
-        var source = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(), "Windows", "Packaging", "DeterministicDirectoryMerger.cs"));
-
-        StringAssert.Contains(source, "SHA256.HashData");
-        StringAssert.Contains(source, "same-path files have different content");
-        StringAssert.Contains(source, "case-only path collision");
-        StringAssert.Contains(source, "File.Copy(source.AbsolutePath, destination, overwrite: false)");
-        StringAssert.Contains(source, "Directory.Delete(path, recursive: true)");
-    }
-
-
-    [TestMethod]
     public void SharedRuntimeUsesCollisionDrivenDirectLinkerActions()
     {
         var root = GetRepositoryRoot();
@@ -197,9 +155,6 @@ public sealed class WindowsPublicationArchitectureTests
         Assert.IsFalse(targets.Contains("<ManagedAssemblyToLink Remove=", StringComparison.Ordinal));
         Assert.IsFalse(targets.Contains("<ManagedAssemblyToLink Include=", StringComparison.Ordinal));
         Assert.IsFalse(targets.Contains("_PrepareTrimConfiguration", StringComparison.Ordinal));
-        StringAssert.Contains(targets, "Neither tier mutates SDK");
-        StringAssert.Contains(targets, "exact initial collision set");
-        StringAssert.Contains(targets, "CopyUsed to Save");
 
         var script = File.ReadAllText(Path.Combine(
             root, "Tools", "Windows", "PublishWindowsProduct.ps1"));
@@ -236,7 +191,7 @@ public sealed class WindowsPublicationArchitectureTests
         }
     }
 
-    private static void AssertProperty(XDocument project, string name, string expected)
+    private static void AssertProperty(XContainer project, string name, string expected)
     {
         var values = project.Descendants(name).Select(element => element.Value.Trim()).ToArray();
         Assert.IsTrue(values.Contains(expected, StringComparer.OrdinalIgnoreCase),

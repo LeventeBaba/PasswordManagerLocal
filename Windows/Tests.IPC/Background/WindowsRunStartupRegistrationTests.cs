@@ -61,36 +61,20 @@ public sealed class WindowsRunStartupRegistrationTests
     }
 
     [TestMethod]
-    public async Task ReadBackDetectsMismatchedCommand()
+    [DataRow("\"C:\\Other\\PasswordManagerLocal.Windows.Agent.exe\" --background")]
+    [DataRow(7)]
+    public async Task ReadBackRejectsMismatchedOrNonStringRegistryValues(object registryValue)
     {
         var registry = new FakeWindowsCurrentUserRegistry();
-        registry.SetValue(
-            WindowsStartupRegistrationConstants.RunKeyPath,
-            WindowsStartupRegistrationConstants.ValueName,
-            "\"C:\\Other\\PasswordManagerLocal.Windows.Agent.exe\" --background");
+        registry.SetValue(WindowsStartupRegistrationConstants.RunKeyPath,
+            WindowsStartupRegistrationConstants.ValueName, registryValue);
         var registration = CreateRegistration(registry);
 
         var state = await registration.ReadAsync();
 
         Assert.IsTrue(state.EntryExists);
         Assert.IsFalse(state.IsRegistered);
-    }
-
-    [TestMethod]
-    public async Task ReadBackTreatsNonStringRunValueAsExistingMismatch()
-    {
-        var registry = new FakeWindowsCurrentUserRegistry();
-        registry.SetValue(
-            WindowsStartupRegistrationConstants.RunKeyPath,
-            WindowsStartupRegistrationConstants.ValueName,
-            7);
-        var registration = CreateRegistration(registry);
-
-        var state = await registration.ReadAsync();
-
-        Assert.IsTrue(state.EntryExists);
-        Assert.IsFalse(state.IsRegistered);
-        Assert.IsNull(state.Command);
+        Assert.AreEqual(registryValue as string, state.Command);
     }
 
     [TestMethod]
@@ -105,7 +89,6 @@ public sealed class WindowsRunStartupRegistrationTests
         await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(
             () => registration.RegisterAsync());
     }
-
 
     [TestMethod]
     public void StartupCommandRejectsTheWindowsUiExecutable()

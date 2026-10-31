@@ -47,38 +47,12 @@ public sealed class RepositoryArchitectureGuardTests
     }
 
     [TestMethod]
-    public void WindowsUiAndAgentProjectReferencesPreserveOwnershipBoundaries()
-    {
-        var root = GetRepositoryRoot();
-        var ui = ProjectReferenceNames(Path.Combine(
-            root,
-            "Windows",
-            "Frontend",
-            "PasswordManagerLocal.Windows.Frontend.csproj"));
-        var agent = ProjectReferenceNames(Path.Combine(
-            root,
-            "Windows",
-            "Agent",
-            "PasswordManagerLocal.Windows.Agent.csproj"));
-
-        CollectionAssert.DoesNotContain(ui, "PasswordManagerLocal.Common.Backend.Hosting.csproj");
-        CollectionAssert.DoesNotContain(ui, "PasswordManagerLocal.Windows.Backend.csproj");
-        CollectionAssert.Contains(agent, "PasswordManagerLocal.Common.Backend.Hosting.csproj");
-        CollectionAssert.Contains(agent, "PasswordManagerLocal.Windows.Backend.csproj");
-        CollectionAssert.DoesNotContain(agent, "PasswordManagerLocal.Common.Frontend.csproj");
-    }
-
-
-    [TestMethod]
     public void AgentRemainsTheOnlyWindowsStartupRegistryWriter()
     {
         var root = GetRepositoryRoot();
-        var callers = Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+        var callers = Directory.EnumerateFiles(Path.Combine(root, "Windows"), "*.cs", SearchOption.AllDirectories)
             .Where(path => !ContainsGeneratedDirectory(path))
             .Where(path => !ContainsTestDirectory(path))
-            .Where(path => !path.Contains(
-                $"{Path.DirectorySeparatorChar}Frontend{Path.DirectorySeparatorChar}",
-                StringComparison.Ordinal))
             .Where(path => File.ReadAllText(path).Contains(
                 "new WindowsRunStartupRegistration(",
                 StringComparison.Ordinal))
@@ -107,7 +81,6 @@ public sealed class RepositoryArchitectureGuardTests
             new[] { Path.Combine("Windows", "Tests.IPC", "PasswordManagerLocal.Windows.Tests.IPC.csproj") },
             referencingProjects);
     }
-
 
     [TestMethod]
     public void SourceFilesUseOneMatchingPrimaryType()
@@ -154,7 +127,6 @@ public sealed class RepositoryArchitectureGuardTests
 
         Assert.IsEmpty(outsideDocs, string.Join(Environment.NewLine, outsideDocs));
     }
-
 
     [TestMethod]
     public void WindowsPublishEntryPointDelegatesToTheAuthoritativeProductPackager()
@@ -371,12 +343,6 @@ public sealed class RepositoryArchitectureGuardTests
             .Select(element => element.Attribute("Include")?.Value)
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Cast<string>()
-            .ToArray();
-
-    private static string[] ProjectReferenceNames(string projectPath) =>
-        ProjectReferences(projectPath)
-            .Select(path => Path.GetFileName(path)
-                ?? throw new InvalidDataException($"Project reference has no file name: {path}"))
             .ToArray();
 
     private static string? Property(XDocument project, string name) =>

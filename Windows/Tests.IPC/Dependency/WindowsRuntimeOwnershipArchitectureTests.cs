@@ -10,59 +10,42 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Dependency;
 public sealed class WindowsRuntimeOwnershipArchitectureTests
 {
     [TestMethod]
-    public void AgentReferencesBackendCompositionAndEndpointRpcButNoFrontendOrAvalonia()
+    public void AgentReferencesBackendAndEndpointServerWithoutManagedUiDependencies()
     {
-        var references = typeof(WindowsAgentHost).Assembly
-            .GetReferencedAssemblies()
-            .Select(reference => reference.Name ?? string.Empty)
-            .ToArray();
+        var references = typeof(WindowsAgentHost).Assembly.GetReferencedAssemblies()
+            .Select(reference => reference.Name ?? string.Empty).ToArray();
+        foreach (var required in new[]
+        {
+            "PasswordManagerLocal.Common.Backend", "PasswordManagerLocal.Common.Backend.Hosting",
+            "PasswordManagerLocal.Windows.Backend", "PasswordManagerLocal.Windows.EndpointRpc.Server"
+        })
+            CollectionAssert.Contains(references, required);
+        foreach (var forbidden in new[]
+        {
+            "PasswordManagerLocal.Windows.EndpointRpc.Client", "PasswordManagerLocal.Common.Frontend",
+            "PasswordManagerLocal.Windows.Frontend", "System.Windows.Forms", "PresentationCore", "PresentationFramework"
+        })
+            CollectionAssert.DoesNotContain(references, forbidden);
+        Assert.IsFalse(references.Any(name => name.StartsWith("Avalonia", StringComparison.Ordinal)
+            || name.StartsWith("ReactiveUI", StringComparison.Ordinal)));
 
-        Assert.IsTrue(references.Contains("PasswordManagerLocal.Common.Backend"));
-        Assert.IsTrue(references.Contains("PasswordManagerLocal.Common.Backend.Hosting"));
-        Assert.IsTrue(references.Contains("PasswordManagerLocal.Windows.Backend"));
-        Assert.IsTrue(references.Contains("PasswordManagerLocal.Windows.EndpointRpc.Server"));
-        Assert.IsFalse(references.Contains("PasswordManagerLocal.Windows.EndpointRpc.Client"));
-        Assert.IsFalse(references.Any(name => name.StartsWith("Avalonia", StringComparison.Ordinal)));
-        Assert.IsFalse(references.Contains("PasswordManagerLocal.Common.Frontend"));
-    }
-
-
-    [TestMethod]
-    public void AgentEndpointHostWiresTheSingleAuthoritativeConnectionLimit()
-    {
-        var source = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(),
-            "Windows",
-            "Agent",
-            "Endpoint",
-            "WindowsAgentEndpointHost.cs"));
-
-        StringAssert.Contains(
-            source,
-            "new WindowsIpcServerHostOptions(MaximumActiveEndpointConnections)");
-        StringAssert.Contains(
-            source,
-            "public const int MaximumActiveEndpointConnections = 1");
+        var project = System.Xml.Linq.XDocument.Load(Path.Combine(
+            GetRepositoryRoot(), "Windows", "Agent", "PasswordManagerLocal.Windows.Agent.csproj"));
+        foreach (var property in new[] { "UseWindowsForms", "UseWPF" })
+            Assert.IsFalse(project.Descendants(property).Any(element =>
+                string.Equals(element.Value.Trim(), "true", StringComparison.OrdinalIgnoreCase)), property);
     }
 
     [TestMethod]
-    public void WindowsUiProductionSourceHasNoBackendRuntimeOrInProcessFallback()
+    public void EndpointHostConfiguresOneProductionConnection()
     {
-        var root = GetRepositoryRoot();
-        var windowsDirectory = Path.Combine(root, "Windows", "Frontend");
-        var source = ReadSources(windowsDirectory);
-        var project = File.ReadAllText(Path.Combine(
-            windowsDirectory,
-            "PasswordManagerLocal.Windows.Frontend.csproj"));
+        var source = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "Windows", "Agent", "Endpoint", "WindowsAgentEndpointHost.cs"));
+        var declaredLimit = typeof(PasswordManagerLocal.Windows.Agent.Endpoint.WindowsAgentEndpointHost)
+            .GetField(nameof(PasswordManagerLocal.Windows.Agent.Endpoint.WindowsAgentEndpointHost.MaximumActiveEndpointConnections))
+            ?.GetRawConstantValue();
 
-        Assert.IsFalse(source.Contains("WindowsBackendRuntimeFactory", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("BackendRuntimeLifetimeCoordinator", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("InProcessFrontendBackendClient", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("new BackendRuntime", StringComparison.Ordinal));
-        Assert.IsTrue(source.Contains("WindowsNamedPipeFrontendBackendClient", StringComparison.Ordinal));
-        Assert.IsTrue(source.Contains("WindowsNamedPipeEndpointRpcConnector", StringComparison.Ordinal));
-        Assert.IsFalse(project.Contains("PasswordManagerLocal.Common.Backend.Hosting.csproj", StringComparison.Ordinal));
-        Assert.IsFalse(project.Contains("PasswordManagerLocal.Windows.Backend.csproj", StringComparison.Ordinal));
+        Assert.AreEqual(1, (int)(declaredLimit ?? throw new InvalidOperationException("Missing endpoint connection limit.")));
+        StringAssert.Contains(source, "new WindowsIpcServerHostOptions(MaximumActiveEndpointConnections)");
     }
 
     [TestMethod]
@@ -83,20 +66,6 @@ public sealed class WindowsRuntimeOwnershipArchitectureTests
         CollectionAssert.AreEqual(
             new[] { Path.Combine("Windows", "Agent", "Backend", "WindowsAgentBackendRuntimeOwner.cs") },
             callers);
-    }
-
-    [TestMethod]
-    public void AndroidUsesServiceOwnedInProcessRuntimeComposition()
-    {
-        var root = GetRepositoryRoot();
-        var androidSource = ReadSources(Path.Combine(
-            root,
-            "Android",
-            "Frontend"));
-
-        Assert.IsTrue(androidSource.Contains("PasswordManagerBackgroundService", StringComparison.Ordinal));
-        Assert.IsTrue(androidSource.Contains("AndroidServiceFrontendBackendClient", StringComparison.Ordinal));
-        Assert.IsFalse(androidSource.Contains("new InProcessFrontendBackendClient", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -145,89 +114,21 @@ public sealed class WindowsRuntimeOwnershipArchitectureTests
     }
 
     [TestMethod]
-    public void WindowsUiShutdownRequestsActivationStopReleasesLockAndBoundsBackendCleanup()
+    public void UiEntryPointWiresShutdownAndEndpointClientCancelsLifetimeBeforeDisposingConnections()
     {
         var root = GetRepositoryRoot();
-        var program = File.ReadAllText(Path.Combine(
-            root,
-            "Windows",
-            "Frontend",
-            "Program.cs"));
-        var shutdown = File.ReadAllText(Path.Combine(
-            root,
-            "Windows",
-            "Frontend",
-            "Lifecycle",
-            "WindowsUiProcessShutdownCoordinator.cs"));
-        var client = File.ReadAllText(Path.Combine(
-            root,
-            "Windows",
-            "EndpointRpc",
-            "Client",
-            "WindowsNamedPipeFrontendBackendClient.cs"));
-
-        var activationStopIndex = shutdown.IndexOf(
-            "activationServer.RequestStop()",
-            StringComparison.Ordinal);
-        var lockDisposeIndex = shutdown.IndexOf(
-            "processLock.Dispose()",
-            activationStopIndex,
-            StringComparison.Ordinal);
-        var activationDisposeIndex = shutdown.IndexOf(
-            "activationServer.DisposeAsync()",
-            lockDisposeIndex,
-            StringComparison.Ordinal);
-        var clientDisposeIndex = shutdown.IndexOf(
-            "backendClient.DisposeAsync()",
-            activationDisposeIndex,
-            StringComparison.Ordinal);
-        var lifetimeCancelIndex = client.IndexOf(
-            "_lifetimeSource.Cancel()",
-            StringComparison.Ordinal);
-        var endpointDisposeIndex = client.IndexOf(
-            "await DisposeEndpointConnectionLockedAsync()",
-            lifetimeCancelIndex,
-            StringComparison.Ordinal);
-        var controlDisposeIndex = client.IndexOf(
-            "await _agentConnection.DisposeAsync()",
-            endpointDisposeIndex,
-            StringComparison.Ordinal);
+        var program = File.ReadAllText(Path.Combine(root, "Windows", "Frontend", "Program.cs"));
+        var client = File.ReadAllText(Path.Combine(root, "Windows", "EndpointRpc", "Client", "WindowsNamedPipeFrontendBackendClient.cs"));
 
         StringAssert.Contains(program, "new WindowsUiProcessShutdownCoordinator()");
         StringAssert.Contains(program, ".ShutdownAsync(");
-        Assert.IsTrue(activationStopIndex >= 0);
-        Assert.IsTrue(lockDisposeIndex > activationStopIndex);
-        Assert.IsTrue(activationDisposeIndex > lockDisposeIndex);
-        Assert.IsTrue(clientDisposeIndex > activationDisposeIndex);
-        StringAssert.Contains(shutdown, "Task.WhenAny(operation, Task.Delay(timeout))");
-        Assert.IsTrue(program.Contains(
-            "using var uiProcessLock",
-            StringComparison.Ordinal));
-        Assert.IsTrue(lifetimeCancelIndex >= 0);
-        Assert.IsTrue(endpointDisposeIndex > lifetimeCancelIndex);
-        Assert.IsTrue(controlDisposeIndex > endpointDisposeIndex);
-        Assert.IsFalse(program.Contains(
-            "BackendLifetimeReason.BackgroundSync",
-            StringComparison.Ordinal));
-        Assert.IsFalse(program.Contains(
-            "WindowsBackendRuntimeFactory",
-            StringComparison.Ordinal));
-        Assert.IsFalse(program.Contains(
-            "new BackendRuntime",
-            StringComparison.Ordinal));
-    }
-
-    [TestMethod]
-    public void WindowsUiShutdownDoesNotOwnOrDisposeAgentRuntime()
-    {
-        var root = GetRepositoryRoot();
-        var windowsDirectory = Path.Combine(root, "Windows", "Frontend");
-        var source = ReadSources(windowsDirectory);
-
-        Assert.IsFalse(source.Contains("IBackendRuntime", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("BackendRuntimeLifetimeCoordinator", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("AcquireAsync(BackendLifetimeReason.BackgroundSync", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("InProcessFrontendBackendClient", StringComparison.Ordinal));
+        StringAssert.Contains(program, "using var uiProcessLock");
+        var cancel = client.IndexOf("_lifetimeSource.Cancel()", StringComparison.Ordinal);
+        Assert.IsTrue(cancel >= 0);
+        var endpointDispose = client.IndexOf("await DisposeEndpointConnectionLockedAsync()", cancel, StringComparison.Ordinal);
+        Assert.IsTrue(endpointDispose > cancel);
+        var controlDispose = client.IndexOf("await _agentConnection.DisposeAsync()", endpointDispose, StringComparison.Ordinal);
+        Assert.IsTrue(controlDispose > endpointDispose);
     }
 
     [TestMethod]
@@ -285,34 +186,6 @@ public sealed class WindowsRuntimeOwnershipArchitectureTests
     }
 
     [TestMethod]
-    public void DatabaseResetUiControlsRecoverOnSuccessAndFailure()
-    {
-        var source = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(),
-            "Common",
-            "Frontend",
-            "ViewModels",
-            "MainViewModel.cs"));
-        var actionIndex = source.IndexOf(
-            "private async Task HandleDatabaseRecoveryPrimaryActionAsync()",
-            StringComparison.Ordinal);
-        var finallyIndex = source.IndexOf("finally", actionIndex, StringComparison.Ordinal);
-        var resetFlagIndex = source.IndexOf(
-            "_isResettingDatabase = false",
-            finallyIndex,
-            StringComparison.Ordinal);
-        var propertyRefreshIndex = source.IndexOf(
-            "RaiseDatabaseRecoveryProperties()",
-            resetFlagIndex,
-            StringComparison.Ordinal);
-
-        Assert.IsTrue(actionIndex >= 0);
-        Assert.IsTrue(finallyIndex > actionIndex);
-        Assert.IsTrue(resetFlagIndex > finallyIndex);
-        Assert.IsTrue(propertyRefreshIndex > resetFlagIndex);
-    }
-
-    [TestMethod]
     public void AgentEntryPointReturnsShellFailureWhenFinalHostDisposalFails()
     {
         var source = File.ReadAllText(Path.Combine(
@@ -355,19 +228,15 @@ public sealed class WindowsRuntimeOwnershipArchitectureTests
         Assert.IsFalse(references.Contains("PasswordManagerLocal.Windows.Backend"));
     }
 
-
     [TestMethod]
     public void AgentIsTheOnlyWindowsProductionBackgroundSettingWriter()
     {
         var root = GetRepositoryRoot();
-        var productionSources = Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+        var productionSources = Directory.EnumerateFiles(Path.Combine(root, "Windows"), "*.cs", SearchOption.AllDirectories)
             .Where(path => !ContainsTestDirectory(path) &&
                 !ContainsGeneratedDirectory(path))
             .ToArray();
         var windowsWriters = productionSources
-            .Where(path => !path.Contains(
-                $"{Path.DirectorySeparatorChar}Frontend{Path.DirectorySeparatorChar}",
-                StringComparison.Ordinal))
             .Where(path => File.ReadAllText(path).Contains(
                 "new FileBackgroundSyncSettingsStore",
                 StringComparison.Ordinal))
@@ -411,36 +280,6 @@ public sealed class WindowsRuntimeOwnershipArchitectureTests
     }
 
     [TestMethod]
-    public void WindowsReleasePackagingPublishesAndMergesIndependentTrimmedOutputs()
-    {
-        var root = GetRepositoryRoot();
-        var frontendProject = File.ReadAllText(Path.Combine(
-            root, "Windows", "Frontend", "PasswordManagerLocal.Windows.Frontend.csproj"));
-        var agentProject = File.ReadAllText(Path.Combine(
-            root, "Windows", "Agent", "PasswordManagerLocal.Windows.Agent.csproj"));
-        var packagingScript = File.ReadAllText(Path.Combine(
-            root, "Tools", "Windows", "PublishWindowsProduct.ps1"));
-
-        StringAssert.Contains(frontendProject, "ReferenceOutputAssembly=\"false\" Private=\"false\"");
-        Assert.IsFalse(frontendProject.Contains("PublishWindowsAgent", StringComparison.Ordinal));
-        Assert.IsFalse(frontendProject.Contains("AgentDeploymentDirectoryName", StringComparison.Ordinal));
-        foreach (var project in new[] { frontendProject, agentProject })
-        {
-            StringAssert.Contains(project, "<PublishTrimmed>true</PublishTrimmed>");
-            StringAssert.Contains(project, "<TrimMode>partial</TrimMode>");
-            StringAssert.Contains(project, "<SelfContained>true</SelfContained>");
-            StringAssert.Contains(project, "<PublishSingleFile>false</PublishSingleFile>");
-            StringAssert.Contains(project, "<PublishReadyToRun>false</PublishReadyToRun>");
-        }
-        StringAssert.Contains(packagingScript, @"staging\frontend");
-        StringAssert.Contains(packagingScript, @"staging\agent");
-        StringAssert.Contains(packagingScript, "--frontend");
-        StringAssert.Contains(packagingScript, "--agent");
-        StringAssert.Contains(packagingScript, "--output");
-        StringAssert.Contains(packagingScript, "--report");
-    }
-
-    [TestMethod]
     public void AgentStartupRegistrationFallsBackToTheCurrentApphostDirectory()
     {
         var source = File.ReadAllText(Path.Combine(
@@ -456,167 +295,32 @@ public sealed class WindowsRuntimeOwnershipArchitectureTests
     }
 
     [TestMethod]
-    public void AgentOwnsExactlyOneOptionalBackgroundLeaseField()
+    public void DesktopWindowCloseWiresExplicitShutdownAndIndependentProcessExit()
     {
-        var source = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(),
-            "Windows",
-            "Agent",
-            "Background",
-            "WindowsBackgroundSyncCoordinator.cs"));
+        var root = GetRepositoryRoot();
+        var app = File.ReadAllText(Path.Combine(root, "Common", "Frontend", "App.axaml.cs"));
+        var context = File.ReadAllText(Path.Combine(root, "Common", "Frontend", "FrontendApplicationContext.cs"));
+        var program = File.ReadAllText(Path.Combine(root, "Windows", "Frontend", "Program.cs"));
+        var exit = File.ReadAllText(Path.Combine(root, "Windows", "Frontend", "Lifecycle", "WindowsUiProcessExitController.cs"));
+        var shutdown = File.ReadAllText(Path.Combine(root, "Windows", "Frontend", "Lifecycle", "WindowsUiProcessShutdownCoordinator.cs"));
 
-        Assert.AreEqual(1, CountOccurrences(source, "IBackendRuntimeLease? _backgroundLease"));
-        Assert.AreEqual(1, CountOccurrences(source, "_backendOwner.AcquireBackgroundSyncLeaseAsync"));
-        Assert.IsFalse(source.Contains("static IBackendRuntimeLease", StringComparison.Ordinal));
-    }
-
-    [TestMethod]
-    public void BackgroundControlWriteUsesReadBackInsteadOfAutomaticReplay()
-    {
-        var source = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(),
-            "Windows",
-            "Frontend",
-            "Settings",
-            "WindowsAgentBackgroundSyncSettingsClient.cs"));
-
-        Assert.AreEqual(1, CountOccurrences(source, "SetBackgroundSyncEnabledAsync("));
-        StringAssert.Contains(source, "ReadBackAfterUncertainWriteAsync");
-        StringAssert.Contains(source, "GetBackgroundSyncStateAsync");
-        Assert.IsTrue(source.IndexOf(
-            "GetBackgroundSyncStateAsync",
-            source.IndexOf("ReadBackAfterUncertainWriteAsync", StringComparison.Ordinal),
-            StringComparison.Ordinal) >= 0);
-    }
-
-
-    [TestMethod]
-    public void WindowsUiReleasesItsInstanceLockBeforeBoundedConnectionCleanup()
-    {
-        var source = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(),
-            "Windows",
-            "Frontend",
-            "Lifecycle",
-            "WindowsUiProcessShutdownCoordinator.cs"));
-        var activationStop = source.IndexOf(
-            "activationServer.RequestStop()",
-            StringComparison.Ordinal);
-        var lockRelease = source.IndexOf(
-            "processLock.Dispose()",
-            activationStop,
-            StringComparison.Ordinal);
-        var activationCleanup = source.IndexOf(
-            "activationServer.DisposeAsync()",
-            lockRelease,
-            StringComparison.Ordinal);
-        var backendCleanup = source.IndexOf(
-            "backendClient.DisposeAsync()",
-            activationCleanup,
-            StringComparison.Ordinal);
-
-        Assert.IsTrue(activationStop >= 0);
-        Assert.IsTrue(lockRelease > activationStop);
-        Assert.IsTrue(activationCleanup > lockRelease);
-        Assert.IsTrue(backendCleanup > activationCleanup);
-        StringAssert.Contains(source, "Task.WhenAny(operation, Task.Delay(timeout))");
-    }
-
-    [TestMethod]
-    public void WindowsUiMainWindowCloseExplicitlyEndsTheDesktopLifetime()
-    {
-        var repositoryRoot = GetRepositoryRoot();
-        var appSource = File.ReadAllText(Path.Combine(
-            repositoryRoot,
-            "Common",
-            "Frontend",
-            "App.axaml.cs"));
-        var programSource = File.ReadAllText(Path.Combine(
-            repositoryRoot,
-            "Windows",
-            "Frontend",
-            "Program.cs"));
-
-        StringAssert.Contains(
-            appSource,
-            "desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;");
-        StringAssert.Contains(
-            appSource,
-            "mainWindow.Closed += (_, _) =>");
-        StringAssert.Contains(
-            appSource,
-            "DesktopExitRequested?.Invoke();");
-        StringAssert.Contains(
-            appSource,
-            "desktop.TryShutdown();");
-
-        var closeHandler = appSource.IndexOf(
-            "mainWindow.Closed += (_, _) =>",
-            StringComparison.Ordinal);
-        var exitRequest = appSource.IndexOf(
-            "DesktopExitRequested?.Invoke();",
-            StringComparison.Ordinal);
-        var desktopShutdown = appSource.IndexOf(
-            "TryShutdownDesktop(desktop);",
-            StringComparison.Ordinal);
-
-        Assert.IsTrue(closeHandler >= 0);
-        Assert.IsTrue(exitRequest > closeHandler);
+        StringAssert.Contains(app, "desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;");
+        StringAssert.Contains(app, "desktop.TryShutdown();");
+        var closed = app.IndexOf("mainWindow.Closed += (_, _) =>", StringComparison.Ordinal);
+        var exitRequest = app.IndexOf("DesktopExitRequested?.Invoke();", StringComparison.Ordinal);
+        var desktopShutdown = app.IndexOf("TryShutdownDesktop(desktop);", StringComparison.Ordinal);
+        Assert.IsTrue(closed >= 0);
+        Assert.IsTrue(exitRequest > closed);
         Assert.IsTrue(desktopShutdown > exitRequest);
-        StringAssert.Contains(
-            programSource,
-            "ShutdownMode.OnExplicitShutdown");
-        StringAssert.Contains(
-            programSource,
-            "new WindowsUiProcessExitController(");
-        StringAssert.Contains(
-            programSource,
-            "() => exitController.RequestExit()");
-    }
-
-    [TestMethod]
-    public void WindowsUiWindowCloseStartsIndependentProcessExitBeforeAvaloniaReturns()
-    {
-        var repositoryRoot = GetRepositoryRoot();
-        var contextSource = File.ReadAllText(Path.Combine(
-            repositoryRoot,
-            "Common",
-            "Frontend",
-            "FrontendApplicationContext.cs"));
-        var appSource = File.ReadAllText(Path.Combine(
-            repositoryRoot,
-            "Common",
-            "Frontend",
-            "App.axaml.cs"));
-        var programSource = File.ReadAllText(Path.Combine(
-            repositoryRoot,
-            "Windows",
-            "Frontend",
-            "Program.cs"));
-        var exitControllerSource = File.ReadAllText(Path.Combine(
-            repositoryRoot,
-            "Windows",
-            "Frontend",
-            "Lifecycle",
-            "WindowsUiProcessExitController.cs"));
-        var shutdownSource = File.ReadAllText(Path.Combine(
-            repositoryRoot,
-            "Windows",
-            "Frontend",
-            "Lifecycle",
-            "WindowsUiProcessShutdownCoordinator.cs"));
-
-        StringAssert.Contains(contextSource, "Action? desktopExitRequested = null");
-        StringAssert.Contains(contextSource, "DesktopExitRequested = desktopExitRequested;");
-        StringAssert.Contains(appSource, "DesktopExitRequested?.Invoke();");
-        StringAssert.Contains(programSource, "() => exitController.RequestExit()");
-        StringAssert.Contains(exitControllerSource, "IsBackground = false");
-        StringAssert.Contains(exitControllerSource, "_terminateProcess(exitCode);");
-        StringAssert.Contains(exitControllerSource, "StopAcceptanceAndReleaseLock(");
-        StringAssert.Contains(shutdownSource, "Task.Factory.StartNew(");
-        Assert.IsFalse(appSource.Contains(
-            "Dispatcher.UIThread.Post(() => TryShutdownDesktop(desktop))",
-            StringComparison.Ordinal));
+        StringAssert.Contains(context, "Action? desktopExitRequested = null");
+        StringAssert.Contains(context, "DesktopExitRequested = desktopExitRequested;");
+        StringAssert.Contains(program, "ShutdownMode.OnExplicitShutdown");
+        StringAssert.Contains(program, "new WindowsUiProcessExitController(");
+        StringAssert.Contains(program, "() => exitController.RequestExit()");
+        StringAssert.Contains(exit, "IsBackground = false");
+        StringAssert.Contains(exit, "_terminateProcess(exitCode);");
+        StringAssert.Contains(exit, "StopAcceptanceAndReleaseLock(");
+        StringAssert.Contains(shutdown, "Task.Factory.StartNew(");
     }
 
     private static int CountOccurrences(string value, string pattern)

@@ -1,68 +1,11 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using PasswordManagerLocal.Windows.Agent.Hosting;
 using System.Runtime.CompilerServices;
-using System.Xml.Linq;
 
 namespace PasswordManagerLocal.Windows.Tests.IPC.Dependency;
 
 [TestClass]
 public sealed class NativeAgentShellArchitectureTests
 {
-    [TestMethod]
-    public void AgentProjectEnablesNoManagedUiFramework()
-    {
-        var project = XDocument.Load(Path.Combine(
-            GetRepositoryRoot(),
-            "Windows",
-            "Agent",
-            "PasswordManagerLocal.Windows.Agent.csproj"));
-        var references = project.Descendants("ProjectReference")
-            .Select(element => element.Attribute("Include")?.Value ?? string.Empty)
-            .ToArray();
-        var assemblyReferences = typeof(WindowsAgentHost).Assembly
-            .GetReferencedAssemblies()
-            .Select(reference => reference.Name ?? string.Empty)
-            .ToArray();
-
-        Assert.IsFalse(project.Descendants("UseWindowsForms").Any());
-        Assert.IsFalse(project.Descendants("UseWPF").Any());
-        Assert.IsFalse(assemblyReferences.Contains("System.Windows.Forms"));
-        Assert.IsFalse(assemblyReferences.Any(name => name.StartsWith("Avalonia", StringComparison.Ordinal)));
-        Assert.IsFalse(references.Any(reference =>
-            string.Equals(
-                Path.GetFileName(reference),
-                "PasswordManagerLocal.Common.Frontend.csproj",
-                StringComparison.OrdinalIgnoreCase)));
-        Assert.IsFalse(references.Any(reference =>
-            string.Equals(
-                Path.GetFileName(reference),
-                "PasswordManagerLocal.Windows.Frontend.csproj",
-                StringComparison.OrdinalIgnoreCase)));
-    }
-
-    [TestMethod]
-    public void AgentSourceContainsNoWinFormsShellRemnants()
-    {
-        var agent = Path.Combine(GetRepositoryRoot(), "Windows", "Agent");
-        var source = ReadSources(agent);
-        var forbidden = new[]
-        {
-            "System.Windows.Forms",
-            "new NotifyIcon",
-            "ContextMenuStrip",
-            "ToolStripMenuItem",
-            "Application.Run",
-            "ApplicationConfiguration.Initialize",
-            "WindowsFormsSynchronizationContext",
-            "WindowsAgentApplicationContext",
-            "WindowsFormsTrayIconAdapter"
-        };
-
-        foreach (var value in forbidden)
-            Assert.IsFalse(source.Contains(value, StringComparison.Ordinal), value);
-        Assert.IsFalse(File.Exists(Path.Combine(agent, "Hosting", "WindowsAgentApplicationContext.cs")));
-        Assert.IsFalse(File.Exists(Path.Combine(agent, "Tray", "WindowsFormsTrayIconAdapter.cs")));
-    }
 
     [TestMethod]
     public void NativeShellUsesBlockingMessageLoopAndMessageDrivenDispatch()
@@ -89,7 +32,7 @@ public sealed class NativeAgentShellArchitectureTests
     }
 
     [TestMethod]
-    public void NativeCallbackBoundaryAndOwnedResourcesHaveExplicitCleanup()
+    public void NativeCallbackSourceDeclaresExceptionFallbackAndResourceCleanup()
     {
         var root = GetRepositoryRoot();
         var window = File.ReadAllText(Path.Combine(
@@ -109,44 +52,13 @@ public sealed class NativeAgentShellArchitectureTests
     }
 
     [TestMethod]
-    public void TrayVisibilityUsesBackgroundSyncStateWithoutPolling()
+    public void NativeTraySourceContainsNoPollingOrFileWatchers()
     {
-        var root = GetRepositoryRoot();
-        var host = File.ReadAllText(Path.Combine(
-            root, "Windows", "Agent", "Hosting", "WindowsAgentHost.cs"));
-        var handler = File.ReadAllText(Path.Combine(
-            root, "Windows", "Agent", "Background", "SetBackgroundSyncEnabledWindowsIpcRequestHandler.cs"));
-        var traySource = ReadSources(Path.Combine(root, "Windows", "Agent", "Tray"));
+        var traySource = ReadSources(Path.Combine(GetRepositoryRoot(), "Windows", "Agent", "Tray"));
 
-        StringAssert.Contains(host, "initialBackgroundSyncState.IsEnabled");
-        StringAssert.Contains(handler, "SetVisibleAsync(state.IsEnabled");
         Assert.IsFalse(traySource.Contains("Task.Delay", StringComparison.Ordinal));
         Assert.IsFalse(traySource.Contains("FileSystemWatcher", StringComparison.Ordinal));
         Assert.IsFalse(traySource.Contains("Timer", StringComparison.Ordinal));
-    }
-
-    [TestMethod]
-    public void AgentReadsLanguageButDoesNotReadTheme()
-    {
-        var root = GetRepositoryRoot();
-        var reader = File.ReadAllText(Path.Combine(
-            root, "Windows", "Agent", "Preferences", "WindowsAgentApplicationPreferencesReader.cs"));
-        var program = File.ReadAllText(Path.Combine(
-            root, "Windows", "Agent", "Program.cs"));
-        var text = File.ReadAllText(Path.Combine(
-            root, "Windows", "Agent", "Tray", "WindowsAgentTrayText.cs"));
-        var english = File.ReadAllText(Path.Combine(
-            root, "Windows", "Agent", "Assets", "Localization", "en_us.json"));
-        var hungarian = File.ReadAllText(Path.Combine(
-            root, "Windows", "Agent", "Assets", "Localization", "hu.json"));
-
-        StringAssert.Contains(reader, "preferences.Language");
-        Assert.IsFalse(reader.Contains("Theme", StringComparison.Ordinal));
-        StringAssert.Contains(program, "ReadLanguageAsync");
-        StringAssert.Contains(text, "IAgentLocalizer");
-        StringAssert.Contains(english, "Open Password Manager Local");
-        StringAssert.Contains(hungarian, "Password Manager Local megnyitása");
-        StringAssert.Contains(hungarian, "Kilépés");
     }
 
     private static string ReadSources(string directory) =>

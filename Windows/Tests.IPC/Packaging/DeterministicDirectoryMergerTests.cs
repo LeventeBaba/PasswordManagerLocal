@@ -25,7 +25,6 @@ public sealed class DeterministicDirectoryMergerTests
         Assert.AreEqual("same", File.ReadAllText(Path.Combine(fixture.Output, "shared.dll")));
     }
 
-
     [TestMethod]
     public void ProcessSpecificExecutablesAndManifestsAreAllPreserved()
     {
@@ -116,7 +115,7 @@ public sealed class DeterministicDirectoryMergerTests
     }
 
     [TestMethod]
-    public void IdenticalInputsProduceDeterministicInventoryAndHashes()
+    public void RepeatedMergeProducesStableInventoryAndCorrectContentHashes()
     {
         using var fixture = new MergeFixture();
         fixture.WriteFrontend("z.dll", "z");
@@ -130,6 +129,12 @@ public sealed class DeterministicDirectoryMergerTests
         var secondProjection = second.Files.Select(ToProjection).ToArray();
 
         CollectionAssert.AreEqual(firstProjection, secondProjection);
+        foreach (var entry in second.Files)
+        {
+            var bytes = File.ReadAllBytes(Path.Combine(fixture.Output, entry.RelativePath));
+            var expectedHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+            Assert.AreEqual(expectedHash, entry.Sha256, entry.RelativePath);
+        }
         CollectionAssert.AreEqual(new[] { "a.dll", "m.dll", "z.dll" }, second.Files.Select(file => file.RelativePath).ToArray());
     }
 
