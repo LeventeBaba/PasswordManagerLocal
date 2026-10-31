@@ -120,6 +120,8 @@
   "Validation_PasswordName_Required": "Please enter a name for the saved password.",
   "Common_Show": "Show",
   "Common_Hide": "Hide",
+  "Common_ShowPassword": "Show password",
+  "Common_HidePassword": "Hide password",
   "Common_Refresh": "Refresh",
   "Common_Name": "Name",
   "Common_Description": "Description",

@@ -78,6 +78,10 @@ public sealed class ProfileViewModel : ViewModelBase
         nameof(CurrentPasswordLabel),
         nameof(NewPasswordLabel),
         nameof(ConfirmNewPasswordLabel),
+        nameof(CurrentPasswordVisibilityToggleText),
+        nameof(NewPasswordVisibilityToggleText),
+        nameof(ConfirmNewPasswordVisibilityToggleText),
+        nameof(DeleteAccountPasswordVisibilityToggleText),
         nameof(DeleteAccountDescription),
         nameof(EditUsernamePlaceholder),
         nameof(CurrentPasswordPlaceholder),
@@ -156,6 +160,7 @@ public sealed class ProfileViewModel : ViewModelBase
         nameof(DisconnectDialogTitle),
         nameof(DisconnectDialogWarning),
         nameof(DisconnectDialogPasswordPlaceholder),
+        nameof(DisconnectDevicePasswordVisibilityToggleText),
         nameof(ConfirmDisconnectLabel),
         nameof(CancelLabel),
         nameof(LocalSyncDialogTitle),
@@ -184,10 +189,15 @@ public sealed class ProfileViewModel : ViewModelBase
     private string _editEmail = string.Empty;
     private string _editUsername = string.Empty;
     private string _currentPassword = string.Empty;
+    private bool _isCurrentPasswordVisible;
     private string _newPassword = string.Empty;
+    private bool _isNewPasswordVisible;
     private string _confirmNewPassword = string.Empty;
+    private bool _isConfirmNewPasswordVisible;
     private string _deleteAccountPassword = string.Empty;
+    private bool _isDeleteAccountPasswordVisible;
     private string _disconnectDevicePassword = string.Empty;
+    private bool _isDisconnectDevicePasswordVisible;
     private DeviceItemViewModel? _selectedDevice;
     private DeviceItemViewModel? _deviceToDisconnect;
     private DeviceItemViewModel? _pendingLocalSyncDevice;
@@ -253,6 +263,26 @@ public sealed class ProfileViewModel : ViewModelBase
         BeginEditPersonalInfoCommand = Own(ReactiveCommand.Create(BeginEditPersonalInfo));
         BeginChangeUsernameCommand = Own(ReactiveCommand.Create(BeginChangeUsername));
         BeginChangeMasterPasswordCommand = Own(ReactiveCommand.Create(BeginChangeMasterPassword));
+        ToggleCurrentPasswordVisibilityCommand = Own(ReactiveCommand.Create(() =>
+        {
+            IsCurrentPasswordVisible = !IsCurrentPasswordVisible;
+        }));
+        ToggleNewPasswordVisibilityCommand = Own(ReactiveCommand.Create(() =>
+        {
+            IsNewPasswordVisible = !IsNewPasswordVisible;
+        }));
+        ToggleConfirmNewPasswordVisibilityCommand = Own(ReactiveCommand.Create(() =>
+        {
+            IsConfirmNewPasswordVisible = !IsConfirmNewPasswordVisible;
+        }));
+        ToggleDeleteAccountPasswordVisibilityCommand = Own(ReactiveCommand.Create(() =>
+        {
+            IsDeleteAccountPasswordVisible = !IsDeleteAccountPasswordVisible;
+        }));
+        ToggleDisconnectDevicePasswordVisibilityCommand = Own(ReactiveCommand.Create(() =>
+        {
+            IsDisconnectDevicePasswordVisible = !IsDisconnectDevicePasswordVisible;
+        }));
         BeginDeleteAccountCommand = Own(ReactiveCommand.Create(BeginDeleteAccount));
         RebuildDeviceSortOptions();
         SelectDefaultDeviceSortOption();
@@ -356,10 +386,16 @@ public sealed class ProfileViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _editUsername, value);
     }
 
+    // Form lifecycle methods clear these values; clearing also resets their reveal state.
     public string CurrentPassword
     {
         get => _currentPassword;
-        set => this.RaiseAndSetIfChanged(ref _currentPassword, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _currentPassword, value);
+            if (string.IsNullOrEmpty(value))
+                IsCurrentPasswordVisible = false;
+        }
     }
 
     public string NewPassword
@@ -368,6 +404,9 @@ public sealed class ProfileViewModel : ViewModelBase
         set
         {
             this.RaiseAndSetIfChanged(ref _newPassword, value);
+            if (string.IsNullOrEmpty(value))
+                IsNewPasswordVisible = false;
+
             RefreshNewPasswordStrength();
         }
     }
@@ -377,20 +416,100 @@ public sealed class ProfileViewModel : ViewModelBase
     public string ConfirmNewPassword
     {
         get => _confirmNewPassword;
-        set => this.RaiseAndSetIfChanged(ref _confirmNewPassword, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _confirmNewPassword, value);
+            if (string.IsNullOrEmpty(value))
+                IsConfirmNewPasswordVisible = false;
+        }
     }
 
     public string DeleteAccountPassword
     {
         get => _deleteAccountPassword;
-        set => this.RaiseAndSetIfChanged(ref _deleteAccountPassword, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _deleteAccountPassword, value);
+            if (string.IsNullOrEmpty(value))
+                IsDeleteAccountPasswordVisible = false;
+        }
     }
 
     public string DisconnectDevicePassword
     {
         get => _disconnectDevicePassword;
-        set => this.RaiseAndSetIfChanged(ref _disconnectDevicePassword, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _disconnectDevicePassword, value);
+            if (string.IsNullOrEmpty(value))
+                IsDisconnectDevicePasswordVisible = false;
+        }
     }
+
+    public bool IsCurrentPasswordVisible
+    {
+        get => _isCurrentPasswordVisible;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _isCurrentPasswordVisible, value);
+            this.RaisePropertyChanged(nameof(CurrentPasswordVisibilityToggleText));
+        }
+    }
+
+    public string CurrentPasswordVisibilityToggleText =>
+        GetTranslation(IsCurrentPasswordVisible ? "Common_HidePassword" : "Common_ShowPassword");
+
+    public bool IsNewPasswordVisible
+    {
+        get => _isNewPasswordVisible;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _isNewPasswordVisible, value);
+            this.RaisePropertyChanged(nameof(NewPasswordVisibilityToggleText));
+        }
+    }
+
+    public string NewPasswordVisibilityToggleText =>
+        GetTranslation(IsNewPasswordVisible ? "Common_HidePassword" : "Common_ShowPassword");
+
+    public bool IsConfirmNewPasswordVisible
+    {
+        get => _isConfirmNewPasswordVisible;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _isConfirmNewPasswordVisible, value);
+            this.RaisePropertyChanged(nameof(ConfirmNewPasswordVisibilityToggleText));
+        }
+    }
+
+    public string ConfirmNewPasswordVisibilityToggleText =>
+        GetTranslation(IsConfirmNewPasswordVisible ? "Common_HidePassword" : "Common_ShowPassword");
+
+    public bool IsDeleteAccountPasswordVisible
+    {
+        get => _isDeleteAccountPasswordVisible;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _isDeleteAccountPasswordVisible, value);
+            this.RaisePropertyChanged(nameof(DeleteAccountPasswordVisibilityToggleText));
+        }
+    }
+
+    public string DeleteAccountPasswordVisibilityToggleText =>
+        GetTranslation(IsDeleteAccountPasswordVisible ? "Common_HidePassword" : "Common_ShowPassword");
+
+    public bool IsDisconnectDevicePasswordVisible
+    {
+        get => _isDisconnectDevicePasswordVisible;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _isDisconnectDevicePasswordVisible, value);
+            this.RaisePropertyChanged(nameof(DisconnectDevicePasswordVisibilityToggleText));
+        }
+    }
+
+    public string DisconnectDevicePasswordVisibilityToggleText =>
+        GetTranslation(IsDisconnectDevicePasswordVisible ? "Common_HidePassword" : "Common_ShowPassword");
 
     public ReactiveCommand<DeviceItemViewModel, RxVoid> ViewDeviceCommand { get; }
     public ReactiveCommand<DeviceItemViewModel, RxVoid> SaveDeviceNameCommand { get; }
@@ -762,6 +881,16 @@ public sealed class ProfileViewModel : ViewModelBase
     public ReactiveCommand<RxVoid, RxVoid> BeginChangeUsernameCommand { get; }
 
     public ReactiveCommand<RxVoid, RxVoid> BeginChangeMasterPasswordCommand { get; }
+
+    public ReactiveCommand<RxVoid, RxVoid> ToggleCurrentPasswordVisibilityCommand { get; }
+
+    public ReactiveCommand<RxVoid, RxVoid> ToggleNewPasswordVisibilityCommand { get; }
+
+    public ReactiveCommand<RxVoid, RxVoid> ToggleConfirmNewPasswordVisibilityCommand { get; }
+
+    public ReactiveCommand<RxVoid, RxVoid> ToggleDeleteAccountPasswordVisibilityCommand { get; }
+
+    public ReactiveCommand<RxVoid, RxVoid> ToggleDisconnectDevicePasswordVisibilityCommand { get; }
 
     public ReactiveCommand<RxVoid, RxVoid> BeginDeleteAccountCommand { get; }
 

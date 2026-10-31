@@ -46,19 +46,30 @@
         </StackPanel>
         <StackPanel Spacing="6">
           <TextBlock Text="{Binding CurrentPasswordLabel}" Classes="subtleText" />
-          <TextBox
-              Text="{Binding DeleteAccountPassword}"
-              PasswordChar="●"
-              PlaceholderText="{Binding DeleteAccountPasswordPlaceholder}"
-              TextInputOptions.ContentType="Password"
-              TextInputOptions.IsSensitive="True"
-              TextInputOptions.AutoCapitalization="False"
-              TextInputOptions.ShowSuggestions="False"
-              TextInputOptions.ReturnKeyType="Done">
-            <TextBox.KeyBindings>
-              <KeyBinding Gesture="Enter" Command="{Binding DeleteAccountCommand}" />
-            </TextBox.KeyBindings>
-          </TextBox>
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox MinWidth="0"
+                     Text="{Binding DeleteAccountPassword}"
+                     PasswordChar="●"
+                     RevealPassword="{Binding IsDeleteAccountPasswordVisible}"
+                     PlaceholderText="{Binding DeleteAccountPasswordPlaceholder}"
+                     TextInputOptions.ContentType="Password"
+                     TextInputOptions.IsSensitive="True"
+                     TextInputOptions.AutoCapitalization="False"
+                     TextInputOptions.ShowSuggestions="False"
+                     TextInputOptions.ReturnKeyType="Done">
+              <TextBox.KeyBindings>
+                <KeyBinding Gesture="Enter" Command="{Binding DeleteAccountCommand}" />
+              </TextBox.KeyBindings>
+            </TextBox>
+            <Button Grid.Column="1"
+                    Classes="ghost iconButton passwordVisibilityButton"
+                    Classes.passwordVisible="{Binding IsDeleteAccountPasswordVisible}"
+                    Command="{Binding ToggleDeleteAccountPasswordVisibilityCommand}"
+                    ToolTip.Tip="{Binding DeleteAccountPasswordVisibilityToggleText}"
+                    AutomationProperties.Name="{Binding DeleteAccountPasswordVisibilityToggleText}">
+              <PathIcon Classes="mediumUiIcon" />
+            </Button>
+          </Grid>
         </StackPanel>
         <WrapPanel Orientation="Horizontal">
           <Button

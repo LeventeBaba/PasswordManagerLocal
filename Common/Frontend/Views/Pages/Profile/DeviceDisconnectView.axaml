@@ -43,19 +43,30 @@
         </Border>
         <StackPanel Spacing="6">
           <TextBlock Text="{Binding CurrentPasswordLabel}" Classes="subtleText" />
-          <TextBox
-              Text="{Binding DisconnectDevicePassword}"
-              PasswordChar="●"
-              PlaceholderText="{Binding DisconnectDialogPasswordPlaceholder}"
-              TextInputOptions.ContentType="Password"
-              TextInputOptions.IsSensitive="True"
-              TextInputOptions.AutoCapitalization="False"
-              TextInputOptions.ShowSuggestions="False"
-              TextInputOptions.ReturnKeyType="Done">
-            <TextBox.KeyBindings>
-              <KeyBinding Gesture="Enter" Command="{Binding ConfirmDisconnectDeviceCommand}" />
-            </TextBox.KeyBindings>
-          </TextBox>
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox MinWidth="0"
+                     Text="{Binding DisconnectDevicePassword}"
+                     PasswordChar="●"
+                     RevealPassword="{Binding IsDisconnectDevicePasswordVisible}"
+                     PlaceholderText="{Binding DisconnectDialogPasswordPlaceholder}"
+                     TextInputOptions.ContentType="Password"
+                     TextInputOptions.IsSensitive="True"
+                     TextInputOptions.AutoCapitalization="False"
+                     TextInputOptions.ShowSuggestions="False"
+                     TextInputOptions.ReturnKeyType="Done">
+              <TextBox.KeyBindings>
+                <KeyBinding Gesture="Enter" Command="{Binding ConfirmDisconnectDeviceCommand}" />
+              </TextBox.KeyBindings>
+            </TextBox>
+            <Button Grid.Column="1"
+                    Classes="ghost iconButton passwordVisibilityButton"
+                    Classes.passwordVisible="{Binding IsDisconnectDevicePasswordVisible}"
+                    Command="{Binding ToggleDisconnectDevicePasswordVisibilityCommand}"
+                    ToolTip.Tip="{Binding DisconnectDevicePasswordVisibilityToggleText}"
+                    AutomationProperties.Name="{Binding DisconnectDevicePasswordVisibilityToggleText}">
+              <PathIcon Classes="mediumUiIcon" />
+            </Button>
+          </Grid>
         </StackPanel>
         <WrapPanel Orientation="Horizontal">
           <Button

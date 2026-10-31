@@ -66,11 +66,13 @@
                          TextInputOptions.ShowSuggestions="False"
                          TextInputOptions.ReturnKeyType="Go" />
                 <Button Grid.Column="1"
-                        Classes="ghost"
+                        Classes="ghost iconButton passwordVisibilityButton"
                         Command="{Binding TogglePasswordVisibilityCommand}"
-                        Content="{Binding PasswordVisibilityToggleText}" >
-              <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
-            </Button>
+                        Classes.passwordVisible="{Binding IsPasswordVisible}"
+                        ToolTip.Tip="{Binding PasswordVisibilityToggleText}"
+                        AutomationProperties.Name="{Binding PasswordVisibilityToggleText}">
+                  <PathIcon Classes="mediumUiIcon" />
+                </Button>
               </Grid>
             </StackPanel>
 

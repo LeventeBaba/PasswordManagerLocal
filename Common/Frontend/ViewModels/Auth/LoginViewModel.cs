@@ -298,7 +298,7 @@ public sealed class LoginViewModel : ViewModelBase
 
     public string PasswordPlaceholder => GetTranslation("Login_Password_Placeholder");
 
-    public string PasswordVisibilityToggleText => GetTranslation(IsPasswordVisible ? "Common_Hide" : "Common_Show");
+    public string PasswordVisibilityToggleText => GetTranslation(IsPasswordVisible ? "Common_HidePassword" : "Common_ShowPassword");
 
     public string DeviceTransferButtonLabel => GetTranslation("Login_DeviceTransfer_Button");
 

@@ -1179,9 +1179,9 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     public string UpdatedAtLabel => GetTranslation("Common_UpdatedAt");
 
-    public string RevealPasswordLabel => GetTranslation("Passwords_Reveal");
+    public string RevealPasswordLabel => GetTranslation("Common_ShowPassword");
 
-    public string HidePasswordLabel => GetTranslation("Passwords_Hide");
+    public string HidePasswordLabel => GetTranslation("Common_HidePassword");
 
     public string CopyPasswordLabel => GetTranslation("Passwords_Copy");
 
@@ -1207,7 +1207,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     public string EditorPasswordHint => GetTranslation("Passwords_Editor_PasswordHint_Create");
 
-    public string EditorPasswordVisibilityToggleText => GetTranslation(IsEditorPasswordVisible ? "Common_Hide" : "Common_Show");
+    public string EditorPasswordVisibilityToggleText => GetTranslation(IsEditorPasswordVisible ? "Common_HidePassword" : "Common_ShowPassword");
 
     public string EditorTagsLabel => GetTranslation("Passwords_Editor_TagsLabel");
 

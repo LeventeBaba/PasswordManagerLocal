@@ -335,9 +335,9 @@ public sealed class RegistrationViewModel : ViewModelBase
 
     public string ConfirmPasswordPlaceholder => GetTranslation("Register_ConfirmPassword_Placeholder");
 
-    public string PasswordVisibilityToggleText => GetTranslation(IsPasswordVisible ? "Common_Hide" : "Common_Show");
+    public string PasswordVisibilityToggleText => GetTranslation(IsPasswordVisible ? "Common_HidePassword" : "Common_ShowPassword");
 
-    public string ConfirmPasswordVisibilityToggleText => GetTranslation(IsConfirmPasswordVisible ? "Common_Hide" : "Common_Show");
+    public string ConfirmPasswordVisibilityToggleText => GetTranslation(IsConfirmPasswordVisible ? "Common_HidePassword" : "Common_ShowPassword");
 
     public string BusyText => GetTranslation("Common_Loading");
 

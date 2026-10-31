@@ -259,6 +259,15 @@
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
 
+    <!-- Keep visibility glyphs centralized; Foreground is inherited from the themed button. -->
+    <Style Selector="Button.passwordVisibilityButton PathIcon">
+      <Setter Property="Data" Value="{StaticResource ShowPasswordIconGeometry}" />
+    </Style>
+
+    <Style Selector="Button.passwordVisibilityButton.passwordVisible PathIcon">
+      <Setter Property="Data" Value="{StaticResource HidePasswordIconGeometry}" />
+    </Style>
+
     <Style Selector="PathIcon.actionButtonIcon">
       <Setter Property="Width" Value="{StaticResource AppMetric.Icon.Action}" />
       <Setter Property="Height" Value="{StaticResource AppMetric.Icon.Action}" />

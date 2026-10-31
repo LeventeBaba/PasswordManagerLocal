@@ -159,10 +159,12 @@
                        TextInputOptions.AutoCapitalization="False"
                        TextInputOptions.ShowSuggestions="False" />
               <Button Grid.Column="1"
-                      Classes="ghost"
+                      Classes="ghost iconButton passwordVisibilityButton"
                       Command="{Binding TogglePasswordVisibilityCommand}"
-                      Content="{Binding PasswordVisibilityToggleText}">
-                <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+                      Classes.passwordVisible="{Binding IsPasswordVisible}"
+                      ToolTip.Tip="{Binding PasswordVisibilityToggleText}"
+                      AutomationProperties.Name="{Binding PasswordVisibilityToggleText}">
+                <PathIcon Classes="mediumUiIcon" />
               </Button>
             </Grid>
             <TextBlock Text="{Binding PasswordValidationMessage}"
@@ -189,10 +191,12 @@
                        TextInputOptions.ShowSuggestions="False"
                        TextInputOptions.ReturnKeyType="Done" />
               <Button Grid.Column="1"
-                      Classes="ghost"
+                      Classes="ghost iconButton passwordVisibilityButton"
                       Command="{Binding ToggleConfirmPasswordVisibilityCommand}"
-                      Content="{Binding ConfirmPasswordVisibilityToggleText}">
-                <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+                      Classes.passwordVisible="{Binding IsConfirmPasswordVisible}"
+                      ToolTip.Tip="{Binding ConfirmPasswordVisibilityToggleText}"
+                      AutomationProperties.Name="{Binding ConfirmPasswordVisibilityToggleText}">
+                <PathIcon Classes="mediumUiIcon" />
               </Button>
             </Grid>
             <TextBlock Text="{Binding ConfirmPasswordValidationMessage}"

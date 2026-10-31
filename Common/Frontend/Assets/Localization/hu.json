@@ -120,6 +120,8 @@
   "Validation_PasswordName_Required": "Kérjük, adj nevet a mentett jelszónak.",
   "Common_Show": "Mutatás",
   "Common_Hide": "Elrejtés",
+  "Common_ShowPassword": "Jelszó megjelenítése",
+  "Common_HidePassword": "Jelszó elrejtése",
   "Common_Refresh": "Frissítés",
   "Common_Name": "Név",
   "Common_Description": "Leírás",
