@@ -143,7 +143,7 @@
                                 PointerCaptureLost="HandleAccountMenuToolTipPointerCaptureLost"
                                 AutomationProperties.Name="{Binding RememberMeWarningLabel}"
                                 AutomationProperties.HelpText="{Binding RememberMeWarningText}">
-                          <PathIcon Classes="mediumUiIcon"
+                          <PathIcon Classes="informationIcon"
                                     Data="{StaticResource InformationIconGeometry}" />
                         </Button>
                         <ToggleSwitch
@@ -294,7 +294,7 @@
                                   PointerCaptureLost="HandleAccountMenuToolTipPointerCaptureLost"
                                   AutomationProperties.Name="{Binding RememberMeWarningLabel}"
                                   AutomationProperties.HelpText="{Binding RememberMeWarningText}">
-                            <PathIcon Classes="mediumUiIcon"
+                            <PathIcon Classes="informationIcon"
                                       Data="{StaticResource InformationIconGeometry}" />
                           </Button>
                           <ToggleSwitch

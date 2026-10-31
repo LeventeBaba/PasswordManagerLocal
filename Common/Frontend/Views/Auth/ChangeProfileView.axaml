@@ -31,7 +31,7 @@
                                       TopicId="{x:Static info:HelpTopicIds.SwitchProfiles}"
                                       AutomationProperties.Name="{Binding ProfilesHelpLabel}">
             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
-              <PathIcon Classes="smallUiIcon" Data="{StaticResource InformationIconGeometry}" />
+              <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
               <TextBlock Grid.Column="1" Text="{Binding ProfilesHelpLabel}" TextWrapping="Wrap" />
             </Grid>
           </controls:ContextHelpButton>

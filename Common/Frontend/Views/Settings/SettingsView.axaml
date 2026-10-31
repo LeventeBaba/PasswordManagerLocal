@@ -306,7 +306,7 @@
             <Grid ColumnDefinitions="Auto,*,Auto"
                   ColumnSpacing="14"
                   IsHitTestVisible="False">
-              <PathIcon Width="28"
+              <PathIcon Classes="informationIcon" Width="28"
                         Height="28"
                         Data="{StaticResource InformationIconGeometry}"
                         VerticalAlignment="Center" />

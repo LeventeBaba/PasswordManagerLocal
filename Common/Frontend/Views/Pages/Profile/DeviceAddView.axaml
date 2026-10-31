@@ -32,7 +32,7 @@
                                     TopicId="{x:Static info:HelpTopicIds.AddDevice}"
                                     AutomationProperties.Name="{Binding AddDeviceHelpLabel}">
           <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
-            <PathIcon Classes="smallUiIcon" Data="{StaticResource InformationIconGeometry}" />
+            <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
             <TextBlock Grid.Column="1" Text="{Binding AddDeviceHelpLabel}" TextWrapping="Wrap" />
           </Grid>
         </controls:ContextHelpButton>

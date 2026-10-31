@@ -39,7 +39,7 @@
                                       TopicId="{x:Static info:HelpTopicIds.DeleteAccount}"
                                       AutomationProperties.Name="{Binding DeleteAccountHelpLabel}">
             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
-              <PathIcon Classes="smallUiIcon" Data="{StaticResource InformationIconGeometry}" />
+              <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
               <TextBlock Grid.Column="1" Text="{Binding DeleteAccountHelpLabel}" TextWrapping="Wrap" />
             </Grid>
           </controls:ContextHelpButton>

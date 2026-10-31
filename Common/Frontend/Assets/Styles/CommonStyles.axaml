@@ -96,6 +96,16 @@
       <Setter Property="Background" Value="{DynamicResource AppBrush.Action.Secondary.PressedSurface}" />
     </Style>
 
+    <Style Selector="Button.contextHelpButton">
+      <Setter Property="MinHeight" Value="{StaticResource AppMetric.TouchTarget.Icon}" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="Button.contextHelpButton TextBlock">
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
     <Style Selector="Button.informationLink">
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -291,16 +301,24 @@
       <Setter Property="Height" Value="20" />
     </Style>
 
+    <!-- One vector glyph and alignment rule for help, strength, and security information. -->
+    <Style Selector="PathIcon.informationIcon">
+      <Setter Property="Width" Value="20" />
+      <Setter Property="Height" Value="20" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
     <Style Selector="PathIcon.largeEmptyStateIcon">
       <Setter Property="Width" Value="{StaticResource AppMetric.TouchTarget.Icon}" />
       <Setter Property="Height" Value="{StaticResource AppMetric.TouchTarget.Icon}" />
     </Style>
 
     <Style Selector="Button.passwordStrengthInfoButton">
-      <Setter Property="MinWidth" Value="{StaticResource AppMetric.TouchTarget.CompactAction}" />
-      <Setter Property="Width" Value="{StaticResource AppMetric.TouchTarget.CompactAction}" />
-      <Setter Property="MinHeight" Value="{StaticResource AppMetric.TouchTarget.CompactAction}" />
-      <Setter Property="Height" Value="{StaticResource AppMetric.TouchTarget.CompactAction}" />
+      <Setter Property="MinWidth" Value="{StaticResource AppMetric.TouchTarget.Icon}" />
+      <Setter Property="Width" Value="{StaticResource AppMetric.TouchTarget.Icon}" />
+      <Setter Property="MinHeight" Value="{StaticResource AppMetric.TouchTarget.Icon}" />
+      <Setter Property="Height" Value="{StaticResource AppMetric.TouchTarget.Icon}" />
       <Setter Property="Padding" Value="0" />
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />

@@ -38,7 +38,7 @@
                                     TopicId="{x:Static info:HelpTopicIds.MoveVsCopy}"
                                     AutomationProperties.Name="{Binding MoveCopyHelpLabel}">
           <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
-            <PathIcon Classes="smallUiIcon" Data="{StaticResource InformationIconGeometry}" />
+            <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
             <TextBlock Grid.Column="1" Text="{Binding MoveCopyHelpLabel}" TextWrapping="Wrap" />
           </Grid>
         </controls:ContextHelpButton>

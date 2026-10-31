@@ -40,7 +40,7 @@
                                         TopicId="{x:Static info:HelpTopicIds.SignIn}"
                                         AutomationProperties.Name="{Binding LoginHelpLabel}">
               <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
-                <PathIcon Classes="smallUiIcon" Data="{StaticResource InformationIconGeometry}" />
+                <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
                 <TextBlock Grid.Column="1" Text="{Binding LoginHelpLabel}" TextWrapping="Wrap" />
               </Grid>
             </controls:ContextHelpButton>
@@ -88,7 +88,7 @@
                       AutomationProperties.Name="{Binding RememberMeWarningLabel}"
                       AutomationProperties.HelpText="{Binding RememberMeWarningText}"
                       VerticalAlignment="Center">
-                <PathIcon Classes="mediumUiIcon"
+                <PathIcon Classes="informationIcon"
                           Data="{StaticResource InformationIconGeometry}" />
               </Button>
               <ToggleSwitch
@@ -109,7 +109,7 @@
                                         IsVisible="{Binding IsStatusMessageError}"
                                         AutomationProperties.Name="{Binding LoginTroubleshootingLabel}">
               <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
-                <PathIcon Classes="smallUiIcon" Data="{StaticResource InformationIconGeometry}" />
+                <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
                 <TextBlock Grid.Column="1" Text="{Binding LoginTroubleshootingLabel}" TextWrapping="Wrap" />
               </Grid>
             </controls:ContextHelpButton>
@@ -208,7 +208,7 @@
                                         TopicId="{x:Static info:HelpTopicIds.EnrollmentOverview}"
                                         AutomationProperties.Name="{Binding EnrollmentHelpLabel}">
               <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
-                <PathIcon Classes="smallUiIcon" Data="{StaticResource InformationIconGeometry}" />
+                <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
                 <TextBlock Grid.Column="1" Text="{Binding EnrollmentHelpLabel}" TextWrapping="Wrap" />
               </Grid>
             </controls:ContextHelpButton>
@@ -227,7 +227,7 @@
                                         TopicId="{x:Static info:HelpTopicIds.EnrollmentCodeSafety}"
                                         AutomationProperties.Name="{Binding EnrollmentCodeHelpLabel}">
               <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
-                <PathIcon Classes="smallUiIcon" Data="{StaticResource InformationIconGeometry}" />
+                <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
                 <TextBlock Grid.Column="1" Text="{Binding EnrollmentCodeHelpLabel}" TextWrapping="Wrap" />
               </Grid>
             </controls:ContextHelpButton>
@@ -291,7 +291,7 @@
                                         IsVisible="{Binding DeviceTransferStatus.IsError}"
                                         AutomationProperties.Name="{Binding EnrollmentTroubleshootingLabel}">
               <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
-                <PathIcon Classes="smallUiIcon" Data="{StaticResource InformationIconGeometry}" />
+                <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
                 <TextBlock Grid.Column="1" Text="{Binding EnrollmentTroubleshootingLabel}" TextWrapping="Wrap" />
               </Grid>
             </controls:ContextHelpButton>

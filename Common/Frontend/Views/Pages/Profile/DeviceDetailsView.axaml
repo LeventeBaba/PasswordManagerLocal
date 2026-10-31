@@ -144,7 +144,7 @@
                                         TopicId="{x:Static info:HelpTopicIds.Blocked}"
                                         AutomationProperties.Name="{Binding BlockedDeviceHelpLabel}">
               <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
-                <PathIcon Classes="smallUiIcon" Data="{StaticResource InformationIconGeometry}" />
+                <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
                 <TextBlock Grid.Column="1" Text="{Binding BlockedDeviceHelpLabel}" TextWrapping="Wrap" />
               </Grid>
             </controls:ContextHelpButton>
@@ -171,7 +171,7 @@
                                     IsVisible="{Binding SelectedDevice.ShowSyncHelp}"
                                     AutomationProperties.Name="{Binding SyncHelpLabel}">
           <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
-            <PathIcon Classes="smallUiIcon" Data="{StaticResource InformationIconGeometry}" />
+            <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
             <TextBlock Grid.Column="1" Text="{Binding SyncHelpLabel}" TextWrapping="Wrap" />
           </Grid>
         </controls:ContextHelpButton>
@@ -202,7 +202,7 @@
                                     IsVisible="{Binding HasSelfDiagnosticsResult}"
                                     AutomationProperties.Name="{Binding DiagnosticsHelpLabel}">
           <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
-            <PathIcon Classes="smallUiIcon" Data="{StaticResource InformationIconGeometry}" />
+            <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
             <TextBlock Grid.Column="1" Text="{Binding DiagnosticsHelpLabel}" TextWrapping="Wrap" />
           </Grid>
         </controls:ContextHelpButton>
