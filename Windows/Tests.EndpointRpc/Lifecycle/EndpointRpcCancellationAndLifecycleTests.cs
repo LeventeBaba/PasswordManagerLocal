@@ -71,7 +71,6 @@ public sealed class EndpointRpcCancellationAndLifecycleTests
         Assert.AreEqual(1, connector.ConnectCount);
     }
 
-
     [TestMethod]
     public async Task ExplicitReconnectDisposesStaleTransportWithoutAutomaticReplay()
     {
@@ -94,7 +93,7 @@ public sealed class EndpointRpcCancellationAndLifecycleTests
     }
 
     [TestMethod]
-    public async Task FrontendClientDisposalIsIdempotentAndNeverFallsBackToInProcessRuntime()
+    public async Task RepeatedFrontendClientDisposalRejectsFurtherEndpointAccess()
     {
         var transport = new ControllableEndpointRpcTransport();
         var client = new WindowsNamedPipeFrontendBackendClient(

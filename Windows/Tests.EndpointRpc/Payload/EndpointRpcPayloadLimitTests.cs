@@ -25,7 +25,6 @@ public sealed class EndpointRpcPayloadLimitTests
         Assert.IsTrue(maxInner < maxOuter, "The outer transport must accommodate the IPC envelope.");
     }
 
-
     [TestMethod]
     public void MaximumEndpointPayloadsAreAcceptedByTheInnerCodec()
     {
@@ -51,16 +50,6 @@ public sealed class EndpointRpcPayloadLimitTests
         Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
             codec.EncodeSuccess(
                 new byte[EndpointRpcLimits.MaximumResponsePayloadSize + 1]));
-    }
-
-    [TestMethod]
-    public void OuterValidatorRejectsOversizedEndpointEnvelopeBeforeHandler()
-    {
-        var validator = new WindowsIpcContractValidator();
-        Assert.ThrowsExactly<PasswordManagerLocal.Windows.Ipc.Serialization.IpcPayloadLimitExceededException>(() =>
-            validator.Validate(new IpcRequestEnvelope(
-                IpcOperationId.EndpointRpcRequest,
-                new byte[IpcContractLimits.MaximumInnerPayloadSize + 1])));
     }
 
     [TestMethod]

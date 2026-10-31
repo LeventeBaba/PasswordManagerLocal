@@ -13,137 +13,53 @@ public sealed class EndpointRpcBackendErrorMapperRestartTests
     private readonly EndpointRpcBackendErrorMapper _mapper = new();
 
     [TestMethod]
-    public void NestedRestartFailureBeforeCommitMapsToConclusiveRuntimeFailure()
+    [DataRow(EndpointOperationId.Logout, "runtime-nested-restart", EndpointMutationOutcome.NotCommitted)]
+    [DataRow(EndpointOperationId.GetLocalDeviceInfo, "aggregate-restart", EndpointMutationOutcome.NotApplicable)]
+    public void PreInvocationRestartFailureIsConclusiveForOperationKind(
+        EndpointOperationId operation, string shape, EndpointMutationOutcome expectedOutcome)
     {
-        var failure = new IOException(
-            "outer runtime wrapper",
-            new InvalidOperationException(
-                "inner runtime wrapper",
-                CreateDatabaseVersionFailure()));
-
-        var error = _mapper.Map(failure, CreateContext(EndpointOperationId.Logout));
+        var error = _mapper.Map(CreateFollowUpFailure(shape), CreateContext(operation));
 
         Assert.AreEqual(EndpointRpcErrorCode.RuntimeUnavailable, error.ErrorCode);
-        Assert.AreEqual(EndpointMutationOutcome.NotCommitted, error.MutationOutcome);
+        Assert.AreEqual(expectedOutcome, error.MutationOutcome);
         Assert.AreEqual(EndpointFailureKind.Generic, error.FailureKind);
         Assert.IsTrue(error.RequiresProcessRestart);
     }
 
     [TestMethod]
-    public void AggregateRestartFailureBeforeReadMapsToConclusiveRuntimeFailure()
+    [DataRow("direct-restart", false, true)]
+    [DataRow("nested-restart", false, true)]
+    [DataRow("aggregate-restart", false, true)]
+    [DataRow("ordinary-aggregate", false, false)]
+    [DataRow("ordinary", true, true)]
+    [DataRow("ordinary", false, false)]
+    public void GenericPartialCommitCombinesExplicitAndNestedRestartRequirements(
+        string shape, bool explicitRestart, bool expectedRestart)
     {
-        var failure = new AggregateException(
-            new IOException("ordinary failure"),
-            CreateDatabaseVersionFailure());
-
-        var error = _mapper.Map(failure, CreateContext(EndpointOperationId.GetLocalDeviceInfo));
-
-        Assert.AreEqual(EndpointRpcErrorCode.RuntimeUnavailable, error.ErrorCode);
-        Assert.AreEqual(EndpointMutationOutcome.NotApplicable, error.MutationOutcome);
-        Assert.IsTrue(error.RequiresProcessRestart);
-    }
-
-    [TestMethod]
-    public void GenericPartialCommitWithDirectRestartFailurePreservesRestartRequirement()
-    {
-        var failure = new MutationPartiallyCommittedException(
-            "authoritative state committed",
-            innerException: CreateDatabaseVersionFailure());
+        var failure = new MutationPartiallyCommittedException("authoritative state committed",
+            requiresProcessRestart: explicitRestart, innerException: CreateFollowUpFailure(shape));
 
         var error = _mapper.Map(failure, CreateContext(EndpointOperationId.ChangeMasterPassword));
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, error.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.PartiallyCommittedRecoveryRequired, error.MutationOutcome);
         Assert.AreEqual(EndpointFailureKind.Generic, error.FailureKind);
-        Assert.IsTrue(error.RequiresProcessRestart);
+        Assert.AreEqual(expectedRestart, error.RequiresProcessRestart);
     }
 
     [TestMethod]
-    public void GenericPartialCommitWithMultipleNestedWrappersPreservesRestartRequirement()
+    [DataRow(true, false, true)]
+    [DataRow(false, true, true)]
+    [DataRow(false, false, false)]
+    public void EnrollmentPartialCommitCombinesExplicitAndNestedRestartRequirements(
+        bool nestedUnsupportedDatabase, bool explicitRestart, bool expectedRestart)
     {
-        var failure = new MutationPartiallyCommittedException(
-            "authoritative state committed",
-            innerException: new InvalidOperationException(
-                "outer follow-up wrapper",
-                new IOException("inner follow-up wrapper", CreateDatabaseVersionFailure())));
-
-        var error = _mapper.Map(failure, CreateContext(EndpointOperationId.ChangeMasterPassword));
-
-        Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, error.ErrorCode);
-        Assert.IsTrue(error.RequiresProcessRestart);
-    }
-
-    [TestMethod]
-    public void GenericPartialCommitWithRestartFailureInAggregatePreservesRestartRequirement()
-    {
-        var failure = new MutationPartiallyCommittedException(
-            "authoritative state committed",
-            innerException: new AggregateException(
-                new IOException("ordinary failure"),
-                CreateDatabaseVersionFailure()));
-
-        var error = _mapper.Map(failure, CreateContext(EndpointOperationId.ChangeMasterPassword));
-
-        Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, error.ErrorCode);
-        Assert.IsTrue(error.RequiresProcessRestart);
-    }
-
-    [TestMethod]
-    public void GenericPartialCommitWithOrdinaryAggregateDoesNotInventRestartRequirement()
-    {
-        var failure = new MutationPartiallyCommittedException(
-            "authoritative state committed",
-            innerException: new AggregateException(
-                new IOException("first ordinary failure"),
-                new InvalidOperationException("second ordinary failure")));
-
-        var error = _mapper.Map(failure, CreateContext(EndpointOperationId.ChangeMasterPassword));
-
-        Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, error.ErrorCode);
-        Assert.IsFalse(error.RequiresProcessRestart);
-    }
-
-    [TestMethod]
-    public void GenericPartialCommitExplicitRestartRemainsTrueWithOrdinaryInnerFailure()
-    {
-        var failure = new MutationPartiallyCommittedException(
-            "authoritative state committed",
-            requiresProcessRestart: true,
-            innerException: new IOException("ordinary failure"));
-
-        var error = _mapper.Map(failure, CreateContext(EndpointOperationId.ChangeMasterPassword));
-
-        Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, error.ErrorCode);
-        Assert.IsTrue(error.RequiresProcessRestart);
-    }
-
-    [TestMethod]
-    public void GenericPartialCommitOrdinaryInnerFailureRemainsRestartFalse()
-    {
-        var failure = new MutationPartiallyCommittedException(
-            "authoritative state committed",
-            requiresProcessRestart: false,
-            innerException: new IOException("ordinary failure"));
-
-        var error = _mapper.Map(failure, CreateContext(EndpointOperationId.ChangeMasterPassword));
-
-        Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, error.ErrorCode);
-        Assert.IsFalse(error.RequiresProcessRestart);
-    }
-
-    [TestMethod]
-    public void EnrollmentPartialCommitWithNestedUnsupportedDatabaseFailureRequiresRestart()
-    {
-        var failure = CreateEnrollmentPartialCommit(
-            requiresProcessRestart: false,
-            innerException: new DeviceEnrollmentException(
-                DeviceEnrollmentErrorCode.Unknown,
-                "outer enrollment wrapper",
-                new IOException(
-                    "nested transfer wrapper",
-                    new DeviceEnrollmentException(
-                        DeviceEnrollmentErrorCode.UnsupportedDatabaseVersion,
-                        "unsupported database"))));
+        Exception inner = nestedUnsupportedDatabase
+            ? new DeviceEnrollmentException(DeviceEnrollmentErrorCode.Unknown, "outer enrollment wrapper",
+                new IOException("nested transfer wrapper", new DeviceEnrollmentException(
+                    DeviceEnrollmentErrorCode.UnsupportedDatabaseVersion, "unsupported database")))
+            : new IOException("ordinary transfer failure");
+        var failure = CreateEnrollmentPartialCommit(explicitRestart, inner);
 
         var error = _mapper.Map(failure, CreateContext(EndpointOperationId.AddDeviceByCode));
 
@@ -151,33 +67,7 @@ public sealed class EndpointRpcBackendErrorMapperRestartTests
         Assert.AreEqual(EndpointMutationOutcome.PartiallyCommittedRecoveryRequired, error.MutationOutcome);
         Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, error.FailureKind);
         Assert.AreEqual(DeviceEnrollmentErrorCode.Unknown, error.EnrollmentErrorCode);
-        Assert.IsTrue(error.RequiresProcessRestart);
-    }
-
-    [TestMethod]
-    public void EnrollmentPartialCommitExplicitRestartRemainsTrueWithOrdinaryInnerFailure()
-    {
-        var failure = CreateEnrollmentPartialCommit(
-            requiresProcessRestart: true,
-            innerException: new IOException("ordinary transfer failure"));
-
-        var error = _mapper.Map(failure, CreateContext(EndpointOperationId.AddDeviceByCode));
-
-        Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, error.ErrorCode);
-        Assert.IsTrue(error.RequiresProcessRestart);
-    }
-
-    [TestMethod]
-    public void EnrollmentPartialCommitOrdinaryTransferFailureRemainsRestartFalse()
-    {
-        var failure = CreateEnrollmentPartialCommit(
-            requiresProcessRestart: false,
-            innerException: new IOException("ordinary transfer failure"));
-
-        var error = _mapper.Map(failure, CreateContext(EndpointOperationId.AddDeviceByCode));
-
-        Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, error.ErrorCode);
-        Assert.IsFalse(error.RequiresProcessRestart);
+        Assert.AreEqual(expectedRestart, error.RequiresProcessRestart);
     }
 
     private static DeviceEnrollmentPartiallyCommittedException CreateEnrollmentPartialCommit(
@@ -194,6 +84,19 @@ public sealed class EndpointRpcBackendErrorMapperRestartTests
             requiresSignedRemovalToUndo: true,
             requiresProcessRestart: requiresProcessRestart,
             innerException: innerException);
+
+    private static Exception CreateFollowUpFailure(string shape) => shape switch
+    {
+        "direct-restart" => CreateDatabaseVersionFailure(),
+        "runtime-nested-restart" => new IOException("outer runtime wrapper",
+            new InvalidOperationException("inner runtime wrapper", CreateDatabaseVersionFailure())),
+        "nested-restart" => new InvalidOperationException("outer wrapper",
+            new IOException("inner wrapper", CreateDatabaseVersionFailure())),
+        "aggregate-restart" => new AggregateException(new IOException("ordinary failure"), CreateDatabaseVersionFailure()),
+        "ordinary-aggregate" => new AggregateException(new IOException("ordinary failure"), new InvalidOperationException("other ordinary failure")),
+        "ordinary" => new IOException("ordinary failure"),
+        _ => throw new ArgumentOutOfRangeException(nameof(shape))
+    };
 
     private static DatabaseVersionNotSupportedException CreateDatabaseVersionFailure() =>
         new(1, 2, 3);

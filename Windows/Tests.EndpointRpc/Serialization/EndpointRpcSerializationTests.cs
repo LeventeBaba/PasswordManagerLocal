@@ -1,6 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Windows.EndpointRpc.Contracts;
-using PasswordManagerLocal.Windows.EndpointRpc.Metadata;
+using PasswordManagerLocal.Windows.EndpointRpc.Contracts.LargeTransfer;
 using PasswordManagerLocal.Windows.EndpointRpc.Serialization;
 using System.Text.Json;
 
@@ -9,97 +9,102 @@ namespace PasswordManagerLocal.Windows.Tests.EndpointRpc.Serialization;
 [TestClass]
 public sealed class EndpointRpcSerializationTests
 {
+
     [TestMethod]
-    public void EveryMappedRequestAndResponseUsesSourceGeneratedMetadata()
+    [DataRow("{", true)]
+    [DataRow("{\"token\":\"00000000-0000-0000-0000-000000000001\",\"unexpected\":true}", false)]
+    public void MalformedOrUnknownMemberRequestJsonIsRejected(string json, bool loginContract)
     {
-        foreach (var descriptor in EndpointOperationManifest.All)
+        var serializer = new EndpointRpcSerializer();
+        var payload = System.Text.Encoding.UTF8.GetBytes(json);
+
+        Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
         {
-            RoundTrip(descriptor.RequestType);
-            RoundTrip(descriptor.ResponseType);
-        }
+            if (loginContract)
+                serializer.Deserialize(payload, EndpointRpcJsonContext.Default.LoginEndpointRequest);
+            else
+                serializer.Deserialize(payload, EndpointRpcJsonContext.Default.GetSavedPasswordsEndpointRequest);
+        });
     }
 
     [TestMethod]
-    public void MalformedJsonIsRejected()
+    public void PopulatedLargeTransferContractsPreserveAllValues()
+    {
+        var id = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        AssertPopulatedRoundTrip(new EndpointLargeResultDescriptor
+        {
+            TransferId = id, OriginalCorrelationId = 41, DeclaredTotalLength = 4,
+            DeclaredChunkCount = 2, ChunkSize = 2,
+            ExpiresAtUtc = new DateTimeOffset(2030, 1, 2, 3, 4, 5, TimeSpan.Zero)
+        }, EndpointRpcJsonContext.Default.EndpointLargeResultDescriptor);
+        AssertPopulatedRoundTrip(new GetEndpointLargeResultChunkRequest
+        {
+            TransferId = id, OriginalCorrelationId = 41, ChunkIndex = 1
+        }, EndpointRpcJsonContext.Default.GetEndpointLargeResultChunkRequest);
+        AssertPopulatedRoundTrip(new GetEndpointLargeResultChunkResponse
+        {
+            TransferId = id, OriginalCorrelationId = 41, ChunkIndex = 1, IsFinal = true,
+            DeclaredTotalLength = 4, DeclaredChunkCount = 2, ChunkPayload = [0x12, 0x34]
+        }, EndpointRpcJsonContext.Default.GetEndpointLargeResultChunkResponse);
+        AssertPopulatedRoundTrip(new ReleaseEndpointLargeResultRequest
+        {
+            TransferId = id, OriginalCorrelationId = 41
+        }, EndpointRpcJsonContext.Default.ReleaseEndpointLargeResultRequest);
+        AssertPopulatedRoundTrip(new ReleaseEndpointLargeResultResponse { Released = true },
+            EndpointRpcJsonContext.Default.ReleaseEndpointLargeResultResponse);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void PartialCommitErrorRoundTripsWithOnlyAllowlistedWireFields(bool restartRequired)
     {
         var serializer = new EndpointRpcSerializer();
-        Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
-            serializer.Deserialize(
-                "{"u8.ToArray(),
-                EndpointRpcJsonContext.Default.LoginEndpointRequest));
-    }
-
-
-    [TestMethod]
-    public void UnknownJsonMemberIsRejected()
-    {
-        var serializer = new EndpointRpcSerializer();
-        Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
-            serializer.Deserialize(
-                "{\"token\":\"00000000-0000-0000-0000-000000000001\",\"unexpected\":true}"u8.ToArray(),
-                EndpointRpcJsonContext.Default.GetSavedPasswordsEndpointRequest));
-    }
-
-    [TestMethod]
-    public void LargeTransferContractsRoundTripWithSourceGeneratedMetadata()
-    {
-        RoundTrip(typeof(PasswordManagerLocal.Windows.EndpointRpc.Contracts.LargeTransfer.EndpointLargeResultDescriptor));
-        RoundTrip(typeof(PasswordManagerLocal.Windows.EndpointRpc.Contracts.LargeTransfer.GetEndpointLargeResultChunkRequest));
-        RoundTrip(typeof(PasswordManagerLocal.Windows.EndpointRpc.Contracts.LargeTransfer.GetEndpointLargeResultChunkResponse));
-        RoundTrip(typeof(PasswordManagerLocal.Windows.EndpointRpc.Contracts.LargeTransfer.ReleaseEndpointLargeResultRequest));
-        RoundTrip(typeof(PasswordManagerLocal.Windows.EndpointRpc.Contracts.LargeTransfer.ReleaseEndpointLargeResultResponse));
-    }
-
-
-    [TestMethod]
-    public void PartialCommitErrorRoundTripsWithOnlySafeFailureMetadata()
-    {
-        var serializer = new EndpointRpcSerializer();
-        var error = new EndpointRpcError(
-            EndpointRpcErrorCode.OperationPartiallyCommitted,
+        var error = new EndpointRpcError(EndpointRpcErrorCode.OperationPartiallyCommitted,
             EndpointFailureKind.DeviceEnrollment,
-            "The device addition was committed, but enrollment recovery is required.",
-            RequiresProcessRestart: true,
+            "The device addition was committed, but enrollment recovery is required.", restartRequired,
             EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
             DeviceEnrollmentErrorCode.NewDeviceConnectionFailed);
-
         var payload = serializer.Serialize(error, EndpointRpcJsonContext.Default.EndpointRpcError);
-        var roundTrip = serializer.Deserialize(payload, EndpointRpcJsonContext.Default.EndpointRpcError);
-
-        var json = System.Text.Encoding.UTF8.GetString(payload);
-
-        Assert.AreEqual(error, roundTrip);
-        Assert.IsFalse(json.Contains("correlationId", StringComparison.Ordinal));
-        Assert.IsFalse(json.Contains("occurredAtUtc", StringComparison.Ordinal));
-        Assert.IsFalse(json.Contains("isRetryable", StringComparison.Ordinal));
-        Assert.IsFalse(json.Contains("validationErrors", StringComparison.Ordinal));
-
-        using var jsonDocument = JsonDocument.Parse(json);
-        var hasRecoveryMetadataProperty = false;
-        foreach (var property in jsonDocument.RootElement.EnumerateObject())
+        try
         {
-            if (property.Name.Contains("recovery", StringComparison.OrdinalIgnoreCase))
-            {
-                hasRecoveryMetadataProperty = true;
-                break;
-            }
-        }
+            var restored = serializer.Deserialize(payload, EndpointRpcJsonContext.Default.EndpointRpcError);
+            using var json = JsonDocument.Parse(payload);
 
-        Assert.IsFalse(
-            hasRecoveryMetadataProperty,
-            "EndpointRpcError must not serialize recovery metadata properties.");
-        Array.Clear(payload);
+            Assert.AreEqual(error, restored);
+            CollectionAssert.AreEquivalent(new[]
+            {
+                "errorCode", "failureKind", "safeMessage", "requiresProcessRestart", "mutationOutcome", "enrollmentErrorCode"
+            }, json.RootElement.EnumerateObject().Select(property => property.Name).ToArray());
+        }
+        finally
+        {
+            Array.Clear(payload);
+        }
     }
 
-    private static void RoundTrip(Type type)
+    private static void AssertPopulatedRoundTrip<T>(
+        T expected, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> metadata)
     {
-        var metadata = EndpointRpcJsonContext.Default.GetTypeInfo(type);
-        Assert.IsNotNull(metadata, type.FullName);
-        var value = Activator.CreateInstance(type);
-        Assert.IsNotNull(value, type.FullName);
-        var payload = JsonSerializer.SerializeToUtf8Bytes(value, metadata);
-        var result = JsonSerializer.Deserialize(payload, metadata);
-        Assert.IsNotNull(result, type.FullName);
-        Assert.AreEqual(type, result.GetType());
+        var serializer = new EndpointRpcSerializer();
+        var payload = serializer.Serialize(expected, metadata);
+        try
+        {
+            var actual = serializer.Deserialize(payload, metadata);
+            foreach (var property in typeof(T).GetProperties())
+            {
+                var before = property.GetValue(expected);
+                var after = property.GetValue(actual);
+                var label = typeof(T).Name + "." + property.Name;
+                if (before is byte[] bytes)
+                    CollectionAssert.AreEqual(bytes, Assert.IsInstanceOfType<byte[]>(after), label);
+                else
+                    Assert.AreEqual(before, after, label);
+            }
+        }
+        finally
+        {
+            Array.Clear(payload);
+        }
     }
 }

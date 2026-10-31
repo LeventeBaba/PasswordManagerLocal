@@ -335,8 +335,6 @@ public sealed class EndpointRpcInvocationOutcomeTests
         Array.Clear(requestPayload);
     }
 
-
-
     [TestMethod]
     public async Task EnrollmentFullSuccessReturnsTheExistingSuccessResponse()
     {
@@ -356,65 +354,29 @@ public sealed class EndpointRpcInvocationOutcomeTests
     }
 
     [TestMethod]
-    public async Task EnrollmentInvalidCodeBeforeCommitIsConclusive()
+    [DataRow(DeviceEnrollmentErrorCode.InvalidCode, false, EndpointRpcErrorCode.OperationRejected)]
+    [DataRow(DeviceEnrollmentErrorCode.NewDeviceNotFound, false, EndpointRpcErrorCode.NotFound)]
+    [DataRow(DeviceEnrollmentErrorCode.DeviceIdentityConflict, false, EndpointRpcErrorCode.Conflict)]
+    [DataRow(DeviceEnrollmentErrorCode.Unknown, true, EndpointRpcErrorCode.BackendFailure)]
+    public async Task KnownUncommittedEnrollmentFailurePreservesCodeAndConclusiveOutcome(
+        DeviceEnrollmentErrorCode cause, bool useExplicitRollback, EndpointRpcErrorCode expected)
     {
-        var endpoints = new ConfiguredEndpointFailureEndpoints(
-            EndpointOperationId.AddDeviceByCode,
-            new DeviceEnrollmentException(DeviceEnrollmentErrorCode.InvalidCode, "invalid code"));
+        // Preserve the coded-failure constructor's inferred pre-commit guarantee.
+        // The Unknown case supplies an explicit rollback guarantee instead.
+        var failure = useExplicitRollback
+            ? new DeviceEnrollmentException(cause, "safe test failure", isKnownNotCommitted: true)
+            : new DeviceEnrollmentException(cause, "safe test failure");
+        var endpoints = new ConfiguredEndpointFailureEndpoints(EndpointOperationId.AddDeviceByCode, failure);
         var context = CreateContext(EndpointOperationId.AddDeviceByCode, 120);
         await using var dispatcher = CreateDispatcher(endpoints, new EndpointRpcSerializer());
 
-        var result = await dispatcher.DispatchAsync(
-            context,
-            SerializeRequest(EndpointOperationId.AddDeviceByCode),
-            CancellationToken.None);
+        var result = await dispatcher.DispatchAsync(context, SerializeRequest(EndpointOperationId.AddDeviceByCode), CancellationToken.None);
 
-        Assert.AreEqual(EndpointRpcErrorCode.OperationRejected, result.Error!.ErrorCode);
+        Assert.AreEqual(1, endpoints.InvocationCount);
+        Assert.AreEqual(expected, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.NotCommitted, result.Error.MutationOutcome);
         Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, result.Error.FailureKind);
-        Assert.AreEqual(DeviceEnrollmentErrorCode.InvalidCode, result.Error.EnrollmentErrorCode);
-    }
-
-    [TestMethod]
-    public async Task EnrollmentTargetMissingBeforeCommitIsConclusive()
-    {
-        var endpoints = new ConfiguredEndpointFailureEndpoints(
-            EndpointOperationId.AddDeviceByCode,
-            new DeviceEnrollmentException(DeviceEnrollmentErrorCode.NewDeviceNotFound, "target missing"));
-        var context = CreateContext(EndpointOperationId.AddDeviceByCode, 121);
-        await using var dispatcher = CreateDispatcher(endpoints, new EndpointRpcSerializer());
-
-        var result = await dispatcher.DispatchAsync(
-            context,
-            SerializeRequest(EndpointOperationId.AddDeviceByCode),
-            CancellationToken.None);
-
-        Assert.AreEqual(EndpointRpcErrorCode.NotFound, result.Error!.ErrorCode);
-        Assert.AreEqual(EndpointMutationOutcome.NotCommitted, result.Error.MutationOutcome);
-        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, result.Error.FailureKind);
-        Assert.AreEqual(DeviceEnrollmentErrorCode.NewDeviceNotFound, result.Error.EnrollmentErrorCode);
-    }
-
-    [TestMethod]
-    public async Task EnrollmentIdentityConflictBeforeCommitIsConclusive()
-    {
-        var endpoints = new ConfiguredEndpointFailureEndpoints(
-            EndpointOperationId.AddDeviceByCode,
-            new DeviceEnrollmentException(
-                DeviceEnrollmentErrorCode.DeviceIdentityConflict,
-                "identity conflict"));
-        var context = CreateContext(EndpointOperationId.AddDeviceByCode, 115);
-        await using var dispatcher = CreateDispatcher(endpoints, new EndpointRpcSerializer());
-
-        var result = await dispatcher.DispatchAsync(
-            context,
-            SerializeRequest(EndpointOperationId.AddDeviceByCode),
-            CancellationToken.None);
-
-        Assert.AreEqual(EndpointRpcErrorCode.Conflict, result.Error!.ErrorCode);
-        Assert.AreEqual(EndpointMutationOutcome.NotCommitted, result.Error.MutationOutcome);
-        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, result.Error.FailureKind);
-        Assert.AreEqual(DeviceEnrollmentErrorCode.DeviceIdentityConflict, result.Error.EnrollmentErrorCode);
+        Assert.AreEqual(cause, result.Error.EnrollmentErrorCode);
         Assert.IsFalse(result.Error.RequiresProcessRestart);
     }
 
@@ -466,42 +428,20 @@ public sealed class EndpointRpcInvocationOutcomeTests
     }
 
     [TestMethod]
-    public async Task EnrollmentKnownRollbackWithUnclassifiedCauseIsConclusive()
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task UnclassifiedEnrollmentFailureAfterInvocationHasUnknownOutcome(bool domainFailure)
     {
-        var endpoints = new ConfiguredEndpointFailureEndpoints(
-            EndpointOperationId.AddDeviceByCode,
-            new DeviceEnrollmentException(
-                DeviceEnrollmentErrorCode.Unknown,
-                "rolled back",
-                isKnownNotCommitted: true));
-        var context = CreateContext(EndpointOperationId.AddDeviceByCode, 122);
-        await using var dispatcher = CreateDispatcher(endpoints, new EndpointRpcSerializer());
-
-        var result = await dispatcher.DispatchAsync(
-            context,
-            SerializeRequest(EndpointOperationId.AddDeviceByCode),
-            CancellationToken.None);
-
-        Assert.AreEqual(EndpointRpcErrorCode.BackendFailure, result.Error!.ErrorCode);
-        Assert.AreEqual(EndpointMutationOutcome.NotCommitted, result.Error.MutationOutcome);
-        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, result.Error.FailureKind);
-        Assert.AreEqual(DeviceEnrollmentErrorCode.Unknown, result.Error.EnrollmentErrorCode);
-    }
-
-    [TestMethod]
-    public async Task EnrollmentUnknownDomainFailureAfterInvocationRemainsOutcomeUnknown()
-    {
-        var endpoints = new ConfiguredEndpointFailureEndpoints(
-            EndpointOperationId.AddDeviceByCode,
-            new DeviceEnrollmentException(DeviceEnrollmentErrorCode.Unknown, "uncertain transaction"));
+        Exception failure = domainFailure
+            ? new DeviceEnrollmentException(DeviceEnrollmentErrorCode.Unknown, "uncertain transaction")
+            : new IOException("response unavailable");
+        var endpoints = new ConfiguredEndpointFailureEndpoints(EndpointOperationId.AddDeviceByCode, failure);
         var context = CreateContext(EndpointOperationId.AddDeviceByCode, 119);
         await using var dispatcher = CreateDispatcher(endpoints, new EndpointRpcSerializer());
 
-        var result = await dispatcher.DispatchAsync(
-            context,
-            SerializeRequest(EndpointOperationId.AddDeviceByCode),
-            CancellationToken.None);
+        var result = await dispatcher.DispatchAsync(context, SerializeRequest(EndpointOperationId.AddDeviceByCode), CancellationToken.None);
 
+        Assert.AreEqual(1, endpoints.InvocationCount);
         Assert.AreEqual(EndpointRpcErrorCode.OperationOutcomeUnknown, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.OutcomeUnknown, result.Error.MutationOutcome);
         Assert.AreEqual(EndpointFailureKind.Generic, result.Error.FailureKind);
@@ -620,25 +560,6 @@ public sealed class EndpointRpcInvocationOutcomeTests
             out _));
     }
 
-    [TestMethod]
-    public async Task EnrollmentUnknownFailureAfterInvocationRemainsOutcomeUnknown()
-    {
-        var endpoints = new ConfiguredEndpointFailureEndpoints(
-            EndpointOperationId.AddDeviceByCode,
-            new IOException("response lost"));
-        var context = CreateContext(EndpointOperationId.AddDeviceByCode, 118);
-        await using var dispatcher = CreateDispatcher(endpoints, new EndpointRpcSerializer());
-
-        var result = await dispatcher.DispatchAsync(
-            context,
-            SerializeRequest(EndpointOperationId.AddDeviceByCode),
-            CancellationToken.None);
-
-        Assert.AreEqual(EndpointRpcErrorCode.OperationOutcomeUnknown, result.Error!.ErrorCode);
-        Assert.AreEqual(EndpointMutationOutcome.OutcomeUnknown, result.Error.MutationOutcome);
-        Assert.AreEqual(EndpointFailureKind.Generic, result.Error.FailureKind);
-    }
-
     private static EndpointRpcDispatcher CreateDispatcher(
         PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints endpoints,
         EndpointRpcSerializer serializer) =>
@@ -647,7 +568,6 @@ public sealed class EndpointRpcInvocationOutcomeTests
             serializer,
             new EndpointRpcContractValidator(),
             new EndpointRpcBackendErrorMapper());
-
 
     private static DeviceEnrollmentPartiallyCommittedException CreatePartialCommitFailure(
         DeviceEnrollmentErrorCode errorCode,

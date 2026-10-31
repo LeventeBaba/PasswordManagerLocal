@@ -108,7 +108,6 @@ public sealed class NamedPipeEndpointsProxyMappingTests
         Assert.AreEqual(1, sends);
     }
 
-
     [TestMethod]
     public async Task SideEffectingMalformedResponseReportsUnknownOutcomeWithoutReplay()
     {
@@ -133,54 +132,26 @@ public sealed class NamedPipeEndpointsProxyMappingTests
         Assert.AreEqual(1, sends);
     }
 
-
     [TestMethod]
-    public async Task StructuredRemoteDisconnectRemainsConclusiveWithoutReplay()
+    [DataRow(EndpointRpcErrorCode.Disconnected, true)]
+    [DataRow(EndpointRpcErrorCode.ResponsePayloadTooLarge, false)]
+    public async Task ConclusiveRemoteFailureKeepsItsExceptionKindWithoutReplay(EndpointRpcErrorCode code, bool disconnected)
     {
         var sends = 0;
         var transport = new RecordingEndpointRpcTransport((_, _, _) =>
         {
             sends++;
-            return Task.FromException<byte[]>(new EndpointRpcRemoteException(
-                new EndpointRpcError(
-                    EndpointRpcErrorCode.Disconnected,
-                    EndpointFailureKind.Generic,
-                    "The endpoint connection is unavailable.",
-                    RequiresProcessRestart: false,
-                    EndpointMutationOutcome.NotCommitted)));
+            return Task.FromException<byte[]>(new EndpointRpcRemoteException(new EndpointRpcError(
+                code, EndpointFailureKind.Generic, "The endpoint operation failed.",
+                RequiresProcessRestart: false, EndpointMutationOutcome.NotCommitted)));
         });
-        var proxy = new NamedPipeEndpointsProxy(
-            transport,
-            new EndpointRpcSerializer(),
-            new EndpointRpcContractValidator());
+        await using var proxy = new NamedPipeEndpointsProxy(transport, new EndpointRpcSerializer(), new EndpointRpcContractValidator());
 
-        await Assert.ThrowsExactlyAsync<EndpointRpcDisconnectedException>(() =>
-            proxy.LogoutAsync(EndpointRpcTestData.Token));
-        Assert.AreEqual(1, sends);
-    }
+        if (disconnected)
+            await Assert.ThrowsExactlyAsync<EndpointRpcDisconnectedException>(() => proxy.LogoutAsync(EndpointRpcTestData.Token));
+        else
+            await Assert.ThrowsExactlyAsync<EndpointFailureException>(() => proxy.LogoutAsync(EndpointRpcTestData.Token));
 
-    [TestMethod]
-    public async Task StructuredRemotePayloadFailureRemainsConclusiveWithoutReplay()
-    {
-        var sends = 0;
-        var transport = new RecordingEndpointRpcTransport((_, _, _) =>
-        {
-            sends++;
-            return Task.FromException<byte[]>(new EndpointRpcRemoteException(
-                new EndpointRpcError(
-                    EndpointRpcErrorCode.ResponsePayloadTooLarge,
-                    EndpointFailureKind.Generic,
-                    "The endpoint response payload exceeds the permitted size.",
-                    RequiresProcessRestart: false,
-                    EndpointMutationOutcome.NotCommitted)));
-        });
-        var proxy = new NamedPipeEndpointsProxy(
-            transport,
-            new EndpointRpcSerializer(),
-            new EndpointRpcContractValidator());
-
-        await Assert.ThrowsExactlyAsync<EndpointFailureException>(() =>
-            proxy.LogoutAsync(EndpointRpcTestData.Token));
         Assert.AreEqual(1, sends);
     }
 
@@ -250,7 +221,6 @@ public sealed class NamedPipeEndpointsProxyMappingTests
         }
     }
 
-
     [TestMethod]
     public async Task InvalidReadOnlyRemoteResponseIsRejectedBeforeFrontendUse()
     {
@@ -284,7 +254,6 @@ public sealed class NamedPipeEndpointsProxyMappingTests
             proxy.GetLocalDeviceInfoAsync());
         Assert.AreEqual(0, sends);
     }
-
 
     [TestMethod]
     public async Task PartialCommitMapsToDedicatedClientExceptionWithoutReplay()

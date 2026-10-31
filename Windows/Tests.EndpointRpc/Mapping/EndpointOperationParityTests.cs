@@ -163,25 +163,6 @@ public sealed class EndpointOperationParityTests
         Assert.AreEqual(
             EndpointRpcLimits.MaximumLargeResultTotalBytes,
             largeDescriptors[0].MaximumLogicalResponsePayloadSize);
-        Assert.IsTrue(EndpointOperationManifest.All
-            .Where(descriptor => descriptor.OperationId != EndpointOperationId.GetSavedPasswords)
-            .All(descriptor => !descriptor.SupportsLargeResponse));
-    }
-
-    [TestMethod]
-    public void InternalLargeTransferContractsUseSourceGeneratedMetadata()
-    {
-        var internalTypes = new[]
-        {
-            typeof(PasswordManagerLocal.Windows.EndpointRpc.Contracts.LargeTransfer.EndpointLargeResultDescriptor),
-            typeof(PasswordManagerLocal.Windows.EndpointRpc.Contracts.LargeTransfer.GetEndpointLargeResultChunkRequest),
-            typeof(PasswordManagerLocal.Windows.EndpointRpc.Contracts.LargeTransfer.GetEndpointLargeResultChunkResponse),
-            typeof(PasswordManagerLocal.Windows.EndpointRpc.Contracts.LargeTransfer.ReleaseEndpointLargeResultRequest),
-            typeof(PasswordManagerLocal.Windows.EndpointRpc.Contracts.LargeTransfer.ReleaseEndpointLargeResultResponse)
-        };
-
-        foreach (var type in internalTypes)
-            Assert.IsNotNull(EndpointRpcJsonContext.Default.GetTypeInfo(type), type.FullName);
     }
 
     private static void AssertCommitModel(

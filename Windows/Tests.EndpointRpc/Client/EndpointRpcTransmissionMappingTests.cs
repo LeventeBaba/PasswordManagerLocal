@@ -31,42 +31,24 @@ public sealed class EndpointRpcTransmissionMappingTests
     }
 
     [TestMethod]
-    public async Task SentMutationsWithoutResponseReportUnknownForEveryCommitModel()
+    [DataRow(EndpointRpcTransmissionState.Sent)]
+    [DataRow(EndpointRpcTransmissionState.TransmissionUnknown)]
+    public async Task PossibleTransmissionWithoutResponseLeavesEveryMutationCommitModelUncertain(EndpointRpcTransmissionState state)
     {
-        foreach (var operationId in MutationRepresentatives())
+        foreach (var operation in MutationRepresentatives())
         {
             var sends = 0;
             var transport = new RecordingEndpointRpcTransport((_, _, _) =>
             {
                 Interlocked.Increment(ref sends);
-                return Task.FromException<byte[]>(new IOException("response lost"));
-            }, EndpointRpcTransmissionState.Sent);
+                return Task.FromException<byte[]>(new IOException("response unavailable"));
+            }, state);
             await using var proxy = CreateProxy(transport);
 
-            await Assert.ThrowsExactlyAsync<EndpointOperationOutcomeUnknownException>(() =>
-                InvokeAsync(proxy, operationId));
-            Assert.AreEqual(1, sends, operationId.ToString());
-            CollectionAssert.AreEqual(new[] { true }, transport.MutationFlags, operationId.ToString());
-        }
-    }
+            await Assert.ThrowsExactlyAsync<EndpointOperationOutcomeUnknownException>(() => InvokeAsync(proxy, operation));
 
-    [TestMethod]
-    public async Task TransmissionUnknownMutationsReportUnknownForEveryCommitModel()
-    {
-        foreach (var operationId in MutationRepresentatives())
-        {
-            var sends = 0;
-            var transport = new RecordingEndpointRpcTransport((_, _, _) =>
-            {
-                Interlocked.Increment(ref sends);
-                return Task.FromException<byte[]>(new IOException("send boundary failed"));
-            }, EndpointRpcTransmissionState.TransmissionUnknown);
-            await using var proxy = CreateProxy(transport);
-
-            await Assert.ThrowsExactlyAsync<EndpointOperationOutcomeUnknownException>(() =>
-                InvokeAsync(proxy, operationId));
-            Assert.AreEqual(1, sends, operationId.ToString());
-            CollectionAssert.AreEqual(new[] { true }, transport.MutationFlags, operationId.ToString());
+            Assert.AreEqual(1, sends, operation.ToString());
+            CollectionAssert.AreEqual(new[] { true }, transport.MutationFlags, operation.ToString());
         }
     }
 

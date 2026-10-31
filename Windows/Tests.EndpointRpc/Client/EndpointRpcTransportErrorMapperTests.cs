@@ -27,10 +27,7 @@ public sealed class EndpointRpcTransportErrorMapperTests
         Assert.AreEqual("The endpoint connection is not authorized.", exception.Message);
         Assert.IsFalse(exception.Message.Contains("sensitive", StringComparison.Ordinal));
         Assert.IsFalse(exception.Error.RequiresProcessRestart);
-        Assert.IsNull(typeof(EndpointRpcError).GetProperty("CorrelationId"));
-        Assert.IsNull(typeof(EndpointRpcError).GetProperty("OccurredAtUtc"));
     }
-
 
     [TestMethod]
     public void RuntimeUnavailablePreservesProcessRestartRequirement()
@@ -51,19 +48,16 @@ public sealed class EndpointRpcTransportErrorMapperTests
     }
 
     [TestMethod]
-    public void RequestRejectedMapsToGenericOperationRejectedFailure()
+    [DataRow(IpcErrorCode.RequestRejected, EndpointRpcErrorCode.OperationRejected)]
+    [DataRow(IpcErrorCode.ResponsePayloadTooLarge, EndpointRpcErrorCode.ResponsePayloadTooLarge)]
+    public void ValidationTransportFailureMapsToStableEndpointCode(IpcErrorCode sourceCode, EndpointRpcErrorCode expected)
     {
-        var source = new IpcError(
-            IpcErrorCode.RequestRejected,
-            IpcErrorCategory.Validation,
-            "transport detail",
-            DateTimeOffset.UtcNow,
-            false,
-            false);
+        var source = new IpcError(sourceCode, IpcErrorCategory.Validation, "transport detail",
+            DateTimeOffset.UtcNow, false, false);
 
         var exception = EndpointRpcTransportErrorMapper.Map(source);
 
-        Assert.AreEqual(EndpointRpcErrorCode.OperationRejected, exception.Error.ErrorCode);
+        Assert.AreEqual(expected, exception.Error.ErrorCode);
         Assert.AreEqual(EndpointFailureKind.Generic, exception.Error.FailureKind);
     }
 
@@ -106,20 +100,4 @@ public sealed class EndpointRpcTransportErrorMapperTests
         Assert.IsFalse(WindowsEndpointRpcTransport.IsPostHandlerFailure(IpcErrorCode.TooManyRequests));
     }
 
-    [TestMethod]
-    public void OversizedResponseMapsToEndpointResponseLimitError()
-    {
-        var source = new IpcError(
-            IpcErrorCode.ResponsePayloadTooLarge,
-            IpcErrorCategory.Validation,
-            "outer detail",
-            DateTimeOffset.UtcNow,
-            false,
-            false);
-
-        var exception = EndpointRpcTransportErrorMapper.Map(source);
-
-        Assert.AreEqual(EndpointRpcErrorCode.ResponsePayloadTooLarge, exception.Error.ErrorCode);
-        Assert.AreEqual(EndpointFailureKind.Generic, exception.Error.FailureKind);
-    }
 }

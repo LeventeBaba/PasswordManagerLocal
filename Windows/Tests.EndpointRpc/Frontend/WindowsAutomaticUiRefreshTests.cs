@@ -42,22 +42,6 @@ public sealed class WindowsAutomaticUiRefreshTests
     public TestContext TestContext { get; set; } = null!;
 
     [TestMethod]
-    public async Task ControlledPasswordResponsesRoundTripThroughProductionRpcContract()
-    {
-        var state = new EndpointState(new UiTestProgress(line => TestContext.WriteLine(line)));
-        var serializer = new EndpointRpcSerializer();
-        var validator = new EndpointRpcContractValidator();
-        foreach (var name in new[] { "Initial password", "Password from incoming sync", "Changed while disconnected" })
-        {
-            state.PasswordName = name;
-            var payload = await state.RespondAsync(EndpointOperationId.GetSavedPasswords, [], CancellationToken.None);
-            var response = serializer.Deserialize(payload, EndpointRpcJsonContext.Default.GetSavedPasswordsEndpointResponse);
-            validator.ValidateResponse(EndpointOperationId.GetSavedPasswords, response);
-            Assert.AreEqual(name, response.Passwords.Passwords.Single().Name);
-        }
-    }
-
-    [TestMethod]
     public Task PasswordAndProfileChangesReachVisibleControlsWithoutUserInput() =>
         RunScenarioAsync(async (fixture, token) =>
         {

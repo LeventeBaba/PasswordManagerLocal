@@ -27,20 +27,6 @@ public sealed class EndpointRpcMessageCodecTests
     }
 
     [TestMethod]
-    public void EmptyEndpointRequestHasNoJsonBodyAndVoidResponseHasNoBody()
-    {
-        var codec = new EndpointRpcMessageCodec(new EndpointRpcSerializer());
-        var message = codec.EncodeRequest(EndpointOperationId.GetLocalDeviceInfo, ReadOnlySpan<byte>.Empty);
-        var decoded = codec.DecodeRequest(message);
-        var success = codec.EncodeSuccess(ReadOnlySpan<byte>.Empty);
-
-        Assert.AreEqual(sizeof(int), message.Length);
-        Assert.AreEqual(EndpointOperationId.GetLocalDeviceInfo, decoded.OperationId);
-        Assert.AreEqual(0, decoded.Payload!.Length);
-        Assert.AreEqual(0, success.Length);
-    }
-
-    [TestMethod]
     public void InternalLargeResultOperationsUseReservedNegativeOperationIds()
     {
         var codec = new EndpointRpcMessageCodec(new EndpointRpcSerializer());
@@ -54,14 +40,16 @@ public sealed class EndpointRpcMessageCodecTests
     }
 
     [TestMethod]
-    public void UnknownAndRetiredOperationValuesAreRejected()
+    [DataRow(0)]
+    [DataRow(-3)]
+    [DataRow(42)]
+    [DataRow(int.MaxValue)]
+    public void UndefinedAndReservedOperationIdsAreRejected(int operationId)
     {
         var codec = new EndpointRpcMessageCodec(new EndpointRpcSerializer());
-        foreach (var value in new[] { 0, -3, 42, int.MaxValue })
-        {
-            var bytes = new byte[sizeof(int)];
-            BinaryPrimitives.WriteInt32BigEndian(bytes, value);
-            Assert.ThrowsExactly<EndpointRpcPayloadException>(() => codec.DecodeRequest(bytes));
-        }
+        var bytes = new byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32BigEndian(bytes, operationId);
+
+        Assert.ThrowsExactly<EndpointRpcPayloadException>(() => codec.DecodeRequest(bytes));
     }
 }

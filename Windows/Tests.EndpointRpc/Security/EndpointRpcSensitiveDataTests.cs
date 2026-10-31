@@ -132,7 +132,6 @@ public sealed class EndpointRpcSensitiveDataTests
         Array.Clear(result.Result!);
     }
 
-
     [TestMethod]
     public async Task ServerClearsInvalidBackendPasswordBufferDuringResponseValidationFailure()
     {
@@ -170,35 +169,6 @@ public sealed class EndpointRpcSensitiveDataTests
         Assert.AreEqual(EndpointRpcErrorCode.ValidationFailed, result.Error!.ErrorCode);
         Assert.IsTrue(sensitiveBuffer.All(value => value == 0));
         Array.Clear(request);
-    }
-
-
-    [TestMethod]
-    public void PartialCommitFailureMetadataContainsOnlyAllowlistedSafeValues()
-    {
-        var serializer = new EndpointRpcSerializer();
-        var error = new EndpointRpcError(
-            EndpointRpcErrorCode.OperationPartiallyCommitted,
-            EndpointFailureKind.DeviceEnrollment,
-            "The device addition was committed, but enrollment recovery is required.",
-            RequiresProcessRestart: false,
-            EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
-            DeviceEnrollmentErrorCode.NewDeviceConnectionFailed);
-
-        var payload = serializer.Serialize(error, EndpointRpcJsonContext.Default.EndpointRpcError);
-        var json = System.Text.Encoding.UTF8.GetString(payload);
-
-        Assert.IsFalse(json.Contains("password", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(json.Contains("token", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(json.Contains("secret", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(json.Contains("key", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(json.Contains("snapshot", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(json.Contains("path", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(json.Contains("correlationId", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(json.Contains("validationErrors", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(json.Contains("targetDeviceId", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(json.Contains("enrollmentCommitId", StringComparison.OrdinalIgnoreCase));
-        Array.Clear(payload);
     }
 
     private static IpcRequestContext CreateContext(byte[] endpointMessage) =>

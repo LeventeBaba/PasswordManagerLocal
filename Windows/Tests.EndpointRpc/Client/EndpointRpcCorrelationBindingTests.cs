@@ -12,7 +12,7 @@ namespace PasswordManagerLocal.Windows.Tests.EndpointRpc.Client;
 public sealed class EndpointRpcCorrelationBindingTests
 {
     [TestMethod]
-    public void InlineEndpointErrorDoesNotDuplicateOuterTransportCorrelation()
+    public void InlineFailureCodecAndResponseMapperPreserveRemoteError()
     {
         var codec = CreateCodec();
         var encoded = codec.EncodeFailure(CreateError());
@@ -22,7 +22,6 @@ public sealed class EndpointRpcCorrelationBindingTests
         Assert.AreEqual(EndpointRpcResponseKind.Failure, response.ResponseKind);
         Assert.AreEqual(EndpointRpcErrorCode.Conflict, response.Error!.ErrorCode);
         Assert.AreEqual(EndpointFailureKind.Generic, response.Error.FailureKind);
-        Assert.IsNull(typeof(EndpointRpcError).GetProperty("CorrelationId"));
         var exception = Assert.ThrowsExactly<EndpointRpcRemoteException>(() =>
             EndpointRpcClientResponseMapper.RequireSuccess(response));
         Assert.AreSame(response.Error, exception.Error);
@@ -60,47 +59,73 @@ public sealed class EndpointRpcCorrelationBindingTests
     }
 
     [TestMethod]
-    public async Task ReadOnlyMismatchedDescriptorIsRejectedBeforeChunksOrRelease()
+    [Timeout(10_000)]
+    public async Task ReadOnlyTransportRejectsDescriptorForAnotherRequestBeforeTransfer()
     {
-        await using var transport = new ScriptedEndpointRpcResponseTransport(
-            correlationId => EndpointRpcTransportResponse.Large(CreateDescriptor(correlationId + 1)));
+        await using var peer = new ScriptedLargeResultIpcConnection(mismatchCorrelation: true);
+        await using var transport = await CreateProductionTransportAsync(peer);
         await using var proxy = CreateProxy(transport);
 
         await Assert.ThrowsExactlyAsync<EndpointRpcCorrelationMismatchException>(() =>
             proxy.GetSavedPasswordsAsync(EndpointRpcTestData.Token));
 
-        Assert.AreEqual(1, transport.PublicRequestCount);
-        Assert.AreEqual(0, transport.ChunkRequestCount);
-        Assert.AreEqual(0, transport.ReleaseRequestCount);
+        Assert.AreEqual(1, peer.PublicRequestCount);
+        Assert.AreEqual(0, peer.ChunkRequestCount);
+        Assert.AreEqual(0, peer.ReleaseRequestCount);
     }
 
     [TestMethod]
-    public async Task ReadOnlyMatchingDescriptorStartsChunkTransfer()
+    [Timeout(10_000)]
+    public async Task MatchingDescriptorCompletesLargeResultThroughProductionTransport()
     {
-        await using var transport = new ScriptedEndpointRpcResponseTransport(
-            correlationId => EndpointRpcTransportResponse.Large(CreateDescriptor(correlationId)));
+        await using var peer = new ScriptedLargeResultIpcConnection(mismatchCorrelation: false);
+        await using var transport = await CreateProductionTransportAsync(peer);
         await using var proxy = CreateProxy(transport);
 
-        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
-            proxy.GetSavedPasswordsAsync(EndpointRpcTestData.Token));
+        var result = await proxy.GetSavedPasswordsAsync(EndpointRpcTestData.Token);
 
-        Assert.AreEqual(1, transport.ChunkRequestCount);
-        Assert.AreEqual(1, transport.ReleaseRequestCount);
+        Assert.IsEmpty(result.Passwords);
+        Assert.AreEqual(1, peer.PublicRequestCount);
+        Assert.AreEqual(1, peer.ChunkRequestCount);
+        Assert.AreEqual(1, peer.ReleaseRequestCount);
     }
 
     [TestMethod]
-    public async Task SentMutationWithMismatchedDescriptorReportsOutcomeUnknownWithoutChunks()
+    [Timeout(10_000)]
+    public async Task SentMutationCorrelationFailureReportsUnknownWithoutStartingTransfer()
     {
-        await using var transport = new ScriptedEndpointRpcResponseTransport(
-            correlationId => EndpointRpcTransportResponse.Large(CreateDescriptor(correlationId + 1)));
+        await using var peer = new ScriptedLargeResultIpcConnection(mismatchCorrelation: true);
+        await using var transport = await CreateProductionTransportAsync(peer);
         await using var proxy = CreateProxy(transport);
 
         var exception = await Assert.ThrowsExactlyAsync<EndpointOperationOutcomeUnknownException>(() =>
             proxy.LogoutAsync(EndpointRpcTestData.Token));
 
+        var transportFailure = Assert.IsInstanceOfType<EndpointRpcTransportException>(exception.InnerException);
+        Assert.IsInstanceOfType<EndpointRpcCorrelationMismatchException>(transportFailure.InnerException);
         Assert.IsFalse(exception.RequiresProcessRestart);
-        Assert.AreEqual(0, transport.ChunkRequestCount);
-        Assert.AreEqual(0, transport.ReleaseRequestCount);
+        Assert.AreEqual(1, peer.PublicRequestCount);
+        Assert.AreEqual(0, peer.ChunkRequestCount);
+        Assert.AreEqual(0, peer.ReleaseRequestCount);
+    }
+
+    private static async Task<WindowsEndpointRpcTransport> CreateProductionTransportAsync(ScriptedLargeResultIpcConnection peer)
+    {
+        var client = new PasswordManagerLocal.Windows.Ipc.Client.WindowsIpcClient(
+            peer, new WindowsIpcSerializer(),
+            new PasswordManagerLocal.Windows.Ipc.Client.WindowsIpcClientOptions(
+                IpcPeerRole.Ui, IpcPeerRole.Agent, IpcCapabilities.EndpointRpc,
+                Environment.ProcessId, 0, Guid.NewGuid(), requiredServerCapabilities: IpcCapabilities.EndpointRpc));
+        try
+        {
+            await client.HandshakeAsync();
+            return new WindowsEndpointRpcTransport(client, CreateCodec());
+        }
+        catch
+        {
+            await client.DisposeAsync();
+            throw;
+        }
     }
 
     private static NamedPipeEndpointsProxy CreateProxy(IEndpointRpcTransport transport) =>
