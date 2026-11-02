@@ -309,6 +309,19 @@ public sealed class EndpointRpcDispatcher : IAsyncDisposable
                         context.Invocation.MarkInvocationCompleted();
                         return new RunSelfDiagnosticsAndRepairEndpointResponse { Result = result };
                     }),
+                EndpointOperationId.ConfirmSelfDiagnosticsRepair => await DispatchAsync(
+                    context,
+                    requestPayload,
+                    EndpointRpcJsonContext.Default.ConfirmSelfDiagnosticsRepairEndpointRequest,
+                    EndpointRpcJsonContext.Default.ConfirmSelfDiagnosticsRepairEndpointResponse,
+                    async (request, token) =>
+                    {
+                        var endpoints = _endpointAdapter.GetEndpoints(context);
+                        context.Invocation.MarkInvoking();
+                        var result = await endpoints.ConfirmSelfDiagnosticsRepairAsync(request.Token, request.PlanId, request.MasterPassword, token);
+                        context.Invocation.MarkInvocationCompleted();
+                        return new ConfirmSelfDiagnosticsRepairEndpointResponse { Result = result };
+                    }),
                 EndpointOperationId.SetUserDeviceName => await DispatchVoidAsync(
                     context,
                     requestPayload,

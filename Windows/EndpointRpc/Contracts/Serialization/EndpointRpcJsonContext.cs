@@ -54,6 +54,8 @@ namespace PasswordManagerLocal.Windows.EndpointRpc.Serialization;
 [JsonSerializable(typeof(ExportPasswordTagsToUserEndpointRequest))]
 [JsonSerializable(typeof(UpdatePasswordTagEndpointRequest))]
 [JsonSerializable(typeof(RunSelfDiagnosticsAndRepairEndpointRequest))]
+[JsonSerializable(typeof(ConfirmSelfDiagnosticsRepairEndpointRequest))]
+[JsonSerializable(typeof(ConfirmSelfDiagnosticsRepairEndpointResponse))]
 [JsonSerializable(typeof(RegisterEndpointResponse))]
 [JsonSerializable(typeof(LoginEndpointResponse))]
 [JsonSerializable(typeof(RenewAuthSessionEndpointResponse))]

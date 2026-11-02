@@ -2938,8 +2938,8 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
                 "IsCustomColorDeleteConfirmationOpen" or "IsPasswordTagDeleteConfirmationOpen" or
                 "IsExportConfirmationOpen") ||
             (sender is ProfileViewModel && property is
-                "IsDeviceDisconnectDialogOpen" or "IsLocalSyncDialogOpen" or "IsAddDeviceDialogOpen" or
-                "IsAddingDevice" or "AreDevicesLoaded") ||
+                "IsDeviceDisconnectDialogOpen" or "IsLocalSyncDialogOpen" or "IsHistoryRecoveryDialogOpen" or "IsAddDeviceDialogOpen" or
+                "IsAddingDevice" or "IsRunningSelfDiagnostics" or "AreDevicesLoaded") ||
             (sender is ChangeProfileViewModel && property == "IsBusy") ||
             (sender is SettingsViewModel && property == nameof(SettingsViewModel.CanAutomaticallyRefreshBackgroundSync)))
         {

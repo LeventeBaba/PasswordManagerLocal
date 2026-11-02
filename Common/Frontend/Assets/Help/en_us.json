@@ -1546,7 +1546,7 @@
       "id": "troubleshooting/diagnostics",
       "categoryId": "troubleshooting",
       "title": "Data verification or self diagnostics needs attention",
-      "summary": "Let the app check safe repairs without assuming every problem is recoverable.",
+      "summary": "Understand automatic repairs, exact blockers, and confirmed recovery using verified local data.",
       "keywords": [
         "data integrity",
         "verification failed",
@@ -1582,8 +1582,22 @@
           "id": "stop",
           "kind": "Warning",
           "platform": "All",
-          "title": "Do not bypass verification",
-          "body": "Do not edit database files, delete account history, repeatedly unblock a device, or reset the database to suppress the warning. Recovery can depend on a healthy peer and available evidence; neither diagnostics nor remembered access guarantees recovery."
+          "title": "Preserve recovery evidence",
+          "body": "Do not edit the database or manually delete history to hide an error. Keep the database and any recovery copies. The app will not reset history if profile data cannot be decrypted and verified, or if account-deletion evidence prevents recovery. If a hard blocker remains, preserve the current unlocked session and use supported copying or backup options rather than deleting data."
+        },
+        {
+          "id": "review-recovery",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Review recovery using this device",
+          "body": "Review the listed risks, enter the current master password and acknowledge using this device’s verified local copy. Recovery data is recorded only inside the encrypted, device-protected database. No separate recovery file is created. A failed reset rolls back its journal and history changes together."
+        },
+        {
+          "id": "after-recovery",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "After confirmed recovery",
+          "body": "After successful verification the temporary local profile copy is removed. Only unresolved received evidence remains, inside the protected database, until proven resolved or the profile is deleted. Interrupted verification is retried automatically when the profile key is available. Synchronization stays paused after confirmed recovery; enable it deliberately and pair other devices again. Other profiles remain unchanged."
         }
       ],
       "relatedTopicIds": [

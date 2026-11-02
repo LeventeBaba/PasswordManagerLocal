@@ -42,6 +42,7 @@ public class AppDbContext : DbContext
     public DbSet<UserLoginIdentityState> UserLoginIdentityStates => Set<UserLoginIdentityState>();
     public DbSet<UserCanonicalCheckpoint> UserCanonicalCheckpoints => Set<UserCanonicalCheckpoint>();
     public DbSet<UserSyncFault> UserSyncFaults => Set<UserSyncFault>();
+    public DbSet<UserRecoveryJournal> UserRecoveryJournals => Set<UserRecoveryJournal>();
 
     public override int SaveChanges()
     {
@@ -144,6 +145,15 @@ public class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder model)
     {
+        var journal = model.Entity<UserRecoveryJournal>();
+        journal.ToTable("UserRecoveryJournals");
+        journal.HasKey(row => row.Id);
+        journal.HasIndex(row => row.UserId);
+        journal.Property(row => row.EncryptedPayload).IsRequired().IsConcurrencyToken();
+        journal.Property(row => row.ProtectedKey).IsRequired();
+        journal.Property(row => row.PayloadHash).IsRequired();
+        // No navigation or sync mapping: this is installation-local evidence, never a bootstrap payload.
+
         base.OnModelCreating(model);
 
         model.Entity<User>().HasKey(u => u.UId);

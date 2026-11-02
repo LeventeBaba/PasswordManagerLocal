@@ -52,7 +52,12 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
         IUserCanonicalHealthService canonicalHealth,
         IUserLoginIdentityProjectionService loginIdentities,
         IDeletedUserBarrierRepository deletionBarriers,
-        IUserSyncFaultRepository faults)
+        IUserSyncFaultRepository faults,
+        IUserRecoveryJournalService recoveryJournal,
+        IUserCanonicalCheckpointRepository checkpoints,
+        IUserSnapshotMergeCoordinator snapshotMerge,
+        IUserMembershipAuthorizationService membershipVerifier,
+        ICredentialVerificationService credentialVerification)
     {
         _users = users;
         _lifecycle = lifecycle;
@@ -77,6 +82,11 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
         _loginIdentities = loginIdentities;
         _deletionBarriers = deletionBarriers;
         _faults = faults;
+        _recoveryJournal = recoveryJournal;
+        _checkpoints = checkpoints;
+        _snapshotMerge = snapshotMerge;
+        _membershipVerifier = membershipVerifier;
+        _credentialVerification = credentialVerification;
     }
 
     public async Task<SelfDiagnosticsResultResponse> RunAsync(Guid token, CancellationToken ct = default)
@@ -91,6 +101,26 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
     {
         var user = await _users.GetAndVerifyUserAsync(token, lifecycleToken);
         var findings = new HashSet<string>();
+        if (await _deletionBarriers.ExistsAsync(user.UId, lifecycleToken))
+            findings.Add("RecoveryBlockedAccountDeletion");
+        foreach (var fault in (await _faults.ListActiveForUserAsync(user.UId, lifecycleToken))
+                     .Where(fault => fault.Status != UserSyncHealthStatus.Healthy))
+        {
+            if (fault.Scope == UserSyncFaultScope.Database) findings.Add("RecoveryBlockedDatabase");
+            else if (fault.Scope == UserSyncFaultScope.ControlPlane) findings.Add("ControlStateInvalid");
+            else if (fault.BlocksPublishing || fault.BlocksMerge || fault.BlocksLogin || fault.BlocksGarbageCollection || fault.BlocksLifecycle)
+                findings.Add("RecoveryRiskSyncFault");
+        }
+        if (_keyResolver.TryResolve(user, out var verificationKey, out var verificationConfidence) && verificationKey is not null)
+        {
+            using (verificationKey)
+            {
+                var health = await _canonicalHealth.VerifyAsync(user, verificationKey, verificationConfidence, recordFault: false, ct: lifecycleToken);
+                if (!health.FullyVerified)
+                    findings.Add(health.CheckpointVerified ? "RecoveryBlockedDataVerification" : "CanonicalCheckpointInvalid");
+            }
+        }
+        else findings.Add("RecoveryBlockedKeyUnavailable");
         var local = await _localLinks.GetAsync(user.UId, lifecycleToken);
         var rows = await _authorizations.ListForUserAsync(user.UId, lifecycleToken);
         var own = rows.Where(row => row.IsActive && row.DeviceId == _identity.LocalDeviceId &&
@@ -100,8 +130,7 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
             own[0].SignPublicKey.SequenceEqual(_identity.SignPublicKey) &&
             Hashing.Verify(own[0].SignPublicKeyHash, Hashing.SHA256Hash(_identity.SignPublicKey)) &&
             Hashing.Verify(own[0].AgreementPublicKeyHash, Hashing.SHA256Hash(_identity.AgreementPublicKey)) &&
-            string.Equals(SyncIdentityUtil.NormalizeFingerprint(own[0].TlsCertFingerprint),
-                SyncIdentityUtil.NormalizeFingerprint(_identity.FingerprintHex), StringComparison.OrdinalIgnoreCase) &&
+            FingerprintsMatch(own[0].TlsCertFingerprint, _identity.FingerprintHex) &&
             own[0].DeviceType == _identity.DeviceType && own[0].MinimumKeyEpoch > 0 &&
             own[0].MinimumKeyEpoch <= user.KeyEpoch &&
             (own[0].MaximumKeyEpoch is not long localMaximum || localMaximum >= user.KeyEpoch);
@@ -134,8 +163,7 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
             if (device is null || !device.IsIntegrityValid() ||
                 !device.SignPublicKey.SequenceEqual(authorization.SignPublicKey) ||
                 !Hashing.Verify(authorization.AgreementPublicKeyHash, Hashing.SHA256Hash(device.PublicKey)) ||
-                !string.Equals(SyncIdentityUtil.NormalizeFingerprint(device.TlsCertFingerprint),
-                    SyncIdentityUtil.NormalizeFingerprint(authorization.TlsCertFingerprint), StringComparison.OrdinalIgnoreCase) ||
+                !FingerprintsMatch(device.TlsCertFingerprint, authorization.TlsCertFingerprint) ||
                 device.DeviceType != authorization.DeviceType)
             {
                 findings.Add("DeviceRecordInvalid");
@@ -154,7 +182,7 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
             operation.Status != UserControlOperationStatus.Rejected &&
             operation.OriginDeviceId == _identity.LocalDeviceId &&
             operation.OriginInstanceId == _identity.OriginInstanceId).ToArray();
-        if (state is not null && (state.NextOriginSequence <= 0 ||
+        if (state is not null && (state.NextOriginSequence <= 0 || state.NextOriginSequence >= long.MaxValue - 1 ||
             (localOperations.Length > 0 &&
              (state.LocalOriginInstanceId != _identity.OriginInstanceId ||
               state.NextOriginSequence <= localOperations.Max(operation => operation.OriginSequence)))))
@@ -233,6 +261,45 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
                     ex,
                     "SelfDiagnostics");
             }
+        }
+
+        foreach (var operation in operations.Where(operation => operation.Status == UserControlOperationStatus.Applied &&
+                     operation.OperationType != UserControlOperationType.AccountDeletion))
+        {
+            try
+            {
+                var envelope = UserControlOperationEnvelopeUtil.Deserialize(operation.EnvelopePayload);
+                var author = await _authorizations.GetForSignedEpochAsync(user.UId, envelope.OriginDeviceId,
+                    envelope.OriginInstanceId, envelope.PreviousMembershipEpoch, lifecycleToken);
+                if (!OperationMatches(operation, envelope) || author is null ||
+                    envelope.PreviousKeyEpoch < author.MinimumKeyEpoch ||
+                    (author.MaximumKeyEpoch is long maximum && envelope.PreviousKeyEpoch > maximum))
+                    throw new InvalidDataException("An applied control operation has inconsistent history.");
+                UserControlOperationEnvelopeUtil.VerifyWithSigningKey(envelope, author.SignPublicKey);
+                if (envelope.OperationType == UserControlOperationType.KeyEpochReplacement)
+                {
+                    var payload = UserControlOperationEnvelopeUtil.DeserializeKeyEpochReplacementPayload(envelope.OperationPayload);
+                    if (payload.UserId != user.UId || payload.PreviousKeyEpoch != envelope.PreviousKeyEpoch ||
+                        payload.ResultingKeyEpoch != envelope.ResultingKeyEpoch || payload.MembershipEpoch != envelope.PreviousMembershipEpoch)
+                        throw new InvalidDataException("The key transition disagrees with its signed header.");
+                }
+            }
+            catch (Exception ex) when (ex is InvalidDataException or UnauthorizedAccessException or ArgumentException or JsonException or OverflowException)
+            {
+                findings.Add("ControlHistoryInvalid");
+                BackendDebugLog.Warning($"Invalid applied control history. UserId={user.UId}, OperationId={operation.OperationId}.", ex, "SelfDiagnostics");
+            }
+        }
+        var genesisRows = rows.Where(row => row.IsGenesis).ToArray();
+        if (genesisRows.Length == 1)
+        {
+            var keyTransitions = operations.Where(operation => operation.Status == UserControlOperationStatus.Applied &&
+                operation.OperationType == UserControlOperationType.KeyEpochReplacement).ToArray();
+            if (keyTransitions.LongLength != user.KeyEpoch - genesisRows[0].MinimumKeyEpoch ||
+                keyTransitions.Select(operation => operation.PreviousKeyEpoch).Distinct().Count() != keyTransitions.Length ||
+                keyTransitions.Any(operation => operation.PreviousKeyEpoch < genesisRows[0].MinimumKeyEpoch ||
+                    operation.ResultingKeyEpoch != operation.PreviousKeyEpoch + 1 || operation.ResultingKeyEpoch > user.KeyEpoch))
+                findings.Add("ControlHistoryInvalid");
         }
 
         var existingCutoffs = await _cutoffs.ListForUserAsync(user.UId, lifecycleToken);
@@ -354,13 +421,65 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
             findings.Add("SignedRemovalHistoryInvalid");
         }
 
-        if (allowRepair && findings.Count > 0 &&
-            findings.All(code => code is "RemovalCutoffInvalid" or "RemovalCutoffMissing"))
+        // Do not judge pending data against damaged membership history. Only the
+        // normal, authenticated merge path runs after the retained history passes.
+        if (allowRepair && findings.Count == 0 &&
+            !operations.Any(operation => operation.OperationType == UserControlOperationType.AccountDeletion &&
+                operation.Status != UserControlOperationStatus.Rejected) &&
+            await TryMergeKnownPendingAsync(user, lifecycleToken))
+        {
+            var merged = await RunUnderLifecycleAsync(token, allowRepair: false, lifecycleToken);
+            if (!merged.Healthy)
+            {
+                var current = await _users.GetAndVerifyUserAsync(token, lifecycleToken);
+                merged = DescribeRecovery(await AnalyzeRecoveryAsync(token, current, lifecycleToken), merged.Findings);
+            }
+            return WithRepair(merged, 1, "PendingChangesMerged");
+        }
+
+        if (operations.Any(operation => operation.OperationType == UserControlOperationType.AccountDeletion &&
+            operation.Status != UserControlOperationStatus.Rejected)) findings.Add("RecoveryBlockedAccountDeletion");
+        if (operations.Any(operation => operation.Status == UserControlOperationStatus.StoredPending))
+            findings.Add("RecoveryRiskPendingOperations");
+        if ((await _snapshots.ListForUserAsync(user.UId, lifecycleToken)).Any(snapshot => snapshot.Status is
+                UserSyncSnapshotStatus.Pending or UserSyncSnapshotStatus.RecoveryCandidate or UserSyncSnapshotStatus.IsolatedFork) ||
+            (await _knowledge.ListForUserAsync(user.UId, lifecycleToken)).Any(row => row.HighestStoredRevision > row.HighestMergedRevision))
+            findings.Add("RecoveryRiskUnmergedData");
+        var recoveryLinks = await _userDevices.ListByUserAsync(user.UId, lifecycleToken);
+        if ((await _enrollmentCommits.ListForUserAsync(user.UId, lifecycleToken)).Any(commit =>
+            (commit.Status is DeviceEnrollmentCommitStatus.PendingTransfer or DeviceEnrollmentCommitStatus.TransferFailed) &&
+            !recoveryLinks.Any(link => link.DeviceId == commit.TargetDeviceId && link.IsDeleted && link.IsIntegrityValid())))
+            findings.Add("RecoveryRiskEnrollment");
+
+        if (allowRepair && findings.SetEquals(["ControlSequenceInvalid"]) && state is not null)
+        {
+            var highest = await _operations.GetHighestOriginSequenceAsync(user.UId, _identity.LocalDeviceId, _identity.OriginInstanceId, lifecycleToken);
+            if (highest < long.MaxValue - 1)
+            {
+                await RepairControlSequenceAsync(state, highest, lifecycleToken);
+                var verified = await RunUnderLifecycleAsync(token, allowRepair: false, lifecycleToken);
+                return WithRepair(verified, 1, "ControlSequenceRepaired");
+            }
+        }
+
+        if (allowRepair && findings.Any(code => code is "RemovalCutoffInvalid" or "RemovalCutoffMissing") &&
+            findings.All(code => code is "RemovalCutoffInvalid" or "RemovalCutoffMissing" or
+                "RecoveryRiskPendingOperations" or "RecoveryRiskUnmergedData" or "RecoveryRiskEnrollment"))
         {
             await ReplaceRemovalCutoffsAsync(existingCutoffs, expectedCutoffs.Values.ToArray(), lifecycleToken);
+            // The repaired signed barriers can now authorize a previously blocked merge.
+            await TryMergeKnownPendingAsync(user, lifecycleToken);
             var repaired = await RunUnderLifecycleAsync(token, allowRepair: false, lifecycleToken);
+            if (!repaired.Healthy)
+            {
+                var current = await _users.GetAndVerifyUserAsync(token, lifecycleToken);
+                repaired = DescribeRecovery(await AnalyzeRecoveryAsync(token, current, lifecycleToken), repaired.Findings);
+            }
             return WithRepair(repaired, Math.Max(1, expectedCutoffs.Count), "RemovalCutoffsRebuilt");
         }
+        var publicationState = await _syncStates.GetAsync(user.UId, lifecycleToken);
+        if (publicationState is not null && (publicationState.NextOriginRevision <= 0 || publicationState.NextOriginRevision >= long.MaxValue - 1))
+            findings.Add("RecoveryRiskCounterMetadata");
         if (findings.Count != 0)
             return await CompleteHistoryRepairAsync(token, user, findings, allowRepair, lifecycleToken);
 
@@ -373,7 +492,7 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
         };
     }
 
-    private async Task<int> RepairRemovedDeviceMetadataAsync(Guid token, Guid userId, CancellationToken ct)
+    private async Task<int> RepairRemovedDeviceMetadataAsync(Guid token, Guid userId, CancellationToken ct, bool includeUnprovenRemoteMetadata = false)
     {
         var authorizations = await _authorizations.ListForUserAsync(userId, ct);
         var links = await _userDevices.ListByUserAsync(userId, ct);
@@ -383,7 +502,7 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
         using var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
         var staleDevices = bundle.UserDevicesData.Devices
             .Where(device => !activeDeviceIds.Contains(device.Id) &&
-                             HasVerifiedRemovalEvidence(device.Id, authorizations, links, bundle.UserDevicesData))
+                             (includeUnprovenRemoteMetadata || HasVerifiedRemovalEvidence(device.Id, authorizations, links, bundle.UserDevicesData)))
             .ToArray();
         if (staleDevices.Length == 0)
             return 0;
@@ -511,4 +630,10 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
         actual.HighestAcceptedSnapshotRevision == expected.HighestAcceptedSnapshotRevision &&
         actual.HighestAcceptedControlSequence == expected.HighestAcceptedControlSequence &&
         Hashing.Verify(actual.RemovalOperationHash, expected.RemovalOperationHash);
+    private static bool FingerprintsMatch(string first, string second)
+    {
+        try { return SyncIdentityUtil.NormalizeFingerprint(first) == SyncIdentityUtil.NormalizeFingerprint(second); }
+        catch (InvalidDataException) { return false; }
+    }
+
 }

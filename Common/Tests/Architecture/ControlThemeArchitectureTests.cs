@@ -1680,10 +1680,30 @@ public sealed class ControlThemeArchitectureTests
         var textBoxes = Directory.EnumerateFiles(viewRoot, "*.axaml", SearchOption.AllDirectories)
             .SelectMany(path => XDocument.Load(path).Descendants(avalonia + "TextBox"))
             .ToArray();
-        Assert.AreEqual(29, textBoxes.Length,
-            "The app's existing editable and password TextBoxes are the scope of this template increment.");
-        Assert.AreEqual(9, textBoxes.Count(textBox => textBox.Attribute("PasswordChar") is not null),
-            "Keep the password-masking usages connected to TextPresenter.PasswordChar.");
+        Assert.IsTrue(textBoxes.Length > 0,
+            "The view audit must discover TextBoxes before checking their theme contracts.");
+        Assert.IsTrue(textBoxes.All(textBox => textBox.Attribute("Theme") is null),
+            "All view TextBoxes should inherit the application-owned default editing theme.");
+        var passwordTextBoxes = textBoxes.Where(textBox => textBox.Attribute("PasswordChar") is not null).ToArray();
+        Assert.IsTrue(passwordTextBoxes.Length > 0,
+            "The view audit must discover password fields before checking their input contracts.");
+        foreach (var passwordTextBox in passwordTextBoxes)
+        {
+            Assert.IsNotNull(passwordTextBox.Attribute("Text"),
+                "Password fields must retain their text binding.");
+            Assert.AreEqual("Password", (string?)passwordTextBox.Attribute("TextInputOptions.ContentType"));
+            Assert.AreEqual("True", (string?)passwordTextBox.Attribute("TextInputOptions.IsSensitive"));
+            Assert.AreEqual("False", (string?)passwordTextBox.Attribute("TextInputOptions.AutoCapitalization"));
+            Assert.AreEqual("False", (string?)passwordTextBox.Attribute("TextInputOptions.ShowSuggestions"));
+        }
+
+        // Attach field-specific contracts to the view rather than a global control count.
+        var recoveryDialog = XDocument.Load(Path.Combine(
+            viewRoot, "Pages", "Profile", "DeviceHistoryRecoveryDialogView.axaml"));
+        var recoveryPassword = recoveryDialog.Descendants(avalonia + "TextBox").Single();
+        Assert.AreEqual("{Binding HistoryRecoveryPassword}", (string?)recoveryPassword.Attribute("Text"));
+        Assert.AreEqual("●", (string?)recoveryPassword.Attribute("PasswordChar"));
+        Assert.AreEqual("{Binding IsHistoryRecoveryPasswordVisible}", (string?)recoveryPassword.Attribute("RevealPassword"));
 
         var watermarkedTextBoxSource = File.ReadAllText(Path.Combine(
             root, "Common", "Frontend", "Views", "Controls", "WatermarkWidthTextBox.cs"));

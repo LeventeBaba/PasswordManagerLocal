@@ -11,6 +11,7 @@ using ReactiveUI;
 using System.Collections.ObjectModel;
 using ReactiveUI.Primitives;
 using System.Security.Cryptography;
+using System.Text;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
 
@@ -132,6 +133,8 @@ public sealed class ProfileViewModel : ViewModelBase
         nameof(CurrentDeviceLabel),
         nameof(SelfDiagnosticsLabel),
         nameof(SelfDiagnosticsSummary),
+        nameof(HistoryRecoveryTitle), nameof(HistoryRecoverySummary), nameof(HistoryRecoveryAcknowledgeLabel),
+        nameof(HistoryRecoveryConfirmLabel), nameof(HistoryRecoveryReviewLabel), nameof(HistoryRecoveryWorkingLabel), nameof(HistoryRecoveryPasswordVisibilityToggleText),
         nameof(BlockedLabel),
         nameof(TrustedLabel),
         nameof(NotTrustedLabel),
@@ -207,6 +210,10 @@ public sealed class ProfileViewModel : ViewModelBase
     private bool _pendingLocalSyncEnabled;
     private bool _isAddingDevice;
     private bool _isRunningSelfDiagnostics;
+    private bool _isHistoryRecoveryDialogOpen;
+    private bool _isHistoryRecoveryAcknowledged;
+    private string _historyRecoveryPassword = string.Empty;
+    private bool _isHistoryRecoveryPasswordVisible;
     private SelfDiagnosticsResultResponse? _selfDiagnosticsResult;
     private string _deviceEnrollmentCodeInput = string.Empty;
     private string _deviceSearchQuery = string.Empty;
@@ -247,6 +254,13 @@ public sealed class ProfileViewModel : ViewModelBase
         UnblockDeviceCommand = Own(ReactiveCommand.CreateFromTask<DeviceItemViewModel>(UnblockDeviceAsync));
         DisconnectDeviceCommand = Own(ReactiveCommand.Create<DeviceItemViewModel>(BeginDisconnectDevice));
         RunSelfDiagnosticsCommand = Own(ReactiveCommand.CreateFromTask(RunSelfDiagnosticsAsync));
+        ReviewHistoryRecoveryCommand = Own(ReactiveCommand.Create(OpenHistoryRecoveryDialog));
+        CancelHistoryRecoveryCommand = Own(ReactiveCommand.Create(CancelHistoryRecovery));
+        ConfirmHistoryRecoveryCommand = Own(ReactiveCommand.CreateFromTask(ConfirmHistoryRecoveryAsync));
+        ToggleHistoryRecoveryPasswordVisibilityCommand = Own(ReactiveCommand.Create(() =>
+        {
+            IsHistoryRecoveryPasswordVisible = !IsHistoryRecoveryPasswordVisible;
+        }));
         SearchDevicesCommand = Own(ReactiveCommand.Create(ApplyCurrentDeviceSearch));
         SelectDeviceSortOptionCommand = Own(ReactiveCommand.Create<string>(SelectDeviceSortOptionByKey));
         BackToDevicesCommand = Own(ReactiveCommand.Create(BackToDevices));
@@ -851,6 +865,10 @@ public sealed class ProfileViewModel : ViewModelBase
     public ReactiveCommand<RxVoid, RxVoid> DeleteAccountCommand { get; }
 
     public ReactiveCommand<RxVoid, RxVoid> RunSelfDiagnosticsCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ReviewHistoryRecoveryCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> CancelHistoryRecoveryCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ConfirmHistoryRecoveryCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ToggleHistoryRecoveryPasswordVisibilityCommand { get; }
 
     public ReactiveCommand<RxVoid, RxVoid> SearchDevicesCommand { get; }
 
@@ -1081,6 +1099,7 @@ public sealed class ProfileViewModel : ViewModelBase
         {
             this.RaiseAndSetIfChanged(ref _isRunningSelfDiagnostics, value);
             this.RaisePropertyChanged(nameof(CanRunSelfDiagnostics));
+            this.RaisePropertyChanged(nameof(CanConfirmHistoryRecovery));
         }
     }
 
@@ -1098,6 +1117,8 @@ public sealed class ProfileViewModel : ViewModelBase
                 ? result.RepairedCount > 0 ? "Profile_Device_SelfDiagnostics_Repaired" : "Profile_Device_SelfDiagnostics_Healthy"
                 : "Profile_Device_SelfDiagnostics_Attention");
             var details = result.Findings.Select(code => GetTranslation("Profile_Device_SelfDiagnostics_" + code));
+            if (result.RecoveryJournalId is not null)
+                details = details.Append(GetTranslation("Profile_Device_Recovery_JournalRetained"));
             return string.Join(Environment.NewLine, new[] { summary }.Concat(details));
         }
     }
@@ -1228,6 +1249,7 @@ public sealed class ProfileViewModel : ViewModelBase
         IsDeviceListPaneVisible &&
         !IsDeviceDisconnectDialogOpen &&
         !IsLocalSyncDialogOpen &&
+        !IsHistoryRecoveryDialogOpen &&
         !IsAddDeviceDialogOpen &&
         !IsAddingDevice &&
         !_isRunningSelfDiagnostics;
@@ -1308,6 +1330,7 @@ public sealed class ProfileViewModel : ViewModelBase
 
     private void ResetDeviceNavigationState()
     {
+        SetSelfDiagnosticsResult(null);
         SelectedDevice = null;
         DeviceToDisconnect = null;
         PendingLocalSyncDevice = null;
@@ -1322,10 +1345,12 @@ public sealed class ProfileViewModel : ViewModelBase
     }
 
     internal bool HasConfirmableDialogOpen =>
-        IsLocalSyncDialogOpen || IsDeviceDisconnectDialogOpen;
+        IsHistoryRecoveryDialogOpen || IsLocalSyncDialogOpen || IsDeviceDisconnectDialogOpen;
 
     internal async Task ConfirmOpenDialogAsync()
     {
+        // Global Enter must not implicitly accept a recovery risk dialog.
+        if (IsHistoryRecoveryDialogOpen) return;
         if (IsLocalSyncDialogOpen)
         {
             await ConfirmLocalSyncToggleAsync();
@@ -1339,6 +1364,11 @@ public sealed class ProfileViewModel : ViewModelBase
 
     public bool TryNavigateBack()
     {
+        if (IsHistoryRecoveryDialogOpen)
+        {
+            CancelHistoryRecovery();
+            return true;
+        }
         if (IsLocalSyncDialogOpen)
         {
             CancelLocalSyncToggle();
@@ -1369,6 +1399,7 @@ public sealed class ProfileViewModel : ViewModelBase
 
     public async Task<bool> LoadAsync(Guid token, UserProfileInfoResponse profile)
     {
+        SetSelfDiagnosticsResult(null);
         _token = token;
         Username = profile.Username;
         FirstName = profile.FirstName;
@@ -1395,10 +1426,15 @@ public sealed class ProfileViewModel : ViewModelBase
         return true;
     }
 
-    public void SetSessionToken(Guid token) => _token = token;
+    public void SetSessionToken(Guid token)
+    {
+        if (_token != token) SetSelfDiagnosticsResult(null);
+        _token = token;
+    }
 
     public void Reset()
     {
+        SetSelfDiagnosticsResult(null);
         _token = Guid.Empty;
         _deviceSearchDebounce.Cancel();
         Username = string.Empty;
@@ -1638,16 +1674,17 @@ public sealed class ProfileViewModel : ViewModelBase
             return false;
 
         var selectedId = SelectedDevice?.DeviceId;
-
+        var token = _token;
         try
         {
-            var devices = await _endpoints.GetUserDevicesAsync(_token);
+            var devices = await _endpoints.GetUserDevicesAsync(token);
+            if (token != _token) return false;
             ApplyLoadedDevices(devices, selectedId);
             return true;
         }
         catch (Exception ex)
         {
-            ShowSafeErrorMessage(ex);
+            if (_token == token) ShowSafeErrorMessage(ex);
             return false;
         }
     }
@@ -1712,7 +1749,14 @@ public sealed class ProfileViewModel : ViewModelBase
 
     private void SetSelfDiagnosticsResult(SelfDiagnosticsResultResponse? result)
     {
+        IsHistoryRecoveryDialogOpen = false;
+        IsHistoryRecoveryAcknowledged = false;
+        HistoryRecoveryPassword = string.Empty;
+        IsHistoryRecoveryPasswordVisible = false;
         _selfDiagnosticsResult = result;
+        this.RaisePropertyChanged(nameof(HasHistoryRecoveryOffer));
+        this.RaisePropertyChanged(nameof(HistoryRecoverySummary));
+        this.RaisePropertyChanged(nameof(CanConfirmHistoryRecovery));
         this.RaisePropertyChanged(nameof(HasSelfDiagnosticsResult));
         this.RaisePropertyChanged(nameof(SelfDiagnosticsSummary));
     }
@@ -1721,20 +1765,120 @@ public sealed class ProfileViewModel : ViewModelBase
     {
         if (_token == Guid.Empty || SelectedDevice?.IsCurrentDevice != true || IsRunningSelfDiagnostics)
             return;
+        var token = _token;
         ClearStatusMessage();
         SetSelfDiagnosticsResult(null);
         IsRunningSelfDiagnostics = true;
         try
         {
-            SetSelfDiagnosticsResult(await _endpoints.RunSelfDiagnosticsAndRepairAsync(_token));
+            var result = await _endpoints.RunSelfDiagnosticsAndRepairAsync(token);
+            if (_token != token) return;
+            SetSelfDiagnosticsResult(result);
             await LoadDevicesAsync();
+            if (_token == token && HasHistoryRecoveryOffer) OpenHistoryRecoveryDialog();
         }
         catch (Exception ex)
         {
-            ShowSafeErrorMessage(ex);
+            if (_token == token) ShowSafeErrorMessage(ex);
         }
         finally
         {
+            IsRunningSelfDiagnostics = false;
+        }
+    }
+
+    public bool HasHistoryRecoveryOffer => _selfDiagnosticsResult?.RecoveryPlanId is { Length: 64 };
+    public bool IsHistoryRecoveryDialogOpen
+    {
+        get => _isHistoryRecoveryDialogOpen;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _isHistoryRecoveryDialogOpen, value);
+            this.RaisePropertyChanged(nameof(CanConfirmHistoryRecovery));
+        }
+    }
+    public bool IsHistoryRecoveryAcknowledged
+    {
+        get => _isHistoryRecoveryAcknowledged;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _isHistoryRecoveryAcknowledged, value);
+            this.RaisePropertyChanged(nameof(CanConfirmHistoryRecovery));
+        }
+    }
+    public string HistoryRecoveryPassword
+    {
+        get => _historyRecoveryPassword;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _historyRecoveryPassword, value);
+            this.RaisePropertyChanged(nameof(CanConfirmHistoryRecovery));
+        }
+    }
+    public bool IsHistoryRecoveryPasswordVisible
+    {
+        get => _isHistoryRecoveryPasswordVisible;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _isHistoryRecoveryPasswordVisible, value);
+            this.RaisePropertyChanged(nameof(HistoryRecoveryPasswordVisibilityToggleText));
+        }
+    }
+    public string HistoryRecoveryPasswordVisibilityToggleText =>
+        GetTranslation(IsHistoryRecoveryPasswordVisible ? "Common_HidePassword" : "Common_ShowPassword");
+    public bool CanConfirmHistoryRecovery => IsHistoryRecoveryDialogOpen && HasHistoryRecoveryOffer &&
+        IsHistoryRecoveryAcknowledged && !string.IsNullOrEmpty(HistoryRecoveryPassword) && !IsRunningSelfDiagnostics;
+    public string HistoryRecoveryTitle => GetTranslation("Profile_Device_Recovery_Title");
+    public string HistoryRecoveryAcknowledgeLabel => GetTranslation("Profile_Device_Recovery_Acknowledge");
+    public string HistoryRecoveryConfirmLabel => GetTranslation("Profile_Device_Recovery_Confirm");
+    public string HistoryRecoveryWorkingLabel => GetTranslation("Profile_Device_Recovery_Working");
+    public string HistoryRecoveryReviewLabel => GetTranslation("Profile_Device_Recovery_Review");
+    public string HistoryRecoverySummary => string.Join(Environment.NewLine + Environment.NewLine,
+        new[] { GetTranslation("Profile_Device_Recovery_Intro"),
+            string.Format(GetTranslation("Profile_Device_Recovery_Counts"),
+                _selfDiagnosticsResult?.RecoveryAffectedDevices ?? 0, _selfDiagnosticsResult?.RecoveryPendingSnapshots ?? 0) }
+        .Concat((_selfDiagnosticsResult?.RecoveryRisks ?? []).Select(code => GetTranslation("Profile_Device_SelfDiagnostics_" + code))));
+    private void OpenHistoryRecoveryDialog()
+    {
+        if (!HasHistoryRecoveryOffer) return;
+        IsHistoryRecoveryAcknowledged = false;
+        HistoryRecoveryPassword = string.Empty;
+        IsHistoryRecoveryPasswordVisible = false;
+        IsHistoryRecoveryDialogOpen = true;
+    }
+    private void CancelHistoryRecovery()
+    {
+        if (IsRunningSelfDiagnostics) return;
+        IsHistoryRecoveryDialogOpen = false;
+        IsHistoryRecoveryAcknowledged = false;
+        HistoryRecoveryPassword = string.Empty;
+        IsHistoryRecoveryPasswordVisible = false;
+    }
+    private async Task ConfirmHistoryRecoveryAsync()
+    {
+        if (!CanConfirmHistoryRecovery || _token == Guid.Empty) return;
+        var token = _token;
+        var planId = _selfDiagnosticsResult!.RecoveryPlanId!;
+        var password = Encoding.UTF8.GetBytes(HistoryRecoveryPassword);
+        HistoryRecoveryPassword = string.Empty;
+        IsHistoryRecoveryPasswordVisible = false;
+        IsRunningSelfDiagnostics = true;
+        try
+        {
+            var result = await _endpoints.ConfirmSelfDiagnosticsRepairAsync(token, planId, password);
+            if (_token != token) return;
+            SetSelfDiagnosticsResult(result);
+            await LoadDevicesAsync();
+            // A changed plan is only presented; it is never automatically accepted.
+            if (_token == token && HasHistoryRecoveryOffer) OpenHistoryRecoveryDialog();
+        }
+        catch (Exception ex)
+        {
+            if (_token == token) ShowSafeErrorMessage(ex);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(password);
             IsRunningSelfDiagnostics = false;
         }
     }

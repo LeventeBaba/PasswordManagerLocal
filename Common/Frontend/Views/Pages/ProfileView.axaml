@@ -26,5 +26,6 @@
     </Grid>
 
     <profile:LocalSyncDialogView />
+    <profile:DeviceHistoryRecoveryDialogView />
   </Grid>
 </UserControl>

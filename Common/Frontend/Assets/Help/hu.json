@@ -1547,7 +1547,7 @@
       "id": "troubleshooting/diagnostics",
       "categoryId": "troubleshooting",
       "title": "Adatellenőrzési hiba vagy figyelmet igénylő öndiagnosztika",
-      "summary": "Hagyd, hogy az alkalmazás ellenőrizze a biztonságos javításokat, de ne számíts minden hiba helyreállítására.",
+      "summary": "Az automatikus javítások, a pontos akadályok és az ellenőrzött helyi adatokból jóváhagyott helyreállítás megismerése.",
       "keywords": [
         "adatintegritás",
         "ellenőrzés sikertelen",
@@ -1583,8 +1583,22 @@
           "id": "stop",
           "kind": "Warning",
           "platform": "All",
-          "title": "Ne kerüld meg az ellenőrzést",
-          "body": "A figyelmeztetés elnyomására ne szerkessz adatbázisfájlt, ne törölj fiókelőzményt, ne oldj fel ismételten eszköztiltást, és ne állíts alaphelyzetbe adatbázist. A helyreállítás ép társ-eszköztől és elérhető ellenőrizhető adatoktól függhet; sem a diagnosztika, sem a megjegyzett hozzáférés nem garantálja."
+          "title": "A helyreállítási bizonyítékok megőrzése",
+          "body": "Ne szerkessze az adatbázist, és ne törölje kézzel az előzményeket a hiba elrejtéséhez. Őrizze meg a titkosított adatbázist; a helyreállítási bizonyítékok is benne maradnak. Az alkalmazás nem állítja vissza az előzményeket, ha a profiladatok nem fejthetők vissza és nem ellenőrizhetők, vagy ha fióktörlési bizonyíték akadályozza a helyreállítást. Végleges akadály esetén őrizze meg a jelenlegi feloldott munkamenetet, és adattörlés helyett használja a támogatott másolási vagy mentési lehetőségeket."
+        },
+        {
+          "id": "review-recovery",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Helyreállítás áttekintése erről az eszközről",
+          "body": "Tekintse át a kockázatokat, adja meg a jelenlegi mesterjelszót, és hagyja jóvá az eszköz ellenőrzött helyi másolatának használatát. A helyreállítási adatok kizárólag a titkosított, eszközvédett adatbázisba kerülnek. Külön helyreállítási fájl nem készül. Sikertelen visszaállításkor a napló és az előzménymódosítások együtt visszagördülnek."
+        },
+        {
+          "id": "after-recovery",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "A jóváhagyott helyreállítás után",
+          "body": "Sikeres ellenőrzés után az ideiglenes helyi profilmásolat törlődik. Kizárólag a feloldatlan fogadott bizonyítékok maradnak a védett adatbázisban, igazolt rendezésükig vagy a profil törléséig. A megszakadt ellenőrzés a profilkulcs elérhetővé válásakor automatikusan újrapróbálódik. Jóváhagyott helyreállítás után a szinkronizáció szünetel; külön engedélyezze, és párosítsa újra a többi eszközt. Más profilok nem változnak."
         }
       ],
       "relatedTopicIds": [

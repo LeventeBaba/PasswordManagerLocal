@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
+             x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Profile.DeviceHistoryRecoveryDialogView"
+             x:DataType="vm:ProfileViewModel"
+             IsVisible="{Binding IsHistoryRecoveryDialogOpen}">
+  <Border Background="{DynamicResource AppBrush.Dialog.Overlay}" Padding="16">
+    <Border Classes="card" MaxWidth="600" MaxHeight="680" VerticalAlignment="Stretch" Margin="0,12">
+      <Grid RowDefinitions="Auto,*,Auto" RowSpacing="14">
+        <StackPanel Spacing="6">
+          <TextBlock Text="{Binding HistoryRecoveryTitle}" Classes="sectionTitle" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding HistoryRecoveryWorkingLabel}" IsVisible="{Binding IsRunningSelfDiagnostics}"
+                     TextWrapping="Wrap" Classes="subtleText" />
+        </StackPanel>
+        <ScrollViewer Grid.Row="1" Classes="comfortableListScroller" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Spacing="14">
+            <TextBlock Text="{Binding HistoryRecoverySummary}" TextWrapping="Wrap" />
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Binding CurrentPasswordLabel}" Classes="subtleText" />
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <TextBox Text="{Binding HistoryRecoveryPassword}" PasswordChar="●"
+                         RevealPassword="{Binding IsHistoryRecoveryPasswordVisible}" IsEnabled="{Binding CanRunSelfDiagnostics}"
+                         TextInputOptions.ContentType="Password" TextInputOptions.IsSensitive="True"
+                         TextInputOptions.AutoCapitalization="False" TextInputOptions.ShowSuggestions="False"
+                         TextInputOptions.ReturnKeyType="Done" />
+                <Button Grid.Column="1" Classes="ghost iconButton passwordVisibilityButton"
+                        Classes.passwordVisible="{Binding IsHistoryRecoveryPasswordVisible}"
+                        Command="{Binding ToggleHistoryRecoveryPasswordVisibilityCommand}"
+                        ToolTip.Tip="{Binding HistoryRecoveryPasswordVisibilityToggleText}"
+                        AutomationProperties.Name="{Binding HistoryRecoveryPasswordVisibilityToggleText}">
+                  <PathIcon Classes="mediumUiIcon" />
+                </Button>
+              </Grid>
+            </StackPanel>
+            <Border Classes="dangerZone">
+              <CheckBox IsChecked="{Binding IsHistoryRecoveryAcknowledged}"
+                        IsEnabled="{Binding CanRunSelfDiagnostics}">
+                <TextBlock Text="{Binding HistoryRecoveryAcknowledgeLabel}" TextWrapping="Wrap" />
+              </CheckBox>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+        <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="10">
+          <Button x:Name="HistoryRecoveryCancelButton" Classes="secondary" Command="{Binding CancelHistoryRecoveryCommand}"
+                  Content="{Binding CancelLabel}" IsEnabled="{Binding CanRunSelfDiagnostics}" />
+          <Button Grid.Column="1" Classes="danger" Command="{Binding ConfirmHistoryRecoveryCommand}"
+                  IsEnabled="{Binding CanConfirmHistoryRecovery}">
+            <TextBlock Text="{Binding HistoryRecoveryConfirmLabel}" TextWrapping="Wrap" TextAlignment="Center" />
+          </Button>
+        </Grid>
+      </Grid>
+    </Border>
+  </Border>
+</UserControl>

@@ -206,6 +206,9 @@
             <TextBlock Grid.Column="1" Text="{Binding DiagnosticsHelpLabel}" TextWrapping="Wrap" />
           </Grid>
         </controls:ContextHelpButton>
+        <Button Classes="secondary" Command="{Binding ReviewHistoryRecoveryCommand}"
+                Content="{Binding HistoryRecoveryReviewLabel}" IsVisible="{Binding HasHistoryRecoveryOffer}"
+                IsEnabled="{Binding CanRunSelfDiagnostics}" />
         <TextBlock Text="{Binding SelfDiagnosticsSummary}"
                    IsVisible="{Binding HasSelfDiagnosticsResult}"
                    TextWrapping="Wrap" />

@@ -52,6 +52,10 @@ public sealed class UserAccountDeletionCleanupService : IUserAccountDeletionClea
         if (ordinarySyncItems.Count != 0)
             _db.SyncItems.RemoveRange(ordinarySyncItems);
 
+        var recoveryJournals = await _db.UserRecoveryJournals.Where(item => item.UserId == userId).ToListAsync(ct);
+        if (recoveryJournals.Count != 0)
+            _db.UserRecoveryJournals.RemoveRange(recoveryJournals);
+
         var snapshots = await _db.UserSyncSnapshots.Where(item => item.UserId == userId).ToListAsync(ct);
         if (snapshots.Count != 0)
             _db.UserSyncSnapshots.RemoveRange(snapshots);

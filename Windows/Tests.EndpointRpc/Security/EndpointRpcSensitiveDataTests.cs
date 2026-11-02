@@ -47,6 +47,34 @@ public sealed class EndpointRpcSensitiveDataTests
     }
 
     [TestMethod]
+    public async Task RecoveryConfirmation_ClearsTemporaryPayloadWithoutClearingCallerPassword()
+    {
+        byte[]? observedPayload = null;
+        var password = EndpointRpcTestData.Password();
+        var original = password.ToArray();
+        var transport = new RecordingEndpointRpcTransport((_, payload, _) =>
+        {
+            observedPayload = payload;
+            return Task.FromException<byte[]>(new IOException("Injected transport failure."));
+        });
+        var proxy = new NamedPipeEndpointsProxy(transport, new EndpointRpcSerializer(), new EndpointRpcContractValidator());
+
+        await Assert.ThrowsExactlyAsync<EndpointOperationOutcomeUnknownException>(() => proxy.ConfirmSelfDiagnosticsRepairAsync(
+            EndpointRpcTestData.Token, new string('A', 64), password));
+
+        Assert.IsNotNull(observedPayload);
+        Assert.IsTrue(observedPayload.All(value => value == 0));
+        CollectionAssert.AreEqual(original, password, "The caller owns the original password buffer.");
+        var request = new ConfirmSelfDiagnosticsRepairEndpointRequest
+        {
+            Token = EndpointRpcTestData.Token, PlanId = new string('A', 64), MasterPassword = original
+        };
+        EndpointSensitiveData.ClearRequest(EndpointOperationId.ConfirmSelfDiagnosticsRepair, request);
+        Assert.IsTrue(original.All(value => value == 0), "Both dispatcher and proxy cleanup must recognize the confirmation request.");
+        Array.Clear(password);
+    }
+
+    [TestMethod]
     public void UntransferredSensitiveResponseBufferIsCleared()
     {
         var response = new GetUnsecurePasswordEndpointResponse

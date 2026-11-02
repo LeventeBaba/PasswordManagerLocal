@@ -91,6 +91,9 @@ public static class EndpointSensitiveData
             case EndpointOperationId.DisconnectUserDevice when value is DisconnectUserDeviceEndpointRequest request:
                 Clear(request.MasterPassword);
                 break;
+            case EndpointOperationId.ConfirmSelfDiagnosticsRepair when value is ConfirmSelfDiagnosticsRepairEndpointRequest request:
+                Clear(request.MasterPassword);
+                break;
             case EndpointOperationId.AddNewPassword when value is AddNewPasswordEndpointRequest request:
                 Clear(request.Request?.Password);
                 break;

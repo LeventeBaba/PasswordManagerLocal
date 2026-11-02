@@ -249,6 +249,9 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<IUserDeviceQueryService, UserDeviceQueryService>();
         services.AddScoped<IUserDeviceSettingsService, UserDeviceSettingsService>();
         services.AddScoped<IUserDeviceDisconnectionService, UserDeviceDisconnectionService>();
+        services.AddScoped<IUserRecoveryJournalService, UserRecoveryJournalService>();
+        services.AddSingleton<UserRecoveryJournalHostedService>();
+        services.AddSingleton<IBackendHostedService>(sp => sp.GetRequiredService<UserRecoveryJournalHostedService>());
         services.AddScoped<ISelfDiagnosticsService, SelfDiagnosticsService>();
         services.AddScoped<IDeviceService, DeviceService>();
 

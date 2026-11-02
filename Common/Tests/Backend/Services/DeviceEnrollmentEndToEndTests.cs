@@ -353,6 +353,41 @@ public sealed class DeviceEnrollmentEndToEndTests
         Assert.AreEqual(0, diagnostics.RepairedCount);
     }
 
+    [TestMethod]
+    [Timeout(TestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task RejectedMalformedControlEvidence_DoesNotPoisonAHealthyEnrollment()
+    {
+        await using var source = await ProductionEnrollmentTestHost.CreateAsync();
+        await using var target = await ProductionEnrollmentTestHost.CreateAsync();
+        Connect(source, target);
+        var username = "rejectedhistory" + Guid.NewGuid().ToString("N")[..12];
+        var token = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest(username));
+        var user = await GetOnlyUserAsync(source);
+        var rejectedId = Guid.NewGuid();
+        using (var scope = source.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IUserControlOperationRepository>().AddAsync(new UserControlOperation
+            {
+                OperationId = rejectedId, UserId = user.UId, OperationType = UserControlOperationType.DeviceRemoval,
+                OriginDeviceId = source.Identity.LocalDeviceId, OriginInstanceId = source.Identity.OriginInstanceId,
+                OriginSequence = 99, PreviousKeyEpoch = user.KeyEpoch, ResultingKeyEpoch = user.KeyEpoch,
+                PreviousMembershipEpoch = 1, ResultingMembershipEpoch = 2,
+                Status = UserControlOperationStatus.Rejected, EnvelopePayload = Encoding.UTF8.GetBytes("{rejected evidence")
+            });
+            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+        }
+        await source.Endpoints.SetLocalUserSyncOnAsync(token, true);
+        var code = await target.Endpoints.StartDeviceEnrollmentAsync();
+        await source.Endpoints.AddDeviceByCodeAsync(token, code.Code);
+        Assert.AreNotEqual(Guid.Empty, await target.Endpoints.LoginAsync(target.CreateLoginRequest(username)));
+        using var sourceScope = source.Services.CreateScope();
+        using var targetScope = target.Services.CreateScope();
+        Assert.IsNotNull(await sourceScope.ServiceProvider.GetRequiredService<IUserControlOperationRepository>().GetByIdAsync(rejectedId));
+        Assert.IsNull(await targetScope.ServiceProvider.GetRequiredService<IUserControlOperationRepository>().GetByIdAsync(rejectedId));
+    }
+
     private async Task<T> RunStepAsync<T>(
         string step,
         Func<CancellationToken, Task<T>> operation)

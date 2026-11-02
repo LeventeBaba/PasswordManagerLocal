@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Contracts.Responses;
 using PasswordManagerLocal.Windows.EndpointRpc.Contracts;
 using PasswordManagerLocal.Windows.EndpointRpc.Contracts.Requests;
 using PasswordManagerLocal.Windows.EndpointRpc.Contracts.LargeTransfer;
@@ -14,6 +15,27 @@ namespace PasswordManagerLocal.Windows.Tests.EndpointRpc.Validation;
 public sealed class EndpointRpcValidationTests
 {
     private readonly EndpointRpcContractValidator _validator = new();
+
+    [TestMethod]
+    public void RecoveryConfirmationRequiresAValidPlanAndRejectsInconsistentOffers()
+    {
+        var request = new ConfirmSelfDiagnosticsRepairEndpointRequest
+        {
+            Token = EndpointRpcTestData.Token, PlanId = new string('A', 64), MasterPassword = [1]
+        };
+        _validator.ValidateRequest(EndpointOperationId.ConfirmSelfDiagnosticsRepair, request);
+        request.PlanId = string.Empty;
+        Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
+            _validator.ValidateRequest(EndpointOperationId.ConfirmSelfDiagnosticsRepair, request));
+        request.PlanId = new string('Z', 64);
+        Assert.ThrowsExactly<EndpointRpcPayloadException>(() =>
+            _validator.ValidateRequest(EndpointOperationId.ConfirmSelfDiagnosticsRepair, request));
+        Assert.ThrowsExactly<EndpointRpcPayloadException>(() => _validator.ValidateResponse(
+            EndpointOperationId.RunSelfDiagnosticsAndRepair, new RunSelfDiagnosticsAndRepairEndpointResponse
+            {
+                Result = new SelfDiagnosticsResultResponse { Healthy = true, RecoveryPlanId = new string('A', 64) }
+            }));
+    }
 
     [TestMethod]
     public void MissingIdentifierIsRejectedBeforeDispatch()

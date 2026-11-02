@@ -149,6 +149,8 @@ public sealed class EndpointOperationParityTests
         AssertCommitModel(EndpointOperationId.ExportCustomUserColorsToUser, EndpointMutationCommitModel.MultiStageRecoverableCommit);
         AssertCommitModel(EndpointOperationId.ExportPasswordTagsToUser, EndpointMutationCommitModel.MultiStageRecoverableCommit);
         AssertCommitModel(EndpointOperationId.GetSavedPasswords, EndpointMutationCommitModel.NoDurableMutation);
+        AssertCommitModel(EndpointOperationId.RunSelfDiagnosticsAndRepair, EndpointMutationCommitModel.MultiStageRecoverableCommit);
+        AssertCommitModel(EndpointOperationId.ConfirmSelfDiagnosticsRepair, EndpointMutationCommitModel.MultiStageRecoverableCommit);
     }
 
     [TestMethod]

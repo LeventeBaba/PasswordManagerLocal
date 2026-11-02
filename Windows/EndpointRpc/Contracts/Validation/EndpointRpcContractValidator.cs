@@ -51,6 +51,7 @@ public sealed class EndpointRpcContractValidator
         typeof(ExportPasswordTagsToUserEndpointRequest),
         typeof(UpdatePasswordTagEndpointRequest),
         typeof(RunSelfDiagnosticsAndRepairEndpointRequest),
+        typeof(ConfirmSelfDiagnosticsRepairEndpointRequest),
     };
 
     private static readonly IReadOnlySet<Type> ResponseTypes = new HashSet<Type>
@@ -72,6 +73,7 @@ public sealed class EndpointRpcContractValidator
         typeof(GetSavedPasswordsEndpointResponse),
         typeof(GetUnsecurePasswordEndpointResponse),
         typeof(RunSelfDiagnosticsAndRepairEndpointResponse),
+        typeof(ConfirmSelfDiagnosticsRepairEndpointResponse),
     };
 
     public bool CanValidateRequest(Type type) => RequestTypes.Contains(type);
@@ -126,6 +128,7 @@ public sealed class EndpointRpcContractValidator
             EndpointOperationId.ExportPasswordTagsToUser when value is ExportPasswordTagsToUserEndpointRequest request => Validate(request),
             EndpointOperationId.UpdatePasswordTag when value is UpdatePasswordTagEndpointRequest request => Validate(request),
             EndpointOperationId.RunSelfDiagnosticsAndRepair when value is RunSelfDiagnosticsAndRepairEndpointRequest request => Validate(request),
+            EndpointOperationId.ConfirmSelfDiagnosticsRepair when value is ConfirmSelfDiagnosticsRepairEndpointRequest request => Validate(request),
                 _ => false
             };
         }
@@ -187,6 +190,7 @@ public sealed class EndpointRpcContractValidator
             EndpointOperationId.ExportPasswordTagsToUser when value is EmptyEndpointResponse response => Validate(response),
             EndpointOperationId.UpdatePasswordTag when value is EmptyEndpointResponse response => Validate(response),
             EndpointOperationId.RunSelfDiagnosticsAndRepair when value is RunSelfDiagnosticsAndRepairEndpointResponse response => Validate(response),
+            EndpointOperationId.ConfirmSelfDiagnosticsRepair when value is ConfirmSelfDiagnosticsRepairEndpointResponse response => Validate(response),
                 _ => false
             };
         }
@@ -352,6 +356,7 @@ public sealed class EndpointRpcContractValidator
     private static bool Validate(ExportPasswordTagsToUserEndpointRequest value) => ValidGuid(value.SourceToken) && value.Request is not null && value.Request.Validate(out _);
     private static bool Validate(UpdatePasswordTagEndpointRequest value) => ValidGuid(value.Token) && value.Request is not null && value.Request.Validate(out _);
     private static bool Validate(RunSelfDiagnosticsAndRepairEndpointRequest value) => ValidGuid(value.Token);
+    private static bool Validate(ConfirmSelfDiagnosticsRepairEndpointRequest value) => ValidGuid(value.Token) && ValidRecoveryPlanId(value.PlanId) && ValidSensitive(value.MasterPassword);
 
     private static bool Validate(RegisterEndpointResponse value) => ValidGuid(value.Token);
     private static bool Validate(LoginEndpointResponse value) => ValidGuid(value.Token);
@@ -371,10 +376,16 @@ public sealed class EndpointRpcContractValidator
     private static bool Validate(InitializeRememberMeSessionEndpointResponse value) => ValidGuid(value.Token);
     private static bool Validate(GetSavedPasswordsEndpointResponse value) => ValidSavedPasswords(value.Passwords);
     private static bool Validate(GetUnsecurePasswordEndpointResponse value) => ValidSensitive(value.Password);
-    private static bool Validate(RunSelfDiagnosticsAndRepairEndpointResponse value) =>
-        value.Result is not null && value.Result.RepairedCount is >= 0 and <= 100_000 &&
-        value.Result.Findings is not null && value.Result.Findings.Count <= 32 &&
-        value.Result.Findings.All(finding => ValidString(finding, 1, 64));
+    private static bool Validate(RunSelfDiagnosticsAndRepairEndpointResponse value) => ValidSelfDiagnostics(value.Result);
+    private static bool Validate(ConfirmSelfDiagnosticsRepairEndpointResponse value) => ValidSelfDiagnostics(value.Result);
+    private static bool ValidRecoveryPlanId(string? value) => value is { Length: 64 } && value.All(Uri.IsHexDigit);
+    private static bool ValidSelfDiagnostics(PasswordManagerLocal.Common.Contracts.Responses.SelfDiagnosticsResultResponse? value) =>
+        value is not null && value.RepairedCount is >= 0 and <= 100_000 &&
+        value.Findings is not null && value.Findings.Count <= 32 && value.Findings.All(code => ValidString(code, 1, 64)) &&
+        value.RecoveryRisks is not null && value.RecoveryRisks.Count <= 16 && value.RecoveryRisks.All(code => ValidString(code, 1, 64)) &&
+        (value.RecoveryPlanId is null || (!value.Healthy && ValidRecoveryPlanId(value.RecoveryPlanId))) &&
+        (value.RecoveryJournalId is null || ValidGuid(value.RecoveryJournalId.Value)) &&
+        value.RecoveryAffectedDevices is >= 0 and <= 100_000 && value.RecoveryPendingSnapshots is >= 0 and <= 100_000;
 
     private static bool ValidGuid(Guid value) => value != Guid.Empty;
 

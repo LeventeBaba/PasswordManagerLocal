@@ -418,7 +418,9 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             snapshot.RemovalCutoffs.Select(ToCutoff).ToArray(), []);
 
         var controlItems = new List<ValidatedControlOperation>();
-        foreach (var operationSnapshot in snapshot.ControlOperations)
+        // Legacy sources may still include rejected forensic rows. They carry no
+        // bootstrap authority and must not be parsed, applied, or relayed here.
+        foreach (var operationSnapshot in snapshot.ControlOperations.Where(operation => operation.Status != UserControlOperationStatus.Rejected))
         {
             var envelope = UserControlOperationEnvelopeUtil.Deserialize(operationSnapshot.EnvelopePayload);
             if (envelope.UserId != snapshot.PrimaryUserId)

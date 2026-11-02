@@ -9,6 +9,20 @@ internal static class AppDatabaseInitializer
     {
         await db.Database.EnsureCreatedAsync(ct);
         await RunQuickCheckAsync(db, ct);
+        // EnsureCreated does not add tables to an existing database. This additive,
+        // idempotent upgrade runs only after the existing database passes quick_check.
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "UserRecoveryJournals" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_UserRecoveryJournals" PRIMARY KEY,
+                "UserId" TEXT NOT NULL,
+                "State" INTEGER NOT NULL,
+                "CreatedAtUtc" TEXT NOT NULL,
+                "ProtectedKey" BLOB NOT NULL,
+                "EncryptedPayload" BLOB NOT NULL,
+                "PayloadHash" BLOB NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS "IX_UserRecoveryJournals_UserId" ON "UserRecoveryJournals" ("UserId");
+            """, ct);
     }
 
     private static async Task RunQuickCheckAsync(AppDbContext db, CancellationToken ct)

@@ -165,7 +165,10 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
             targetAuthorization.AdditionOperationId != authorizingAdditionOperationId || targetAuthorization.AdditionOperationHash is null)
             throw new InvalidDataException("The target authorization does not reference the committed addition operation.");
 
-        var operations = await operationsRepository.ListForUserAsync(userId, ct);
+        // Rejected records are local forensic evidence, not part of the canonical
+        // bootstrap. Relaying them can poison an otherwise healthy enrollment.
+        var operations = (await operationsRepository.ListForUserAsync(userId, ct))
+            .Where(operation => operation.Status != UserControlOperationStatus.Rejected).ToList();
         var addition = operations.SingleOrDefault(operation => operation.OperationId == authorizingAdditionOperationId)
             ?? throw new InvalidDataException("The committed device-addition operation is missing.");
         if (addition.Status != UserControlOperationStatus.Applied || addition.OperationType != UserControlOperationType.DeviceAddition ||

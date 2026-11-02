@@ -417,6 +417,7 @@ public sealed class NamedPipeEndpointsProxyMappingTests
             new(nameof(IEndpoints.DeletePasswordTagAsync), () => proxy.DeletePasswordTagAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId)),
             new(nameof(IEndpoints.ExportPasswordTagsToUserAsync), () => proxy.ExportPasswordTagsToUserAsync(EndpointRpcTestData.Token, exportTags)),
             new(nameof(IEndpoints.UpdatePasswordTagAsync), () => proxy.UpdatePasswordTagAsync(EndpointRpcTestData.Token, updateTag)),
+            new(nameof(IEndpoints.ConfirmSelfDiagnosticsRepairAsync), () => proxy.ConfirmSelfDiagnosticsRepairAsync(EndpointRpcTestData.Token, new string('A', 64), password)),
             new(nameof(IEndpoints.RunSelfDiagnosticsAndRepairAsync), () => proxy.RunSelfDiagnosticsAndRepairAsync(EndpointRpcTestData.Token))
         ];
     }

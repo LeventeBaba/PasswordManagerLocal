@@ -68,6 +68,9 @@ public sealed class AndroidAttachmentAuthorizedEndpoints : IEndpoints
     public Task<SelfDiagnosticsResultResponse> RunSelfDiagnosticsAndRepairAsync(Guid token, CancellationToken ct = default) =>
         InvokeAsync(() => _inner.RunSelfDiagnosticsAndRepairAsync(token, ct));
 
+    public Task<SelfDiagnosticsResultResponse> ConfirmSelfDiagnosticsRepairAsync(Guid token, string planId, byte[] masterPassword, CancellationToken ct = default) =>
+        InvokeAsync(() => _inner.ConfirmSelfDiagnosticsRepairAsync(token, planId, masterPassword, ct));
+
     public Task SetUserDeviceNameAsync(Guid token, Guid deviceId, string name, CancellationToken ct = default) =>
         InvokeAsync(() => _inner.SetUserDeviceNameAsync(token, deviceId, name, ct));
 

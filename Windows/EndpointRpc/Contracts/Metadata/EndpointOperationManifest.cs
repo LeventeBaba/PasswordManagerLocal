@@ -48,7 +48,8 @@ public static class EndpointOperationManifest
         new(EndpointOperationId.DeletePasswordTag, nameof(PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints.DeletePasswordTagAsync), typeof(DeletePasswordTagEndpointRequest), typeof(EmptyEndpointResponse), EndpointMutationCommitModel.CommitThenFollowUp, EndpointRpcLimits.MaximumSmallRequestPayloadSize, EndpointRpcLimits.MaximumSmallResponsePayloadSize),
         new(EndpointOperationId.ExportPasswordTagsToUser, nameof(PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints.ExportPasswordTagsToUserAsync), typeof(ExportPasswordTagsToUserEndpointRequest), typeof(EmptyEndpointResponse), EndpointMutationCommitModel.MultiStageRecoverableCommit, EndpointRpcLimits.MaximumBulkRequestPayloadSize, EndpointRpcLimits.MaximumSmallResponsePayloadSize),
         new(EndpointOperationId.UpdatePasswordTag, nameof(PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints.UpdatePasswordTagAsync), typeof(UpdatePasswordTagEndpointRequest), typeof(EmptyEndpointResponse), EndpointMutationCommitModel.CommitThenFollowUp, EndpointRpcLimits.MaximumSmallRequestPayloadSize, EndpointRpcLimits.MaximumSmallResponsePayloadSize),
-        new(EndpointOperationId.RunSelfDiagnosticsAndRepair, nameof(PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints.RunSelfDiagnosticsAndRepairAsync), typeof(RunSelfDiagnosticsAndRepairEndpointRequest), typeof(RunSelfDiagnosticsAndRepairEndpointResponse), EndpointMutationCommitModel.SingleAtomicCommit, EndpointRpcLimits.MaximumSmallRequestPayloadSize, EndpointRpcLimits.MaximumSmallResponsePayloadSize),
+        new(EndpointOperationId.RunSelfDiagnosticsAndRepair, nameof(PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints.RunSelfDiagnosticsAndRepairAsync), typeof(RunSelfDiagnosticsAndRepairEndpointRequest), typeof(RunSelfDiagnosticsAndRepairEndpointResponse), EndpointMutationCommitModel.MultiStageRecoverableCommit, EndpointRpcLimits.MaximumSmallRequestPayloadSize, EndpointRpcLimits.MaximumSmallResponsePayloadSize),
+        new(EndpointOperationId.ConfirmSelfDiagnosticsRepair, nameof(PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints.ConfirmSelfDiagnosticsRepairAsync), typeof(ConfirmSelfDiagnosticsRepairEndpointRequest), typeof(ConfirmSelfDiagnosticsRepairEndpointResponse), EndpointMutationCommitModel.MultiStageRecoverableCommit, EndpointRpcLimits.MaximumSmallRequestPayloadSize, EndpointRpcLimits.MaximumSmallResponsePayloadSize),
     ];
 
     public static IReadOnlyList<EndpointOperationDescriptor> All => Descriptors;
@@ -96,6 +97,7 @@ public static class EndpointOperationManifest
         EndpointOperationId.ExportPasswordTagsToUser => Descriptors[38],
         EndpointOperationId.UpdatePasswordTag => Descriptors[39],
         EndpointOperationId.RunSelfDiagnosticsAndRepair => Descriptors[40],
+        EndpointOperationId.ConfirmSelfDiagnosticsRepair => Descriptors[41],
         _ => throw new ArgumentOutOfRangeException(nameof(operationId))
     };
 }
