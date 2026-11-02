@@ -92,7 +92,7 @@ $forbiddenNames = @(
     'mscordaccore.dll', 'mscordbi.dll', 'Microsoft.DiaSymReader.Native.amd64.dll'
 )
 foreach ($file in Get-ChildItem -LiteralPath $publish -Recurse -File) {
-    if ($file.Extension -ieq '.pdb' -or $file.Name -match '\.Tests?(\.|$)' -or $forbiddenNames -contains $file.Name -or $file.Name -like 'mscordaccore_*.dll') {
+    if ($file.Extension -in @('.ps1', '.bat', '.cmd') -or $file.Extension -ieq '.pdb' -or $file.Name -match '\.Tests?(\.|$)' -or $forbiddenNames -contains $file.Name -or $file.Name -like 'mscordaccore_*.dll') {
         throw "Development/debug/test artifact is present: $($file.FullName)"
     }
     if ($file.FullName.IndexOf('\staging\', [StringComparison]::OrdinalIgnoreCase) -ge 0 -or

@@ -19,9 +19,7 @@ public sealed class WindowsProductValidator
         "PasswordManagerLocal.Windows.EndpointRpc.Client.dll",
         "PasswordManagerLocal.Windows.Ipc.dll",
         "Avalonia.Win32.dll",
-        "Avalonia.Skia.dll",
-        "ConfigureWindowsFirewall.ps1",
-        "ConfigureWindowsFirewall.bat"
+        "Avalonia.Skia.dll"
     ];
 
     private static readonly string[] AgentRequiredFiles =
@@ -236,7 +234,10 @@ public sealed class WindowsProductValidator
             .Where(path =>
             {
                 var name = Path.GetFileName(path);
-                return name.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase) ||
+                return name.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase) ||
+                       name.EndsWith(".bat", StringComparison.OrdinalIgnoreCase) ||
+                       name.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) ||
+                       name.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase) ||
                        name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) ||
                        name.Contains("testhost", StringComparison.OrdinalIgnoreCase) ||
                        name.Contains("Microsoft.TestPlatform", StringComparison.OrdinalIgnoreCase) ||

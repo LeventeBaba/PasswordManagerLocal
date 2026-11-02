@@ -28,7 +28,7 @@ public static class FirewallPermissionStartupPrompt
         UiPreferencesService preferences,
         CancellationToken ct = default)
     {
-        await EnsureConfiguredAsync(owner, preferences, false, ct);
+        await EnsureConfiguredAsync(owner, preferences, ct);
     }
 
 
@@ -36,7 +36,7 @@ public static class FirewallPermissionStartupPrompt
     public static Task<bool> EnsureConfiguredAsync(
         UiPreferencesService preferences,
         CancellationToken ct = default) =>
-        EnsureConfiguredAsync(ResolveOwner(), preferences, false, ct);
+        EnsureConfiguredAsync(ResolveOwner(), preferences, ct);
 
 
 
@@ -53,7 +53,7 @@ public static class FirewallPermissionStartupPrompt
 
         try
         {
-            await EnsureConfiguredAsync(ResolveOwner(), preferences, true, ct);
+            await EnsureConfiguredAsync(ResolveOwner(), preferences, ct);
         }
         catch
         {
@@ -65,21 +65,16 @@ public static class FirewallPermissionStartupPrompt
     private static async Task<bool> EnsureConfiguredAsync(
         Window? owner,
         UiPreferencesService preferences,
-        bool forceVerification,
         CancellationToken ct)
     {
         if (!OperatingSystem.IsWindows())
             return true;
 
-        if (!forceVerification && WindowsFirewallConfigurationStore.IsConfigured())
-            return true;
-
         await PromptLock.WaitAsync(ct);
         try
         {
-            if (!forceVerification && WindowsFirewallConfigurationStore.IsConfigured())
-                return true;
-
+            // A saved success flag cannot prove that rules still match the Agent
+            // path, current ports, or effective Windows network policy.
             var check = await CheckFirewallAsync(ct);
             if (!check.IsSupported)
                 return true;
@@ -92,8 +87,13 @@ public static class FirewallPermissionStartupPrompt
 
             WindowsFirewallConfigurationStore.SetConfigured(false);
 
-            if (!check.CanRequestPermission || owner is null)
+            if (owner is null)
                 return false;
+            if (!check.CanRequestPermission)
+            {
+                await RunOnUiThreadAsync(() => ShowErrorDialogAsync(owner, preferences, check.Details));
+                return false;
+            }
 
             var approved = await RunOnUiThreadAsync(() => ShowConfirmDialogAsync(owner, preferences));
             if (!approved)

@@ -8,6 +8,27 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Packaging;
 public sealed class WindowsPublicationArchitectureTests
 {
     [TestMethod]
+    public void FirewallScriptsAreDevelopmentOnlyAndRejectedFromPublications()
+    {
+        var root = GetRepositoryRoot();
+        var project = XDocument.Load(Path.Combine(root, "Windows", "Frontend", "PasswordManagerLocal.Windows.Frontend.csproj"));
+        var content = project.Descendants().Where(element => element.Name.LocalName is "None" or "Content")
+            .Select(element => (string?)element.Attribute("Include") ?? string.Empty).ToArray();
+        Assert.IsFalse(content.Any(path => path.Contains("WindowsFirewall", StringComparison.OrdinalIgnoreCase)));
+        var validator = File.ReadAllText(Path.Combine(root, "Windows", "Packaging", "WindowsProductValidator.cs"));
+        var verifier = File.ReadAllText(Path.Combine(root, "Tools", "Windows", "VerifyWindowsPublishedLayout.ps1"));
+        foreach (var extension in new[] { ".ps1", ".bat", ".cmd" })
+        {
+            StringAssert.Contains(validator, $"name.EndsWith(\"{extension}\", StringComparison.OrdinalIgnoreCase)");
+            StringAssert.Contains(verifier, $"'{extension}'");
+        }
+        var signing = File.ReadAllText(Path.Combine(root, "Tools", "Windows", "WindowsReleaseSigning.ps1"));
+        Assert.IsFalse(signing.Contains("ConfigureWindowsFirewall", StringComparison.Ordinal));
+        Assert.IsFalse(signing.Contains("ResetWindowsFirewall", StringComparison.Ordinal));
+        Assert.IsTrue(File.Exists(Path.Combine(root, "Tools", "ResetWindowsFirewall.ps1")));
+    }
+
+    [TestMethod]
     public void ReleaseWinX64ProjectsDeclareCompatibleTrimSettings()
     {
         var root = GetRepositoryRoot();

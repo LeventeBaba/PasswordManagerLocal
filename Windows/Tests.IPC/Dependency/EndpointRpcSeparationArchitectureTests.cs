@@ -139,27 +139,28 @@ public sealed class EndpointRpcSeparationArchitectureTests
     }
 
     [TestMethod]
-    public void FirewallManagerUsesSharedPortAndTargetsSiblingAgentExecutable()
+    public void FirewallUsesNativeApiSharedPortsAndTheSiblingAgentWithoutScripts()
     {
-        var source = File.ReadAllText(Project(
-            GetRepositoryRoot(),
-            "Windows",
-            "Frontend",
-            "WindowsFirewallPermissionManager.cs"));
-
-        StringAssert.Contains(source, "SyncProtocolDefaults.TcpPort");
-        StringAssert.Contains(source, "WindowsExecutableNames.AgentExecutableFileName");
-        Assert.IsFalse(source.Contains("AgentDeploymentDirectoryName", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("Environment.ProcessPath", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("BackendDebugLog", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("SyncConstants", StringComparison.Ordinal));
-
-        var script = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(),
-            "Tools",
-            "ConfigureWindowsFirewall.ps1"));
-        StringAssert.Contains(script, "Join-Path $PSScriptRoot 'PasswordManagerLocal.Windows.Agent.exe'");
-        Assert.IsFalse(script.Contains("AgentRuntime", StringComparison.Ordinal));
+        var root = GetRepositoryRoot();
+        var manager = File.ReadAllText(Project(root, "Windows", "Frontend", "WindowsFirewallPermissionManager.cs"));
+        var setup = File.ReadAllText(Project(root, "Windows", "Frontend", "Firewall", "WindowsFirewallSetup.cs"));
+        var service = File.ReadAllText(Project(root, "Windows", "Frontend", "Firewall", "WindowsFirewallConfigurationService.cs"));
+        var native = File.ReadAllText(Project(root, "Windows", "Frontend", "Firewall", "WindowsFirewallPolicy.cs"));
+        StringAssert.Contains(service, "SyncProtocolDefaults.TcpPort");
+        StringAssert.Contains(service, "SyncProtocolDefaults.DiscoveryUdpPort");
+        StringAssert.Contains(setup, "WindowsExecutableNames.AgentExecutableFileName");
+        StringAssert.Contains(manager, "Verb = \"runas\"");
+        StringAssert.Contains(native, "CoCreateInstance");
+        foreach (var source in new[] { manager, setup, service, native })
+        {
+            Assert.IsFalse(source.Contains("powershell.exe", StringComparison.OrdinalIgnoreCase));
+            Assert.IsFalse(source.Contains("GetTempPath", StringComparison.Ordinal));
+            Assert.IsFalse(source.Contains("Environment.ProcessPath", StringComparison.Ordinal));
+            Assert.IsFalse(source.Contains("BackendDebugLog", StringComparison.Ordinal));
+            Assert.IsFalse(source.Contains("SyncConstants", StringComparison.Ordinal));
+        }
+        Assert.IsFalse(File.Exists(Project(root, "Tools", "ConfigureWindowsFirewall.ps1")));
+        Assert.IsFalse(File.Exists(Project(root, "Tools", "ConfigureWindowsFirewall.bat")));
     }
 
     private static string[] ProjectReferenceNames(string projectPath) =>

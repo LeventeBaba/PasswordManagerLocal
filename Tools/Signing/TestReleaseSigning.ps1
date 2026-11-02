@@ -130,12 +130,12 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $product 'hu') -Force | Out-Null
     foreach ($name in @('PasswordManagerLocal.exe', 'PasswordManagerLocal.dll', 'PasswordManagerLocal.Windows.Agent.exe',
         'PasswordManagerLocal.Windows.Agent.dll', 'PasswordManagerLocal.Common.Backend.dll', 'hu/PasswordManagerLocal.Common.Frontend.resources.dll',
-        'ConfigureWindowsFirewall.ps1', 'System.Runtime.dll', 'Avalonia.dll', 'ThirdParty.exe', 'ThirdParty.ps1')) {
+        'ResetWindowsFirewall.ps1', 'System.Runtime.dll', 'Avalonia.dll', 'ThirdParty.exe', 'ThirdParty.ps1')) {
         [IO.File]::WriteAllText((Join-Path $product $name), 'test input')
     }
     $owned = @(Get-WindowsOwnedSigningFiles -ProductDirectory $product)
-    Assert-SigningCheck ($owned.Count -eq 7) 'Select both own executables, own DLLs, satellite and firewall script'
-    Assert-SigningCheck (@($owned | Where-Object { $_.Name -in @('System.Runtime.dll', 'Avalonia.dll', 'ThirdParty.exe', 'ThirdParty.ps1') }).Count -eq 0) 'Preserve third-party files'
+    Assert-SigningCheck ($owned.Count -eq 6) 'Select both own executables, own DLLs and satellite without development scripts'
+    Assert-SigningCheck (@($owned | Where-Object { $_.Name -in @('System.Runtime.dll', 'Avalonia.dll', 'ThirdParty.exe', 'ThirdParty.ps1', 'ResetWindowsFirewall.ps1') }).Count -eq 0) 'Exclude third-party files and development scripts'
     Remove-Item -LiteralPath (Join-Path $product 'PasswordManagerLocal.Windows.Agent.dll')
     Assert-SigningFailure { Get-WindowsOwnedSigningFiles -ProductDirectory $product } 'Required signing input is missing'
 
@@ -153,7 +153,7 @@ try {
     $signatureReport = Join-Path $temp 'signatures.json'
     Invoke-WindowsProductSigning -ProductDirectory $product -Context $context -ReportPath $signatureReport
     $report = Get-Content -LiteralPath $signatureReport -Raw | ConvertFrom-Json
-    Assert-SigningCheck ($report.Files.Count -eq 7) 'Record only verified application signatures'
+    Assert-SigningCheck ($report.Files.Count -eq 6) 'Record only verified application signatures'
     Assert-SigningCheck (@($report.Files | Where-Object { $_.Sha256 -notmatch '^[0-9A-F]{64}$' }).Count -eq 0) 'Record final SHA-256 hashes'
     $script:testSignature.TimeStamperCertificate = $null
     Assert-SigningFailure { Assert-WindowsReleaseSignature -Path $release -Context $context } 'valid, timestamped signature'

@@ -25,6 +25,16 @@ internal sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // Handle the narrow elevated operation before touching user data, instance
+        // locks, Agent IPC, or Avalonia. The regular app remains unelevated.
+        if (args.Contains(Firewall.WindowsFirewallSetup.Argument, StringComparer.Ordinal))
+        {
+            Environment.ExitCode = args.Length == 1
+                ? Firewall.WindowsFirewallSetup.Run()
+                : Firewall.WindowsFirewallSetup.InvalidArgumentsExitCode;
+            return;
+        }
+
         var applicationDataDirectory = new WindowsApplicationDataPathProvider()
             .GetApplicationDataDirectory();
         var names = new WindowsInstanceNameProvider(

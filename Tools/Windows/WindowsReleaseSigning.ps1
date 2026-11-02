@@ -62,8 +62,7 @@ function Get-WindowsOwnedSigningFiles {
         if (-not (Test-Path -LiteralPath (Join-Path $ProductDirectory $required) -PathType Leaf)) { throw "Required signing input is missing: $required" }
     }
     return @(Get-ChildItem -LiteralPath $ProductDirectory -Recurse -File | Where-Object {
-        ($_.Extension -in @('.dll', '.exe') -and $_.BaseName -match '^PasswordManagerLocal(?:\.|$)') -or
-        $_.Name -eq 'ConfigureWindowsFirewall.ps1'
+        $_.Extension -in @('.dll', '.exe') -and $_.BaseName -match '^PasswordManagerLocal(?:\.|$)'
     } | Sort-Object FullName)
 }
 

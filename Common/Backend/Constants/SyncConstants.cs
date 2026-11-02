@@ -10,7 +10,7 @@ public static class SyncConstants
     public const int SyncProtocolVersion = 13;
     public const int MaxPeerEndpointHints = 32;
     public const string LocalDiscoveryMulticastAddress = "239.255.67.67";
-    public const int LocalDiscoveryPort = 26689;
+    public const int LocalDiscoveryPort = SyncProtocolDefaults.DiscoveryUdpPort;
     public const int LocalDiscoveryProtocolVersion = 2;
     public const int LocalDiscoveryPeerThrottleSeconds = 20;
     public const int LocalDiscoveryEnrollmentQueryIntervalSeconds = 2;
