@@ -189,6 +189,120 @@ public sealed class UserMembershipAuthorizationServiceTests
         MSTestAssert.AreEqual(3L, authorized.StartedMembershipEpoch);
     }
 
+    [TestMethod]
+    [DataRow(1L)]
+    [DataRow(2L)]
+    [DataRow(3L)]
+    [TestCategory("Backend")]
+    [TestCategory("Security")]
+    public async Task IncompleteRemovalKeyRange_IsRejectedBeforeAuthorizationOrCutoffsChange(long missingEpoch)
+    {
+        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        var identity = CreateIdentity(signingKey);
+        var user = CreateUser();
+        var service = new UserMembershipAuthorizationService(database.UserMembershipAuthorizations, database.UserOriginRemovalCutoffs, identity);
+        var authorization = await service.CreateGenesisAsync(user);
+        await database.UnitOfWork.SaveChangesAsync();
+        var removal = new DeviceRemovalPayload
+        {
+            UserId = user.UId, RemovedDeviceId = identity.LocalDeviceId,
+            PreviousMembershipEpoch = 1, ResultingMembershipEpoch = 2, KeyEpoch = 3,
+            Origins = Enumerable.Range(1, 3).Where(epoch => epoch != missingEpoch)
+                .Select(epoch => CreateCutoff(authorization, epoch, 0, 0)).ToList()
+        };
+        UserControlOperationEnvelopeUtil.FinalizeDeviceRemovalPayload(removal);
+
+        await MSTestAssert.ThrowsExactlyAsync<InvalidDataException>(() => service.EndAuthorizationAsync(
+            authorization, removal, Guid.NewGuid(), RandomNumberGenerator.GetBytes(32), DateTimeOffset.UtcNow));
+        // Even a caller that saves after catching the error must not persist a partial removal.
+        await database.UnitOfWork.SaveChangesAsync();
+        database.Db.ChangeTracker.Clear();
+        MSTestAssert.IsTrue((await database.UserMembershipAuthorizations.GetByIdAsync(authorization.AuthorizationId))!.IsActive);
+        MSTestAssert.AreEqual(0, (await database.UserOriginRemovalCutoffs.ListForUserAsync(user.UId)).Count);
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Security")]
+    public async Task ConflictingLaterCutoff_DoesNotLeaveEarlierCutoffOrEndedAuthorizationTracked()
+    {
+        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        var identity = CreateIdentity(signingKey);
+        var user = CreateUser();
+        var service = new UserMembershipAuthorizationService(database.UserMembershipAuthorizations, database.UserOriginRemovalCutoffs, identity);
+        var authorization = await service.CreateGenesisAsync(user);
+        await database.UserOriginRemovalCutoffs.AddAsync(new UserOriginRemovalCutoff
+        {
+            UserId = user.UId, DeviceId = identity.LocalDeviceId, OriginInstanceId = identity.OriginInstanceId,
+            UserKeyEpoch = 2, AuthorizationId = authorization.AuthorizationId,
+            RemovalOperationId = Guid.NewGuid(), RemovalOperationHash = RandomNumberGenerator.GetBytes(32),
+            ResultingMembershipEpoch = 2
+        });
+        await database.UnitOfWork.SaveChangesAsync();
+        var removal = new DeviceRemovalPayload
+        {
+            UserId = user.UId, RemovedDeviceId = identity.LocalDeviceId,
+            PreviousMembershipEpoch = 1, ResultingMembershipEpoch = 2, KeyEpoch = 2,
+            Origins = [CreateCutoff(authorization, 1, 0, 0), CreateCutoff(authorization, 2, 0, 0)]
+        };
+        UserControlOperationEnvelopeUtil.FinalizeDeviceRemovalPayload(removal);
+
+        await MSTestAssert.ThrowsExactlyAsync<InvalidOperationException>(() => service.EndAuthorizationAsync(
+            authorization, removal, Guid.NewGuid(), RandomNumberGenerator.GetBytes(32), DateTimeOffset.UtcNow));
+        await database.UnitOfWork.SaveChangesAsync();
+        database.Db.ChangeTracker.Clear();
+        MSTestAssert.IsTrue((await database.UserMembershipAuthorizations.GetByIdAsync(authorization.AuthorizationId))!.IsActive);
+        var retained = await database.UserOriginRemovalCutoffs.ListForUserAsync(user.UId);
+        MSTestAssert.AreEqual(1, retained.Count);
+        MSTestAssert.AreEqual(2L, retained[0].UserKeyEpoch);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task OptionalMembershipHashes_NullAndEmptyStorageRemainAbsentAndDoNotBlockRemoval(bool emptyBlobs)
+    {
+        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        var identity = CreateIdentity(signingKey);
+        var user = CreateUser();
+        var service = new UserMembershipAuthorizationService(database.UserMembershipAuthorizations, database.UserOriginRemovalCutoffs, identity);
+        var authorization = await service.CreateGenesisAsync(user);
+        await database.UnitOfWork.SaveChangesAsync();
+        if (emptyBlobs)
+        {
+            // Seed the actual persisted representation rather than going through a
+            // model setter that already canonicalizes an empty optional hash.
+            await database.Db.Database.ExecuteSqlRawAsync(
+                "UPDATE UserMembershipAuthorizations SET AdditionOperationHash = X'', RemovalOperationHash = X''");
+        }
+        database.Db.ChangeTracker.Clear();
+        var retained = (await database.UserMembershipAuthorizations.GetByIdAsync(authorization.AuthorizationId))!;
+        MSTestAssert.IsNull(retained.AdditionOperationHash);
+        MSTestAssert.IsNull(retained.RemovalOperationHash);
+        PasswordManagerLocal.Common.Backend.Sync.Tombstones.TombstoneGarbageCollectionRules.ValidateEvidenceStructure(
+            user.UId, 1, 1, [retained], [], []);
+
+        var removal = new DeviceRemovalPayload
+        {
+            UserId = user.UId, RemovedDeviceId = identity.LocalDeviceId,
+            PreviousMembershipEpoch = 1, ResultingMembershipEpoch = 2, KeyEpoch = 1,
+            Origins = [CreateCutoff(retained, 1, 0, 0)]
+        };
+        UserControlOperationEnvelopeUtil.FinalizeDeviceRemovalPayload(removal);
+        await service.EndAuthorizationAsync(retained, removal, Guid.NewGuid(), RandomNumberGenerator.GetBytes(32), DateTimeOffset.UtcNow);
+        await database.UnitOfWork.SaveChangesAsync();
+        database.Db.ChangeTracker.Clear();
+        var ended = (await database.UserMembershipAuthorizations.GetByIdAsync(authorization.AuthorizationId))!;
+        MSTestAssert.IsFalse(ended.IsActive);
+        MSTestAssert.HasCount(32, ended.RemovalOperationHash!);
+        MSTestAssert.HasCount(1, await database.UserOriginRemovalCutoffs.ListForUserAsync(user.UId));
+    }
+
     private static DeviceRemovalOriginCutoffPayload CreateCutoff(UserMembershipAuthorization authorization, long keyEpoch, long snapshotRevision, long controlSequence) =>
         new()
         {

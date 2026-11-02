@@ -29,9 +29,12 @@
                           Text="{Binding CustomColorsSearchModeNameLabel}"
                           VerticalAlignment="Center" />
                       <ToggleSwitch
+                          Classes="searchFieldToggle"
+                          Classes.searchFieldLocked="{Binding !CanToggleCustomColorSearchName}"
                           Grid.Column="1"
                           IsChecked="{Binding IsCustomColorSearchNameEnabled, Mode=TwoWay}"
                           IsEnabled="{Binding CanToggleCustomColorSearchName}"
+                          AutomationProperties.HelpText="{Binding SearchFieldLockedHint}"
                           MinWidth="0"
                           OnContent="{Binding SwitchOnLabel}"
                           OffContent="{Binding SwitchOffLabel}"
@@ -42,14 +45,21 @@
                           Text="{Binding CustomColorsSearchModeColorCodeLabel}"
                           VerticalAlignment="Center" />
                       <ToggleSwitch
+                          Classes="searchFieldToggle"
+                          Classes.searchFieldLocked="{Binding !CanToggleCustomColorSearchCode}"
                           Grid.Column="1"
                           IsChecked="{Binding IsCustomColorSearchCodeEnabled, Mode=TwoWay}"
                           IsEnabled="{Binding CanToggleCustomColorSearchCode}"
+                          AutomationProperties.HelpText="{Binding SearchFieldLockedHint}"
                           MinWidth="0"
                           OnContent="{Binding SwitchOnLabel}"
                           OffContent="{Binding SwitchOffLabel}"
                           AutomationProperties.Name="{Binding CustomColorsSearchModeColorCodeLabel}" />
                     </Grid>
+                    <TextBlock Text="{Binding SearchFieldLockedHint}"
+                               IsVisible="{Binding IsCustomColorSearchFieldLocked}"
+                               Foreground="{DynamicResource AppBrush.Text.Secondary}"
+                               TextWrapping="Wrap" MaxWidth="260" Margin="0,4,0,0" />
                   </StackPanel>
                 </Border>
               </Flyout>

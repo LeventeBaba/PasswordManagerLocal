@@ -6,6 +6,9 @@ namespace PasswordManagerLocal.Common.Backend.Models;
 /// </summary>
 public sealed class UserMembershipAuthorization
 {
+    private byte[]? _additionOperationHash;
+    private byte[]? _removalOperationHash;
+
     public Guid AuthorizationId { get; set; }
     public Guid UserId { get; set; }
     public Guid DeviceId { get; set; }
@@ -22,9 +25,20 @@ public sealed class UserMembershipAuthorization
     public bool IsActive { get; set; }
     public bool IsGenesis { get; set; }
     public Guid? AdditionOperationId { get; set; }
-    public byte[]? AdditionOperationHash { get; set; }
+
+    // An empty optional hash carries no evidence, just like null. Normalize on
+    // read as well as write because EF can materialize through backing fields.
+    public byte[]? AdditionOperationHash
+    {
+        get => _additionOperationHash is { Length: 0 } ? null : _additionOperationHash;
+        set => _additionOperationHash = value is { Length: 0 } ? null : value;
+    }
     public Guid? RemovalOperationId { get; set; }
-    public byte[]? RemovalOperationHash { get; set; }
+    public byte[]? RemovalOperationHash
+    {
+        get => _removalOperationHash is { Length: 0 } ? null : _removalOperationHash;
+        set => _removalOperationHash = value is { Length: 0 } ? null : value;
+    }
     public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? EndedAtUtc { get; set; }
     public long Version { get; set; }

@@ -259,6 +259,36 @@ public sealed class UserTombstoneGarbageCollectorTests
                 []));
     }
 
+    [TestMethod]
+    [DataRow("hash")]
+    [DataRow("operation")]
+    [DataRow("membership")]
+    [DataRow("key")]
+    [DataRow("timestamp")]
+    [DataRow("duplicate-device")]
+    [TestCategory("Backend")]
+    [TestCategory("Security")]
+    public void ValidateEvidenceStructure_ActiveMembershipWithRealRemovalEvidenceStillFailsClosed(string evidence)
+    {
+        var userId = Guid.NewGuid();
+        var genesis = StructuralAuthorization(userId, 1, null, active: true, genesis: true);
+        var joined = StructuralAuthorization(userId, 2, null, active: true, genesis: false);
+        // Prove the baseline is valid before introducing each individual fault.
+        TombstoneGarbageCollectionRules.ValidateEvidenceStructure(userId, 1, 2, [genesis, joined], [], []);
+        switch (evidence)
+        {
+            case "hash": genesis.RemovalOperationHash = new byte[32]; break;
+            case "operation": genesis.RemovalOperationId = Guid.NewGuid(); break;
+            case "membership": genesis.EndedMembershipEpoch = 2; break;
+            case "key": genesis.MaximumKeyEpoch = 1; break;
+            case "timestamp": genesis.EndedAtUtc = DateTimeOffset.UtcNow; break;
+            case "duplicate-device": joined.DeviceId = genesis.DeviceId; break;
+            default: throw new AssertFailedException("Unknown evidence case.");
+        }
+        MSTestAssert.ThrowsExactly<InvalidDataException>(() =>
+            TombstoneGarbageCollectionRules.ValidateEvidenceStructure(userId, 1, 2, [genesis, joined], [], []));
+    }
+
     private static UserMembershipAuthorization StructuralAuthorization(
         Guid userId,
         long started,

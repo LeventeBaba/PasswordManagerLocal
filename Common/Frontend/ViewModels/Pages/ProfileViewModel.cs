@@ -607,6 +607,8 @@ public sealed class ProfileViewModel : ViewModelBase
 
     public bool CanToggleDeviceSearchType => CanToggleDeviceSearchMode(_isDeviceSearchTypeEnabled);
 
+    public bool IsDeviceSearchFieldLocked => EnabledDeviceSearchModeCount == 1;
+
     public PasswordSortOptionViewModel? SelectedDeviceSortOption
     {
         get => _selectedDeviceSortOption;
@@ -2239,6 +2241,7 @@ public sealed class ProfileViewModel : ViewModelBase
     {
         this.RaisePropertyChanged(nameof(CanToggleDeviceSearchName));
         this.RaisePropertyChanged(nameof(CanToggleDeviceSearchType));
+        this.RaisePropertyChanged(nameof(IsDeviceSearchFieldLocked));
     }
 
     private int EnabledDeviceSearchModeCount =>

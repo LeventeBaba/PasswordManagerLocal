@@ -405,6 +405,7 @@
               <ColumnDefinition Width="Auto" />
               <ColumnDefinition Width="12" MaxWidth="12" />
               <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
             <Grid x:Name="SwitchAreaGrid"
@@ -431,6 +432,19 @@
                               Foreground="{TemplateBinding Foreground}"
                               HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                               VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+
+            <!-- Only the last enabled search field displays this non-interactive marker. -->
+            <PathIcon x:Name="SearchFieldLockIcon"
+                      Grid.RowSpan="3"
+                      Grid.Column="3"
+                      Width="16"
+                      Height="16"
+                      Margin="8,0,0,0"
+                      Data="{StaticResource LockIconGeometry}"
+                      Foreground="{DynamicResource AppBrush.Text.Secondary}"
+                      VerticalAlignment="Center"
+                      IsVisible="False"
+                      IsHitTestVisible="False" />
 
             <Border x:Name="OuterBorder"
                     Grid.Row="1"
@@ -536,6 +550,22 @@
     <Style Selector="^:disabled:checked /template/ Border#SwitchKnobBounds">
       <Setter Property="Background" Value="{DynamicResource AppBrush.Surface.SubtleEmphasis}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AppBrush.Surface.SubtleEmphasis}" />
+    </Style>
+    <!-- A search-field constraint is not an off state. Preserve the on appearance
+         only when the view's existing CanToggle rule marks this specific switch locked. -->
+    <Style Selector="^.searchFieldLocked:disabled:checked">
+      <Setter Property="Foreground" Value="{DynamicResource AppBrush.Text.Primary}" />
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="^.searchFieldLocked:disabled:checked /template/ Border#SwitchKnobBounds">
+      <Setter Property="Background" Value="{DynamicResource AppBrush.Action.Primary}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBrush.Action.Primary}" />
+    </Style>
+    <Style Selector="^.searchFieldLocked:disabled:checked /template/ Ellipse#SwitchKnobOn">
+      <Setter Property="Fill" Value="{DynamicResource AppBrush.Action.PrimaryForeground}" />
+    </Style>
+    <Style Selector="^.searchFieldLocked:disabled:checked /template/ PathIcon#SearchFieldLockIcon">
+      <Setter Property="IsVisible" Value="True" />
     </Style>
     <Style Selector="^:focus-visible /template/ Border#OuterBorder">
       <Setter Property="BorderBrush" Value="{DynamicResource AppBrush.Focus}" />

@@ -138,6 +138,10 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
                   authorization.AdditionOperationHash is not { Length: SyncConstants.SyncDeltaPayloadHashBytes }))
             throw new InvalidDataException("The membership authorization does not satisfy the current identity invariant.");
 
+        if (operationId == Guid.Empty || operationHash.Length != SyncConstants.SyncDeltaPayloadHashBytes)
+            throw new InvalidDataException("The authoritative removal reference is invalid.");
+        DeviceRemovalEvidenceUtil.ValidateAuthorization(payload, authorization);
+
         var authorizationId = authorization.AuthorizationId;
         var origins = payload.Origins
             .Where(item => item.AuthorizationId == authorizationId)
@@ -157,6 +161,19 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
                   origin.AdditionOperationId != authorization.AdditionOperationId || origin.AdditionOperationHash is null ||
                   !Hashing.Verify(origin.AdditionOperationHash, authorization.AdditionOperationHash)))
             throw new InvalidDataException("A removal cutoff does not match the authorization's addition evidence.");
+
+        foreach (var origin in origins)
+        {
+            var existing = await _cutoffs.GetAsync(payload.UserId, payload.RemovedDeviceId,
+                origin.OriginInstanceId, origin.UserKeyEpoch, ct);
+            if (existing is not null &&
+                (existing.AuthorizationId != authorizationId || existing.RemovalOperationId != operationId ||
+                 existing.ResultingMembershipEpoch != payload.ResultingMembershipEpoch ||
+                 !Hashing.Verify(existing.RemovalOperationHash, operationHash) ||
+                 existing.HighestAcceptedSnapshotRevision != origin.HighestAcceptedSnapshotRevision ||
+                 existing.HighestAcceptedControlSequence != origin.HighestAcceptedControlSequence))
+                throw new InvalidOperationException("A different removal cutoff already exists for the origin namespace.");
+        }
 
         if (!authorization.IsActive)
         {

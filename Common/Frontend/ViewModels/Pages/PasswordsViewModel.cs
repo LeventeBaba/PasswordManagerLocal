@@ -909,6 +909,8 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     public bool CanTogglePasswordSearchTag => CanTogglePasswordSearchMode(_isPasswordSearchTagEnabled);
 
+    public bool IsPasswordSearchFieldLocked => EnabledPasswordSearchModeCount == 1;
+
     public string CustomColorSearchQuery
     {
         get => _customColorSearchQuery;
@@ -940,6 +942,8 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     public bool CanToggleCustomColorSearchName => CanToggleCustomColorSearchMode(_isCustomColorSearchNameEnabled);
 
     public bool CanToggleCustomColorSearchCode => CanToggleCustomColorSearchMode(_isCustomColorSearchCodeEnabled);
+
+    public bool IsCustomColorSearchFieldLocked => EnabledCustomColorSearchModeCount == 1;
 
     public bool HasCustomColors => CustomColors.Count > 0;
 
@@ -3038,6 +3042,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(CanTogglePasswordSearchName));
         this.RaisePropertyChanged(nameof(CanTogglePasswordSearchDescription));
         this.RaisePropertyChanged(nameof(CanTogglePasswordSearchTag));
+        this.RaisePropertyChanged(nameof(IsPasswordSearchFieldLocked));
     }
 
     private int EnabledPasswordSearchModeCount =>
@@ -3070,6 +3075,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     {
         this.RaisePropertyChanged(nameof(CanToggleCustomColorSearchName));
         this.RaisePropertyChanged(nameof(CanToggleCustomColorSearchCode));
+        this.RaisePropertyChanged(nameof(IsCustomColorSearchFieldLocked));
     }
 
     private int EnabledCustomColorSearchModeCount =>

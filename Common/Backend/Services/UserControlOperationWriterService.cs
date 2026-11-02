@@ -64,7 +64,22 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         CreateAppliedDeviceAdditionCoreAsync(canonicalUser, target, ct);
 
     public Task<UserControlOperationEnvelope> CreateAppliedDeviceRemovalAsync(User canonicalUser, DeviceRemovalPayload payload, CancellationToken ct = default) =>
-        _lifecycle.ExecuteAsync(canonicalUser.UId, token => CreateAppliedDeviceRemovalCoreAsync(canonicalUser, payload, token), ct);
+        _lifecycle.ExecuteAsync(canonicalUser.UId, async token =>
+        {
+            await using var transaction = await _uow.BeginTransactionAsync(token);
+            try
+            {
+                var envelope = await CreateAppliedDeviceRemovalCoreAsync(canonicalUser, payload, token);
+                await transaction.CommitAsync(token);
+                return envelope;
+            }
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                _uow.ClearTrackedChanges();
+                throw;
+            }
+        }, ct);
 
     public Task<UserControlOperationEnvelope> CreateAppliedDeviceRemovalUnderLifecycleAsync(User canonicalUser, DeviceRemovalPayload payload, CancellationToken ct = default) =>
         CreateAppliedDeviceRemovalCoreAsync(canonicalUser, payload, ct);
@@ -161,10 +176,7 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         await RequireLocalAuthorActiveAsync(user, user.KeyEpoch, user.MembershipEpoch, ct);
 
         var active = await _authorizationRows.ListActiveForDeviceAsync(user.UId, payload.RemovedDeviceId, ct);
-        if (active.Count == 0)
-            throw new InvalidOperationException("The device has no active installation authorization.");
-        if (active.Any(row => payload.Origins.All(origin => origin.AuthorizationId != row.AuthorizationId)))
-            throw new InvalidDataException("The removal payload does not cover every active installation origin.");
+        DeviceRemovalEvidenceUtil.ValidateActiveAuthorizations(payload, active);
 
         var state = await GetOrCreateStateAsync(user, user.KeyEpoch, user.MembershipEpoch, ct);
         var envelope = CreateEnvelope(

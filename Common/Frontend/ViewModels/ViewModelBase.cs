@@ -40,6 +40,8 @@ public abstract class ViewModelBase : DisposableReactiveObject
 
     public string? StatusMessage => OperationMessage.Message;
 
+    public string SearchFieldLockedHint => GetTranslation("Search_FieldSelection_LockedHint");
+
     public string ScrollBarScrollHereLabel => GetTranslation("ScrollBar_Context_ScrollHere");
 
     public string ScrollBarTopLabel => GetTranslation("ScrollBar_Context_Top");
@@ -298,6 +300,7 @@ public abstract class ViewModelBase : DisposableReactiveObject
         if (e.LanguageChanged)
         {
             this.RaisePropertyChanged(nameof(CurrentLanguage));
+            this.RaisePropertyChanged(nameof(SearchFieldLockedHint));
             this.RaisePropertyChanged(nameof(ScrollBarScrollHereLabel));
             this.RaisePropertyChanged(nameof(ScrollBarTopLabel));
             this.RaisePropertyChanged(nameof(ScrollBarBottomLabel));

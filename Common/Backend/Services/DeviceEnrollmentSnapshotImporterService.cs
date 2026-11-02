@@ -412,6 +412,11 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         foreach (var cutoff in snapshot.RemovalCutoffs)
             ValidateCutoff(cutoff, authById);
 
+        PasswordManagerLocal.Common.Backend.Sync.Tombstones.TombstoneGarbageCollectionRules.ValidateEvidenceStructure(
+            userSnapshot.UId, userSnapshot.KeyEpoch, userSnapshot.MembershipEpoch,
+            snapshot.MembershipAuthorizations.Select(ToAuthorization).ToArray(),
+            snapshot.RemovalCutoffs.Select(ToCutoff).ToArray(), []);
+
         var controlItems = new List<ValidatedControlOperation>();
         foreach (var operationSnapshot in snapshot.ControlOperations)
         {
@@ -458,7 +463,8 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             additionPayload.DeviceType != _identity.DeviceType || additionPayload.ResultingMembershipEpoch != userSnapshot.MembershipEpoch)
             throw new InvalidDataException("The authorizing addition payload does not authorize this exact target installation.");
 
-        ValidateAppliedTransitionChains(controlItems, userSnapshot);
+        ValidateAppliedTransitionChains(controlItems, userSnapshot,
+            snapshot.MembershipAuthorizations.Single(row => row.IsGenesis).MinimumKeyEpoch);
 
         var controlState = snapshot.ControlStates.SingleOrDefault(row => row.UserId == snapshot.PrimaryUserId)
             ?? throw new InvalidDataException("The authoritative control state is missing.");
@@ -661,6 +667,12 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
                 if (payload.UserId != envelope.UserId || payload.KeyEpoch != envelope.PreviousKeyEpoch || payload.PreviousMembershipEpoch != envelope.PreviousMembershipEpoch ||
                     payload.ResultingMembershipEpoch != envelope.ResultingMembershipEpoch)
                     throw new InvalidDataException("A device-removal payload does not match its immutable header.");
+                foreach (var authorizationId in payload.Origins.Select(origin => origin.AuthorizationId).Distinct())
+                {
+                    if (!authorizations.TryGetValue(authorizationId, out var target))
+                        throw new InvalidDataException("The removal references a missing installation authorization.");
+                    DeviceRemovalEvidenceUtil.ValidateAuthorization(payload, ToAuthorization(target));
+                }
                 foreach (var origin in payload.Origins)
                 {
                     if (!authorizations.TryGetValue(origin.AuthorizationId, out var authorization) ||
@@ -682,24 +694,24 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         }
     }
 
-    private void ValidateAppliedTransitionChains(IReadOnlyList<ValidatedControlOperation> operations, DeviceEnrollmentUserSnapshot user)
+    private void ValidateAppliedTransitionChains(IReadOnlyList<ValidatedControlOperation> operations, DeviceEnrollmentUserSnapshot user, long snapshotGenesisKeyEpoch)
     {
         var membership = operations.Where(item => item.Snapshot.Status == UserControlOperationStatus.Applied &&
             item.Envelope.OperationType is UserControlOperationType.DeviceAddition or UserControlOperationType.DeviceRemoval).ToList();
-        for (var epoch = 1L; epoch < user.MembershipEpoch; epoch++)
-        {
-            if (membership.Count(item => item.Envelope.PreviousMembershipEpoch == epoch) != 1)
-                throw new InvalidDataException("The applied membership transition history is incomplete or ambiguous.");
-        }
-        if (membership.Any(item => item.Envelope.ResultingMembershipEpoch > user.MembershipEpoch))
-            throw new InvalidDataException("The membership transition history is ahead of canonical state.");
+        if (membership.Count != user.MembershipEpoch - 1 ||
+            membership.Select(item => item.Envelope.PreviousMembershipEpoch).Distinct().Count() != membership.Count ||
+            membership.Any(item => item.Envelope.PreviousMembershipEpoch < 1 ||
+                item.Envelope.ResultingMembershipEpoch > user.MembershipEpoch))
+            throw new InvalidDataException("The applied membership transition history is incomplete or ambiguous.");
 
         var key = operations.Where(item => item.Snapshot.Status == UserControlOperationStatus.Applied && item.Envelope.OperationType == UserControlOperationType.KeyEpochReplacement).ToList();
-        for (var epoch = 1L; epoch < user.KeyEpoch; epoch++)
-        {
-            if (key.Count(item => item.Envelope.PreviousKeyEpoch == epoch) != 1)
-                throw new InvalidDataException("The applied key transition history is incomplete or ambiguous.");
-        }
+        // A verified local-only recovery starts a new genesis in a fresh key namespace.
+        // Every transition from that genesis must still be present and unambiguous.
+        if (key.Count != user.KeyEpoch - snapshotGenesisKeyEpoch ||
+            key.Select(item => item.Envelope.PreviousKeyEpoch).Distinct().Count() != key.Count ||
+            key.Any(item => item.Envelope.PreviousKeyEpoch < snapshotGenesisKeyEpoch ||
+                item.Envelope.ResultingKeyEpoch > user.KeyEpoch))
+            throw new InvalidDataException("The applied key transition history is incomplete or ambiguous.");
     }
 
     private void ValidateDeviceSnapshot(DeviceEnrollmentDeviceSnapshot source)
@@ -808,7 +820,9 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         AdditionOperationId = row.AdditionOperationId,
         AdditionOperationHash = row.IsGenesis && row.AdditionOperationId is null && row.AdditionOperationHash is { Length: 0 }
             ? null : row.AdditionOperationHash?.ToArray(),
-        RemovalOperationId = row.RemovalOperationId, RemovalOperationHash = row.RemovalOperationHash?.ToArray(),
+        RemovalOperationId = row.RemovalOperationId,
+        RemovalOperationHash = row.RemovalOperationHash is { Length: > 0 }
+            ? row.RemovalOperationHash.ToArray() : null,
         CreatedAtUtc = UtcDateTimeUtil.ToUtc(row.CreatedAtUtc), EndedAtUtc = UtcDateTimeUtil.ToUtc(row.EndedAtUtc)
     };
 

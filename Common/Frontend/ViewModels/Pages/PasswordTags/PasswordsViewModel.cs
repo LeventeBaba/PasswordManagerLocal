@@ -142,6 +142,8 @@ public sealed partial class PasswordsViewModel
     public bool CanTogglePasswordTagSearchColor =>
         CanTogglePasswordTagSearchMode(IsPasswordTagSearchColorEnabled);
 
+    public bool IsPasswordTagSearchFieldLocked => EnabledPasswordTagSearchModeCount == 1;
+
     public bool HasPasswordTags => PasswordTags.Count > 0;
 
     public bool HasStoredPasswordTags => _allManagedPasswordTags.Count > 0;
@@ -493,6 +495,7 @@ public sealed partial class PasswordsViewModel
     {
         this.RaisePropertyChanged(nameof(CanTogglePasswordTagSearchName));
         this.RaisePropertyChanged(nameof(CanTogglePasswordTagSearchColor));
+        this.RaisePropertyChanged(nameof(IsPasswordTagSearchFieldLocked));
     }
 
     private void SelectPasswordTagSortOption(string key)

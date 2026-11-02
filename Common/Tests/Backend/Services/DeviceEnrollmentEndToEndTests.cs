@@ -10,6 +10,8 @@ using PasswordManagerLocal.Common.Contracts.Responses;
 using PasswordManagerLocal.Common.Backend.Sync.Enrollment;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 using System.Text;
+using System.Text.Json;
+using PasswordManagerLocal.Common.Backend.Utils;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 
@@ -295,6 +297,60 @@ public sealed class DeviceEnrollmentEndToEndTests
         Assert.AreEqual(0, (await GetUserIdsAsync(target)).Count);
         Assert.AreEqual(DeviceEnrollmentCommitStatus.TransferFailed,
             (await GetOnlyEnrollmentCommitAsync(source)).Status);
+    }
+
+    [TestMethod]
+    [Timeout(TestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task EmptyOptionalMembershipHashes_SurviveSnapshotRoundTripAndIdempotentImport()
+    {
+        await using var source = await ProductionEnrollmentTestHost.CreateAsync();
+        await using var target = await ProductionEnrollmentTestHost.CreateAsync();
+        Connect(source, target);
+        var username = "enrollhash" + Guid.NewGuid().ToString("N")[..16];
+        var token = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest(username));
+        await source.Endpoints.SetLocalUserSyncOnAsync(token, true);
+        var code = await target.Endpoints.StartDeviceEnrollmentAsync();
+        await source.Endpoints.AddDeviceByCodeAsync(token, code.Code);
+        var commit = await GetOnlyEnrollmentCommitAsync(source);
+        var user = await GetOnlyUserAsync(source);
+        DeviceEnrollmentSnapshot snapshot;
+        using (var scope = source.Services.CreateScope())
+        {
+            snapshot = await scope.ServiceProvider.GetRequiredService<IDeviceEnrollmentSnapshotService>().BuildAsync(
+                scope.ServiceProvider, user.UId, new EnrollmentEndpoint
+                {
+                    DeviceId = target.Identity.LocalDeviceId,
+                    OriginInstanceId = target.Identity.OriginInstanceId,
+                    SignPublicKey = target.Identity.SignPublicKey,
+                    AgreementPublicKey = target.Identity.AgreementPublicKey,
+                    TlsCertFingerprint = target.Identity.FingerprintHex,
+                    DeviceType = target.Identity.DeviceType
+                }, commit.AdditionOperationId);
+        }
+        foreach (var authorization in snapshot.MembershipAuthorizations)
+        {
+            authorization.RemovalOperationHash = [];
+            if (authorization.IsGenesis)
+                authorization.AdditionOperationHash = [];
+        }
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(snapshot, BackendJsonSerializerContext.Default.DeviceEnrollmentSnapshot);
+        var roundTripped = JsonSerializer.Deserialize(bytes, BackendJsonSerializerContext.Default.DeviceEnrollmentSnapshot)!;
+        using (var scope = target.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IDeviceEnrollmentSnapshotImporterService>()
+                .ImportAsync(scope.ServiceProvider, roundTripped);
+            var rows = await scope.ServiceProvider.GetRequiredService<IUserMembershipAuthorizationRepository>()
+                .ListForUserAsync(user.UId);
+            Assert.AreEqual(2, rows.Count);
+            Assert.IsTrue(rows.All(row => row.RemovalOperationHash is null));
+            Assert.IsNull(rows.Single(row => row.IsGenesis).AdditionOperationHash);
+        }
+        var targetToken = await target.Endpoints.LoginAsync(target.CreateLoginRequest(username));
+        var diagnostics = await target.Endpoints.RunSelfDiagnosticsAndRepairAsync(targetToken);
+        Assert.IsTrue(diagnostics.Healthy, string.Join(", ", diagnostics.Findings));
+        Assert.AreEqual(0, diagnostics.RepairedCount);
     }
 
     private async Task<T> RunStepAsync<T>(

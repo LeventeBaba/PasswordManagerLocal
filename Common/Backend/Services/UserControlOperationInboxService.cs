@@ -971,8 +971,14 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         }
 
         var active = await _authorizationRows.ListActiveForDeviceAsync(user.UId, payload.RemovedDeviceId, ct);
-        if (active.Count == 0 || active.Any(auth => payload.Origins.All(origin => origin.AuthorizationId != auth.AuthorizationId)))
-            return await QuarantinePayloadMismatchAsync(row, envelope, state, transaction, "The removal does not exactly cover current installation authorizations.", ct);
+        try
+        {
+            DeviceRemovalEvidenceUtil.ValidateActiveAuthorizations(payload, active);
+        }
+        catch (InvalidDataException ex)
+        {
+            return await QuarantinePayloadMismatchAsync(row, envelope, state, transaction, ex.Message, ct);
+        }
         foreach (var authorization in active)
             await _membershipAuthorization.EndAuthorizationAsync(authorization, payload, envelope.OperationId, envelope.OperationHash, envelope.CreatedAtUtc, ct);
 

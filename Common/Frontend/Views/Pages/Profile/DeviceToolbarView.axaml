@@ -31,9 +31,12 @@
                           Text="{Binding DeviceSearchModeNameLabel}"
                           VerticalAlignment="Center" />
                       <ToggleSwitch
+                          Classes="searchFieldToggle"
+                          Classes.searchFieldLocked="{Binding !CanToggleDeviceSearchName}"
                           Grid.Column="1"
                           IsChecked="{Binding IsDeviceSearchNameEnabled, Mode=TwoWay}"
                           IsEnabled="{Binding CanToggleDeviceSearchName}"
+                          AutomationProperties.HelpText="{Binding SearchFieldLockedHint}"
                           MinWidth="0"
                           OnContent="{Binding DeviceSwitchOnLabel}"
                           OffContent="{Binding DeviceSwitchOffLabel}"
@@ -44,14 +47,21 @@
                           Text="{Binding DeviceSearchModeTypeLabel}"
                           VerticalAlignment="Center" />
                       <ToggleSwitch
+                          Classes="searchFieldToggle"
+                          Classes.searchFieldLocked="{Binding !CanToggleDeviceSearchType}"
                           Grid.Column="1"
                           IsChecked="{Binding IsDeviceSearchTypeEnabled, Mode=TwoWay}"
                           IsEnabled="{Binding CanToggleDeviceSearchType}"
+                          AutomationProperties.HelpText="{Binding SearchFieldLockedHint}"
                           MinWidth="0"
                           OnContent="{Binding DeviceSwitchOnLabel}"
                           OffContent="{Binding DeviceSwitchOffLabel}"
                           AutomationProperties.Name="{Binding DeviceSearchModeTypeLabel}" />
                     </Grid>
+                    <TextBlock Text="{Binding SearchFieldLockedHint}"
+                               IsVisible="{Binding IsDeviceSearchFieldLocked}"
+                               Foreground="{DynamicResource AppBrush.Text.Secondary}"
+                               TextWrapping="Wrap" MaxWidth="260" Margin="0,4,0,0" />
                   </StackPanel>
                 </Border>
               </Flyout>
