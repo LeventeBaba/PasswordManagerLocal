@@ -856,8 +856,8 @@ public sealed class ControlThemeArchitectureTests
         var viewFiles = Directory.EnumerateFiles(viewRoot, "*.axaml", SearchOption.AllDirectories).ToArray();
         var viewItemsControls = viewFiles.SelectMany(file =>
             XDocument.Load(file).Descendants(avalonia + "ItemsControl")).ToArray();
-        Assert.AreEqual(13, viewItemsControls.Length,
-            "All current view ItemsControls should receive the application-owned default theme.");
+        Assert.IsTrue(viewItemsControls.Length > 0,
+            "The view audit must discover ItemsControls before checking their theme contracts.");
         Assert.IsTrue(viewItemsControls.All(control => control.Attribute("Theme") is null),
             "View ItemsControls should inherit the application-owned default theme.");
         Assert.IsTrue(viewItemsControls.All(control =>
@@ -865,14 +865,32 @@ public sealed class ControlThemeArchitectureTests
             control.Element(avalonia + "ItemsControl.ItemTemplate") is not null),
             "All current ItemsControls should keep their data source and item template.");
 
-        var customPanels = viewItemsControls.Select(control =>
-            control.Element(avalonia + "ItemsControl.ItemsPanel")?
-                .Element(avalonia + "ItemsPanelTemplate")?.Elements().Single().Name.LocalName)
-            .Where(panel => panel is not null).ToArray();
-        Assert.AreEqual(4, customPanels.Count(panel => panel == "VirtualizingStackPanel"));
-        Assert.AreEqual(2, customPanels.Count(panel => panel == "WrapPanel"));
-        Assert.AreEqual(7, viewItemsControls.Length - customPanels.Length,
-            "ItemsControls without an explicit panel should retain ItemsControl's default panel.");
+        Assert.IsFalse(itemsControlTheme.Elements(avalonia + "Setter").Any(setter =>
+            (string?)setter.Attribute("Property") == "ItemsPanel"),
+            "The default theme must not replace view-selected panels or ItemsControl's default panel.");
+
+        // Layout contracts are attached to the lists they protect. Adding or removing
+        // an unrelated control must not invalidate an application-wide control count.
+        foreach (var (relativePath, itemsSource, expectedPanel) in new[]
+                 {
+                     ("Pages/Passwords/CustomColorListView.axaml", "{Binding CustomColors}", "VirtualizingStackPanel"),
+                     ("Pages/Passwords/PasswordListPaneView.axaml", "{Binding Passwords}", "VirtualizingStackPanel"),
+                     ("Pages/Passwords/PasswordTagListView.axaml", "{Binding PasswordTags}", "VirtualizingStackPanel"),
+                     ("Pages/Passwords/PasswordTagPickerView.axaml", "{Binding Tags}", "VirtualizingStackPanel"),
+                     ("Pages/Profile/DeviceListView.axaml", "{Binding Devices}", "VirtualizingStackPanel"),
+                     ("Pages/Passwords/PasswordDetailsView.axaml", "{Binding SelectedPasswordTags}", "WrapPanel")
+                 })
+        {
+            var view = XDocument.Load(Path.Combine(
+                viewRoot, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+            var control = view.Descendants(avalonia + "ItemsControl")
+                .Single(item => (string?)item.Attribute("ItemsSource") == itemsSource);
+            var panelTemplate = control.Element(avalonia + "ItemsControl.ItemsPanel")?
+                .Element(avalonia + "ItemsPanelTemplate");
+            Assert.IsNotNull(panelTemplate, $"{relativePath} must declare its intended item layout.");
+            Assert.AreEqual(expectedPanel, panelTemplate!.Elements().Single().Name.LocalName,
+                $"{relativePath} must preserve its {expectedPanel} layout.");
+        }
     }
 
     [TestMethod]
@@ -2022,8 +2040,10 @@ public sealed class ControlThemeArchitectureTests
         var scrollViewers = Directory.EnumerateFiles(viewRoot, "*.axaml", SearchOption.AllDirectories)
             .SelectMany(path => XDocument.Load(path).Descendants(avalonia + "ScrollViewer"))
             .ToArray();
-        Assert.AreEqual(30, scrollViewers.Length,
-            "The application-owned default theme should cover all existing view ScrollViewers.");
+        Assert.IsTrue(scrollViewers.Length > 0,
+            "The view audit must discover ScrollViewers before checking their theme contracts.");
+        Assert.IsTrue(scrollViewers.All(control => control.Attribute("Theme") is null),
+            "All view ScrollViewers should inherit the application-owned default theme without an instance override.");
         var codeScrollerSource = File.ReadAllText(Path.Combine(
             viewRoot, "Controls", "PasswordStrengthInfoButton.axaml.cs"));
         StringAssert.Contains(codeScrollerSource, "new ScrollViewer");

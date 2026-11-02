@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Platform;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
@@ -99,6 +100,15 @@ internal sealed class MainViewKeyboardHandler
 
     internal async Task<bool> HandleBackRequestCoreAsync()
     {
+        // Android Back dismisses the input pane before navigating or cancelling a draft.
+        if (OperatingSystem.IsAndroid() && TopLevel.GetTopLevel(_view) is { } topLevel
+            && topLevel.InputPane?.State == InputPaneState.Open)
+        {
+            topLevel.FocusManager?.Focus(null);
+            _view.PlatformServices?.Keyboard.Hide();
+            return true;
+        }
+
         if (_view.DataContext is not MainViewModel viewModel)
             return true;
 

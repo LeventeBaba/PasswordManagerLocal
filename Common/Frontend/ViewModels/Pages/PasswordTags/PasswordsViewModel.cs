@@ -186,7 +186,8 @@ public sealed partial class PasswordsViewModel
 
     public string PasswordTagsTitle => GetTranslation("Passwords_Tags_Title");
 
-    public string PasswordTagsBackToEditorLabel => GetTranslation("Passwords_Tags_BackToEditor");
+    public string PasswordTagsBackToEditorLabel => GetTranslation(_isPasswordTagPickerOpen
+        ? "Passwords_TagPicker_Back" : "Passwords_Tags_BackToEditor");
 
     public string PasswordTagsEmptyTitle => GetTranslation("Passwords_Tags_Empty_Title");
 
@@ -228,7 +229,8 @@ public sealed partial class PasswordsViewModel
     public string PasswordTagEditorSaveLabel => GetTranslation(
         IsEditingPasswordTag ? "Common_Save" : "Common_Add");
 
-    public string PasswordTagEditorBackLabel => GetTranslation("Passwords_Tags_Editor_Back");
+    public string PasswordTagEditorBackLabel => GetTranslation(_isCreatingTagFromPicker
+        ? "Passwords_TagPicker_Back" : "Passwords_Tags_Editor_Back");
 
     public string PasswordTagDeleteConfirmationTitle => GetTranslation(
         _passwordTagsPendingDeletion.Count > 1
@@ -265,6 +267,7 @@ public sealed partial class PasswordsViewModel
     {
         ClearStatusMessage();
         ResetPasswordTagDeleteState();
+        this.RaisePropertyChanged(nameof(PasswordTagsBackToEditorLabel));
         CurrentPane = PasswordTagListPane;
     }
 
@@ -277,8 +280,10 @@ public sealed partial class PasswordsViewModel
         }
 
         ClearStatusMessage();
+        TagPicker.RefreshTags(_allPasswordTags);
+        RestoreEditorTagsFocus = !_isPasswordTagPickerOpen;
         SetCurrentPane(EditorPane, true);
-        RefreshEditorTagSuggestions();
+        RaiseEditorTagStateChanged();
     }
 
     private void OpenPasswordTagEditor()
@@ -303,7 +308,9 @@ public sealed partial class PasswordsViewModel
     {
         ClearStatusMessage();
         ResetPasswordTagEditorDraft();
-        SetCurrentPane(PasswordTagListPane, true);
+        var returnToPicker = _isCreatingTagFromPicker;
+        _isCreatingTagFromPicker = false;
+        SetCurrentPane(returnToPicker ? EditorPane : PasswordTagListPane, true);
     }
 
     private async Task SavePasswordTagAsync()
@@ -359,7 +366,9 @@ public sealed partial class PasswordsViewModel
                 ? "Passwords_Tags_Update_Success"
                 : "Passwords_Tags_Add_Success";
             ResetPasswordTagEditorDraft();
-            SetCurrentPane(PasswordTagListPane, true);
+            var returnToPicker = _isCreatingTagFromPicker;
+            _isCreatingTagFromPicker = false;
+            SetCurrentPane(returnToPicker ? EditorPane : PasswordTagListPane, true);
             ShowLocalizedSuccessMessage(successKey);
         }
         catch (Exception ex)
@@ -378,6 +387,7 @@ public sealed partial class PasswordsViewModel
         this.RaisePropertyChanged(nameof(IsEditingPasswordTag));
         this.RaisePropertyChanged(nameof(PasswordTagEditorTitle));
         this.RaisePropertyChanged(nameof(PasswordTagEditorSaveLabel));
+        this.RaisePropertyChanged(nameof(PasswordTagEditorBackLabel));
     }
 
     private void ResetPasswordTagEditorDraft()

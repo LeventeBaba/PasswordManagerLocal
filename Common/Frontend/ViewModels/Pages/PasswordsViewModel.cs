@@ -26,7 +26,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     private const string ExportTargetPane = "export-target";
     private const string CustomColorKey = "custom";
     private const string SelectedCustomColorKey = "selected-custom";
-    private const int MaximumVisibleEditorTagSuggestions = 8;
 
     private static readonly string[] LocalizedPropertyNames =
     [
@@ -213,8 +212,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     private string _editorDescription = string.Empty;
     private string _editorColor = PasswordColorUtility.DefaultColor;
     private string _editorPassword = string.Empty;
-    private string _editorTagSearchQuery = string.Empty;
-    private bool _isEditorTagSearchFocused;
     private bool _isEditorPasswordVisible;
     private bool _isEditorStoredPasswordRevealed;
     private int _editorPasswordStrength;
@@ -258,18 +255,20 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         _endpoints = endpoints;
         _authSessionRegistry = authSessionRegistry;
         _passwordGenerator = new MaximumStrengthPasswordGenerator(_passwordStrengthEstimator);
+        TagPicker = Own(new PasswordTagPickerViewModel(
+            uiPreferences, ApplyPasswordTagPicker, ClosePasswordTagPicker, ManageTagsFromPicker, CreateTagFromPicker));
+        OpenPasswordTagPickerCommand = Own(ReactiveCommand.Create(OpenPasswordTagPicker));
+        ConfirmDiscardPasswordEditorCommand = Own(ReactiveCommand.Create(CancelPasswordEditor));
+        KeepEditingPasswordCommand = Own(ReactiveCommand.Create(() => { IsEditorDiscardConfirmationOpen = false; }));
 
         Passwords = new ObservableCollection<PasswordItemViewModel>();
         SelectedPasswordTags = new ObservableCollection<PasswordTagItemViewModel>();
         EditorSelectedTags = new ObservableCollection<PasswordTagItemViewModel>();
-        EditorTagSuggestions = new ObservableCollection<PasswordTagItemViewModel>();
         CustomColors = new ObservableCollection<CustomColorItemViewModel>();
         ExportTargetProfiles = new ObservableCollection<ExportTargetProfileItemViewModel>();
         PresetColors = new ObservableCollection<PasswordColorOptionViewModel>();
         SortOptions = new ObservableCollection<PasswordSortOptionViewModel>();
 
-        SelectEditorTagCommand = Own(ReactiveCommand.Create<PasswordTagItemViewModel>(SelectEditorTag));
-        RemoveEditorTagCommand = Own(ReactiveCommand.Create<PasswordTagItemViewModel>(RemoveEditorTag));
         ViewPasswordCommand = Own(ReactiveCommand.CreateFromTask<PasswordItemViewModel>(BeginViewPasswordAsync));
         EditPasswordCommand = Own(ReactiveCommand.CreateFromTask<PasswordItemViewModel>(BeginEditPasswordAsync));
         DeletePasswordCommand = Own(ReactiveCommand.CreateFromTask<PasswordItemViewModel>(BeginDeletePasswordAsync));
@@ -290,7 +289,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         CopyRevealedPasswordCommand = Own(ReactiveCommand.CreateFromTask(CopyRevealedPasswordAsync));
         RevealEditorPasswordCommand = Own(ReactiveCommand.CreateFromTask(RevealEditorPasswordAsync));
         SavePasswordCommand = Own(ReactiveCommand.CreateFromTask(SavePasswordAsync));
-        CancelPasswordEditorCommand = Own(ReactiveCommand.Create(CancelPasswordEditor));
+        CancelPasswordEditorCommand = Own(ReactiveCommand.Create(RequestCancelPasswordEditor));
         ToggleEditorPasswordVisibilityCommand = Own(ReactiveCommand.Create(ToggleEditorPasswordVisibility));
         GenerateEditorPasswordCommand = Own(ReactiveCommand.Create(GenerateEditorPassword));
         OpenCustomColorPickerCommand = Own(ReactiveCommand.Create(OpenCustomColorPicker));
@@ -319,8 +318,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         SelectDefaultSortOption();
     }
 
-    public ReactiveCommand<PasswordTagItemViewModel, RxVoid> SelectEditorTagCommand { get; }
-    public ReactiveCommand<PasswordTagItemViewModel, RxVoid> RemoveEditorTagCommand { get; }
     public ReactiveCommand<PasswordItemViewModel, RxVoid> ViewPasswordCommand { get; }
     public ReactiveCommand<PasswordItemViewModel, RxVoid> EditPasswordCommand { get; }
     public ReactiveCommand<PasswordItemViewModel, RxVoid> DeletePasswordCommand { get; }
@@ -334,8 +331,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     public ObservableCollection<PasswordTagItemViewModel> SelectedPasswordTags { get; }
 
     public ObservableCollection<PasswordTagItemViewModel> EditorSelectedTags { get; }
-
-    public ObservableCollection<PasswordTagItemViewModel> EditorTagSuggestions { get; }
 
     public ObservableCollection<CustomColorItemViewModel> CustomColors { get; private set; }
 
@@ -582,6 +577,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(IsEditorOpen));
         this.RaisePropertyChanged(nameof(IsEditorClosed));
         CurrentPaneViewModel = CreatePaneTransitionViewModel(value);
+        RaiseEditorOverlayStateChanged();
     }
 
     private PasswordPaneTransitionViewModel CreatePaneTransitionViewModel(string pane) =>
@@ -606,6 +602,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             this.RaisePropertyChanged(nameof(IsEditMode));
             this.RaisePropertyChanged(nameof(EditorTitle));
             this.RaisePropertyChanged(nameof(SavePasswordButtonLabel));
+            this.RaisePropertyChanged(nameof(EditorSaveActionLabel));
             this.RaisePropertyChanged(nameof(EditorPasswordHint));
             this.RaisePropertyChanged(nameof(CanRevealEditorStoredPassword));
             this.RaisePropertyChanged(nameof(IsEditorPasswordFieldVisible));
@@ -649,60 +646,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _editorDescription, value);
     }
 
-    public string EditorTagSearchQuery
-    {
-        get => _editorTagSearchQuery;
-        set
-        {
-            value ??= string.Empty;
-            if (string.Equals(_editorTagSearchQuery, value, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            this.RaiseAndSetIfChanged(ref _editorTagSearchQuery, value);
-            RefreshEditorTagSuggestions();
-        }
-    }
-
-    public bool IsEditorTagSearchFocused
-    {
-        get => _isEditorTagSearchFocused;
-        set
-        {
-            if (_isEditorTagSearchFocused == value)
-            {
-                return;
-            }
-
-            this.RaiseAndSetIfChanged(ref _isEditorTagSearchFocused, value);
-            RaiseEditorTagStateChanged();
-        }
-    }
-
-    public bool HasAvailablePasswordTags => _allPasswordTags.Count > 0;
-
     public bool HasSelectedEditorTags => EditorSelectedTags.Count > 0;
-
-    public bool AreAllEditorTagsSelected =>
-        HasAvailablePasswordTags && EditorSelectedTags.Count >= _allPasswordTags.Count;
-
-    public bool IsEditorTagSearchEnabled =>
-        HasAvailablePasswordTags && !AreAllEditorTagsSelected;
-
-    public bool IsEditorTagSuggestionPanelVisible =>
-        IsEditorTagSearchFocused && IsEditorTagSearchEnabled;
-
-    public bool HasEditorTagSuggestions => EditorTagSuggestions.Count > 0;
-
-    public bool IsEditorTagNoMatchesVisible =>
-        IsEditorTagSuggestionPanelVisible
-        && !HasEditorTagSuggestions
-        && !string.IsNullOrWhiteSpace(EditorTagSearchQuery);
-
-    public bool IsEditorTagEmptyStateVisible => !HasAvailablePasswordTags;
-
-    public bool IsEditorAllTagsSelectedVisible => AreAllEditorTagsSelected;
 
     public string EditorColor
     {
@@ -879,7 +823,12 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         get => _editorPassword;
         set
         {
+            value ??= string.Empty;
+            if (_editorPassword == value)
+                return;
             this.RaiseAndSetIfChanged(ref _editorPassword, value);
+            _hasEditorSecretChanges = true;
+            ClearEditorPasswordValidation();
             RefreshEditorPasswordStrength();
         }
     }
@@ -1437,6 +1386,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         RaiseSortMenuLabelProperties();
         RaiseCustomColorSortMenuLabelProperties();
         ApplyPasswordTagLocalization();
+        RaiseEditorPresentationChanged();
         ApplyFiltersAndSorting(SelectedPassword?.Id, preserveSelection: true);
         ApplyCustomColorFiltersAndSorting();
     }
@@ -1472,14 +1422,6 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             cancellationToken: cancellationToken);
 
     public void RequestListScrollToTop() => ListScrollToTopRequested?.Invoke(this, EventArgs.Empty);
-
-    public void SelectFirstEditorTagSuggestion()
-    {
-        if (EditorTagSuggestions.FirstOrDefault() is { } tag)
-        {
-            SelectEditorTag(tag);
-        }
-    }
 
     public void ShowMainPage()
     {
@@ -2129,6 +2071,19 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     public bool TryNavigateBack()
     {
+        if (_isSavingPassword)
+            return true;
+        if (IsEditorDiscardConfirmationOpen)
+        {
+            IsEditorDiscardConfirmationOpen = false;
+            return true;
+        }
+        if (IsPasswordTagPickerVisible)
+        {
+            ClosePasswordTagPicker();
+            return true;
+        }
+
         if (IsExportConfirmationOpen)
         {
             CancelExportConfirmation();
@@ -2188,7 +2143,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
         if (IsEditorPaneVisible)
         {
-            CancelPasswordEditor();
+            RequestCancelPasswordEditor();
             return true;
         }
 
@@ -2227,6 +2182,10 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             await ConfirmDeletePasswordAsync();
             return;
         }
+
+        // Picker search/checkbox input must never execute the underlying editor action.
+        if (IsPasswordTagPickerVisible || IsEditorDiscardConfirmationOpen)
+            return;
 
         if (IsEditorPaneVisible)
         {
@@ -2421,46 +2380,10 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         IsEditorStoredPasswordRevealed = false;
         SetEditorSelectedTags(password.TagIds);
         ApplyEditorColor(password.Color);
+        ClearEditorPasswordValidation();
+        CaptureEditorBaseline();
         CurrentPane = EditorPane;
         return Task.CompletedTask;
-    }
-
-    private void SelectEditorTag(PasswordTagItemViewModel tag)
-    {
-        if (!_allPasswordTags.Contains(tag) || EditorSelectedTags.Any(selectedTag => selectedTag.Id == tag.Id))
-        {
-            return;
-        }
-
-        EditorSelectedTags.Add(tag);
-        SortEditorSelectedTags();
-
-        if (!string.IsNullOrEmpty(EditorTagSearchQuery))
-        {
-            EditorTagSearchQuery = string.Empty;
-        }
-        else
-        {
-            RefreshEditorTagSuggestions();
-        }
-
-        // A newly selected tag becomes the password's suggested visual color.
-        // The user can still choose any other password color afterwards.
-        ApplyEditorColor(tag.Color);
-    }
-
-    private void RemoveEditorTag(PasswordTagItemViewModel tag)
-    {
-        if (!_allPasswordTags.Contains(tag))
-            return;
-        var selectedTag = EditorSelectedTags.FirstOrDefault(item => item.Id == tag.Id);
-        if (selectedTag is null)
-        {
-            return;
-        }
-
-        EditorSelectedTags.Remove(selectedTag);
-        RefreshEditorTagSuggestions();
     }
 
     private void RebuildPasswordTagItems(
@@ -2478,6 +2401,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         }
 
         SetEditorSelectedTags(selectedTagIds);
+        TagPicker.RefreshTags(_allPasswordTags);
         RefreshSelectedPasswordTags();
     }
 
@@ -2509,79 +2433,23 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     private void SetEditorSelectedTags(IEnumerable<Guid> tagIds)
     {
         var selectedTagIds = tagIds.ToHashSet();
-
         EditorSelectedTags.Clear();
-        foreach (var tag in _allPasswordTags.Where(tag => selectedTagIds.Contains(tag.Id)))
-        {
+        foreach (var tag in _allPasswordTags.Where(tag => selectedTagIds.Contains(tag.Id))
+                     .OrderBy(tag => tag.Name, StringComparer.CurrentCultureIgnoreCase))
             EditorSelectedTags.Add(tag);
-        }
-
-        _editorTagSearchQuery = string.Empty;
-        this.RaisePropertyChanged(nameof(EditorTagSearchQuery));
-        RefreshEditorTagSuggestions();
+        RaiseEditorTagStateChanged();
     }
 
     private void ClearEditorTagSelection()
     {
         EditorSelectedTags.Clear();
-        _editorTagSearchQuery = string.Empty;
-        _isEditorTagSearchFocused = false;
-        this.RaisePropertyChanged(nameof(EditorTagSearchQuery));
-        this.RaisePropertyChanged(nameof(IsEditorTagSearchFocused));
-        RefreshEditorTagSuggestions();
-    }
-
-    private void SortEditorSelectedTags()
-    {
-        var sortedTags = EditorSelectedTags
-            .OrderBy(tag => tag.Name, StringComparer.CurrentCultureIgnoreCase)
-            .ToArray();
-
-        if (EditorSelectedTags.SequenceEqual(sortedTags))
-        {
-            return;
-        }
-
-        EditorSelectedTags.Clear();
-        foreach (var tag in sortedTags)
-        {
-            EditorSelectedTags.Add(tag);
-        }
-    }
-
-    private void RefreshEditorTagSuggestions()
-    {
-        var selectedTagIds = EditorSelectedTags.Select(tag => tag.Id).ToHashSet();
-        var searchTerm = EditorTagSearchQuery.Trim();
-
-        var suggestions = _allPasswordTags
-            .Where(tag => !selectedTagIds.Contains(tag.Id))
-            .Where(tag => string.IsNullOrWhiteSpace(searchTerm)
-                || tag.Name.Contains(searchTerm, StringComparison.CurrentCultureIgnoreCase))
-            .OrderBy(tag => tag.Name, StringComparer.CurrentCultureIgnoreCase)
-            .Take(MaximumVisibleEditorTagSuggestions)
-            .ToArray();
-
-        EditorTagSuggestions.Clear();
-        foreach (var tag in suggestions)
-        {
-            EditorTagSuggestions.Add(tag);
-        }
-
         RaiseEditorTagStateChanged();
     }
 
     private void RaiseEditorTagStateChanged()
     {
-        this.RaisePropertyChanged(nameof(HasAvailablePasswordTags));
         this.RaisePropertyChanged(nameof(HasSelectedEditorTags));
-        this.RaisePropertyChanged(nameof(AreAllEditorTagsSelected));
-        this.RaisePropertyChanged(nameof(IsEditorTagSearchEnabled));
-        this.RaisePropertyChanged(nameof(IsEditorTagSuggestionPanelVisible));
-        this.RaisePropertyChanged(nameof(HasEditorTagSuggestions));
-        this.RaisePropertyChanged(nameof(IsEditorTagNoMatchesVisible));
-        this.RaisePropertyChanged(nameof(IsEditorTagEmptyStateVisible));
-        this.RaisePropertyChanged(nameof(IsEditorAllTagsSelectedVisible));
+        RaiseEditorPresentationChanged();
     }
 
     private List<Guid> GetSelectedEditorTagIds() =>
@@ -2744,6 +2612,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
             try
             {
                 EditorPassword = Encoding.UTF8.GetString(passwordBytes);
+                _hasEditorSecretChanges = false;
                 IsEditorPasswordVisible = true;
                 IsEditorStoredPasswordRevealed = true;
             }
@@ -2760,12 +2629,13 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     private async Task SavePasswordAsync()
     {
-        if (_isSavingPassword || !ValidatePasswordEditor())
+        if (_isSavingPassword || !IsEditorPaneVisible || _isPasswordTagPickerOpen
+            || IsEditorDiscardConfirmationOpen || !ValidatePasswordEditor())
             return;
 
         try
         {
-            _isSavingPassword = true;
+            SetEditorSaving(true);
             var successKey = await PersistPasswordEditorAsync();
             if (successKey is null)
                 return;
@@ -2792,7 +2662,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         }
         finally
         {
-            _isSavingPassword = false;
+            SetEditorSaving(false);
         }
     }
 
@@ -2800,6 +2670,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     {
         ClearStatusMessage();
         ClearEditorNameValidation();
+        ClearEditorPasswordValidation();
         if (string.IsNullOrWhiteSpace(EditorName))
         {
             ShowEditorNameValidationError("Validation_PasswordName_Required");
@@ -2818,7 +2689,9 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
         if (IsCreateMode && string.IsNullOrWhiteSpace(EditorPassword))
         {
-            ShowLocalizedErrorMessage("Validation_RegisterPassword_Required");
+            _editorPasswordValidationKey = "Validation_RegisterPassword_Required";
+            RaisePropertiesChanged([nameof(HasEditorPasswordValidationError), nameof(EditorPasswordValidationMessage)]);
+            ShowLocalizedErrorMessage(_editorPasswordValidationKey);
             return false;
         }
 
@@ -2958,6 +2831,11 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     private void ResetEditorFields()
     {
+        _isPasswordTagPickerOpen = false;
+        _isCreatingTagFromPicker = false;
+        TagPicker.End();
+        IsEditorDiscardConfirmationOpen = false;
+        ClearEditorPasswordValidation();
         ClearEditorNameValidation();
         EditorName = string.Empty;
         EditorDescription = string.Empty;
@@ -2966,6 +2844,8 @@ public sealed partial class PasswordsViewModel : ViewModelBase
         EditorPassword = string.Empty;
         IsEditorPasswordVisible = false;
         IsEditorStoredPasswordRevealed = false;
+        CaptureEditorBaseline();
+        RaiseEditorOverlayStateChanged();
     }
 
     private void ApplyFiltersAndSorting(Guid? preferredSelectionId, bool preserveSelection)

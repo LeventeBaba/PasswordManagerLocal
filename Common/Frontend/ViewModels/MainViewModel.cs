@@ -437,7 +437,8 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
     public bool IsDesktopNavigationVisible => IsAuthenticated && !IsMobileNavigationEnabled && IsMainContentPageVisible;
 
-    public bool IsMobilePageIndicatorVisible => IsAuthenticated && IsMobileNavigationEnabled && IsMainContentPageVisible;
+    public bool IsMobilePageIndicatorVisible => IsAuthenticated && IsMobileNavigationEnabled && IsMainContentPageVisible
+        && !(CurrentMainPageIndex == 0 && _passwordsViewModel is { IsListPaneVisible: false });
 
     public bool IsMobileMainPageAnimationEnabled =>
         EffectiveInterfaceAnimationsEnabled;
@@ -1231,6 +1232,9 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
     private void HandlePageStatusChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (sender is PasswordsViewModel && e.PropertyName == nameof(PasswordsViewModel.CurrentPane))
+            this.RaisePropertyChanged(nameof(IsMobilePageIndicatorVisible));
+
         if (e.PropertyName is nameof(ViewModelBase.StatusMessage)
             or nameof(ViewModelBase.HasStatusMessage)
             or nameof(ViewModelBase.IsStatusMessageInformation)
