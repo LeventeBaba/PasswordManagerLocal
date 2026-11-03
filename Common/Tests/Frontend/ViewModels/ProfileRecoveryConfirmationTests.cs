@@ -38,7 +38,9 @@ public sealed class ProfileRecoveryConfirmationTests
         Assert.AreEqual(1, recording.ConfirmCalls);
         Assert.AreEqual(token, recording.LastToken);
         Assert.AreEqual(new string('A', 64), recording.LastPlanId);
-        CollectionAssert.AreEqual(System.Text.Encoding.UTF8.GetBytes("P@ssw0rd12345678"), recording.SentPassword!);
+        CollectionAssert.AreEqual(
+            System.Security.Cryptography.SHA512.HashData(System.Text.Encoding.UTF8.GetBytes("P@ssw0rd12345678")),
+            recording.SentPassword!);
         Assert.IsTrue(recording.BorrowedPassword!.All(value => value == 0));
         Assert.AreEqual(string.Empty, model.HistoryRecoveryPassword);
         Assert.IsFalse(model.IsHistoryRecoveryDialogOpen);

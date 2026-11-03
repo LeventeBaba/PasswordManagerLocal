@@ -28,6 +28,8 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
     private readonly IUserDataReaderService _userDataReader;
     private readonly IUserDataWriterService _userDataWriter;
     private readonly ISyncVersionClockService _versionClock;
+    private readonly ISyncRuntimeService _syncRuntime;
+    private bool _historyResetCommitted;
 
     public SelfDiagnosticsService(
         IUserLookupService users,
@@ -57,7 +59,8 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
         IUserCanonicalCheckpointRepository checkpoints,
         IUserSnapshotMergeCoordinator snapshotMerge,
         IUserMembershipAuthorizationService membershipVerifier,
-        ICredentialVerificationService credentialVerification)
+        ICredentialVerificationService credentialVerification,
+        ISyncRuntimeService syncRuntime)
     {
         _users = users;
         _lifecycle = lifecycle;
@@ -87,12 +90,13 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
         _snapshotMerge = snapshotMerge;
         _membershipVerifier = membershipVerifier;
         _credentialVerification = credentialVerification;
+        _syncRuntime = syncRuntime;
     }
 
     public async Task<SelfDiagnosticsResultResponse> RunAsync(Guid token, CancellationToken ct = default)
     {
         var userId = (await _users.GetAndVerifyUserAsync(token, ct)).UId;
-        return await _lifecycle.ExecuteAsync(userId,
+        return await ExecuteWithRuntimeRefreshAsync(userId,
             lifecycleToken => RunUnderLifecycleAsync(token, allowRepair: true, lifecycleToken), ct);
     }
 
@@ -150,6 +154,11 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
 
         var remoteLinks = (await _userDevices.ListByUserWithDevicesAsync(user.UId, lifecycleToken))
             .Where(link => link.DeviceId != _identity.LocalDeviceId).ToArray();
+        // Check both directions. A retained link must not remain active after its
+        // membership ended, or when its authorization row is missing altogether.
+        if (remoteLinks.Any(link => !link.IsDeleted &&
+            (!link.IsIntegrityValid() || !rows.Any(row => row.IsActive && row.DeviceId == link.DeviceId))))
+            findings.Add("DeviceLinkInvalid");
         foreach (var authorization in rows.Where(row => row.IsActive && row.DeviceId != _identity.LocalDeviceId))
         {
             var links = remoteLinks.Where(link => link.DeviceId == authorization.DeviceId).ToArray();

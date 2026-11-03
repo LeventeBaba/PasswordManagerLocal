@@ -13,6 +13,7 @@ public sealed class FakeSyncRuntimeService : ISyncRuntimeService
     public int StartCalls { get; private set; }
     public int StopCalls { get; private set; }
     public Exception? RefreshFailure { get; set; }
+    public Func<CancellationToken, Task>? RefreshHandler { get; set; }
     public TaskCompletionSource<bool>? BeginEnrollmentOnlyGate { get; set; }
 
     public SyncRuntimeSnapshot Snapshot => _snapshot;
@@ -23,7 +24,7 @@ public sealed class FakeSyncRuntimeService : ISyncRuntimeService
     {
         RefreshSyncEnabledCalls++;
         if (RefreshFailure is null)
-            return Task.CompletedTask;
+            return RefreshHandler?.Invoke(ct) ?? Task.CompletedTask;
 
         Transition(SyncRuntimeState.Degraded, RefreshFailure);
         return Task.FromException(RefreshFailure);

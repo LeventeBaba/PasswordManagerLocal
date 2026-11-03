@@ -11,7 +11,6 @@ using ReactiveUI;
 using System.Collections.ObjectModel;
 using ReactiveUI.Primitives;
 using System.Security.Cryptography;
-using System.Text;
 
 namespace PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
 
@@ -1915,14 +1914,16 @@ public sealed class ProfileViewModel : ViewModelBase
         if (!CanConfirmHistoryRecovery || _token == Guid.Empty) return;
         var token = _token;
         var planId = _selfDiagnosticsResult!.RecoveryPlanId!;
-        var password = Encoding.UTF8.GetBytes(HistoryRecoveryPassword);
+        // The credential endpoint contract uses the same SHA-512 transform as
+        // registration, login, password changes and device disconnection.
+        var passwordHash = SecretTransform.HashPassword(HistoryRecoveryPassword);
         ClearStatusMessage();
         HistoryRecoveryPassword = string.Empty;
         IsHistoryRecoveryPasswordVisible = false;
         IsRunningSelfDiagnostics = true;
         try
         {
-            var result = await _endpoints.ConfirmSelfDiagnosticsRepairAsync(token, planId, password);
+            var result = await _endpoints.ConfirmSelfDiagnosticsRepairAsync(token, planId, passwordHash);
             if (_token != token) return;
             // Keep retry feedback in the existing dialog instead of closing and
             // reopening it, which hides the reason behind the recovery overlay.
@@ -1937,7 +1938,7 @@ public sealed class ProfileViewModel : ViewModelBase
         }
         finally
         {
-            CryptographicOperations.ZeroMemory(password);
+            CryptographicOperations.ZeroMemory(passwordHash);
             IsRunningSelfDiagnostics = false;
         }
     }

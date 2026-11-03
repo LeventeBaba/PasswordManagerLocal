@@ -17,6 +17,7 @@ using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Utils;
 using PasswordManagerLocal.Common.Contracts.Requests;
+using PasswordManagerLocal.Common.Tests.Fakes;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Services;
@@ -25,6 +26,83 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 [DoNotParallelize]
 public sealed class ConfirmedDeviceHistoryRecoveryTests
 {
+    [TestMethod]
+    [Timeout(90_000)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task ActiveLinkWithoutActiveMembership_IsDetectedAndRemovedAfterConfirmation()
+    {
+        await using var source = await ProductionSyncTestHost.CreateAsync();
+        await using var removed = await ProductionSyncTestHost.CreateAsync();
+        var token = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest("orphan_device_link"));
+        await EnrollAsync(source, removed, token);
+        await source.Endpoints.DisconnectUserDeviceAsync(token, removed.Identity.LocalDeviceId, Password());
+        var before = await ReadUserAsync(source, token);
+        using (var scope = source.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var link = await db.UserDevices.SingleAsync(row => row.UserId == before.UId && row.DeviceId == removed.Identity.LocalDeviceId);
+            link.IsDeleted = false;
+            link.DeletedAt = null;
+            link.IsSyncOn = true;
+            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+        }
+        var assessment = await source.Endpoints.RunSelfDiagnosticsAndRepairAsync(token);
+        Assert.IsFalse(assessment.Healthy);
+        CollectionAssert.Contains(assessment.Findings.ToArray(), "DeviceLinkInvalid");
+        CollectionAssert.Contains(assessment.RecoveryRisks.ToArray(), "RecoveryRiskOtherDevices");
+        Assert.IsNotNull(assessment.RecoveryPlanId);
+        Assert.AreEqual(0, (await JournalsAsync(source)).Count, "An active orphan link requires review before resetting history.");
+        var repaired = await source.Endpoints.ConfirmSelfDiagnosticsRepairAsync(token, assessment.RecoveryPlanId!, Password());
+        Assert.IsTrue(repaired.Healthy, string.Join(", ", repaired.Findings));
+        Assert.IsTrue((await source.Endpoints.GetUserDevicesAsync(token)).All(device => device.IsCurrentDevice));
+        using var verify = source.Services.CreateScope();
+        var stored = await verify.ServiceProvider.GetRequiredService<AppDbContext>().UserDevices.SingleAsync(row =>
+            row.UserId == before.UId && row.DeviceId == removed.Identity.LocalDeviceId);
+        Assert.IsTrue(stored.IsDeleted);
+        Assert.IsFalse(stored.IsSyncOn);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    [Timeout(90_000)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task ConfirmedReset_RefreshesRuntimeAfterCommitAndLifecycleRelease(bool failRefresh)
+    {
+        await using var source = await ProductionSyncTestHost.CreateAsync();
+        await using var removed = await ProductionSyncTestHost.CreateAsync();
+        var token = await PrepareAsync(source, removed);
+        var before = await ReadUserAsync(source, token);
+        using var scope = source.Services.CreateScope();
+        var lifecycle = new LifecycleProbe(scope.ServiceProvider.GetRequiredService<IUserLifecycleCoordinator>());
+        var runtime = new FakeSyncRuntimeService
+        {
+            RefreshHandler = async _ =>
+            {
+                Assert.IsFalse(lifecycle.IsExecuting, "Runtime shutdown must not wait for workers while holding their profile lock.");
+                using var read = source.Services.CreateScope();
+                var db = read.ServiceProvider.GetRequiredService<AppDbContext>();
+                Assert.IsFalse((await db.LocalUserDevices.SingleAsync(row => row.UserId == before.UId)).IsSyncOn);
+                Assert.IsTrue((await db.Users.SingleAsync(row => row.UId == before.UId)).KeyEpoch > before.KeyEpoch,
+                    "A separate scope must see the committed recovery before runtime reconciliation.");
+                if (failRefresh) throw new IOException("Injected runtime refresh failure.");
+            }
+        };
+        var diagnostics = ActivatorUtilities.CreateInstance<SelfDiagnosticsService>(scope.ServiceProvider, lifecycle, runtime);
+        var assessment = await diagnostics.RunAsync(token);
+        Assert.AreEqual(0, runtime.RefreshSyncEnabledCalls);
+        if (failRefresh)
+            await Assert.ThrowsExactlyAsync<MutationPartiallyCommittedException>(() =>
+                diagnostics.ConfirmRepairAsync(token, assessment.RecoveryPlanId!, Password()));
+        else
+            Assert.IsTrue((await diagnostics.ConfirmRepairAsync(token, assessment.RecoveryPlanId!, Password())).Healthy);
+        Assert.AreEqual(1, runtime.RefreshSyncEnabledCalls);
+        Assert.IsTrue((await source.Endpoints.RunSelfDiagnosticsAndRepairAsync(token)).Healthy,
+            "A runtime failure must not undo committed history or require another reset.");
+    }
+
     [TestMethod]
     [Timeout(120_000)]
     [TestCategory("Backend")]
@@ -476,9 +554,11 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
         using (var scope = source.Services.CreateScope())
         {
             var actual = scope.ServiceProvider.GetRequiredService<IUserRecoveryJournalService>();
-            var diagnostics = ActivatorUtilities.CreateInstance<SelfDiagnosticsService>(scope.ServiceProvider, new InterruptedJournalService(actual));
+            var runtime = new FakeSyncRuntimeService();
+            var diagnostics = ActivatorUtilities.CreateInstance<SelfDiagnosticsService>(scope.ServiceProvider, new InterruptedJournalService(actual), runtime);
             await Assert.ThrowsExactlyAsync<MutationPartiallyCommittedException>(() =>
                 diagnostics.ConfirmRepairAsync(token, assessment.RecoveryPlanId!, Password()));
+            Assert.AreEqual(1, runtime.RefreshSyncEnabledCalls, "Interrupted cleanup must still reconcile the committed synchronization pause.");
         }
         var row = (await JournalsAsync(source)).Single();
         Assert.AreEqual(UserRecoveryJournalState.PendingVerification, row.State);
@@ -628,6 +708,20 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
         public Task<Guid> StageAsync(Guid userId, byte[] snapshot, CancellationToken ct = default) => inner.StageAsync(userId, snapshot, ct);
         public Task<bool> CompleteAsync(Guid id, CancellationToken ct = default) => throw new IOException("Injected interruption before verification cleanup.");
         public Task MaintainAsync(CancellationToken ct = default) => inner.MaintainAsync(ct);
+    }
+
+    private sealed class LifecycleProbe(IUserLifecycleCoordinator inner) : IUserLifecycleCoordinator
+    {
+        public bool IsExecuting { get; private set; }
+        public Task ExecuteAsync(Guid userId, Func<CancellationToken, Task> action, CancellationToken ct = default) =>
+            ExecuteAsync<object?>(userId, async token => { await action(token); return null; }, ct);
+        public Task<T> ExecuteAsync<T>(Guid userId, Func<CancellationToken, Task<T>> action, CancellationToken ct = default) =>
+            inner.ExecuteAsync(userId, async token =>
+            {
+                IsExecuting = true;
+                try { return await action(token); }
+                finally { IsExecuting = false; }
+            }, ct);
     }
 
     private static async Task<Guid> PrepareAsync(ProductionSyncTestHost source, ProductionSyncTestHost removed)

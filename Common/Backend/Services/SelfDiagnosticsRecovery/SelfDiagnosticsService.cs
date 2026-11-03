@@ -103,7 +103,7 @@ public sealed partial class SelfDiagnosticsService
         if (masterPassword is null || masterPassword.Length == 0 || masterPassword.Length > 4096) throw new InvalidInputException();
         if (planId is null || planId.Length != 64 || !planId.All(Uri.IsHexDigit)) throw new InvalidInputException();
         var userId = (await _users.GetAndVerifyUserAsync(token, ct)).UId;
-        return await _lifecycle.ExecuteAsync(userId, async inner =>
+        return await ExecuteWithRuntimeRefreshAsync(userId, async inner =>
         {
             var user = await _users.GetAndVerifyUserAsync(token, inner);
             var plan = await AnalyzeRecoveryAsync(token, user, inner);
@@ -152,6 +152,48 @@ public sealed partial class SelfDiagnosticsService
         {
             throw new MutationPartiallyCommittedException(
                 $"Profile history was recovered, but follow-up verification or cleanup did not complete. Recovery journal {journalId:N} remains inside the protected database if still needed.", innerException: ex);
+        }
+    }
+
+    private async Task<SelfDiagnosticsResultResponse> ExecuteWithRuntimeRefreshAsync(
+        Guid userId, Func<CancellationToken, Task<SelfDiagnosticsResultResponse>> action, CancellationToken ct)
+    {
+        _historyResetCommitted = false;
+        SelfDiagnosticsResultResponse result;
+        try
+        {
+            result = await _lifecycle.ExecuteAsync(userId, action, ct);
+        }
+        catch
+        {
+            // A cleanup failure can occur after the reset committed. Reconcile
+            // the runtime even then, preserving the original operation error.
+            try { await RefreshRuntimeAfterResetAsync(); }
+            catch (Exception ex)
+            {
+                BackendDebugLog.Warning($"Synchronization runtime refresh also failed after recovery. UserId={userId}.", ex, "SelfDiagnostics");
+            }
+            throw;
+        }
+        await RefreshRuntimeAfterResetAsync();
+        return result;
+    }
+
+    private async Task RefreshRuntimeAfterResetAsync()
+    {
+        if (!_historyResetCommitted) return;
+        try
+        {
+            // Worker shutdown may wait for the profile lifecycle lock. This must
+            // run after ExecuteAsync released it, and after the durable commit.
+            // The runtime evaluates all profiles, preserving other profiles' sync.
+            await _syncRuntime.RefreshSyncEnabledAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            throw new MutationPartiallyCommittedException(
+                "Profile history was recovered, but synchronization runtime reconciliation did not complete.",
+                innerException: ex);
         }
     }
 
@@ -254,6 +296,7 @@ public sealed partial class SelfDiagnosticsService
             await _loginIdentities.SetCanonicalAsync(user, user.GetGeneralUserDataVersion(), ct);
             await _uow.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
+            _historyResetCommitted = true;
         }
         catch
         {
