@@ -26,7 +26,7 @@ public sealed partial class PasswordsViewModel
     internal double EditorScrollOffset { get; set; }
     internal bool RestoreEditorTagsFocus { get; set; }
     public bool IsPasswordTagPickerVisible => _isPasswordTagPickerOpen && IsEditorPaneVisible;
-    public bool IsPasswordPaneContentEnabled => !IsPasswordTagPickerVisible && !IsEditorDiscardConfirmationOpen;
+    public bool IsPasswordPaneContentEnabled => !IsInitialLoading && !IsPasswordTagPickerVisible && !IsEditorDiscardConfirmationOpen;
     public bool IsOuterPasswordErrorVisible => IsStatusMessageError && !IsEditorPaneVisible;
     public bool IsEditorInteractive => !_isSavingPassword;
     public bool IsSavingPassword => _isSavingPassword;

@@ -10,6 +10,25 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 public sealed class InteractiveSessionStateServiceTests
 {
     [TestMethod]
+    public async Task DeactivationCancelsDeferredWorkLifetimeAndReactivationUsesANewLifetime()
+    {
+        using var provider = new ServiceCollection().BuildServiceProvider();
+        using var state = new InteractiveSessionStateService(provider.GetRequiredService<IServiceScopeFactory>());
+        Assert.IsTrue(state.CurrentLifetime.IsCancellationRequested);
+        await state.ActivateAsync();
+        var first = state.CurrentLifetime;
+        Assert.IsFalse(first.IsCancellationRequested);
+
+        await state.DeactivateAsync();
+
+        Assert.IsTrue(first.IsCancellationRequested);
+        await state.ActivateAsync();
+        Assert.IsFalse(state.CurrentLifetime.IsCancellationRequested);
+        Assert.AreNotEqual(first, state.CurrentLifetime);
+        await state.DeactivateAsync();
+    }
+
+    [TestMethod]
     public async Task InactiveStateDoesNotResolveInteractiveServices()
     {
         var tokenServiceResolutions = 0;

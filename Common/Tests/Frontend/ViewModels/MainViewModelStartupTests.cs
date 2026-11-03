@@ -14,6 +14,35 @@ namespace PasswordManagerLocal.Common.Tests.Frontend.ViewModels;
 public sealed class MainViewModelStartupTests
 {
     [TestMethod]
+    public async Task RememberedLogin_PresentsAuthenticatedPageWhileInitialListLoads()
+    {
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync();
+        var endpoints = CreateEndpoints(out var recording);
+        var token = recording.AddProfile();
+        recording.RestoreResult = Task.FromResult<IReadOnlyList<Guid>>(new[] { token });
+        var list = new TaskCompletionSource<SavedPasswordsResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+        recording.PasswordsResult = list.Task;
+        await using var runtime = new StartupRuntime();
+        using var shell = new MainViewModel(endpoints, runtime, new FakeBackgroundSyncSettingsClient(), preferences,
+            deadlineScheduler: new ManualFrontendDeadlineScheduler());
+
+        var initialization = shell.InitializeAsync();
+        await recording.PasswordsRequested.Task;
+
+        Assert.IsTrue(shell.IsAuthenticated);
+        Assert.AreSame(shell.PasswordsViewModel, shell.CurrentPageViewModel);
+        Assert.IsTrue(shell.PasswordsViewModel.IsInitialLoading);
+        Assert.IsFalse(shell.PasswordsViewModel.IsVaultEmpty);
+        Assert.IsFalse(shell.PasswordsViewModel.IsPasswordPaneContentEnabled);
+        Assert.IsFalse(shell.PasswordsViewModel.CanAutomaticallyRefresh);
+        list.SetResult(new SavedPasswordsResponse());
+        await initialization;
+        Assert.IsFalse(shell.PasswordsViewModel.IsInitialLoading);
+        Assert.IsTrue(shell.PasswordsViewModel.IsVaultEmpty);
+        Assert.IsTrue(shell.PasswordsViewModel.IsPasswordPaneContentEnabled);
+    }
+
+    [TestMethod]
     public async Task ConstructionPreparesLocalViewsWithoutStartingConnectionOrRestoration()
     {
         await using var preferences = await TestUiPreferencesFactory.CreateAsync();
@@ -278,6 +307,8 @@ public sealed class MainViewModelStartupTests
         public int RestoreCalls { get; private set; }
         public Task<IReadOnlyList<Guid>> RestoreResult { get; set; } =
             Task.FromResult<IReadOnlyList<Guid>>(Array.Empty<Guid>());
+        public Task<SavedPasswordsResponse>? PasswordsResult { get; set; }
+        public TaskCompletionSource PasswordsRequested { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly Dictionary<Guid, UserProfileInfoResponse> _profiles = new();
 
         public Guid AddProfile()
@@ -302,7 +333,8 @@ public sealed class MainViewModelStartupTests
                 case nameof(IEndpoints.GetUserProfileInfoAsync):
                     return Task.FromResult(_profiles[(Guid)args![0]!]);
                 case nameof(IEndpoints.GetSavedPasswordsAsync):
-                    return Task.FromResult(new SavedPasswordsResponse());
+                    PasswordsRequested.TrySetResult();
+                    return PasswordsResult ?? Task.FromResult(new SavedPasswordsResponse());
                 case nameof(IEndpoints.LogoutAsync):
                     return Task.CompletedTask;
                 default:

@@ -2205,16 +2205,18 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
         var passwordsLoadTask = passwordsViewModel.LoadAsync(token);
         var profileLoadTask = profileViewModel.LoadAsync(token, profile);
+        // Authentication and the initial local list are independent of pending sync reconciliation.
+        // LoadAsync sets its loading state before this page is presented.
+        SetPageAfterSessionChange(passwordsViewModel);
+        SetCurrentMobileNavigationIndex(0);
         await Task.WhenAll(passwordsLoadTask, profileLoadTask);
         var passwordsLoaded = await passwordsLoadTask;
         var profileLoaded = await profileLoadTask;
 
         if (startupEpoch is { } currentEpoch)
             EnsureStartupCurrent(currentEpoch);
-        if (IsDisposed || LifetimeToken.IsCancellationRequested)
+        if (IsDisposed || LifetimeToken.IsCancellationRequested || _authSessionRegistry.CurrentUserToken != token)
             return false;
-        SetPageAfterSessionChange(passwordsViewModel);
-        SetCurrentMobileNavigationIndex(0);
 
         if (!passwordsLoaded)
         {
@@ -3098,7 +3100,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
                 "IsPasswordMultiSelectionActive" or "IsCustomColorMultiSelectionActive" or
                 "IsPasswordTagMultiSelectionActive" or "IsDeleteConfirmationOpen" or
                 "IsCustomColorDeleteConfirmationOpen" or "IsPasswordTagDeleteConfirmationOpen" or
-                "IsExportConfirmationOpen") ||
+                "IsExportConfirmationOpen" or "IsInitialLoading") ||
             (sender is ProfileViewModel && property is
                 "IsDeviceDisconnectDialogOpen" or "IsLocalSyncDialogOpen" or "IsHistoryRecoveryDialogOpen" or "IsAddDeviceDialogOpen" or
                 "IsAddingDevice" or "IsRunningSelfDiagnostics" or "IsChangingDeviceSync" or "AreDevicesLoaded") ||

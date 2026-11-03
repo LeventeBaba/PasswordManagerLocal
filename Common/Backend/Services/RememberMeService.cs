@@ -27,6 +27,11 @@ public class RememberMeService : IRememberMeService
     private readonly IUserDataRecoveryCoordinator? _recoveryCoordinator;
     private readonly IUserRepository? _users;
 
+    private readonly IUserLifecycleCoordinator? _lifecycle;
+    private readonly IUserLoginPreparationService? _preparation;
+    private readonly IUserPostLoginWorkScheduler? _postLogin;
+    private readonly IAuthenticatedSessionIssuer? _sessionIssuer;
+
     public RememberMeService(
         ITokenService tokens,
         IKeyVaultService keys,
@@ -41,8 +46,16 @@ public class RememberMeService : IRememberMeService
         IUserTombstoneGarbageCollector? garbageCollector = null,
         IUserCanonicalHealthService? canonicalHealth = null,
         IUserDataRecoveryCoordinator? recoveryCoordinator = null,
-        IUserRepository? users = null)
+        IUserRepository? users = null,
+        IUserLifecycleCoordinator? lifecycle = null,
+        IUserLoginPreparationService? preparation = null,
+        IUserPostLoginWorkScheduler? postLogin = null,
+        IAuthenticatedSessionIssuer? sessionIssuer = null)
     {
+        _lifecycle = lifecycle;
+        _preparation = preparation;
+        _postLogin = postLogin;
+        _sessionIssuer = sessionIssuer;
         _tokens = tokens;
         _keys = keys;
         _protector = protector;
@@ -135,8 +148,27 @@ public class RememberMeService : IRememberMeService
     }
 
 
-    private async Task<Guid?> TryInitializeRememberedUserAsync(User user, CancellationToken ct)
+    private Task<Guid?> TryInitializeRememberedUserAsync(User user, CancellationToken ct) =>
+        _lifecycle is null
+            ? InitializeRememberedUserUnderLifecycleAsync(user, ct)
+            : _lifecycle.ExecuteAsync(user.UId, async innerCt =>
+            {
+                // The Remember Me inventory may predate a password change or device removal.
+                var current = await _lookup.GetUserByUidAsync(user.UId, innerCt);
+                return current is null ? null : await InitializeRememberedUserUnderLifecycleAsync(current, innerCt);
+            }, ct);
+
+    private async Task<Guid?> InitializeRememberedUserUnderLifecycleAsync(User user, CancellationToken ct)
     {
+        if (_preparation is not null)
+        {
+            try { await _preparation.ReconcilePendingSecurityOperationsAsync(user.UId, ct); }
+            catch (UnauthorizedAccessException) { return null; }
+            // Key replacement may have cleared SavedKey; never unprotect the inventory's old key.
+            var current = await _lookup.GetUserByUidAsync(user.UId, ct);
+            if (current is null) return null;
+            user = current;
+        }
         if (user.SavedKey is null)
             return null;
 
@@ -163,33 +195,40 @@ public class RememberMeService : IRememberMeService
 
             try
             {
-                await _snapshotMerge.TryMergePendingAsync(user.UId, key, UserSyncKeyConfidence.RememberMe, ct);
-                if (_recoveryCoordinator is not null)
+                using var localBundle = _preparation is not null && _postLogin is not null
+                    ? await _preparation.TryPrepareLocalAsync(user, key, UserSyncKeyConfidence.RememberMe, ct)
+                    : null;
+                if (localBundle is null)
                 {
-                    await _recoveryCoordinator.TryRecoverAsync(
-                        user.UId,
-                        key,
-                        UserSyncKeyConfidence.RememberMe,
-                        UserDataRecoveryTrigger.RememberMeStartup,
-                        ct);
-                }
-                if (_garbageCollector is not null)
-                {
-                    try
+                    await _snapshotMerge.TryMergePendingAsync(user.UId, key, UserSyncKeyConfidence.RememberMe, ct);
+                    if (_recoveryCoordinator is not null)
                     {
-                        await _garbageCollector.CollectAsync(user.UId, key, ct);
+                        await _recoveryCoordinator.TryRecoverAsync(
+                            user.UId,
+                            key,
+                            UserSyncKeyConfidence.RememberMe,
+                            UserDataRecoveryTrigger.RememberMeStartup,
+                            ct);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    if (_garbageCollector is not null)
                     {
-                        // Remember Me unlock remains available when maintenance is conservatively blocked.
+                        try
+                        {
+                            await _garbageCollector.CollectAsync(user.UId, key, ct);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            // Remember Me unlock remains available when maintenance is conservatively blocked.
+                        }
                     }
                 }
 
                 user = await _lookup.GetAndVerifyUserByUidAsync(user.UId, ct);
-                using var bundle = await _reader.GetAndVerifyUserDataBundleAsync(user, key, ct);
+                using var bundle = localBundle ?? await _reader.GetAndVerifyUserDataBundleAsync(user, key, ct);
                 try
                 {
-                    if (_canonicalHealth is not null)
+                    UserLoginIdentityMetadataUtil.Verify(user, bundle.GeneralUserData);
+                    if (localBundle is null && _canonicalHealth is not null)
                     {
                         var health = await _canonicalHealth.VerifyAsync(
                             user, key, UserSyncKeyConfidence.RememberMe, recordFault: true, ct: ct);
@@ -212,9 +251,18 @@ public class RememberMeService : IRememberMeService
 
                     try
                     {
-                        var token = _tokens.Issue(user.UId);
-                        _keys.SetUserKey(token, key);
-                        _keys.SetUserBlobKeys(token, bundle.UserData);
+                        if (_preparation is not null)
+                            await _preparation.EnsureAuthorizedAsync(user.UId, ct);
+                        var token = _sessionIssuer is not null
+                            ? _sessionIssuer.IssueAuthenticatedSession(user.UId, key, bundle)
+                            : _tokens.Issue(user.UId);
+                        if (_sessionIssuer is null)
+                        {
+                            _keys.SetUserKey(token, key);
+                            _keys.SetUserBlobKeys(token, bundle.UserData);
+                        }
+                        if (localBundle is not null)
+                            _postLogin!.DeferUntilInitialRead(user.UId, user.KeyEpoch, user.MembershipEpoch, token);
                         return token;
                     }
                     catch (Exception ex)

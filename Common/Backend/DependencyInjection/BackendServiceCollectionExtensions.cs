@@ -116,9 +116,17 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
 
         services.AddSingleton<IUserLifecycleCoordinator, UserLifecycleCoordinator>();
-        services.AddSingleton<IInteractiveSessionStateService, InteractiveSessionStateService>();
+        services.AddSingleton<InteractiveSessionStateService>();
+        services.AddSingleton<IInteractiveSessionStateService>(sp => sp.GetRequiredService<InteractiveSessionStateService>());
+        services.AddSingleton<IInteractiveSessionLifetime>(sp => sp.GetRequiredService<InteractiveSessionStateService>());
         services.AddSingleton<IInteractiveUserDataStateAccessor, InteractiveUserDataStateAccessor>();
         services.AddSingleton(TimeProvider.System);
+
+        services.AddSingleton<UserPostLoginWorkScheduler>();
+        services.AddSingleton<IUserPostLoginWorkScheduler>(sp => sp.GetRequiredService<UserPostLoginWorkScheduler>());
+        services.AddSingleton<UserPostLoginWorkHostedService>();
+        services.AddSingleton<IBackendHostedService>(sp => sp.GetRequiredService<UserPostLoginWorkHostedService>());
+        services.AddScoped<IUserLoginPreparationService, UserLoginPreparationService>();
 
         services.AddSingleton<UserDataRecoveryScheduler>();
         services.AddSingleton<IUserDataRecoveryScheduler>(sp => sp.GetRequiredService<UserDataRecoveryScheduler>());

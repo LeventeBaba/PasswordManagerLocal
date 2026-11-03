@@ -29,6 +29,9 @@ public sealed class NetworkDeltaService : INetworkDeltaService
     private readonly IUnitOfWork _uow;
     private readonly IUserTombstoneGarbageCollector? _garbageCollector;
 
+    private readonly IUserPostLoginWorkScheduler? _postLogin;
+    private readonly IUserLifecycleCoordinator? _userLifecycle;
+
     public NetworkDeltaService(
         IOutgoingDeltaBuilderService outgoingDeltaBuilder,
         INetworkDeltaProtocolService protocol,
@@ -44,8 +47,12 @@ public sealed class NetworkDeltaService : INetworkDeltaService
         IUserRevisionKnowledgeRepository revisionKnowledge,
         IInteractiveSessionStateService interactiveSessions,
         IUserControlOperationInboxService controlOperationInbox,
-        IUserTombstoneGarbageCollector? garbageCollector = null)
+        IUserTombstoneGarbageCollector? garbageCollector = null,
+        IUserPostLoginWorkScheduler? postLogin = null,
+        IUserLifecycleCoordinator? userLifecycle = null)
     {
+        _postLogin = postLogin;
+        _userLifecycle = userLifecycle;
         _outgoingDeltaBuilder = outgoingDeltaBuilder;
         _protocol = protocol;
         _replay = replay;
@@ -132,10 +139,6 @@ public sealed class NetworkDeltaService : INetworkDeltaService
             ?? throw new InvalidDataException("User snapshot envelope is missing.");
 
         var inbox = _snapshotInbox;
-        var mergeCoordinator = _mergeCoordinator;
-        var keyResolver = _keyResolver;
-        var users = _users;
-
         var receipt = await inbox.StoreAsync(envelope, sourceDevice.Id, ct);
         await _lifecycle.TouchSourceDeviceAsync(sourceDevice, ct);
         await _uow.SaveChangesAsync(ct);
@@ -152,7 +155,31 @@ public sealed class NetworkDeltaService : INetworkDeltaService
 
         try
         {
-        var user = await users.GetByIdAsync(envelope.UserId, ct);
+            return _userLifecycle is null
+                ? await MergeStoredSnapshotAsync(envelope, receipt, transportTimestamp, ct)
+                : await _userLifecycle.ExecuteAsync(envelope.UserId,
+                    workCt => MergeStoredSnapshotAsync(envelope, receipt, transportTimestamp, workCt), ct);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or UnauthorizedAccessException or InvalidDataIntegrityException)
+        {
+            // The peer's signed envelope was already accepted and stored. A failure while
+            // merging or refreshing our own canonical state cannot be attributed to it.
+            throw new SyncStateUnavailableException("The verified snapshot is stored, but local merge is unavailable.", ex);
+        }
+    }
+    private async Task<NetworkDeltaApplyResult> MergeStoredSnapshotAsync(
+        UserSnapshotEnvelope envelope, UserSnapshotReceiptResult receipt, long transportTimestamp, CancellationToken ct)
+    {
+        var mergeCoordinator = _mergeCoordinator;
+        var keyResolver = _keyResolver;
+        var users = _users;
+        // This gate is checked under lifecycle ownership, after any concurrent login completed.
+        if (_postLogin?.IsInitialReadPending(envelope.UserId) == true)
+        {
+            _postLogin.Schedule(envelope.UserId);
+            return new NetworkDeltaApplyResult(transportTimestamp, receipt);
+        }
+        var user = await users.GetByIdAsNoTrackingAsync(envelope.UserId, ct);
         if (user is null || !keyResolver.TryResolve(user, out var key) || key is null)
             return new NetworkDeltaApplyResult(transportTimestamp, receipt);
 
@@ -202,12 +229,6 @@ public sealed class NetworkDeltaService : INetworkDeltaService
             Detail = "The pending snapshot was durably stored and then incorporated into canonical state."
         };
         return new NetworkDeltaApplyResult(transportTimestamp, mergedReceipt);
-        }
-        catch (Exception ex) when (ex is InvalidDataException or UnauthorizedAccessException or InvalidDataIntegrityException)
-        {
-            // The peer's signed envelope was already accepted and stored. A failure while
-            // merging or refreshing our own canonical state cannot be attributed to it.
-            throw new SyncStateUnavailableException("The verified snapshot is stored, but local merge is unavailable.", ex);
-        }
     }
+
 }

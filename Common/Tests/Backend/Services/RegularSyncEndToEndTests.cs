@@ -718,11 +718,36 @@ public sealed class RegularSyncEndToEndTests
         foreach (var host in setup.Hosts)
         {
             await using var restarted = await host.RestartAsync();
-            var token = await restarted.Endpoints.LoginAsync(restarted.CreateLoginRequest(setup.Username));
+            Guid token;
+            try { token = await restarted.Endpoints.LoginAsync(restarted.CreateLoginRequest(setup.Username)); }
+            catch
+            {
+                try { TestContext.WriteLine(await DescribeLoginSecurityStateAsync(restarted)); }
+                catch (Exception diagnosticFailure) { TestContext.WriteLine($"Security diagnostics failed: {diagnosticFailure.GetType().Name}."); }
+                throw;
+            }
             Assert.IsTrue(await HasPasswordAsync(restarted, token, "B edit 2"));
             Assert.IsTrue(await HasPasswordAsync(restarted, token, "C edit 2"));
             Assert.IsTrue((await restarted.Endpoints.GetUserDevicesAsync(token)).Any(x => x.Name == "Third PC 2"));
         }
+    }
+
+    private static async Task<string> DescribeLoginSecurityStateAsync(ProductionSyncTestHost host)
+    {
+        using var scope = host.Services.CreateScope();
+        var services = scope.ServiceProvider;
+        var lines = new List<string> { $"Restart login rejected on device {host.Identity.LocalDeviceId:N}." };
+        foreach (var userId in await services.GetRequiredService<IUserRepository>().ListUserIdsAsync())
+        {
+            var state = await services.GetRequiredService<IUserControlStateRepository>().GetAsync(userId);
+            lines.Add($"User={userId:N}, KeyEpoch={state?.AppliedKeyEpoch}, MembershipEpoch={state?.AppliedMembershipEpoch}, ControlConflict={state?.HasConflict}.");
+            foreach (var operation in await services.GetRequiredService<IUserControlOperationRepository>().ListForUserAsync(userId))
+                lines.Add($"Operation={operation.OperationId:N}, Type={operation.OperationType}, Status={operation.Status}, " +
+                    $"KeyEpoch={operation.PreviousKeyEpoch}->{operation.ResultingKeyEpoch}, MembershipEpoch={operation.PreviousMembershipEpoch}->{operation.ResultingMembershipEpoch}, Reason={operation.StatusReason}.");
+            foreach (var fault in await services.GetRequiredService<IUserSyncFaultRepository>().ListActiveForUserAsync(userId))
+                lines.Add($"Fault={fault.Kind}, Status={fault.Status}, BlocksLogin={fault.BlocksLogin}, BlocksLifecycle={fault.BlocksLifecycle}, Code={fault.DiagnosticCode}.");
+        }
+        return string.Join(Environment.NewLine, lines);
     }
 
     private static async Task WaitForAutomaticAsync(

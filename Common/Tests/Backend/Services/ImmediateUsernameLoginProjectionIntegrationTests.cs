@@ -26,12 +26,14 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 public sealed class ImmediateUsernameLoginProjectionIntegrationTests
 {
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
     [TestCategory("Security")]
-    public async Task PendingSignedUsernameChange_IsEffectiveWhileLocked_LoginMergesAndKeepsOldUsernameInvalid()
+    public async Task PendingSignedUsernameChange_IsEffectiveWhileLocked_LoginMergesAndKeepsOldUsernameInvalid(bool enableDeferredLogin)
     {
-        using var host = new BackendTestHost(useRealSnapshotMergeCoordinator: true);
+        using var host = new BackendTestHost(useRealSnapshotMergeCoordinator: true, enableDeferredLogin: enableDeferredLogin);
         var scenario = await StorePendingRenameAsync(
             host,
             oldUsername: "pending-old-username",
@@ -77,12 +79,14 @@ public sealed class ImmediateUsernameLoginProjectionIntegrationTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
     [TestCategory("Security")]
-    public async Task SignedProjectionThatDisagreesWithDecryptedUsername_IsQuarantinedAndCannotCompleteLogin()
+    public async Task SignedProjectionThatDisagreesWithDecryptedUsername_IsQuarantinedAndCannotCompleteLogin(bool enableDeferredLogin)
     {
-        using var host = new BackendTestHost(useRealSnapshotMergeCoordinator: true);
+        using var host = new BackendTestHost(useRealSnapshotMergeCoordinator: true, enableDeferredLogin: enableDeferredLogin);
         var scenario = await StorePendingRenameAsync(
             host,
             oldUsername: "mismatch-old-username",

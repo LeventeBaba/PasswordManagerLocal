@@ -494,15 +494,31 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     public int RevealedPasswordStrength => _revealedPasswordStrength;
 
+    private bool _isInitialLoading;
+    private long _initialLoadVersion;
+
+    public bool IsInitialLoading
+    {
+        get => _isInitialLoading;
+        private set
+        {
+            if (_isInitialLoading == value) return;
+            this.RaiseAndSetIfChanged(ref _isInitialLoading, value);
+            this.RaisePropertyChanged(nameof(IsPasswordPaneContentEnabled));
+            this.RaisePropertyChanged(nameof(IsVaultEmpty));
+            this.RaisePropertyChanged(nameof(IsSearchResultEmpty));
+        }
+    }
+
     public bool HasPasswords => Passwords.Count > 0;
 
     public bool IsEmpty => Passwords.Count == 0;
 
     public bool HasStoredPasswords => _allPasswords.Count > 0;
 
-    public bool IsVaultEmpty => _allPasswords.Count == 0;
+    public bool IsVaultEmpty => !IsInitialLoading && _allPasswords.Count == 0;
 
-    public bool IsSearchResultEmpty => HasStoredPasswords && Passwords.Count == 0;
+    public bool IsSearchResultEmpty => !IsInitialLoading && HasStoredPasswords && Passwords.Count == 0;
 
     public string CurrentPane
     {
@@ -1398,8 +1414,14 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     public async Task<bool> LoadAsync(Guid token)
     {
         _token = token;
+        var version = ++_initialLoadVersion;
+        IsInitialLoading = true;
         RaiseMultiSelectionStateChanged();
-        return await RefreshAsync();
+        try { return await RefreshAsync(); }
+        finally
+        {
+            if (_initialLoadVersion == version) IsInitialLoading = false;
+        }
     }
 
     public void SetSessionToken(Guid token)
@@ -1409,7 +1431,7 @@ public sealed partial class PasswordsViewModel : ViewModelBase
     }
 
     public bool CanAutomaticallyRefresh =>
-        _token != Guid.Empty &&
+        !IsInitialLoading && _token != Guid.Empty &&
         IsListPaneVisible &&
         !IsMultiSelectionToolbarVisible &&
         !IsDeleteConfirmationOpen &&
@@ -1455,6 +1477,8 @@ public sealed partial class PasswordsViewModel : ViewModelBase
 
     public void Reset()
     {
+        ++_initialLoadVersion;
+        IsInitialLoading = false;
         _token = Guid.Empty;
         _searchDebounce.Cancel();
         _customColorSearchDebounce.Cancel();

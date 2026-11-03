@@ -26,7 +26,8 @@ public sealed class BackendTestHost : IDisposable
 
     public BackendTestHost(
         bool useRealSnapshotMergeCoordinator = false,
-        IKeyProtector? keyProtector = null)
+        IKeyProtector? keyProtector = null,
+        bool enableDeferredLogin = false)
     {
         var sc = new ServiceCollection();
         _signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
@@ -102,6 +103,7 @@ public sealed class BackendTestHost : IDisposable
         sc.AddSingleton<IUserSyncKeyResolverService, UserSyncKeyResolverService>();
         sc.AddSingleton<IUserLifecycleCoordinator, UserLifecycleCoordinator>();
         sc.AddSingleton<IInteractiveSessionStateService, InteractiveSessionStateService>();
+        sc.AddSingleton<IInteractiveSessionLifetime>(sp => (IInteractiveSessionLifetime)sp.GetRequiredService<IInteractiveSessionStateService>());
         sc.AddSingleton<IInteractiveUserDataStateAccessor, InteractiveUserDataStateAccessor>();
         sc.AddSingleton<FakeUserDataRecoveryCoordinator>();
         sc.AddSingleton<IUserDataRecoveryCoordinator>(sp => sp.GetRequiredService<FakeUserDataRecoveryCoordinator>());
@@ -159,6 +161,20 @@ public sealed class BackendTestHost : IDisposable
         sc.AddSingleton<IUserDeviceSettingsService, UserDeviceSettingsService>();
         sc.AddSingleton<IUserDeviceDisconnectionService, UserDeviceDisconnectionService>();
         sc.AddSingleton<IDeviceService, DeviceService>();
+
+        if (enableDeferredLogin)
+        {
+            sc.AddSingleton<IUserCanonicalCheckpointRepository, FakeUserCanonicalCheckpointRepository>();
+            sc.AddSingleton<IUserSyncFaultRepository, FakeUserSyncFaultRepository>();
+            sc.AddSingleton<IUserSyncFaultService, UserSyncFaultService>();
+            sc.AddSingleton<IUserDataBundleVerificationService, UserDataBundleVerificationService>();
+            sc.AddSingleton<IUserCanonicalHealthService, UserCanonicalHealthService>();
+            sc.AddSingleton<FakeUserControlOperationInboxService>();
+            sc.AddSingleton<IUserControlOperationInboxService>(sp => sp.GetRequiredService<FakeUserControlOperationInboxService>());
+            sc.AddSingleton<IUserLoginPreparationService, UserLoginPreparationService>();
+            sc.AddSingleton<UserPostLoginWorkScheduler>();
+            sc.AddSingleton<IUserPostLoginWorkScheduler>(sp => sp.GetRequiredService<UserPostLoginWorkScheduler>());
+        }
 
         _sp = sc.BuildServiceProvider(new ServiceProviderOptions
         {

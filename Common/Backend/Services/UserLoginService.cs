@@ -30,6 +30,9 @@ public sealed class UserLoginService : IUserLoginService
     private readonly IUserDataRecoveryCoordinator? _recoveryCoordinator;
     private readonly IUserMembershipAuthorizationRepository _membershipAuthorizations;
 
+    private readonly IUserLoginPreparationService? _preparation;
+    private readonly IUserPostLoginWorkScheduler? _postLogin;
+
     public UserLoginService(
         IUserLookupService userLookup,
         IUserLoginIdentityProjectionService loginIdentities,
@@ -44,8 +47,12 @@ public sealed class UserLoginService : IUserLoginService
         IUserTombstoneGarbageCollector? garbageCollector = null,
         IUserCanonicalHealthService? canonicalHealth = null,
         IUserDataRecoveryCoordinator? recoveryCoordinator = null,
-        IUserMembershipAuthorizationRepository? membershipAuthorizations = null)
+        IUserMembershipAuthorizationRepository? membershipAuthorizations = null,
+        IUserLoginPreparationService? preparation = null,
+        IUserPostLoginWorkScheduler? postLogin = null)
     {
+        _preparation = preparation;
+        _postLogin = postLogin;
         _userLookup = userLookup;
         _loginIdentities = loginIdentities;
         _userDataReader = userDataReader;
@@ -110,6 +117,10 @@ public sealed class UserLoginService : IUserLoginService
         Guid expectedUserId,
         CancellationToken ct)
     {
+        if (_preparation is not null)
+            await _preparation.ReconcilePendingSecurityOperationsAsync(expectedUserId, ct);
+        // A control operation can replace the salt, username projection, or local authorization.
+        // Resolve identity and load the canonical user only after those prerequisites complete.
         var prePasswordResolution = await _userLookup.ResolveUsernameAsync(usernameBytes, ct);
         if (prePasswordResolution.State is UserLoginIdentityMatchState.InvalidProjection or UserLoginIdentityMatchState.ProjectionOutdated)
         {
@@ -155,34 +166,40 @@ public sealed class UserLoginService : IUserLoginService
 
             using var key = EncryptionKey.FromPassword(request.Password, passwordSalt);
 
-            await _snapshotMerge.TryMergePendingUnderLifecycleAsync(user.UId, key, UserSyncKeyConfidence.UnconfirmedPassword, ct);
-            if (_recoveryCoordinator is not null)
+            using var localBundle = _preparation is not null && _postLogin is not null
+                ? await _preparation.TryPrepareLocalAsync(user, key, UserSyncKeyConfidence.UnconfirmedPassword, ct)
+                : null;
+            if (localBundle is null)
             {
-                await _recoveryCoordinator.TryRecoverAsync(
-                    user.UId,
-                    key,
-                    UserSyncKeyConfidence.UnconfirmedPassword,
-                    UserDataRecoveryTrigger.Login,
-                    ct);
-            }
-            if (_garbageCollector is not null)
-            {
-                try
+                await _snapshotMerge.TryMergePendingUnderLifecycleAsync(user.UId, key, UserSyncKeyConfidence.UnconfirmedPassword, ct);
+                if (_recoveryCoordinator is not null)
                 {
-                    await _garbageCollector.CollectAsync(user.UId, key, ct);
+                    await _recoveryCoordinator.TryRecoverAsync(
+                        user.UId,
+                        key,
+                        UserSyncKeyConfidence.UnconfirmedPassword,
+                        UserDataRecoveryTrigger.Login,
+                        ct);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                if (_garbageCollector is not null)
                 {
-                    // Login must remain available when conservative maintenance cannot complete.
+                    try
+                    {
+                        await _garbageCollector.CollectAsync(user.UId, key, ct);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // Login must remain available when conservative maintenance cannot complete.
+                    }
                 }
             }
 
             user = await _userLookup.GetAndVerifyUserByUidAsync(user.UId, ct);
-            using var bundle = await _userDataReader.GetAndVerifyUserDataBundleAsync(user, key, ct);
+            using var bundle = localBundle ?? await _userDataReader.GetAndVerifyUserDataBundleAsync(user, key, ct);
             try
             {
                 UserLoginIdentityMetadataUtil.Verify(user, bundle.GeneralUserData);
-                if (_canonicalHealth is not null)
+                if (localBundle is null && _canonicalHealth is not null)
                 {
                     var health = await _canonicalHealth.VerifyAsync(
                         user, key, UserSyncKeyConfidence.ExplicitlyTrusted, recordFault: true, ct: ct);
@@ -212,7 +229,12 @@ public sealed class UserLoginService : IUserLoginService
                         finalResolution.UserId != expectedUserId)
                         throw new UsernameChangedDuringLoginException();
 
-                    return _sessionIssuer.IssueAuthenticatedSession(user.UId, key, bundle);
+                    if (_preparation is not null)
+                        await _preparation.EnsureAuthorizedAsync(user.UId, ct);
+                    var session = _sessionIssuer.IssueAuthenticatedSession(user.UId, key, bundle);
+                    if (localBundle is not null)
+                        _postLogin!.DeferUntilInitialRead(user.UId, user.KeyEpoch, user.MembershipEpoch, session);
+                    return session;
                 }
                 catch (Exception ex)
                 {

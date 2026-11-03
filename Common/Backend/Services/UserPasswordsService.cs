@@ -15,14 +15,18 @@ public sealed class UserPasswordsService : IUserPasswordsService
     private readonly ICustomUserColorService _customUserColorService;
     private readonly IPasswordTagService _passwordTagService;
 
+    private readonly IUserPostLoginWorkScheduler? _postLogin;
+
     public UserPasswordsService(
         IUserSessionService sessions,
         IUserDataReaderService reader,
         IUserDataWriterService writer,
         IPasswordService passwordService,
         ICustomUserColorService customUserColorService,
-        IPasswordTagService passwordTagService)
+        IPasswordTagService passwordTagService,
+        IUserPostLoginWorkScheduler? postLogin = null)
     {
+        _postLogin = postLogin;
         _sessions = sessions;
         _reader = reader;
         _writer = writer;
@@ -36,12 +40,15 @@ public sealed class UserPasswordsService : IUserPasswordsService
     public async Task<SavedPasswordsResponse> GetSavedPasswordsAsync(Guid token, CancellationToken ct = default)
     {
         using var bundle = await _reader.GetLoadAndVerifyUserDataBundleAsync(token, ct);
-        return new SavedPasswordsResponse
+        var response = new SavedPasswordsResponse
         {
             Passwords = _passwordService.ConvertToPasswordInfoResponses(bundle.UserPasswordsData),
             CustomColors = _customUserColorService.ConvertToCustomUserColorInfoResponses(bundle.UserPasswordsData),
             Tags = _passwordTagService.ConvertToPasswordTagInfoResponses(bundle.UserPasswordsData)
         };
+        // Do not let reconciliation acquire the lifecycle lock ahead of the initial list projection.
+        _postLogin?.ReleaseInitialRead(_sessions.GetUidFromToken(token), token);
+        return response;
     }
 
 

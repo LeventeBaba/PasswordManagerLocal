@@ -471,8 +471,6 @@ public sealed class UserDataWriterService : IUserDataWriterService
             await userDataTask,
             value => user.EncryptedPayload = value);
 
-        bundle.CanonicalGeneration = UserDataGeneration.Capture(user);
-
         if (rewriteGeneral)
         {
             user.SetGeneralUserDataVersion(bundle.GeneralUserData.Version);
@@ -491,6 +489,8 @@ public sealed class UserDataWriterService : IUserDataWriterService
         {
             await UpdateUserAsync(user, enqueueSync, ct);
         }
+        // Capture after metadata, integrity and persistence have reached the committed generation.
+        bundle.CanonicalGeneration = UserDataGeneration.Capture(user);
     }
 
     private async Task<byte[]> EncryptBlobAsync<T>(

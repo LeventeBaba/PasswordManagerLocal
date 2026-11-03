@@ -1,5 +1,6 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Utils;
@@ -118,10 +119,18 @@ public sealed class UserDataReaderService : IUserDataReaderService
     {
         if (_interactiveState.TryGetUserDataBundle(token, out var foundBundle) && foundBundle is not null)
         {
-            _integrity.VerifyUntrustedBundle(foundBundle);
-            _versionClock.Observe(SyncVersionStampTraversal.Enumerate(foundBundle));
-            bundle = foundBundle;
-            return true;
+            try
+            {
+                _integrity.VerifyUntrustedBundle(foundBundle);
+                _versionClock.Observe(SyncVersionStampTraversal.Enumerate(foundBundle));
+                bundle = foundBundle;
+                return true;
+            }
+            catch
+            {
+                foundBundle.Dispose();
+                throw;
+            }
         }
 
         bundle = null;
@@ -139,10 +148,28 @@ public sealed class UserDataReaderService : IUserDataReaderService
 
     public async Task<UserDataBundle> GetLoadAndVerifyUserDataBundleAsync(Guid token, CancellationToken ct = default, User? user = null)
     {
+        var userId = _interactiveState.GetUserIdFromToken(token);
         user ??= await _users.GetAndVerifyUserAsync(token, ct);
+        if (user.UId != userId)
+            throw new InvalidTokenException();
+        user.VerifyIntegrity();
+        ct.ThrowIfCancellationRequested();
 
-        var bundle = await GetAndVerifyUserDataBundleAsync(user, token, ct);
-        return bundle;
+        // Session issuance already verified this exact committed encrypted generation.
+        // Cache entries are independent clones and never authorize a stale canonical read.
+        if (TryGetAndVerifyUserDataBundleFromCache(token, out var cached) && cached is not null)
+        {
+            var generation = UserDataGeneration.Capture(user);
+            try
+            {
+                if (cached.CanonicalGeneration is not null &&
+                    cached.CanonicalGeneration.AsSpan().SequenceEqual(generation))
+                    return cached;
+            }
+            finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(generation); }
+            cached.Dispose();
+        }
+        return await GetAndVerifyUserDataBundleAsync(user, token, ct);
     }
 
     private async Task<UserData> DecryptUserDataAsync(User user, EncryptionKey key, CancellationToken ct)

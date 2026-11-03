@@ -10,6 +10,7 @@ internal static class UserDataGeneration
         hash.Write(user.UId);
         hash.Write(user.KeyEpoch);
         hash.Write(user.MembershipEpoch);
+        hash.WriteBytes(user.IntegrityHash); // Includes canonical metadata as well as encrypted blobs.
         hash.WriteBytes(user.EncryptedPayload);
         hash.WriteBytes(user.EncryptedGeneralUserDataPayload);
         hash.WriteBytes(user.EncryptedUserPasswordsDataPayload);

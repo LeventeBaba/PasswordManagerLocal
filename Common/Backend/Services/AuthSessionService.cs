@@ -21,6 +21,8 @@ public sealed class AuthSessionService : IAuthSessionService, IAuthenticatedSess
     private readonly IKeyVaultService _keys;
     private readonly IBackendChangePublisher? _changePublisher;
 
+    private readonly IUserPostLoginWorkScheduler? _postLogin;
+
     public AuthSessionService(
         IUserDataReaderService userDataReader,
         ITokenService tokens,
@@ -28,8 +30,10 @@ public sealed class AuthSessionService : IAuthSessionService, IAuthenticatedSess
         IKeyVaultService keys,
         IUserRepository users,
         IUserLifecycleCoordinator lifecycle,
-        IBackendChangePublisher? changePublisher = null)
+        IBackendChangePublisher? changePublisher = null,
+        IUserPostLoginWorkScheduler? postLogin = null)
     {
+        _postLogin = postLogin;
         _userDataReader = userDataReader;
         _tokens = tokens;
         _cache = cache;
@@ -196,6 +200,7 @@ public sealed class AuthSessionService : IAuthSessionService, IAuthenticatedSess
     private bool InvalidateToken(Guid token, AuthSessionInvalidationReason reason)
     {
         var wasActive = _tokens.TryGetUid(token, out _);
+        _postLogin?.CancelToken(token);
         _cache.InvalidateToken(token);
         _keys.InvalidateToken(token);
         _tokens.Revoke(token, reason);

@@ -5,7 +5,7 @@ using PasswordManagerLocal.Common.Backend.Security;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
 
-public sealed class InteractiveSessionStateService : IInteractiveSessionStateService
+public sealed class InteractiveSessionStateService : IInteractiveSessionStateService, IInteractiveSessionLifetime, IDisposable
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly object _stateLock = new();
@@ -13,6 +13,12 @@ public sealed class InteractiveSessionStateService : IInteractiveSessionStateSer
     private TaskCompletionSource? _operationsDrained;
     private int _activeOperations;
     private bool _active;
+    private CancellationTokenSource? _sessionLifetime;
+
+    public CancellationToken CurrentLifetime
+    {
+        get { lock (_stateLock) return _active ? _sessionLifetime!.Token : new CancellationToken(true); }
+    }
 
     public InteractiveSessionStateService(IServiceScopeFactory scopeFactory) =>
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
@@ -38,20 +44,26 @@ public sealed class InteractiveSessionStateService : IInteractiveSessionStateSer
             if (_activeOperations != 0)
                 throw new InvalidOperationException("Interactive session state is still deactivating.");
 
+            _sessionLifetime = new CancellationTokenSource();
             _active = true;
         }
 
         return Task.CompletedTask;
     }
 
-    public Task DeactivateAsync(CancellationToken cancellationToken = default)
+    public async Task DeactivateAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         Task? operationsDrained = null;
+        CancellationTokenSource? sessionLifetime;
+        Task cancellation;
         lock (_stateLock)
         {
             _active = false;
+            sessionLifetime = _sessionLifetime;
+            _sessionLifetime = null;
+            cancellation = sessionLifetime?.CancelAsync() ?? Task.CompletedTask;
             if (_activeOperations != 0)
             {
                 _operationsDrained ??= new TaskCompletionSource(
@@ -60,9 +72,20 @@ public sealed class InteractiveSessionStateService : IInteractiveSessionStateSer
             }
         }
 
-        return operationsDrained is null
-            ? Task.CompletedTask
-            : operationsDrained.WaitAsync(cancellationToken);
+        try
+        {
+            await cancellation;
+            if (operationsDrained is not null) await operationsDrained.WaitAsync(cancellationToken);
+        }
+        finally { sessionLifetime?.Dispose(); }
+    }
+
+    public void Dispose()
+    {
+        CancellationTokenSource? lifetime;
+        lock (_stateLock) { _active = false; lifetime = _sessionLifetime; _sessionLifetime = null; }
+        lifetime?.Cancel();
+        lifetime?.Dispose();
     }
 
     public IDisposable EnterOperation()
