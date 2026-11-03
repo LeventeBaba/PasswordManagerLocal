@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
@@ -25,6 +26,7 @@ public sealed class NetworkDeltaService : INetworkDeltaService
     private readonly IUserRevisionKnowledgeRepository _revisionKnowledge;
     private readonly IInteractiveSessionStateService _interactiveSessions;
     private readonly IUserControlOperationInboxService _controlOperationInbox;
+    private readonly IServiceScopeFactory? _scopes;
     private readonly IDeviceIdentityService _identity;
     private readonly IUnitOfWork _uow;
     private readonly IUserTombstoneGarbageCollector? _garbageCollector;
@@ -49,8 +51,10 @@ public sealed class NetworkDeltaService : INetworkDeltaService
         IUserControlOperationInboxService controlOperationInbox,
         IUserTombstoneGarbageCollector? garbageCollector = null,
         IUserPostLoginWorkScheduler? postLogin = null,
-        IUserLifecycleCoordinator? userLifecycle = null)
+        IUserLifecycleCoordinator? userLifecycle = null,
+        IServiceScopeFactory? scopes = null)
     {
+        _scopes = scopes;
         _postLogin = postLogin;
         _userLifecycle = userLifecycle;
         _outgoingDeltaBuilder = outgoingDeltaBuilder;
@@ -73,7 +77,34 @@ public sealed class NetworkDeltaService : INetworkDeltaService
     public Task<NetworkDelta> BuildAsync(SyncItem item, Device device, CancellationToken ct = default) =>
         _outgoingDeltaBuilder.BuildAsync(item, device, ct);
 
-    public async Task<NetworkDeltaApplyResult> ApplyAsync(NetworkDelta delta, CancellationToken ct = default)
+    public Task<NetworkDeltaApplyResult> ApplyAsync(NetworkDelta delta, CancellationToken ct = default)
+    {
+        if (_scopes is null)
+            return ApplyCoreAsync(delta, ct);
+
+        // Entity is only a lock-routing hint. ApplyCoreAsync still verifies its
+        // exact agreement with the authenticated, decrypted payload before storage.
+        // Open the persistence scope after waiting, not before: a context retained
+        // by a multi-delta worker may otherwise contain an earlier canonical user,
+        // checkpoint or origin revision despite acquiring the correct lifecycle lock.
+        var parts = delta.Entity?.Split(':');
+        if (_userLifecycle is not null && parts is { Length: 3 } &&
+            parts[0] == nameof(SyncModelType.User) &&
+            Guid.TryParseExact(parts[2], "N", out var userId) && userId != Guid.Empty)
+            return _userLifecycle.ExecuteAsync(userId,
+                token => ApplyInFreshScopeAsync(delta, token), ct);
+
+        return ApplyInFreshScopeAsync(delta, ct);
+    }
+
+    private async Task<NetworkDeltaApplyResult> ApplyInFreshScopeAsync(NetworkDelta delta, CancellationToken ct)
+    {
+        using var scope = _scopes!.CreateScope();
+        var service = (NetworkDeltaService)scope.ServiceProvider.GetRequiredService<INetworkDeltaService>();
+        return await service.ApplyCoreAsync(delta, ct);
+    }
+
+    private async Task<NetworkDeltaApplyResult> ApplyCoreAsync(NetworkDelta delta, CancellationToken ct)
     {
         if (!_identity.IsSyncOn)
             throw new SyncRouteDisabledException("Local synchronization is disabled.");

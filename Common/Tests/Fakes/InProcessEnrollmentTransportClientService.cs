@@ -26,6 +26,16 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
     private IDeviceIdentityService? _localIdentity;
     private IDevicePresenceRegistry? _localPresenceRegistry;
     private readonly ConcurrentDictionary<string, RemotePeer> _remotePeers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, string> _lastDeltaSendFailures = new(StringComparer.OrdinalIgnoreCase);
+
+    public string? GetLastDeltaSendFailure(string fingerprint) => _lastDeltaSendFailures.GetValueOrDefault(fingerprint);
+
+    private bool RecordDeltaSendFailure(string fingerprint, string reason)
+    {
+        _lastDeltaSendFailures[fingerprint] = reason;
+        return false;
+    }
+
 
     public bool ThrowAfterNextSuccessfulEnrollmentCompletion { get; set; }
     public bool TamperNextEnrollmentSnapshot { get; set; }
@@ -197,13 +207,13 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
         if (list.Length > SyncConstants.MaxIncomingDeltaCountPerCall ||
             list.Sum(delta => (long)delta.Payload.Length) > SyncConstants.MaxIncomingDeltaTotalBytesPerCall)
         {
-            return false;
+            return RecordDeltaSendFailure(serverFingerprintHex, "batch-limit");
         }
 
         if (FailNextDeltaSend)
         {
             FailNextDeltaSend = false;
-            return false;
+            return RecordDeltaSendFailure(serverFingerprintHex, "injected-failure");
         }
 
         try
@@ -213,7 +223,7 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
             var ack = await destinationHandler.PushDeltaAsync(ToChunksAsync(list, ct), context, ct);
 
             if (ack.LastSyncedTs < list.Max(delta => delta.Ts))
-                return false;
+                return RecordDeltaSendFailure(serverFingerprintHex, "ack-timestamp");
 
             foreach (var expected in list.Where(delta => delta.SnapshotOriginRevision > 0))
             {
@@ -225,7 +235,8 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
                     CryptographicOperations.FixedTimeEquals(candidate.SnapshotHash.ToByteArray(), expected.SnapshotHash));
 
                 if (receipt is null || !IsDurableSnapshotReceipt(receipt.State))
-                    return false;
+                    return RecordDeltaSendFailure(serverFingerprintHex,
+                        receipt is null ? "snapshot-receipt-missing" : $"snapshot-receipt-{receipt.State}");
             }
 
             foreach (var expected in list.Where(delta => delta.ControlOperationOriginSequence > 0))
@@ -239,7 +250,8 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
                     CryptographicOperations.FixedTimeEquals(candidate.OperationHash.ToByteArray(), expected.ControlOperationHash));
 
                 if (receipt is null || !IsDurableControlOperationReceipt(receipt.State))
-                    return false;
+                    return RecordDeltaSendFailure(serverFingerprintHex,
+                        receipt is null ? "control-receipt-missing" : $"control-receipt-{receipt.State}");
             }
 
             return true;
@@ -254,7 +266,8 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
             OperationCanceledException or
             SyncProtocolException)
         {
-            return false;
+            return RecordDeltaSendFailure(serverFingerprintHex,
+                ex is SyncProtocolException protocol ? $"protocol-{protocol.StatusCode}" : ex.GetType().Name);
         }
     }
 

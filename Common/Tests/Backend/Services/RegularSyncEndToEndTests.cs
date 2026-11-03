@@ -5,8 +5,10 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Services.Hosted;
 using PasswordManagerLocal.Common.Backend.Sync.Presence;
+using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 using System.Text;
@@ -669,6 +671,170 @@ public sealed class RegularSyncEndToEndTests
     }
 
     [TestMethod]
+    [Timeout(TestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task SnapshotAcknowledgedDuringInitialReadGate_IsMergedWithoutAnotherTransportDelivery()
+    {
+        await using var pair = await CreateEnrolledPairAsync();
+        await PauseAutomaticDeliveryAsync(pair);
+        Assert.IsTrue(pair.Target.OwnsPostLoginConsumer,
+            "The production-composition fixture must own the deferred reconciliation consumer.");
+        const string passwordName = "Deferred edit with no further transport";
+        await AddPasswordAsync(pair.Source, pair.SourceToken, passwordName, Encoding.UTF8.GetBytes("deferred-sync-secret"));
+        var delta = await BuildLatestUserDeltaAsync(pair.Source, pair.Target);
+        var sentBefore = pair.Source.Transport.DeltaSendCalls;
+        var scheduler = pair.Target.Services.GetRequiredService<UserPostLoginWorkScheduler>();
+        var lifecycle = pair.Target.Services.GetRequiredService<IUserLifecycleCoordinator>();
+
+        await lifecycle.ExecuteAsync(delta.SnapshotUserId, async ct =>
+        {
+            using var scope = pair.Target.Services.CreateScope();
+            var services = scope.ServiceProvider;
+            var user = await services.GetRequiredService<IUserRepository>().GetByIdAsNoTrackingAsync(delta.SnapshotUserId, ct)
+                ?? throw new InvalidOperationException("The enrolled user is missing.");
+            scheduler.DeferUntilInitialRead(user.UId, user.KeyEpoch, user.MembershipEpoch, pair.TargetToken);
+            Assert.IsTrue(scheduler.IsInitialReadPending(user.UId));
+
+            // The receiver commits the encrypted snapshot and acknowledges it while
+            // the first-read gate still prevents its canonical merge.
+            Assert.IsTrue(await pair.Source.Transport.SendDeltasAsync("127.0.0.1", 26688,
+                pair.Target.Identity.FingerprintHex, [delta], ct));
+            var stored = await services.GetRequiredService<IUserSyncSnapshotRepository>().GetAsync(user.UId,
+                pair.Source.Identity.LocalDeviceId, pair.Source.Identity.OriginInstanceId, user.KeyEpoch, ct);
+            Assert.IsNotNull(stored);
+            Assert.AreEqual(delta.SnapshotOriginRevision, stored.OriginRevision);
+            Assert.AreEqual(UserSyncSnapshotStatus.Pending, stored.Status);
+            await pair.Source.DeletePendingForAsync(pair.Target.Identity.LocalDeviceId, ct);
+            Assert.IsFalse(await pair.Source.HasPendingForAsync(pair.Target.Identity.LocalDeviceId, ct));
+            pair.Source.EndpointsCache.Clear();
+            pair.Target.EndpointsCache.Clear();
+
+            // Holding lifecycle ownership prevents the background worker from racing
+            // this first projection, but the endpoint releases its normal read gate.
+            var initial = await pair.Target.Endpoints.GetSavedPasswordsAsync(pair.TargetToken, ct);
+            Assert.IsFalse(initial.Passwords.Any(password => password.Name == passwordName));
+            Assert.IsFalse(scheduler.IsInitialReadPending(user.UId));
+        });
+
+        await RunStepAsync("deferred consumer merges an acknowledged snapshot without another delivery", async ct =>
+        {
+            while (!(await pair.Target.Endpoints.GetSavedPasswordsAsync(pair.TargetToken, ct)).Passwords
+                       .Any(password => password.Name == passwordName))
+                await Task.Delay(10, ct);
+        });
+        Assert.AreEqual(sentBefore + 1, pair.Source.Transport.DeltaSendCalls,
+            "The consumer must finish already stored work without requiring the sender to retransmit.");
+        using var verification = pair.Target.Services.CreateScope();
+        var knowledge = await verification.ServiceProvider.GetRequiredService<IUserRevisionKnowledgeRepository>()
+            .GetAsync(delta.SnapshotUserId, pair.Source.Identity.LocalDeviceId,
+                pair.Source.Identity.OriginInstanceId, 1);
+        Assert.IsNotNull(knowledge);
+        Assert.IsTrue(knowledge.HighestMergedRevision >= delta.SnapshotOriginRevision);
+    }
+
+    [TestMethod]
+    [Timeout(TestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task ReusedOutgoingBuilder_DoesNotReusePublicationStateFromBeforeOtherScopeCommits()
+    {
+        await using var pair = await CreateEnrolledPairAsync();
+        await PauseAutomaticDeliveryAsync(pair);
+        using var retainedScope = pair.Source.Services.CreateScope();
+        var services = retainedScope.ServiceProvider;
+        var userId = (await services.GetRequiredService<IUserRepository>().ListUserIdsAsync()).Single();
+        var peer = await services.GetRequiredService<IDeviceRepository>()
+            .GetByIdWithUserDevicesAsync(pair.Target.Identity.LocalDeviceId)
+            ?? throw new InvalidOperationException("The enrolled target is missing.");
+        var builder = services.GetRequiredService<IOutgoingDeltaBuilderService>();
+        var item = new SyncItem { ModelId = userId, ModelType = SyncModelType.User, ChangeType = SyncChangeType.Updated };
+        var first = await builder.BuildAsync(item, peer);
+
+        // Two independent commits/publications make stale sequence reuse observable
+        // without depending on timestamp resolution or thread scheduling.
+        await AddPasswordAsync(pair.Source, pair.SourceToken, "Independent publication 1", Encoding.UTF8.GetBytes("source-one-secret"));
+        await BuildLatestUserDeltaAsync(pair.Source, pair.Target);
+        await AddPasswordAsync(pair.Source, pair.SourceToken, "Independent publication 2", Encoding.UTF8.GetBytes("source-two-secret"));
+        await BuildLatestUserDeltaAsync(pair.Source, pair.Target);
+        long committedRevision;
+        byte[] committedHash;
+        using (var fresh = pair.Source.Services.CreateScope())
+        {
+            var publication = await fresh.ServiceProvider.GetRequiredService<IUserSnapshotPublisherService>().GetLatestAsync(userId, 1)
+                ?? throw new InvalidOperationException("The current publication is missing.");
+            committedRevision = publication.OriginRevision;
+            committedHash = publication.SnapshotHash.ToArray();
+        }
+        Assert.IsTrue(committedRevision >= first.SnapshotOriginRevision + 2);
+
+        var second = await builder.BuildAsync(item, peer);
+        Assert.AreEqual(committedRevision, second.SnapshotOriginRevision,
+            "A reused transport builder must reuse the latest committed immutable publication, not an old origin sequence.");
+        CollectionAssert.AreEqual(committedHash, second.SnapshotHash);
+        using var receivingScope = pair.Target.Services.CreateScope();
+        await receivingScope.ServiceProvider.GetRequiredService<IIncomingDeltaApplierService>().ApplyAsync(second);
+        Assert.IsTrue(await HasPasswordAsync(pair.Target, pair.TargetToken, "Independent publication 1"));
+        Assert.IsTrue(await HasPasswordAsync(pair.Target, pair.TargetToken, "Independent publication 2"));
+    }
+
+    [TestMethod]
+    [Timeout(TestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task ReusedIncomingApplier_PreservesLocalCommitBetweenTwoRemoteDeltas()
+    {
+        await using var pair = await CreateEnrolledPairAsync();
+        await PauseAutomaticDeliveryAsync(pair);
+        using var retainedScope = pair.Target.Services.CreateScope();
+        var services = retainedScope.ServiceProvider;
+        var userId = (await services.GetRequiredService<IUserRepository>().ListUserIdsAsync()).Single();
+        // Seed the outer transport scope with an older tracked generation deliberately.
+        Assert.IsNotNull(await services.GetRequiredService<IUserRepository>().GetByIdWithRelationsAsync(userId));
+        var applier = services.GetRequiredService<IIncomingDeltaApplierService>();
+        await AddPasswordAsync(pair.Source, pair.SourceToken, "First remote edit", Encoding.UTF8.GetBytes("remote-one-secret"));
+        await applier.ApplyAsync(await BuildLatestUserDeltaAsync(pair.Source, pair.Target));
+        Assert.IsTrue(await HasPasswordAsync(pair.Target, pair.TargetToken, "First remote edit"));
+
+        await AddPasswordAsync(pair.Target, pair.TargetToken, "Local edit between receives", Encoding.UTF8.GetBytes("target-local-secret"));
+        await AddPasswordAsync(pair.Source, pair.SourceToken, "Second remote edit", Encoding.UTF8.GetBytes("remote-two-secret"));
+        Assert.IsFalse(await HasPasswordAsync(pair.Source, pair.SourceToken, "Local edit between receives"),
+            "The second remote snapshot must not already contain the local edit this regression protects.");
+        var result = await applier.ApplyAsync(await BuildLatestUserDeltaAsync(pair.Source, pair.Target));
+
+        Assert.IsNotNull(result.UserSnapshotReceipt);
+        Assert.AreEqual(UserSnapshotReceiptState.MergedImmediately, result.UserSnapshotReceipt.State);
+        Assert.IsTrue(await HasPasswordAsync(pair.Target, pair.TargetToken, "First remote edit"));
+        Assert.IsTrue(await HasPasswordAsync(pair.Target, pair.TargetToken, "Second remote edit"));
+        Assert.IsTrue(await HasPasswordAsync(pair.Target, pair.TargetToken, "Local edit between receives"),
+            "Merging through a reused transport service must start from the current committed local generation.");
+    }
+
+    private static async Task PauseAutomaticDeliveryAsync(SyncPair pair)
+    {
+        pair.Source.EndpointsCache.Clear();
+        pair.Target.EndpointsCache.Clear();
+        await pair.Source.WaitForSyncIdleAsync(pair.Target.Identity.LocalDeviceId);
+        await pair.Target.WaitForSyncIdleAsync(pair.Source.Identity.LocalDeviceId);
+        pair.Source.EndpointsCache.Clear();
+        pair.Target.EndpointsCache.Clear();
+        // Release initial login projection gates before testing synchronous merge admission.
+        await pair.Source.Endpoints.GetSavedPasswordsAsync(pair.SourceToken);
+        await pair.Target.Endpoints.GetSavedPasswordsAsync(pair.TargetToken);
+    }
+
+    private static async Task<NetworkDelta> BuildLatestUserDeltaAsync(ProductionSyncTestHost source, ProductionSyncTestHost target)
+    {
+        using var scope = source.Services.CreateScope();
+        var services = scope.ServiceProvider;
+        var userId = (await services.GetRequiredService<IUserRepository>().ListUserIdsAsync()).Single();
+        var peer = await services.GetRequiredService<IDeviceRepository>().GetByIdWithUserDevicesAsync(target.Identity.LocalDeviceId)
+            ?? throw new InvalidOperationException("The enrolled target is missing.");
+        return await services.GetRequiredService<IOutgoingDeltaBuilderService>().BuildAsync(
+            new SyncItem { ModelId = userId, ModelType = SyncModelType.User, ChangeType = SyncChangeType.Updated }, peer);
+    }
+
+    [TestMethod]
     [Timeout(ThreeDeviceTestTimeoutMilliseconds)]
     [TestCategory("Integration")]
     [TestCategory("EndToEnd")]
@@ -712,7 +878,8 @@ public sealed class RegularSyncEndToEndTests
             () => Task.FromResult(
                 setup.Original.EndpointsCache.TryGetByFingerprint(setup.NewDevice.Identity.FingerprintHex, out _) &&
                 setup.NewDevice.EndpointsCache.TryGetByFingerprint(setup.Original.Identity.FingerprintHex, out _)),
-            "A and C did not both learn each other's endpoints through authenticated relay via B.");
+            "A and C did not both learn each other's endpoints through authenticated relay via B.",
+            failureDiagnostics: () => DescribeAutomaticConvergenceAsync(setup));
         Assert.IsTrue(setup.Original.EndpointsCache.TryGetByFingerprint(setup.NewDevice.Identity.FingerprintHex, out _));
         Assert.IsTrue(setup.NewDevice.EndpointsCache.TryGetByFingerprint(setup.Original.Identity.FingerprintHex, out _));
         foreach (var host in setup.Hosts)
@@ -790,8 +957,33 @@ public sealed class RegularSyncEndToEndTests
                 var pendingTargets = new List<string>();
                 using var scope = host.Services.CreateScope();
                 var queue = scope.ServiceProvider.GetRequiredService<ISyncQueueRepository>();
+                var faults = scope.ServiceProvider.GetRequiredService<IUserSyncFaultRepository>();
+                var users = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+                var faultDescriptions = new List<string>();
+                var snapshotDescriptions = new List<string>();
+                var knowledgeDescriptions = new List<string>();
+                var initialReadGates = new List<string>();
+                var postLogin = scope.ServiceProvider.GetRequiredService<IUserPostLoginWorkScheduler>();
+                foreach (var userId in await users.ListUserIdsAsync(timeout.Token))
+                {
+                    initialReadGates.Add($"{userId:N}={postLogin.IsInitialReadPending(userId)}");
+                    foreach (var fault in await faults.ListActiveForUserAsync(userId, timeout.Token))
+                        faultDescriptions.Add($"{fault.Kind}/{fault.Status}/{fault.DiagnosticCode}/BlocksLogin={fault.BlocksLogin}");
+                    foreach (var snapshot in await scope.ServiceProvider.GetRequiredService<IUserSyncSnapshotRepository>().ListForUserAsync(userId, timeout.Token))
+                        snapshotDescriptions.Add($"{snapshot.OriginDeviceId:N}/r{snapshot.OriginRevision}/{snapshot.Status}/k{snapshot.UserKeyEpoch}/m{snapshot.MembershipEpoch}");
+                    foreach (var knowledge in await scope.ServiceProvider.GetRequiredService<IUserRevisionKnowledgeRepository>().ListForUserAsync(userId, timeout.Token))
+                        knowledgeDescriptions.Add($"{knowledge.OriginDeviceId:N}/stored={knowledge.HighestStoredRevision}/merged={knowledge.HighestMergedRevision}");
+                }
+                var discoveredPeers = setup.Hosts.Where(peer => !ReferenceEquals(peer, host))
+                    .Select(peer => $"{peer.Identity.LocalDeviceId:N}=" +
+                        host.EndpointsCache.TryGetByFingerprint(peer.Identity.FingerprintHex, out _))
+                    .ToArray();
+                var sendFailures = new List<string>();
                 foreach (var peer in setup.Hosts.Where(peer => !ReferenceEquals(peer, host)))
                 {
+                    var lastFailure = host.Transport.GetLastDeltaSendFailure(peer.Identity.FingerprintHex);
+                    if (lastFailure is not null)
+                        sendFailures.Add($"{peer.Identity.LocalDeviceId:N}={lastFailure}");
                     if (await queue.HasPendingForDeviceAsync(peer.Identity.LocalDeviceId, timeout.Token))
                         pendingTargets.Add(peer.Identity.LocalDeviceId.ToString("N"));
                 }
@@ -800,7 +992,14 @@ public sealed class RegularSyncEndToEndTests
                     $"HasThirdName2={devices.Any(item => item.DeviceId == setup.NewDevice.Identity.LocalDeviceId && item.Name == "Third PC 2")}; " +
                     $"PendingTargets=[{string.Join(",", pendingTargets)}]; " +
                     $"PenalizedPeers={devices.Count(item => item.IsBlocked || item.InvalidSyncAttemptCount != 0)}; " +
-                    $"PenaltyAttempts={host.PeerPenaltyAttempts.Count}.");
+                    $"PenaltyAttempts={host.PeerPenaltyAttempts.Count}; " +
+                    $"Endpoints=[{string.Join(",", discoveredPeers)}]; " +
+                    $"Faults=[{string.Join(",", faultDescriptions)}]; " +
+                    $"Snapshots=[{string.Join(",", snapshotDescriptions)}]; " +
+                    $"Knowledge=[{string.Join(",", knowledgeDescriptions)}]; " +
+                    $"LastSendFailures=[{string.Join(",", sendFailures)}]; " +
+                    $"PostLoginConsumerOwned={host.OwnsPostLoginConsumer}; InitialReadGates=[{string.Join(",", initialReadGates)}]; " +
+                    $"DeltaSends={host.Transport.DeltaSendCalls}; Inventories={host.Transport.SnapshotInventoryExchangeCalls}.");
             }
             catch (Exception exception)
             {

@@ -395,7 +395,10 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
 
         if (!sent)
         {
-            _endpointRegistry.TryRemove(endpoint.TlsCertFingerprint);
+            // A false result also covers a non-durable receipt or temporary remote
+            // state failure. It does not prove the learned address is invalid.
+            // Keep its existing freshness/expiry so later activation can retry;
+            // do not erase a route refreshed by discovery while this send ran.
             return false;
         }
 
@@ -457,7 +460,6 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
                     requestedDeltas,
                     ct))
             {
-                _endpointRegistry.TryRemove(endpoint.TlsCertFingerprint);
                 return false;
             }
         }
@@ -577,7 +579,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             targetDevice.TlsCertFingerprint,
             localInventory,
             ct);
-        await AcceptAuthorizedEndpointHintsAsync(scope.ServiceProvider, targetDevice.Id, exchange.EndpointHints, ct);
+        await AcceptAuthorizedEndpointHintsAsync(targetDevice.Id, exchange.EndpointHints, ct);
 
         if (exchange.RequestedSnapshots.Count > 0)
         {
@@ -595,7 +597,6 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
                     requestedDeltas,
                     ct))
             {
-                _endpointRegistry.TryRemove(endpoint.TlsCertFingerprint);
                 return false;
             }
         }
@@ -639,16 +640,25 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
                 throw new InvalidDataException("The relay returned the same requested user snapshot more than once.");
         }
 
-        return fulfilled.Count == expected.Count;
+        if (fulfilled.Count != expected.Count)
+            return false;
+
+        // This reply may have introduced the device/link that made one of its
+        // hints eligible. Re-check against freshly committed state after applying
+        // snapshots, rather than discarding that hint until another discovery pass.
+        await AcceptAuthorizedEndpointHintsAsync(targetDevice.Id, exchange.EndpointHints, ct);
+        return true;
     }
 
     private async Task AcceptAuthorizedEndpointHintsAsync(
-        IServiceProvider services, Guid sourceDeviceId,
+        Guid sourceDeviceId,
         IEnumerable<PeerEndpointHint> hints, CancellationToken ct)
     {
         var received = hints.Take(SyncConstants.MaxPeerEndpointHints + 1).ToArray();
         if (received.Length > SyncConstants.MaxPeerEndpointHints)
             throw new InvalidDataException("The peer supplied too many endpoint hints.");
+        using var scope = _scopeFactory.CreateScope();
+        var services = scope.ServiceProvider;
         var links = services.GetRequiredService<IUserDeviceRepository>();
         var localLinks = services.GetRequiredService<ILocalUserDeviceRepository>();
         var devices = services.GetRequiredService<IDeviceRepository>();
@@ -688,12 +698,19 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
                 catch (Exception ex) when (ex is InvalidDataException or PasswordManagerLocal.Common.Contracts.Errors.InvalidDataIntegrityException) { }
             }
             if (!authorized) continue;
+            var endpointChanged = !_endpointRegistry.TryGetByFingerprint(device.TlsCertFingerprint, out var previous) ||
+                                  previous is null || previous.Port != hint.Port ||
+                                  !string.Equals(previous.Host, hint.Host, StringComparison.OrdinalIgnoreCase);
             _endpointRegistry.AddOrUpdate(new DiscoveredDeviceEndpoint
             {
                 Host = hint.Host, Port = hint.Port, TlsCertFingerprint = device.TlsCertFingerprint,
                 ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(2)
             });
-            activated.Add(device);
+            // Repeated hints refresh freshness without making A -> B -> C gossip
+            // continually restart idle workers. Pending delivery still needs a kick
+            // if an earlier attempt through the same endpoint failed.
+            if (endpointChanged || await HasPendingAsync(device.Id, ct))
+                activated.Add(device);
         }
         if (activated.Count != 0)
             services.GetRequiredService<IPendingSyncActivationService>().ActivateDevices(activated);

@@ -1,6 +1,7 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Sync;
@@ -150,10 +151,25 @@ public sealed class UserSnapshotInboxService : IUserSnapshotInboxService
         if (envelope.MembershipEpoch > user.MembershipEpoch)
             return Receipt(envelope, UserSnapshotReceiptState.WrongMembershipEpoch, "The snapshot uses a newer membership epoch whose predecessor operation is missing.");
 
+        var existing = await _snapshots.GetAsync(
+            envelope.UserId,
+            envelope.OriginDeviceId,
+            envelope.OriginInstanceId,
+            envelope.UserKeyEpoch,
+            ct);
+
         if (envelope.OriginDeviceId == _identity.LocalDeviceId &&
             envelope.OriginInstanceId == _identity.OriginInstanceId)
         {
-            await RecordForkAsync(envelope, "duplicate-local-origin", envelope.SnapshotHash, [], ct);
+            // Inventories are point-in-time views. We can publish and send a revision
+            // while a relay is replying to an older inventory, then request our own
+            // publication back. Such an echo cannot introduce new local-origin data.
+            var replay = await TryRecognizeLocalReplayAsync(envelope, existing, ct);
+            if (replay is not null)
+                return replay;
+
+            await RecordForkAsync(envelope, "duplicate-local-origin", envelope.SnapshotHash,
+                existing?.SnapshotHash ?? [], ct);
             return Receipt(
                 envelope,
                 UserSnapshotReceiptState.Quarantined,
@@ -166,13 +182,6 @@ public sealed class UserSnapshotInboxService : IUserSnapshotInboxService
             envelope.OriginInstanceId,
             envelope.UserKeyEpoch,
             ct);
-        var existing = await _snapshots.GetAsync(
-            envelope.UserId,
-            envelope.OriginDeviceId,
-            envelope.OriginInstanceId,
-            envelope.UserKeyEpoch,
-            ct);
-
         if (existing is not null && existing.Status == UserSyncSnapshotStatus.IsolatedFork)
             return Receipt(envelope, UserSnapshotReceiptState.Quarantined, existing.QuarantineReason ?? "This origin is quarantined.");
 
@@ -400,6 +409,48 @@ public sealed class UserSnapshotInboxService : IUserSnapshotInboxService
         return Receipt(
             envelope,
             existing is null ? UserSnapshotReceiptState.StoredPending : UserSnapshotReceiptState.ReplacedOlderPending);
+    }
+
+    private async Task<UserSnapshotReceiptResult?> TryRecognizeLocalReplayAsync(
+        UserSnapshotEnvelope envelope,
+        UserSyncSnapshot? existing,
+        CancellationToken ct)
+    {
+        if (existing is null || existing.LastReceivedFromDeviceId is not null ||
+            existing.Status is not (UserSyncSnapshotStatus.LocalPublished or UserSyncSnapshotStatus.RecoveryCandidate))
+            return null;
+
+        UserSnapshotEnvelope publication;
+        try
+        {
+            publication = DeserializeRetainedEnvelope(existing);
+            UserSnapshotEnvelopeUtil.VerifyWithSigningKey(publication, _identity.SignPublicKey);
+            await _membershipAuthorization.VerifySnapshotAuthorAsync(publication, ct);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or UnauthorizedAccessException or JsonException)
+        {
+            // Broken local evidence is not proof that the transport peer cloned us.
+            throw new SyncStateUnavailableException("The retained local publication could not be verified.", ex);
+        }
+
+        if (envelope.OriginRevision == publication.OriginRevision &&
+            Hashing.Verify(envelope.SnapshotHash, publication.SnapshotHash))
+            return Receipt(envelope, UserSnapshotReceiptState.AlreadyStored,
+                "The relay returned the exact retained local publication.");
+
+        // A second publication may have replaced the requested row while its old
+        // envelope was in flight. Ignore it only if the verified local publication
+        // covers all its history. Never store it or advance local revision state.
+        if (Hashing.Verify(envelope.OriginSignPublicKey, publication.OriginSignPublicKey) &&
+            CoverageDominates(publication, envelope))
+        {
+            if (existing.Status != UserSyncSnapshotStatus.LocalPublished)
+                throw new SyncStateUnavailableException("The newer local publication is awaiting canonical recovery.");
+            return Receipt(envelope, UserSnapshotReceiptState.ObsoleteRevision,
+                "A newer verified local publication already covers the relayed revision.");
+        }
+
+        return null;
     }
 
     private async Task RecordForkAsync(

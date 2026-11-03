@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSec.Cryptography;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Services;
@@ -834,6 +835,176 @@ public sealed class UserSnapshotInboxServiceTests
     }
 
     [TestMethod]
+    [DataRow(false, UserSyncSnapshotStatus.LocalPublished)]
+    [DataRow(true, UserSyncSnapshotStatus.LocalPublished)]
+    [DataRow(false, UserSyncSnapshotStatus.RecoveryCandidate)]
+    [DataRow(true, UserSyncSnapshotStatus.RecoveryCandidate)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task StoreAsync_PublicationAdvancesDuringInventoryExchange_LocalRelayDoesNotCreateConflict(
+        bool supersededBeforeDelivery, UserSyncSnapshotStatus retainedStatus)
+    {
+        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        var user = await AddCanonicalUserAsync(database);
+        using var key = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        var identity = CreateSigningIdentity(Guid.NewGuid(), Guid.NewGuid(), key);
+        var lifecycle = new UserLifecycleCoordinator();
+        var publisher = new UserSnapshotPublisherService(database.UserSyncSnapshots, database.UserSyncStates,
+            database.UserRevisionKnowledge, identity, database.UnitOfWork, lifecycle);
+        var inbox = new UserSnapshotInboxService(database.Users, database.UserSyncSnapshots,
+            database.UserRevisionKnowledge, identity, database.UnitOfWork, lifecycle,
+            new FakeUserMembershipAuthorizationService(), syncFaults: new UserSyncFaultService(database.UserSyncFaults));
+
+        var first = await publisher.GetOrCreateAsync(user);
+        var sentInventory = Inventory(user, Revision(identity.LocalDeviceId, identity.OriginInstanceId,
+            first.OriginRevision, first.OriginRevision, first.OriginRevision, first.SnapshotHash, first.SnapshotHash));
+        user.EncryptedUserPasswordsDataPayload = [0xA1, 0x02];
+        user.GenerateIntegrityHash();
+        database.Users.Update(user);
+        var second = await publisher.GetOrCreateAsync(user);
+        var echoed = JsonSerializer.Deserialize(second.EnvelopePayload,
+            BackendJsonSerializerContext.Default.UserSnapshotEnvelope)!;
+        var relayInventory = Inventory(user, Revision(identity.LocalDeviceId, identity.OriginInstanceId,
+            second.OriginRevision, second.OriginRevision, second.OriginRevision, second.SnapshotHash, second.SnapshotHash));
+        var antiEntropy = new UserSnapshotAntiEntropyService(null!, null!, null!, null!, null!, null!, null!, null!, null!);
+        var requests = antiEntropy.FindMissingSnapshots(sentInventory, relayInventory.Users);
+        MSTestAssert.AreEqual(1, requests.Count,
+            "A stale inventory can legitimately request the local revision published during the exchange.");
+        MSTestAssert.AreEqual(echoed.OriginRevision, requests[0].OriginRevision);
+        CollectionAssert.AreEqual(echoed.SnapshotHash, requests[0].ExpectedSnapshotHash.ToByteArray());
+
+        if (supersededBeforeDelivery)
+        {
+            user.EncryptedUserPasswordsDataPayload = [0xA2, 0x03];
+            user.GenerateIntegrityHash();
+            database.Users.Update(user);
+            await publisher.GetOrCreateAsync(user);
+        }
+        var retained = await database.UserSyncSnapshots.GetAsync(user.UId, identity.LocalDeviceId,
+            identity.OriginInstanceId, user.KeyEpoch);
+        MSTestAssert.IsNotNull(retained);
+        var originalPayload = retained.EnvelopePayload.ToArray();
+        var originalHash = retained.SnapshotHash.ToArray();
+        var originalRevision = retained.OriginRevision;
+        var originalReceivedAt = retained.ReceivedAtUtc;
+        var originalNextRevision = (await database.UserSyncStates.GetAsync(user.UId))!.NextOriginRevision;
+        var originalCanonical = user.EncryptedUserPasswordsDataPayload.ToArray();
+        retained.Status = retainedStatus;
+        database.UserSyncSnapshots.Update(retained);
+        await database.UnitOfWork.SaveChangesAsync();
+        database.Db.ChangeTracker.Clear();
+
+        UserSnapshotReceiptResult? receipt = null;
+        if (supersededBeforeDelivery && retainedStatus == UserSyncSnapshotStatus.RecoveryCandidate)
+            await MSTestAssert.ThrowsAsync<SyncStateUnavailableException>(() => inbox.StoreAsync(echoed, Guid.NewGuid()));
+        else
+        {
+            receipt = await inbox.StoreAsync(echoed, Guid.NewGuid());
+            MSTestAssert.IsNotNull(receipt);
+        }
+        database.Db.ChangeTracker.Clear();
+        var after = await database.UserSyncSnapshots.GetAsync(user.UId, identity.LocalDeviceId,
+            identity.OriginInstanceId, user.KeyEpoch);
+        MSTestAssert.IsNotNull(after);
+        if (receipt is not null)
+            MSTestAssert.AreEqual(supersededBeforeDelivery ? UserSnapshotReceiptState.ObsoleteRevision :
+                UserSnapshotReceiptState.AlreadyStored, receipt.State);
+        MSTestAssert.AreEqual(retainedStatus, after.Status);
+        MSTestAssert.AreEqual(originalRevision, after.OriginRevision);
+        MSTestAssert.AreEqual(originalReceivedAt, after.ReceivedAtUtc);
+        MSTestAssert.IsNull(after.LastReceivedFromDeviceId);
+        CollectionAssert.AreEqual(originalPayload, after.EnvelopePayload);
+        CollectionAssert.AreEqual(originalHash, after.SnapshotHash);
+        MSTestAssert.AreEqual(originalNextRevision, (await database.UserSyncStates.GetAsync(user.UId))!.NextOriginRevision);
+        var knowledge = await database.UserRevisionKnowledge.GetAsync(user.UId, identity.LocalDeviceId,
+            identity.OriginInstanceId, user.KeyEpoch);
+        MSTestAssert.IsNotNull(knowledge);
+        MSTestAssert.AreEqual(originalRevision, knowledge.HighestStoredRevision);
+        MSTestAssert.AreEqual(originalRevision, knowledge.HighestMergedRevision);
+        CollectionAssert.AreEqual(originalHash, knowledge.HighestStoredSnapshotHash);
+        CollectionAssert.AreEqual(originalCanonical, (await database.Users.GetByIdAsync(user.UId))!.EncryptedUserPasswordsDataPayload);
+        MSTestAssert.AreEqual(0, (await database.UserSyncFaults.ListActiveForUserAsync(user.UId)).Count);
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(1)]
+    [DataRow(2)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task StoreAsync_UnrecognizedLocalOriginHistory_StillCreatesTerminalConflict(int conflictCase)
+    {
+        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        var user = await AddCanonicalUserAsync(database);
+        using var key = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        var identity = CreateSigningIdentity(Guid.NewGuid(), Guid.NewGuid(), key);
+        var lifecycle = new UserLifecycleCoordinator();
+        var publisher = new UserSnapshotPublisherService(database.UserSyncSnapshots, database.UserSyncStates,
+            database.UserRevisionKnowledge, identity, database.UnitOfWork, lifecycle);
+        await publisher.GetOrCreateAsync(user);
+        user.EncryptedUserPasswordsDataPayload = [0xA1];
+        user.GenerateIntegrityHash();
+        database.Users.Update(user);
+        var publication = await publisher.GetOrCreateAsync(user);
+        var originalPayload = publication.EnvelopePayload.ToArray();
+        var revision = conflictCase switch { 0 => 2L, 1 => 3L, _ => 1L };
+        UserSnapshotCoverageEntry[] extraHistory = conflictCase == 2
+            ? [new() { OriginDeviceId = Guid.NewGuid(), OriginInstanceId = Guid.NewGuid(), UserKeyEpoch = 1, OriginRevision = 10 }]
+            : [];
+        var unknown = CreateSignedEnvelope(user, identity.LocalDeviceId, identity.OriginInstanceId,
+            revision, key, marker: 0xD0, coverage: extraHistory);
+        var inbox = new UserSnapshotInboxService(database.Users, database.UserSyncSnapshots,
+            database.UserRevisionKnowledge, identity, database.UnitOfWork, lifecycle,
+            new FakeUserMembershipAuthorizationService(), syncFaults: new UserSyncFaultService(database.UserSyncFaults));
+
+        var receipt = await inbox.StoreAsync(unknown, Guid.NewGuid());
+        database.Db.ChangeTracker.Clear();
+        MSTestAssert.AreEqual(UserSnapshotReceiptState.Quarantined, receipt.State);
+        var fault = (await database.UserSyncFaults.ListActiveForUserAsync(user.UId)).Single();
+        MSTestAssert.AreEqual(UserSyncFaultKind.DuplicateOriginInstallation, fault.Kind);
+        MSTestAssert.AreEqual(UserSyncHealthStatus.TerminalConflict, fault.Status);
+        MSTestAssert.IsTrue(fault.BlocksLogin);
+        CollectionAssert.AreEqual(unknown.SnapshotHash, fault.ObservedHash);
+        CollectionAssert.AreEqual(publication.SnapshotHash, fault.ConflictingHash);
+        CollectionAssert.AreEqual(originalPayload, (await database.UserSyncSnapshots.GetAsync(user.UId,
+            identity.LocalDeviceId, identity.OriginInstanceId, user.KeyEpoch))!.EnvelopePayload);
+        var knownPublication = JsonSerializer.Deserialize(originalPayload,
+            BackendJsonSerializerContext.Default.UserSnapshotEnvelope)!;
+        MSTestAssert.AreEqual(UserSnapshotReceiptState.AlreadyStored,
+            (await inbox.StoreAsync(knownPublication, Guid.NewGuid())).State);
+        database.Db.ChangeTracker.Clear();
+        MSTestAssert.IsTrue((await database.UserSyncFaults.ListActiveForUserAsync(user.UId)).Single().BlocksLogin,
+            "A later harmless replay must not clear the proven terminal conflict.");
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task StoreAsync_DamagedLocalPublication_DoesNotAccuseRelayOfDuplicateInstallation()
+    {
+        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        var user = await AddCanonicalUserAsync(database);
+        using var key = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        var identity = CreateSigningIdentity(Guid.NewGuid(), Guid.NewGuid(), key);
+        var lifecycle = new UserLifecycleCoordinator();
+        var publisher = new UserSnapshotPublisherService(database.UserSyncSnapshots, database.UserSyncStates,
+            database.UserRevisionKnowledge, identity, database.UnitOfWork, lifecycle);
+        var publication = await publisher.GetOrCreateAsync(user);
+        var echoed = JsonSerializer.Deserialize(publication.EnvelopePayload,
+            BackendJsonSerializerContext.Default.UserSnapshotEnvelope)!;
+        publication.EnvelopePayload = [0x7B]; // Incomplete JSON in our own persisted evidence.
+        database.UserSyncSnapshots.Update(publication);
+        await database.UnitOfWork.SaveChangesAsync();
+        var inbox = new UserSnapshotInboxService(database.Users, database.UserSyncSnapshots,
+            database.UserRevisionKnowledge, identity, database.UnitOfWork, lifecycle,
+            new FakeUserMembershipAuthorizationService(), syncFaults: new UserSyncFaultService(database.UserSyncFaults));
+
+        await MSTestAssert.ThrowsAsync<SyncStateUnavailableException>(() => inbox.StoreAsync(echoed, Guid.NewGuid()));
+        database.Db.ChangeTracker.Clear();
+        MSTestAssert.AreEqual(0, (await database.UserSyncFaults.ListActiveForUserAsync(user.UId)).Count);
+    }
+
+    [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
     public async Task StoreAsync_PeerClaimsCurrentLocalOriginIdentity_RejectsWithoutCreatingRow()
@@ -851,7 +1022,8 @@ public sealed class UserSnapshotInboxServiceTests
             localIdentity,
             database.UnitOfWork,
             new UserLifecycleCoordinator(),
-            new FakeUserMembershipAuthorizationService());
+            new FakeUserMembershipAuthorizationService(),
+            syncFaults: new UserSyncFaultService(database.UserSyncFaults));
         var envelope = CreateSignedEnvelope(user, localDeviceId, localInstanceId, 2, localKey, marker: 0x66);
 
         var receipt = await service.StoreAsync(envelope, Guid.NewGuid());
@@ -859,6 +1031,10 @@ public sealed class UserSnapshotInboxServiceTests
 
         MSTestAssert.AreEqual(UserSnapshotReceiptState.Quarantined, receipt.State);
         MSTestAssert.HasCount(0, await database.Db.UserSyncSnapshots.ToListAsync());
+        database.Db.ChangeTracker.Clear();
+        var fault = (await database.UserSyncFaults.ListActiveForUserAsync(user.UId)).Single();
+        MSTestAssert.AreEqual(UserSyncFaultKind.DuplicateOriginInstallation, fault.Kind);
+        MSTestAssert.IsTrue(fault.BlocksLogin);
     }
 
 

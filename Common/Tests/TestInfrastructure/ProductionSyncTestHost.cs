@@ -12,6 +12,7 @@ using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Backend.Services;
+using PasswordManagerLocal.Common.Backend.Services.Hosted;
 using PasswordManagerLocal.Common.Backend.Sync.Discovery;
 using PasswordManagerLocal.Common.Backend.Sync.Presence;
 using PasswordManagerLocal.Common.Backend.Sync.Tcp;
@@ -34,6 +35,7 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
     private bool _preserveDirectory;
     private bool _disposed;
     private readonly FakeBackendExecutionProfileProvider _executionProfiles;
+    private UserPostLoginWorkHostedService? _postLoginWorker;
 
     static ProductionSyncTestHost() => Batteries_V2.Init();
 
@@ -58,6 +60,7 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
     public IDevicePresenceRegistry Presence => _services.GetRequiredService<IDevicePresenceRegistry>();
     public IDevicePresenceProbeService PresenceProbe => _services.GetRequiredService<IDevicePresenceProbeService>();
     public IDiscoveredDeviceEndpointRegistry EndpointsCache => _services.GetRequiredService<IDiscoveredDeviceEndpointRegistry>();
+    internal bool OwnsPostLoginConsumer => _postLoginWorker is not null;
     internal IReadOnlyList<(Guid PeerId, string Reason)> PeerPenaltyAttempts =>
         _services.GetRequiredService<PeerPenaltyRecorder>().Snapshot();
 
@@ -126,6 +129,12 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
                 provider.GetRequiredService<SyncPeerProtocolHandler>(),
                 provider.GetRequiredService<IDeviceIdentityService>(),
                 provider.GetRequiredService<IDevicePresenceRegistry>());
+            // Production BackendServiceHost starts this runtime-owned consumer.
+            // This fixture initializes the provider directly, so it must own the
+            // worker explicitly too. A durable snapshot receipt may precede merge
+            // while login's initial-read gate is active, even with no later traffic.
+            host._postLoginWorker = provider.GetRequiredService<UserPostLoginWorkHostedService>();
+            await host._postLoginWorker.StartAsync();
             return host;
         }
         catch
@@ -335,6 +344,13 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
         _disposed = true;
         await TryRunCleanupAsync("stop automatic discovery", ct =>
             _services.GetRequiredService<PasswordManagerLocal.Common.Backend.Services.Hosted.LocalDiscoveryHostedService>().StopAsync(ct));
+        var postLoginStopped = true;
+        if (_postLoginWorker is { } worker)
+        {
+            postLoginStopped = await TryRunCleanupAsync("stop post-login reconciliation", worker.StopAsync);
+            if (postLoginStopped)
+                _postLoginWorker = null;
+        }
         Transport.Disconnect();
 
         var syncTasksStopped = await TryRunCleanupAsync(
@@ -359,11 +375,12 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
                     await interactive.DeactivateAsync(ct);
             });
 
-        var providerDisposed = await TryRunCleanupAsync(
+        // Do not dispose scoped dependencies underneath a worker that did not join.
+        var providerDisposed = postLoginStopped && syncTasksStopped && await TryRunCleanupAsync(
             "dispose backend service provider",
             async _ => await _services.DisposeAsync());
 
-        if (!_preserveDirectory && syncTasksStopped && enrollmentClosed && interactiveDeactivated && providerDisposed)
+        if (!_preserveDirectory && postLoginStopped && syncTasksStopped && enrollmentClosed && interactiveDeactivated && providerDisposed)
         {
             try
             {

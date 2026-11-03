@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Constants;
@@ -21,6 +22,8 @@ public sealed class OutgoingDeltaBuilderService : IOutgoingDeltaBuilderService
     private readonly IDeviceIdentityService _identity;
     private readonly IUserSnapshotPublisherService _snapshotPublisher;
     private readonly IUserMembershipAuthorizationService _membershipAuthorization;
+    private readonly IUserLifecycleCoordinator? _lifecycle;
+    private readonly IServiceScopeFactory? _scopes;
 
     public OutgoingDeltaBuilderService(
         IUserRepository users,
@@ -30,8 +33,12 @@ public sealed class OutgoingDeltaBuilderService : IOutgoingDeltaBuilderService
         ISyncRouteRepository syncRoutes,
         IDeviceIdentityService identity,
         IUserSnapshotPublisherService snapshotPublisher,
-        IUserMembershipAuthorizationService membershipAuthorization)
+        IUserMembershipAuthorizationService membershipAuthorization,
+        IUserLifecycleCoordinator? lifecycle = null,
+        IServiceScopeFactory? scopes = null)
     {
+        _lifecycle = lifecycle;
+        _scopes = scopes;
         _users = users;
         _groups = groups;
         _devices = devices;
@@ -45,7 +52,29 @@ public sealed class OutgoingDeltaBuilderService : IOutgoingDeltaBuilderService
 
 
 
-    public async Task<NetworkDelta> BuildAsync(SyncItem item, Device device, CancellationToken ct = default)
+    public Task<NetworkDelta> BuildAsync(SyncItem item, Device device, CancellationToken ct = default)
+    {
+        if (_scopes is null)
+            return BuildCoreAsync(item, device, ct);
+
+        // Canonical reads and local publication must share the same lifecycle
+        // ownership. The queue worker's retained context must not reuse publication
+        // state or checkpoints loaded before another local/remote write committed.
+        if (_lifecycle is not null && item.ModelType == SyncModelType.User && item.ModelId != Guid.Empty)
+            return _lifecycle.ExecuteAsync(item.ModelId,
+                token => BuildInFreshScopeAsync(item, device, token), ct);
+
+        return BuildInFreshScopeAsync(item, device, ct);
+    }
+
+    private async Task<NetworkDelta> BuildInFreshScopeAsync(SyncItem item, Device device, CancellationToken ct)
+    {
+        using var scope = _scopes!.CreateScope();
+        var service = (OutgoingDeltaBuilderService)scope.ServiceProvider.GetRequiredService<IOutgoingDeltaBuilderService>();
+        return await service.BuildCoreAsync(item, device, ct);
+    }
+
+    private async Task<NetworkDelta> BuildCoreAsync(SyncItem item, Device device, CancellationToken ct)
     {
         ValidateTargetDevice(device);
         var timestamp = item.ChangedAtTs > 0
