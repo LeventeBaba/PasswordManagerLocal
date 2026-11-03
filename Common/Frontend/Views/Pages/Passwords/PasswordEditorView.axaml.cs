@@ -1,3 +1,4 @@
+using PasswordManagerLocal.Common.Frontend.Views.Styling;
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
@@ -16,6 +17,7 @@ public partial class PasswordEditorView : UserControl
 
     public PasswordEditorView()
     {
+        DeferredControlThemeResources.EnsureLoaded();
         InitializeComponent();
         SizeChanged += (_, e) => _editor?.SetEditorViewportHeight(e.NewSize.Height);
         AttachedToVisualTree += (_, _) => BindEditor();

@@ -72,8 +72,14 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
     private ChangeProfileViewModel? _changeProfileViewModel;
     private ViewModelBase? _observedPageStatusViewModel;
     private ViewModelBase? _settingsReturnPageViewModel;
-    private readonly HelpCatalog _helpCatalog = HelpCatalogLoader.Load();
-    private readonly ThirdPartyNoticeCatalog _noticeCatalog;
+    private readonly Lazy<HelpCatalog> _helpCatalog = new(HelpCatalogLoader.Load);
+    private readonly Lazy<ThirdPartyNoticeCatalog> _noticeCatalog = new(ThirdPartyNoticeCatalogLoader.Load);
+    private readonly string? _applicationVersion;
+    private SettingsViewModel? _settingsViewModel;
+    private AboutViewModel? _aboutViewModel;
+    private PrivacyPolicyViewModel? _privacyPolicyViewModel;
+    private ThirdPartyLicensesViewModel? _thirdPartyLicensesViewModel;
+    private ThirdPartyLicenseDetailViewModel? _thirdPartyLicenseDetailViewModel;
     private readonly InformationNavigationHistory _informationNavigation = new();
     private readonly Dictionary<InformationRoute, HelpPageViewModel> _helpPages = new();
     private readonly InformationNavigationHistory _contextHelpNavigation = new();
@@ -135,34 +141,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         _currentPageContentViewModel = new MainPageContentViewModel(LoginViewModel);
         ObservePageStatus(_currentPageViewModel);
 
-        var noticeCatalog = ThirdPartyNoticeCatalogLoader.Load();
-        _noticeCatalog = noticeCatalog;
-        AboutViewModel = new AboutViewModel(
-            uiPreferences,
-            applicationVersion,
-            NavigateBackFromAbout,
-            NavigateToThirdPartyLicenses,
-            noticeCatalog.Notices.Count != 0);
-        ThirdPartyLicensesViewModel = new ThirdPartyLicensesViewModel(
-            uiPreferences,
-            noticeCatalog,
-            NavigateBackFromThirdPartyLicenses,
-            NavigateToThirdPartyLicenseDetail);
-        ThirdPartyLicenseDetailViewModel = new ThirdPartyLicenseDetailViewModel(
-            uiPreferences,
-            NavigateBackFromThirdPartyLicenseDetail);
-
-        PrivacyPolicyViewModel = new PrivacyPolicyViewModel(
-            uiPreferences, PrivacyPolicyCatalog.Load(), NavigateBackFromInformation, ReturnToAppFromInformation);
-
-        SettingsViewModel = new SettingsViewModel(
-            uiPreferences,
-            _deviceAppPreferences,
-            NavigateBackFromSettings,
-            NavigateToAbout,
-            NavigateToHelp,
-            OpenPrivacyPolicy);
-        SettingsViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
+        _applicationVersion = applicationVersion;
 
         RetryStartupCommand = Own(ReactiveCommand.CreateFromTask(RetryStartupAsync));
         ShowSettingsCommand = Own(ReactiveCommand.Create(NavigateToSettings));
@@ -194,11 +173,11 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         StopObservingPageStatus();
         _settingsReturnPageViewModel = null;
         LoginViewModel.Dispose();
-        SettingsViewModel.Dispose();
-        AboutViewModel.Dispose();
-        PrivacyPolicyViewModel.Dispose();
-        ThirdPartyLicensesViewModel.Dispose();
-        ThirdPartyLicenseDetailViewModel.Dispose();
+        _settingsViewModel?.Dispose();
+        _aboutViewModel?.Dispose();
+        _privacyPolicyViewModel?.Dispose();
+        _thirdPartyLicensesViewModel?.Dispose();
+        _thirdPartyLicenseDetailViewModel?.Dispose();
         foreach (var page in _helpPages.Values)
             page.Dispose();
         _helpPages.Clear();
@@ -209,7 +188,8 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         _profileViewModel?.Dispose();
         _changeProfileViewModel?.Dispose();
         LoginViewModel.PropertyChanged -= HandleRefreshPageViewModelPropertyChanged;
-        SettingsViewModel.PropertyChanged -= HandleRefreshPageViewModelPropertyChanged;
+        if (_settingsViewModel is not null)
+            _settingsViewModel.PropertyChanged -= HandleRefreshPageViewModelPropertyChanged;
         if (_registrationViewModel is not null)
             _registrationViewModel.PropertyChanged -= HandleRefreshPageViewModelPropertyChanged;
         if (_passwordsViewModel is not null)
@@ -252,15 +232,61 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
     public event EventHandler? RefreshAuthenticationChanged;
     public event EventHandler? BackendInitializationCompleted;
 
-    public SettingsViewModel SettingsViewModel { get; }
+    public SettingsViewModel SettingsViewModel
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(IsDisposed, this);
+            if (_settingsViewModel is null)
+            {
+                _settingsViewModel = new SettingsViewModel(UiPreferences, _deviceAppPreferences,
+                    NavigateBackFromSettings, NavigateToAbout, NavigateToHelp, OpenPrivacyPolicy);
+                _settingsViewModel.SetBackendAvailable(_backendReady);
+                _settingsViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
+            }
+            return _settingsViewModel;
+        }
+    }
 
-    public AboutViewModel AboutViewModel { get; }
+    public AboutViewModel AboutViewModel
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(IsDisposed, this);
+            return _aboutViewModel ??= new AboutViewModel(UiPreferences, _applicationVersion,
+                NavigateBackFromAbout, NavigateToThirdPartyLicenses, _noticeCatalog.Value.Notices.Count != 0);
+        }
+    }
 
-    public PrivacyPolicyViewModel PrivacyPolicyViewModel { get; }
+    public PrivacyPolicyViewModel PrivacyPolicyViewModel
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(IsDisposed, this);
+            return _privacyPolicyViewModel ??= new PrivacyPolicyViewModel(UiPreferences,
+                PrivacyPolicyCatalog.Load(), NavigateBackFromInformation, ReturnToAppFromInformation);
+        }
+    }
 
-    public ThirdPartyLicensesViewModel ThirdPartyLicensesViewModel { get; }
+    public ThirdPartyLicensesViewModel ThirdPartyLicensesViewModel
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(IsDisposed, this);
+            return _thirdPartyLicensesViewModel ??= new ThirdPartyLicensesViewModel(UiPreferences,
+                _noticeCatalog.Value, NavigateBackFromThirdPartyLicenses, NavigateToThirdPartyLicenseDetail);
+        }
+    }
 
-    public ThirdPartyLicenseDetailViewModel ThirdPartyLicenseDetailViewModel { get; }
+    public ThirdPartyLicenseDetailViewModel ThirdPartyLicenseDetailViewModel
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(IsDisposed, this);
+            return _thirdPartyLicenseDetailViewModel ??= new ThirdPartyLicenseDetailViewModel(UiPreferences,
+                NavigateBackFromThirdPartyLicenseDetail);
+        }
+    }
 
     public RegistrationViewModel RegistrationViewModel
     {
@@ -345,7 +371,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
             // A documentation visit suspends the current task. In particular, leaving
             // Login normally cancels enrollment; opening Settings/help must not do that.
-            if (!ReferenceEquals(value, SettingsViewModel) && !IsInformationViewModel(value))
+            if (!ReferenceEquals(value, _settingsViewModel) && !IsInformationViewModel(value))
                 _currentPageViewModel.OnNavigatedFrom();
             StopObservingPageStatus();
             ClearStatusMessage();
@@ -372,6 +398,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
                 this.RaisePropertyChanged(nameof(CurrentUserId));
                 RefreshAuthenticationChanged?.Invoke(this, EventArgs.Empty);
             }
+            this.RaisePropertyChanged(nameof(AuthenticatedMenuContent));
             this.RaisePropertyChanged(nameof(IsAnonymous));
             RaiseHeaderSubtitleProperties();
             this.RaisePropertyChanged(nameof(IsDesktopContentVisible));
@@ -413,6 +440,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
                 return;
 
             this.RaiseAndSetIfChanged(ref _isSessionRenewalDialogOpen, value);
+            this.RaisePropertyChanged(nameof(SessionRenewalDialogContent));
             this.RaisePropertyChanged(nameof(IsContextHelpInteractive));
             RaiseMobileSwipeEligibilityProperties();
         }
@@ -454,6 +482,12 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
     public bool IsDesktopContentVisible => !IsMobileNavigationEnabled;
 
+    public MainViewModel? DesktopHeaderContent => IsDesktopContentVisible ? this : null;
+    public MainViewModel? MobileHeaderContent => IsMobileNavigationEnabled ? this : null;
+    public MainViewModel? AuthenticatedMenuContent => IsAuthenticated ? this : null;
+    public MainViewModel? SessionRenewalDialogContent => IsSessionRenewalDialogOpen ? this : null;
+    public MainViewModel? DatabaseRecoveryDialogContent => IsDatabaseRecoveryDialogOpen ? this : null;
+
     public ViewModelBase? CurrentDesktopPageViewModel => IsAndroidUi ? null : CurrentPageViewModel;
 
     public bool IsMobileMainContentVisible => IsMobileNavigationEnabled && IsMainContentPageVisible;
@@ -489,7 +523,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
     public bool IsProfileMainPageSelected => IsAuthenticated && CurrentMainPageIndex == 2;
 
-    public bool IsSettingsPageVisible => ReferenceEquals(CurrentPageViewModel, SettingsViewModel);
+    public bool IsSettingsPageVisible => ReferenceEquals(CurrentPageViewModel, _settingsViewModel);
 
     public bool IsInformationPageVisible =>
         IsInformationViewModel(CurrentPageViewModel);
@@ -1233,6 +1267,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
     {
         this.RaisePropertyChanged(nameof(CanRetryStartup));
         this.RaisePropertyChanged(nameof(IsDatabaseRecoveryDialogOpen));
+        this.RaisePropertyChanged(nameof(DatabaseRecoveryDialogContent));
         this.RaisePropertyChanged(nameof(IsApplicationInteractionEnabled));
         this.RaisePropertyChanged(nameof(IsApplicationSurfaceEnabled));
         this.RaisePropertyChanged(nameof(IsContextHelpInteractive));
@@ -1466,7 +1501,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         _isBackendInitialized = canAuthenticate;
         LoginViewModel.SetBackendInitialized(canAuthenticate);
         _registrationViewModel?.SetBackendInitialized(canAuthenticate);
-        SettingsViewModel.SetBackendAvailable(isReady);
+        _settingsViewModel?.SetBackendAvailable(isReady);
         RaiseHeaderSubtitleProperties();
         this.RaisePropertyChanged(nameof(CanUseBackend));
         this.RaisePropertyChanged(nameof(IsStartupInProgress));
@@ -1477,10 +1512,10 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
     }
 
     private bool IsInformationViewModel(ViewModelBase page) =>
-        ReferenceEquals(page, AboutViewModel) ||
-        ReferenceEquals(page, PrivacyPolicyViewModel) ||
-        ReferenceEquals(page, ThirdPartyLicensesViewModel) ||
-        ReferenceEquals(page, ThirdPartyLicenseDetailViewModel) ||
+        ReferenceEquals(page, _aboutViewModel) ||
+        ReferenceEquals(page, _privacyPolicyViewModel) ||
+        ReferenceEquals(page, _thirdPartyLicensesViewModel) ||
+        ReferenceEquals(page, _thirdPartyLicenseDetailViewModel) ||
         page is HelpPageViewModel;
 
     private void NavigateToSettings()
@@ -1533,13 +1568,13 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
     private void NavigateToThirdPartyLicenses()
     {
-        if (ReferenceEquals(CurrentPageViewModel, AboutViewModel))
+        if (ReferenceEquals(CurrentPageViewModel, _aboutViewModel))
             NavigateInformation(new InformationRoute(InformationDestination.Licenses));
     }
 
     private void NavigateToThirdPartyLicenseDetail(ThirdPartyNotice notice)
     {
-        if (ReferenceEquals(CurrentPageViewModel, ThirdPartyLicensesViewModel))
+        if (ReferenceEquals(CurrentPageViewModel, _thirdPartyLicensesViewModel))
             NavigateInformation(new InformationRoute(InformationDestination.LicenseDetail, notice.Id));
     }
 
@@ -1556,7 +1591,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
             return;
         var route = requested;
         var missingTopic = route.Destination == InformationDestination.HelpTopic &&
-            (route.ContentId is null || !_helpCatalog.ForLanguage(CurrentLanguage).Topics.ContainsKey(route.ContentId));
+            (route.ContentId is null || !_helpCatalog.Value.ForLanguage(CurrentLanguage).Topics.ContainsKey(route.ContentId));
         if (missingTopic)
             route = new InformationRoute(InformationDestination.Help);
 
@@ -1616,13 +1651,13 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
                 page = ThirdPartyLicensesViewModel;
                 break;
             case InformationDestination.LicenseDetail:
-                ThirdPartyLicenseDetailViewModel.SetNotice(_noticeCatalog.Notices.Single(notice => notice.Id == route.ContentId));
+                ThirdPartyLicenseDetailViewModel.SetNotice(_noticeCatalog.Value.Notices.Single(notice => notice.Id == route.ContentId));
                 page = ThirdPartyLicenseDetailViewModel;
                 break;
             default:
                 if (!_helpPages.TryGetValue(route, out var helpPage))
                 {
-                    helpPage = new HelpPageViewModel(UiPreferences, _helpCatalog, route,
+                    helpPage = new HelpPageViewModel(UiPreferences, _helpCatalog.Value, route,
                         NavigateBackFromInformation, NavigateInformation, ReturnToAppFromInformation);
                     _helpPages.Add(route, helpPage);
                 }
@@ -1672,7 +1707,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
     private void NavigateContextHelp(InformationRoute requested)
     {
-        var content = _helpCatalog.ForLanguage(CurrentLanguage);
+        var content = _helpCatalog.Value.ForLanguage(CurrentLanguage);
         var valid = requested.Destination switch
         {
             InformationDestination.Help => true,
@@ -1689,7 +1724,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
     {
         if (!_contextHelpPages.TryGetValue(route, out var page))
         {
-            page = new HelpPageViewModel(UiPreferences, _helpCatalog, route,
+            page = new HelpPageViewModel(UiPreferences, _helpCatalog.Value, route,
                 NavigateBackFromContextHelp, NavigateContextHelp, CloseContextHelp);
             _contextHelpPages.Add(route, page);
         }
@@ -2941,7 +2976,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         if (IsDisposed)
             return Array.Empty<FrontendRefreshPage>();
 
-        if (ReferenceEquals(CurrentPageViewModel, SettingsViewModel))
+        if (ReferenceEquals(CurrentPageViewModel, _settingsViewModel))
             return [FrontendRefreshPage.BackgroundSync];
 
         if (_changeProfileViewModel is not null && ReferenceEquals(CurrentPageViewModel, _changeProfileViewModel))
@@ -2987,8 +3022,8 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
             ReferenceEquals(CurrentPageViewModel, _changeProfileViewModel) &&
             !_changeProfileViewModel.IsStartupSelection && !_changeProfileViewModel.IsBusy,
         FrontendRefreshPage.BackgroundSync =>
-            ReferenceEquals(CurrentPageViewModel, SettingsViewModel) &&
-            SettingsViewModel.CanAutomaticallyRefreshBackgroundSync,
+            ReferenceEquals(CurrentPageViewModel, _settingsViewModel) &&
+            _settingsViewModel?.CanAutomaticallyRefreshBackgroundSync == true,
         _ => false
     });
 

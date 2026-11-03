@@ -139,6 +139,10 @@ public sealed class LoginViewModel : ViewModelBase
 
     public bool IsLoginFormVisible => !IsDeviceTransferIntroVisible && !IsDeviceTransferCodeVisible && !IsDeviceTransferFinished;
 
+    public LoginViewModel? DeviceTransferIntroContent => IsDeviceTransferIntroVisible ? this : null;
+    public LoginViewModel? DeviceTransferCodeContent => IsDeviceTransferCodeVisible ? this : null;
+    public LoginViewModel? DeviceTransferFinishedContent => IsDeviceTransferFinished ? this : null;
+
     public bool IsDeviceTransferFlowVisible =>
         IsDeviceTransferIntroVisible || IsDeviceTransferCodeVisible || IsDeviceTransferFinished;
 
@@ -770,6 +774,9 @@ public sealed class LoginViewModel : ViewModelBase
 
     private void RaiseDeviceTransferViewStateChanged()
     {
+        this.RaisePropertyChanged(nameof(DeviceTransferIntroContent));
+        this.RaisePropertyChanged(nameof(DeviceTransferCodeContent));
+        this.RaisePropertyChanged(nameof(DeviceTransferFinishedContent));
         this.RaisePropertyChanged(nameof(IsLoginFormVisible));
         this.RaisePropertyChanged(nameof(IsDeviceTransferFlowVisible));
         this.RaisePropertyChanged(nameof(IsDeviceTransferBackButtonVisible));

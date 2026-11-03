@@ -10,8 +10,7 @@
       <ResourceDictionary.MergedDictionaries>
         <ResourceInclude Source="avares://PasswordManagerLocal.Common.Frontend/Assets/Icons/IconGeometries.axaml" />
         <ResourceInclude Source="avares://PasswordManagerLocal.Common.Frontend/Assets/Styles/SharedUiResources.axaml" />
-          <ResourceInclude Source="avares://PasswordManagerLocal.Common.Frontend/Assets/Styles/ControlThemes.axaml" />
-        <ResourceInclude Source="avares://PasswordManagerLocal.Common.Frontend/Assets/Styles/ColorPickerThemes.axaml" />
+        <ResourceInclude Source="avares://PasswordManagerLocal.Common.Frontend/Assets/Styles/ControlThemes.axaml" />
       </ResourceDictionary.MergedDictionaries>
     </ResourceDictionary>
   </Application.Resources>

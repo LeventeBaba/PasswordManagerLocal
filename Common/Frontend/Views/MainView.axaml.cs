@@ -260,9 +260,14 @@ public partial class MainView : UserControl, IDisposable
     private void HandleMobileAccountMenuFlyoutClosed(object? sender, EventArgs e) =>
         SetAccountMenuChevronAngle("MobileAccountMenuChevron", 0);
 
+    // Header/menu templates have their own name scopes and exist only when requested.
+    private T? FindShellControl<T>(string name) where T : Control =>
+        this.FindControl<T>(name) ?? this.GetVisualDescendants().OfType<T>()
+            .FirstOrDefault(control => string.Equals(control.Name, name, StringComparison.Ordinal));
+
     private void SetAccountMenuChevronAngle(string iconName, double angle)
     {
-        if (this.FindControl<PathIcon>(iconName)?.RenderTransform is RotateTransform rotation)
+        if (FindShellControl<PathIcon>(iconName)?.RenderTransform is RotateTransform rotation)
             rotation.Angle = angle;
     }
 
@@ -335,8 +340,8 @@ public partial class MainView : UserControl, IDisposable
             return;
         }
 
-        this.FindControl<Button>("AccountMenuButton")?.Flyout?.Hide();
-        this.FindControl<Button>("MobileAccountMenuButton")?.Flyout?.Hide();
+        FindShellControl<Button>("AccountMenuButton")?.Flyout?.Hide();
+        FindShellControl<Button>("MobileAccountMenuButton")?.Flyout?.Hide();
     }
 
     private void DetachTopLevelInputHandlers()

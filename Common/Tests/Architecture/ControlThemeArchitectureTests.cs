@@ -318,7 +318,7 @@ public sealed class ControlThemeArchitectureTests
     }
 
     [TestMethod]
-    public void ApplicationLoadsItsApplicationOwnedControlThemes()
+    public void ApplicationKeepsLoginThemesGlobalAndLoadsFeatureThemesOnDemand()
     {
         var root = GetRepositoryRoot();
         var app = XDocument.Load(Path.Combine(root, "Common", "Frontend", "App.axaml"));
@@ -329,18 +329,30 @@ public sealed class ControlThemeArchitectureTests
             .ToHashSet(StringComparer.Ordinal);
         Assert.IsTrue(includedDictionaries.Contains(
             "avares://PasswordManagerLocal.Common.Frontend/Assets/Styles/ControlThemes.axaml"));
-        Assert.IsTrue(includedDictionaries.Contains(
+        Assert.IsFalse(includedDictionaries.Contains(
+            "avares://PasswordManagerLocal.Common.Frontend/Assets/Styles/ColorPickerThemes.axaml"));
+        Assert.IsFalse(includedDictionaries.Contains(
+            "avares://PasswordManagerLocal.Common.Frontend/Assets/Styles/FeatureControlThemes.axaml"));
+        var colorPicker = XDocument.Load(Path.Combine(root, "Common", "Frontend", "Views",
+            "Pages", "Passwords", "PasswordColorPickerView.axaml"));
+        Assert.IsTrue(colorPicker.Descendants(avalonia + "ResourceInclude").Any(include =>
+            (string?)include.Attribute("Source") ==
             "avares://PasswordManagerLocal.Common.Frontend/Assets/Styles/ColorPickerThemes.axaml"));
         var controlThemes = XDocument.Load(Path.Combine(
             root, "Common", "Frontend", "Assets", "Styles", "ControlThemes.axaml"));
         var colorPickerThemes = XDocument.Load(Path.Combine(
             root, "Common", "Frontend", "Assets", "Styles", "ColorPickerThemes.axaml"));
         XNamespace xaml = "http://schemas.microsoft.com/winfx/2006/xaml";
-        var appOwnedDefaultThemeCount = new[] { controlThemes, colorPickerThemes }
-            .Sum(dictionary => dictionary.Root!.Elements(avalonia + "ControlTheme")
-                .Count(theme => ((string?)theme.Attribute(xaml + "Key"))
-                    ?.StartsWith("{x:Type ", StringComparison.Ordinal) == true));
-        Assert.AreEqual(28, appOwnedDefaultThemeCount,
+        var featureThemes = XDocument.Load(Path.Combine(
+            root, "Common", "Frontend", "Assets", "Styles", "FeatureControlThemes.axaml"));
+        var defaultThemeKeys = new[] { controlThemes, featureThemes, colorPickerThemes }
+            .SelectMany(dictionary => dictionary.Root!.Elements(avalonia + "ControlTheme"))
+            .Select(theme => (string?)theme.Attribute(xaml + "Key"))
+            .Where(key => key?.StartsWith("{x:Type ", StringComparison.Ordinal) == true)
+            .ToArray();
+        Assert.AreEqual(defaultThemeKeys.Length, defaultThemeKeys.Distinct(StringComparer.Ordinal).Count(),
+            "Each implicit control theme must have one owner across the dictionaries.");
+        Assert.AreEqual(28, defaultThemeKeys.Length,
             "Twenty-eight app-owned default control themes should cover the migrated control families and desktop/Android popup roots.");
     }
 
@@ -778,10 +790,20 @@ public sealed class ControlThemeArchitectureTests
 
         var viewFiles = Directory.GetFiles(
             Path.Combine(root, "Common", "Frontend", "Views"), "*.axaml", SearchOption.AllDirectories);
-        // Includes the contextual-help overlay alongside the three existing content hosts.
-        Assert.AreEqual(4, viewFiles.Sum(path =>
-            XDocument.Load(path).Descendants().Count(element => element.Name.LocalName == "ContentControl")),
-            "All current view-level content hosts should use the shared app-owned theme.");
+        var contentHosts = viewFiles.SelectMany(path =>
+                XDocument.Load(path).Descendants(avalonia + "ContentControl"))
+            .ToArray();
+        Assert.IsTrue(contentHosts.Length > 0,
+            "The source audit must include the application's content hosts.");
+        // Deferred sections add hosts without changing their shared control theme.
+        // Audit theme ownership rather than freezing the number of UI sections.
+        foreach (var host in contentHosts)
+        {
+            Assert.IsNull(host.Attribute("Theme"),
+                $"Content host {host.Attribute("Content")?.Value} must use the shared app-owned theme.");
+            Assert.IsFalse(host.Elements(avalonia + "ContentControl.Theme").Any(),
+                "View-level content hosts must not replace the shared app-owned theme inline.");
+        }
     }
 
     [TestMethod]
@@ -1276,7 +1298,7 @@ public sealed class ControlThemeArchitectureTests
     public void TabItemUsesAnApplicationOwnedThemeAndPreservesProfileHeadersAndSelection()
     {
         var root = GetRepositoryRoot();
-        var themesPath = Path.Combine(root, "Common", "Frontend", "Assets", "Styles", "ControlThemes.axaml");
+        var themesPath = Path.Combine(root, "Common", "Frontend", "Assets", "Styles", "FeatureControlThemes.axaml");
         var themes = XDocument.Load(themesPath);
         XNamespace avalonia = "https://github.com/avaloniaui";
         XNamespace xaml = "http://schemas.microsoft.com/winfx/2006/xaml";
@@ -1361,7 +1383,7 @@ public sealed class ControlThemeArchitectureTests
     public void TabControlUsesAnApplicationOwnedHostAndPreservesProfileSelection()
     {
         var root = GetRepositoryRoot();
-        var themesPath = Path.Combine(root, "Common", "Frontend", "Assets", "Styles", "ControlThemes.axaml");
+        var themesPath = Path.Combine(root, "Common", "Frontend", "Assets", "Styles", "FeatureControlThemes.axaml");
         var themes = XDocument.Load(themesPath);
         XNamespace avalonia = "https://github.com/avaloniaui";
         XNamespace xaml = "http://schemas.microsoft.com/winfx/2006/xaml";
@@ -1452,7 +1474,7 @@ public sealed class ControlThemeArchitectureTests
     public void ComboBoxAndItemsUseApplicationOwnedTemplatesAndPreserveSelectionContracts()
     {
         var root = GetRepositoryRoot();
-        var themesPath = Path.Combine(root, "Common", "Frontend", "Assets", "Styles", "ControlThemes.axaml");
+        var themesPath = Path.Combine(root, "Common", "Frontend", "Assets", "Styles", "FeatureControlThemes.axaml");
         var themes = XDocument.Load(themesPath);
         XNamespace avalonia = "https://github.com/avaloniaui";
         XNamespace xaml = "http://schemas.microsoft.com/winfx/2006/xaml";

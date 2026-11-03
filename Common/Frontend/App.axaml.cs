@@ -30,6 +30,16 @@ public partial class App : Application
 
     internal AvaloniaAppThemeResourceHost ThemeResourceHost { get; }
 
+    private bool _featureControlThemesLoaded;
+
+    internal void EnsureFeatureControlThemes()
+    {
+        Dispatcher.UIThread.VerifyAccess();
+        if (_featureControlThemesLoaded) return;
+        Resources.MergedDictionaries.Add(new FeatureControlThemes());
+        _featureControlThemesLoaded = true;
+    }
+
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
     public override void OnFrameworkInitializationCompleted()

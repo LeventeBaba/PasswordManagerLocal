@@ -2,8 +2,10 @@ using System.Reflection;
 using System.Windows.Input;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
+using PasswordManagerLocal.Common.Contracts.Preferences;
 using PasswordManagerLocal.Common.Contracts.Responses;
 using PasswordManagerLocal.Common.Contracts.Runtime;
+using PasswordManagerLocal.Common.Frontend.Information;
 using PasswordManagerLocal.Common.Frontend.Services;
 using PasswordManagerLocal.Common.Frontend.ViewModels;
 using PasswordManagerLocal.Common.Tests.Fakes;
@@ -57,6 +59,123 @@ public sealed class MainViewModelStartupTests
         Assert.AreSame(shell.LoginViewModel, shell.CurrentPageViewModel);
         Assert.IsFalse(shell.LoginViewModel.CanLogin);
     }
+
+    [TestMethod]
+    public async Task LoginPresentationReadinessAndDisposalDoNotConstructOptionalPagesOrReadCatalogs()
+    {
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync();
+        var endpoints = CreateEndpoints(out _);
+        await using var runtime = new StartupRuntime();
+        using var shell = new MainViewModel(endpoints, runtime, new FakeBackgroundSyncSettingsClient(), preferences);
+
+        AssertOptionalPagesUncreated(shell);
+        _ = shell.IsSettingsPageVisible;
+        _ = shell.IsInformationPageVisible;
+        _ = shell.IsSettingsSectionVisible;
+        _ = shell.IsBackendPageEnabled;
+        _ = shell.GetVisiblePages();
+        _ = shell.CanRefreshPage(FrontendRefreshPage.BackgroundSync);
+        AssertOptionalPagesUncreated(shell);
+
+        await shell.InitializeAsync();
+        AssertOptionalPagesUncreated(shell);
+        Assert.IsNull(shell.AuthenticatedMenuContent);
+        Assert.IsNull(shell.SessionRenewalDialogContent);
+        Assert.IsNull(shell.DatabaseRecoveryDialogContent);
+
+        shell.Dispose();
+        AssertOptionalPagesUncreated(shell);
+        Assert.Throws<ObjectDisposedException>(() => _ = shell.SettingsViewModel);
+        Assert.Throws<ObjectDisposedException>(() => _ = shell.AboutViewModel);
+        AssertOptionalPagesUncreated(shell);
+    }
+
+    [TestMethod]
+    public async Task SettingsCreatedAfterReadinessUsesCurrentPreferencesAndIsReused()
+    {
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync();
+        var endpoints = CreateEndpoints(out _);
+        var settingsClient = new FakeBackgroundSyncSettingsClient();
+        await using var runtime = new StartupRuntime();
+        using var shell = new MainViewModel(endpoints, runtime, settingsClient, preferences);
+        await shell.InitializeAsync();
+        await preferences.SetLanguageAsync(AppLanguage.Hungarian);
+        await preferences.SetThemeAsync(AppThemeId.Light);
+        AssertOptionalPagesUncreated(shell);
+
+        ((ICommand)shell.ShowSettingsCommand).Execute(null);
+        var settings = shell.SettingsViewModel;
+        Assert.AreSame(settings, shell.CurrentPageViewModel);
+        Assert.AreEqual(AppLanguage.Hungarian, settings.CurrentLanguage);
+        Assert.AreEqual(AppThemeId.Light, settings.CurrentThemeId);
+        Assert.IsTrue(settings.CanAutomaticallyRefreshBackgroundSync);
+        Assert.AreEqual(1, settingsClient.GetCount);
+        AssertPublicCatalogsUncreated(shell);
+
+        Assert.IsTrue(await shell.TryNavigateBackAsync());
+        ((ICommand)shell.ShowSettingsCommand).Execute(null);
+        Assert.AreSame(settings, shell.SettingsViewModel);
+        shell.Dispose();
+        Assert.IsTrue(settings.IsDisposed);
+    }
+
+    [TestMethod]
+    public async Task InformationCatalogsLoadOnlyWhenTheirPagesAreRequested()
+    {
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync();
+        var endpoints = CreateEndpoints(out _);
+        await using var runtime = new StartupRuntime();
+        using var shell = new MainViewModel(endpoints, runtime, new FakeBackgroundSyncSettingsClient(), preferences);
+        ((ICommand)shell.ShowSettingsCommand).Execute(null);
+        AssertPublicCatalogsUncreated(shell);
+
+        ((ICommand)shell.SettingsViewModel.NavigateToAboutCommand).Execute(null);
+        var about = shell.AboutViewModel;
+        Assert.AreSame(about, shell.CurrentPageViewModel);
+        Assert.IsTrue(ReadShellField<Lazy<ThirdPartyNoticeCatalog>>(shell, "_noticeCatalog").IsValueCreated);
+        Assert.IsFalse(ReadShellField<Lazy<HelpCatalog>>(shell, "_helpCatalog").IsValueCreated);
+        Assert.IsNull(ReadShellField<object?>(shell, "_thirdPartyLicensesViewModel"));
+        Assert.IsNull(ReadShellField<object?>(shell, "_privacyPolicyViewModel"));
+
+        ((ICommand)about.NavigateToLicensesCommand).Execute(null);
+        var licenses = shell.ThirdPartyLicensesViewModel;
+        Assert.AreSame(licenses, shell.CurrentPageViewModel);
+        Assert.IsTrue(await shell.TryNavigateBackAsync());
+        Assert.AreSame(about, shell.CurrentPageViewModel);
+        Assert.IsTrue(await shell.TryNavigateBackAsync());
+        Assert.AreSame(shell.SettingsViewModel, shell.CurrentPageViewModel);
+        ((ICommand)shell.SettingsViewModel.NavigateToHelpCommand).Execute(null);
+        Assert.IsTrue(ReadShellField<Lazy<HelpCatalog>>(shell, "_helpCatalog").IsValueCreated);
+        Assert.IsNull(ReadShellField<object?>(shell, "_privacyPolicyViewModel"));
+        Assert.IsTrue(await shell.TryNavigateBackAsync());
+        ((ICommand)shell.SettingsViewModel.NavigateToPrivacyCommand).Execute(null);
+        var privacy = shell.PrivacyPolicyViewModel;
+        Assert.AreSame(privacy, shell.CurrentPageViewModel);
+        Assert.IsTrue(await shell.TryNavigateBackAsync());
+        Assert.AreSame(privacy, shell.PrivacyPolicyViewModel);
+
+        shell.Dispose();
+        Assert.IsTrue(about.IsDisposed);
+        Assert.IsTrue(licenses.IsDisposed);
+        Assert.IsTrue(privacy.IsDisposed);
+    }
+
+    private static void AssertOptionalPagesUncreated(MainViewModel shell)
+    {
+        foreach (var name in new[] { "_settingsViewModel", "_aboutViewModel", "_privacyPolicyViewModel",
+                     "_thirdPartyLicensesViewModel", "_thirdPartyLicenseDetailViewModel" })
+            Assert.IsNull(ReadShellField<object?>(shell, name), $"{name} must wait for explicit use.");
+        AssertPublicCatalogsUncreated(shell);
+    }
+
+    private static void AssertPublicCatalogsUncreated(MainViewModel shell)
+    {
+        Assert.IsFalse(ReadShellField<Lazy<HelpCatalog>>(shell, "_helpCatalog").IsValueCreated);
+        Assert.IsFalse(ReadShellField<Lazy<ThirdPartyNoticeCatalog>>(shell, "_noticeCatalog").IsValueCreated);
+    }
+
+    private static T ReadShellField<T>(MainViewModel shell, string name) =>
+        (T)typeof(MainViewModel).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(shell)!;
 
     [TestMethod]
     public async Task AuthenticationStaysDisabledUntilRememberedSessionDecisionCompletes()

@@ -7,6 +7,7 @@ public partial class SettingsView : UserControl
 {
     public SettingsView()
     {
+        DeferredControlThemeResources.EnsureLoaded();
         InitializeComponent();
         ScrollViewerStyleHelper.ApplyComfortableScrollerStyle(PageScrollViewer);
     }
