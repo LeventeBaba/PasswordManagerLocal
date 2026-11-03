@@ -2,6 +2,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
+             xmlns:controls="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Controls"
              x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Profile.DeviceHistoryRecoveryDialogView"
              x:DataType="vm:ProfileViewModel"
              IsVisible="{Binding IsHistoryRecoveryDialogOpen}">
@@ -15,6 +16,9 @@
         </StackPanel>
         <ScrollViewer Grid.Row="1" Classes="comfortableListScroller" HorizontalScrollBarVisibility="Disabled">
           <StackPanel Spacing="14">
+            <controls:OperationMessageView />
+            <TextBlock Text="{Binding HistoryRecoveryFeedback}" IsVisible="{Binding HasHistoryRecoveryFeedback}"
+                       Classes="errorText" TextWrapping="Wrap" />
             <TextBlock Text="{Binding HistoryRecoverySummary}" TextWrapping="Wrap" />
             <StackPanel Spacing="6">
               <TextBlock Text="{Binding CurrentPasswordLabel}" Classes="subtleText" />

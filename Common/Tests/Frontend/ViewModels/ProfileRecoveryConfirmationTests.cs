@@ -79,12 +79,72 @@ public sealed class ProfileRecoveryConfirmationTests
         await OpenAssessmentAsync(model, Guid.NewGuid());
         model.HistoryRecoveryPassword = "P@ssw0rd12345678";
         model.IsHistoryRecoveryAcknowledged = true;
+        var dialogClosed = false;
+        model.PropertyChanged += (_, change) =>
+        {
+            if (change.PropertyName == nameof(model.IsHistoryRecoveryDialogOpen) && !model.IsHistoryRecoveryDialogOpen)
+                dialogClosed = true;
+        };
         await InvokeAsync(model, "ConfirmHistoryRecoveryAsync");
         Assert.AreEqual(1, recording.ConfirmCalls);
         Assert.IsTrue(model.IsHistoryRecoveryDialogOpen);
+        Assert.IsFalse(dialogClosed, "A retry must update the existing dialog without flashing it closed.");
+        Assert.IsTrue(model.HasHistoryRecoveryFeedback);
+        StringAssert.Contains(model.HistoryRecoveryFeedback, preferences.GetString("Profile_Device_SelfDiagnostics_RecoveryPlanChanged"));
         Assert.IsFalse(model.IsHistoryRecoveryAcknowledged);
         await InvokeAsync(model, "ConfirmHistoryRecoveryAsync");
         Assert.AreEqual(1, recording.ConfirmCalls);
+    }
+
+    [TestMethod]
+    public async Task InvalidPasswordIsExplainedInTheOpenDialog_AndRetryCanComplete()
+    {
+        var endpoints = DispatchProxy.Create<IEndpoints, RecoveryEndpoints>();
+        var recording = (RecoveryEndpoints)(object)endpoints;
+        recording.ConfirmationResult = new SelfDiagnosticsResultResponse
+        {
+            Healthy = false, RecoveryPlanId = new string('A', 64), Findings = ["RecoveryPasswordInvalid"]
+        };
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync();
+        using var model = new ProfileViewModel(preferences, endpoints, () => Task.FromResult(true), () => Task.CompletedTask);
+        await OpenAssessmentAsync(model, Guid.NewGuid());
+        model.HistoryRecoveryPassword = "IncorrectPassword!";
+        model.IsHistoryRecoveryAcknowledged = true;
+        await InvokeAsync(model, "ConfirmHistoryRecoveryAsync");
+        Assert.IsTrue(model.IsHistoryRecoveryDialogOpen);
+        Assert.IsTrue(model.HasHistoryRecoveryFeedback);
+        StringAssert.Contains(model.HistoryRecoveryFeedback, preferences.GetString("Profile_Device_SelfDiagnostics_RecoveryPasswordInvalid"));
+        Assert.IsFalse(model.IsHistoryRecoveryAcknowledged);
+        Assert.AreEqual(string.Empty, model.HistoryRecoveryPassword);
+        Assert.IsTrue(recording.BorrowedPassword!.All(value => value == 0));
+
+        recording.ConfirmationResult = new SelfDiagnosticsResultResponse { Healthy = true, RepairedCount = 1 };
+        model.HistoryRecoveryPassword = "P@ssw0rd12345678";
+        model.IsHistoryRecoveryAcknowledged = true;
+        Assert.IsTrue(model.CanConfirmHistoryRecovery);
+        await InvokeAsync(model, "ConfirmHistoryRecoveryAsync");
+        Assert.AreEqual(2, recording.ConfirmCalls);
+        Assert.IsFalse(model.IsHistoryRecoveryDialogOpen);
+        Assert.IsFalse(model.HasHistoryRecoveryFeedback);
+    }
+
+    [TestMethod]
+    public async Task EndpointFailureKeepsRecoveryOpenAndExposesTheSafeError()
+    {
+        var endpoints = DispatchProxy.Create<IEndpoints, RecoveryEndpoints>();
+        var recording = (RecoveryEndpoints)(object)endpoints;
+        recording.ConfirmationException = new IOException("Internal details must not be shown.");
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync();
+        using var model = new ProfileViewModel(preferences, endpoints, () => Task.FromResult(true), () => Task.CompletedTask);
+        await OpenAssessmentAsync(model, Guid.NewGuid());
+        model.HistoryRecoveryPassword = "P@ssw0rd12345678";
+        model.IsHistoryRecoveryAcknowledged = true;
+        await InvokeAsync(model, "ConfirmHistoryRecoveryAsync");
+        Assert.IsTrue(model.IsHistoryRecoveryDialogOpen);
+        Assert.IsTrue(model.IsStatusMessageError);
+        Assert.AreEqual(preferences.GetString("Error_Generic"), model.StatusMessage);
+        Assert.IsFalse(model.IsRunningSelfDiagnostics);
+        Assert.IsTrue(recording.BorrowedPassword!.All(value => value == 0));
     }
 
     private static async Task OpenAssessmentAsync(ProfileViewModel model, Guid token)
@@ -106,6 +166,7 @@ public sealed class ProfileRecoveryConfirmationTests
         public string? LastPlanId { get; private set; }
         public byte[]? SentPassword { get; private set; }
         public byte[]? BorrowedPassword { get; private set; }
+        public Exception? ConfirmationException { get; set; }
         public SelfDiagnosticsResultResponse ConfirmationResult { get; set; } = new()
         {
             Healthy = true, RepairedCount = 1, Findings = ["ConfirmedHistoryRecovery"], RecoveryJournalId = Guid.NewGuid()
@@ -130,7 +191,9 @@ public sealed class ProfileRecoveryConfirmationTests
                     ConfirmCalls++; LastToken = (Guid)args![0]!; LastPlanId = (string)args[1]!;
                     BorrowedPassword = (byte[])args[2]!;
                     SentPassword = BorrowedPassword.ToArray();
-                    return Task.FromResult(ConfirmationResult);
+                    return ConfirmationException is { } error
+                        ? Task.FromException<SelfDiagnosticsResultResponse>(error)
+                        : Task.FromResult(ConfirmationResult);
                 default: throw new NotSupportedException(method?.Name);
             }
         }

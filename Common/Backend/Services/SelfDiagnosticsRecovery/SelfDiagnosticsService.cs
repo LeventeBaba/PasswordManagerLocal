@@ -110,6 +110,7 @@ public sealed partial class SelfDiagnosticsService
             if (!plan.CanRecover) return DescribeRecovery(plan, ["HistoryResetNotSafe"]);
             if (!Hashing.Verify(Convert.FromHexString(plan.PlanId), Convert.FromHexString(planId)))
             {
+                BackendDebugLog.Info($"Recovery confirmation needs renewed review because the evidence changed. UserId={user.UId}.", "SelfDiagnostics");
                 var current = await RunUnderLifecycleAsync(token, allowRepair: false, inner);
                 if (current.Healthy)
                 {

@@ -133,6 +133,7 @@ public sealed class ProfileViewModel : ViewModelBase
         nameof(CurrentDeviceLabel),
         nameof(SelfDiagnosticsLabel),
         nameof(SelfDiagnosticsSummary),
+        nameof(HistoryRecoveryFeedback),
         nameof(HistoryRecoveryTitle), nameof(HistoryRecoverySummary), nameof(HistoryRecoveryAcknowledgeLabel),
         nameof(HistoryRecoveryConfirmLabel), nameof(HistoryRecoveryReviewLabel), nameof(HistoryRecoveryWorkingLabel), nameof(HistoryRecoveryPasswordVisibilityToggleText),
         nameof(BlockedLabel),
@@ -1796,9 +1797,9 @@ public sealed class ProfileViewModel : ViewModelBase
         return Task.CompletedTask;
     }
 
-    private void SetSelfDiagnosticsResult(SelfDiagnosticsResultResponse? result)
+    private void SetSelfDiagnosticsResult(SelfDiagnosticsResultResponse? result, bool keepRecoveryDialogOpen = false)
     {
-        IsHistoryRecoveryDialogOpen = false;
+        IsHistoryRecoveryDialogOpen = keepRecoveryDialogOpen && result?.RecoveryPlanId is { Length: 64 };
         IsHistoryRecoveryAcknowledged = false;
         HistoryRecoveryPassword = string.Empty;
         IsHistoryRecoveryPasswordVisible = false;
@@ -1808,6 +1809,8 @@ public sealed class ProfileViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(CanConfirmHistoryRecovery));
         this.RaisePropertyChanged(nameof(HasSelfDiagnosticsResult));
         this.RaisePropertyChanged(nameof(SelfDiagnosticsSummary));
+        this.RaisePropertyChanged(nameof(HistoryRecoveryFeedback));
+        this.RaisePropertyChanged(nameof(HasHistoryRecoveryFeedback));
     }
 
     private async Task RunSelfDiagnosticsAsync()
@@ -1837,6 +1840,10 @@ public sealed class ProfileViewModel : ViewModelBase
     }
 
     public bool HasHistoryRecoveryOffer => _selfDiagnosticsResult?.RecoveryPlanId is { Length: 64 };
+    public string HistoryRecoveryFeedback => string.Join(Environment.NewLine,
+        (_selfDiagnosticsResult?.Findings ?? []).Where(code => code is "RecoveryPlanChanged" or "RecoveryPasswordInvalid")
+            .Select(code => GetTranslation("Profile_Device_SelfDiagnostics_" + code)));
+    public bool HasHistoryRecoveryFeedback => !string.IsNullOrEmpty(HistoryRecoveryFeedback);
     public bool IsHistoryRecoveryDialogOpen
     {
         get => _isHistoryRecoveryDialogOpen;
@@ -1909,6 +1916,7 @@ public sealed class ProfileViewModel : ViewModelBase
         var token = _token;
         var planId = _selfDiagnosticsResult!.RecoveryPlanId!;
         var password = Encoding.UTF8.GetBytes(HistoryRecoveryPassword);
+        ClearStatusMessage();
         HistoryRecoveryPassword = string.Empty;
         IsHistoryRecoveryPasswordVisible = false;
         IsRunningSelfDiagnostics = true;
@@ -1916,10 +1924,12 @@ public sealed class ProfileViewModel : ViewModelBase
         {
             var result = await _endpoints.ConfirmSelfDiagnosticsRepairAsync(token, planId, password);
             if (_token != token) return;
-            SetSelfDiagnosticsResult(result);
+            // Keep retry feedback in the existing dialog instead of closing and
+            // reopening it, which hides the reason behind the recovery overlay.
+            SetSelfDiagnosticsResult(result, keepRecoveryDialogOpen: true);
             await LoadDevicesAsync();
-            // A changed plan is only presented; it is never automatically accepted.
-            if (_token == token && HasHistoryRecoveryOffer) OpenHistoryRecoveryDialog();
+            // SetSelfDiagnosticsResult clears acknowledgement; changed plans still
+            // require a new password and explicit approval.
         }
         catch (Exception ex)
         {

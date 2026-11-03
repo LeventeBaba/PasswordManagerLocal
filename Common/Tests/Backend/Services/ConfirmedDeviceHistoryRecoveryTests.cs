@@ -105,6 +105,64 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
     [TestMethod]
     [Timeout(90_000)]
     [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task ReobservingTheSameEvidence_DoesNotInvalidateConfirmedRecovery()
+    {
+        await using var source = await ProductionSyncTestHost.CreateAsync();
+        await using var removed = await ProductionSyncTestHost.CreateAsync();
+        var token = await PrepareAsync(source, removed);
+        var before = await ReadUserAsync(source, token);
+        using (var scope = source.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IUserSyncFaultRepository>().AddAsync(new UserSyncFault
+            {
+                UserId = before.UId, Scope = UserSyncFaultScope.ControlPlane,
+                Kind = UserSyncFaultKind.MembershipConflict, Status = UserSyncHealthStatus.TerminalConflict,
+                KeyEpoch = before.KeyEpoch, MembershipEpoch = before.MembershipEpoch,
+                DiagnosticCode = "invalid-removal-history", BlocksLifecycle = true
+            });
+            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+        }
+        var assessment = await source.Endpoints.RunSelfDiagnosticsAndRepairAsync(token);
+        Assert.IsNotNull(assessment.RecoveryPlanId);
+        using (var scope = source.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var now = DateTimeOffset.UtcNow.AddMinutes(1);
+            var fault = await db.UserSyncFaults.SingleAsync(row => row.UserId == before.UId &&
+                row.Scope == UserSyncFaultScope.ControlPlane && row.DiagnosticCode == "invalid-removal-history");
+            fault.LastDetectedAtUtc = now;
+            fault.LastRecoveryAttemptAtUtc = now;
+            fault.NextRecoveryAttemptAtUtc = now.AddMinutes(5);
+            fault.RecoveryAttemptCount++;
+            foreach (var row in await db.UserControlOperations.Where(row => row.UserId == before.UId).ToListAsync())
+            {
+                row.ReceivedAtUtc = now;
+                row.LastReceivedFromDeviceId = removed.Identity.LocalDeviceId;
+            }
+            foreach (var row in await db.UserSyncSnapshots.Where(row => row.UserId == before.UId).ToListAsync())
+            {
+                row.ReceivedAtUtc = now;
+                row.LastReceivedFromDeviceId = removed.Identity.LocalDeviceId;
+            }
+            foreach (var row in await db.UserRevisionKnowledge.Where(row => row.UserId == before.UId).ToListAsync())
+                row.LastUpdatedAtUtc = now;
+            (await db.UserControlStates.SingleAsync(row => row.UserId == before.UId)).LastUpdatedAtUtc = now;
+            (await db.UserSyncStates.SingleAsync(row => row.UserId == before.UId)).LastUpdatedAtUtc = now;
+            (await db.DeviceEnrollmentCommits.SingleAsync(row => row.UserId == before.UId)).LastAttemptAtUtc = now;
+            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+        }
+        await source.Endpoints.GetUserDevicesAsync(token); // The frontend refreshes this before confirmation.
+        var result = await source.Endpoints.ConfirmSelfDiagnosticsRepairAsync(token, assessment.RecoveryPlanId!, Password());
+        Assert.IsTrue(result.Healthy, string.Join(", ", result.Findings));
+        CollectionAssert.DoesNotContain(result.Findings.ToArray(), "RecoveryPlanChanged");
+        CollectionAssert.Contains(result.Findings.ToArray(), "ConfirmedHistoryRecovery");
+        CollectionAssert.AreEqual(before.EncryptedUserPasswordsDataPayload, (await ReadUserAsync(source, token)).EncryptedUserPasswordsDataPayload);
+    }
+
+    [TestMethod]
+    [Timeout(90_000)]
+    [TestCategory("Backend")]
     [TestCategory("Security")]
     public async Task ChangedProfile_InvalidatesApprovalWithoutSavingOrResettingAnything()
     {

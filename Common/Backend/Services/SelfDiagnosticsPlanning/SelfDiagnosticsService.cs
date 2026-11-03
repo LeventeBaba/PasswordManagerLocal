@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text.Json;
 using PasswordManagerLocal.Common.Backend.Diagnostics;
 using PasswordManagerLocal.Common.Backend.Internal.Recovery;
@@ -225,17 +224,9 @@ public sealed partial class SelfDiagnosticsService
         if (plan.MaximumKeyEpoch == long.MaxValue || plan.HighestLocalSequence >= long.MaxValue - 1)
             plan.Blockers.Add("RecoveryBlockedEpochExhausted");
         UtcDateTimeUtil.NormalizeObjectGraph(archive);
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(archive, BackendJsonSerializerContext.Default.UserRecoveryJournalSnapshot);
-        try
-        {
-            plan.PlanId = Convert.ToHexString(Hashing.SHA256Hash(hash =>
-            {
-                hash.WriteString("PasswordManagerLocal.ProfileRecovery.v1");
-                hash.Write(token); hash.Write(_identity.LocalDeviceId); hash.Write(_identity.OriginInstanceId);
-                hash.WriteBytes(bytes); hash.WriteString(string.Join("|", plan.Risks)); hash.WriteString(string.Join("|", plan.Blockers));
-            }));
-        }
-        finally { CryptographicOperations.ZeroMemory(bytes); }
+        // Retain the exact archive for the journal, but do not expire approval when
+        // background services only re-observe the same evidence or reschedule a retry.
+        plan.PlanId = SelfDiagnosticsRecoveryPlanFingerprint.Calculate(plan, token, _identity.LocalDeviceId, _identity.OriginInstanceId);
         foreach (var code in plan.Blockers.Concat(plan.Risks))
             BackendDebugLog.Info($"Recovery assessment. UserId={user.UId}, Reason={code}.", "SelfDiagnostics");
         return plan;
