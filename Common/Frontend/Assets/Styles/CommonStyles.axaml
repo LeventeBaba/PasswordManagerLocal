@@ -64,6 +64,11 @@
       <Setter Property="Background" Value="{DynamicResource AppBrush.PasswordStrength.Excellent}" />
     </Style>
 
+    <Style Selector="Button.confirmationAction">
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
     <Style Selector="Button.primary">
       <Setter Property="MinHeight" Value="{StaticResource AppMetric.TouchTarget.PrimaryButton}" />
       <Setter Property="Padding" Value="18,10" />

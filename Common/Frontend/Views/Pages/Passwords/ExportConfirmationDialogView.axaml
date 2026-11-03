@@ -45,12 +45,12 @@
 
         <WrapPanel Orientation="Horizontal" HorizontalAlignment="Right">
           <Button
-              Classes="secondary"
+              Classes="secondary confirmationAction"
               Command="{Binding CancelExportConfirmationCommand}"
               Content="{Binding CancelButtonLabel}"
               Margin="0,0,8,8" />
           <Button
-              Classes="primary"
+              Classes="primary confirmationAction"
               Command="{Binding ConfirmExportCommand}"
               Content="{Binding ConfirmExportLabel}"
               Margin="0,0,0,8" />

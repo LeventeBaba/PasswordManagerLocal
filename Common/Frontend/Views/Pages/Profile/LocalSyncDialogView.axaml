@@ -26,11 +26,11 @@
           </StackPanel>
         </ScrollViewer>
         <StackPanel Grid.Row="1" Spacing="10">
-          <Button Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+          <Button Classes="primary confirmationAction" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                   Command="{Binding ConfirmLocalSyncToggleCommand}" IsEnabled="{Binding CanConfirmLocalSyncToggle}">
             <TextBlock Text="{Binding LocalSyncConfirmLabel}" TextWrapping="Wrap" TextAlignment="Center" />
           </Button>
-          <Button x:Name="LocalSyncCancelButton" Classes="secondary"
+          <Button x:Name="LocalSyncCancelButton" Classes="secondary confirmationAction"
                   HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                   Command="{Binding CancelLocalSyncToggleCommand}" IsEnabled="{Binding CanCancelLocalSyncToggle}">
             <TextBlock Text="{Binding CancelLabel}" TextWrapping="Wrap" TextAlignment="Center" />

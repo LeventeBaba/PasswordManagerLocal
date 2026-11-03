@@ -42,9 +42,9 @@
           </StackPanel>
         </ScrollViewer>
         <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="10">
-          <Button x:Name="HistoryRecoveryCancelButton" Classes="secondary" Command="{Binding CancelHistoryRecoveryCommand}"
+          <Button x:Name="HistoryRecoveryCancelButton" Classes="secondary confirmationAction" Command="{Binding CancelHistoryRecoveryCommand}"
                   Content="{Binding CancelLabel}" IsEnabled="{Binding CanRunSelfDiagnostics}" />
-          <Button Grid.Column="1" Classes="danger" Command="{Binding ConfirmHistoryRecoveryCommand}"
+          <Button Grid.Column="1" Classes="danger confirmationAction" Command="{Binding ConfirmHistoryRecoveryCommand}"
                   IsEnabled="{Binding CanConfirmHistoryRecovery}">
             <TextBlock Text="{Binding HistoryRecoveryConfirmLabel}" TextWrapping="Wrap" TextAlignment="Center" />
           </Button>
