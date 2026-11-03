@@ -572,7 +572,7 @@ public sealed class AndroidLifecycleSecurityArchitectureTests
     }
 
     [TestMethod]
-    public void DeferredAndroidClientReplaysReadinessAndFrontendConfirmsConnectedSnapshot()
+    public void DeferredAndroidClientSubscribesBeforeReplayingCurrentReadiness()
     {
         var root = GetRepositoryRoot();
         var deferredClient = File.ReadAllText(Path.Combine(
@@ -581,13 +581,6 @@ public sealed class AndroidLifecycleSecurityArchitectureTests
             "Frontend",
             "Runtime",
             "AndroidDeferredServiceFrontendBackendClient.cs"));
-        var mainViewModel = File.ReadAllText(Path.Combine(
-            root,
-            "Common",
-            "Frontend",
-            "ViewModels",
-            "MainViewModel.cs"));
-
         var subscription = deferredClient.IndexOf(
             "inner.StateChanged += HandleInnerStateChanged;",
             StringComparison.Ordinal);
@@ -600,8 +593,9 @@ public sealed class AndroidLifecycleSecurityArchitectureTests
         StringAssert.Contains(deferredClient, "private readonly object _snapshotGate = new();");
         StringAssert.Contains(deferredClient, "sender is IBackendRuntimeClient runtimeClient");
         StringAssert.Contains(deferredClient, "PublishStateChanged(new BackendRuntimeStateChangedEventArgs(previous, current));");
-        StringAssert.Contains(mainViewModel, "var snapshot = _backendClient.Snapshot;");
-        StringAssert.Contains(mainViewModel, "ApplyBackendAvailability(snapshot.IsReady);");
+        // Frontend readiness admission is covered behaviorally by
+        // MainViewModelStartupTests.CompletedReadinessWaitStillRequiresCurrentReadySnapshot.
+        // A local variable name is not an Android lifecycle contract.
     }
 
     [TestMethod]

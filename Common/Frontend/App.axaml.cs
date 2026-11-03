@@ -49,8 +49,28 @@ public partial class App : Application
                 mainWindow.WindowState = WindowState.Maximized;
             var view = (MainView)mainWindow.Content!;
             var session = new FrontendUiSession(view, context, ownsBackendClient: false);
+            var firewallPromptCompleted = false;
+            var firewallPromptRunning = false;
+            session.BackendInitializationCompleted += async (_, _) =>
+            {
+                if (session.IsDisposed || !mainWindow.IsVisible || firewallPromptCompleted || firewallPromptRunning ||
+                    context.BackendClient.Snapshot.IsReady != true || session.ViewModel?.IsDatabaseRecoveryDialogOpen == true)
+                    return;
+                firewallPromptRunning = true;
+                try
+                {
+                    await TryShowFirewallPermissionPromptAsync(mainWindow, session, context);
+                    firewallPromptCompleted = true;
+                }
+                finally { firewallPromptRunning = false; }
+            };
             mainWindow.Closed += (_, _) =>
                 _ = CompleteDesktopCloseAsync(mainWindow, session, context, desktop);
+            desktop.Exit += (_, _) =>
+            {
+                context.DesktopStopping?.Invoke();
+                _ = DisposeDesktopSessionAsync(session);
+            };
             // The desktop lifetime automatically shows MainWindow when its event loop
             // starts. Do not publish it yet: the selected theme and the first view
             // model are loaded asynchronously, and showing it early exposes an
@@ -59,7 +79,7 @@ public partial class App : Application
             {
                 try
                 {
-                    await session.InitializeAsync();
+                    await session.PreparePresentationAsync();
                     if (session.IsDisposed)
                     {
                         AbortUnshownDesktopStartup(desktop);
@@ -71,7 +91,10 @@ public partial class App : Application
                     mainWindow.DataContext = session.ViewModel;
                     desktop.MainWindow = mainWindow;
                     mainWindow.Show();
-                    await TryShowFirewallPermissionPromptAsync(mainWindow, session, context);
+                    context.DesktopPresentationReady?.Invoke();
+                    // Backend and automatic sign-in continue after presentation. Failure
+                    // is rendered in the shell; it does not close a usable themed UI.
+                    _ = CompleteDesktopInitializationAsync(session);
                 }
                 catch (OperationCanceledException) when (session.IsDisposed)
                 {
@@ -82,6 +105,9 @@ public partial class App : Application
                     System.Diagnostics.Trace.TraceError(
                         $"Frontend initialization failed: {exception.GetType().Name}");
                     // Do not leave an invisible UI process behind if startup fails.
+                    context.DesktopStopping?.Invoke();
+                    await DisposeDesktopSessionAsync(session);
+                    context.DesktopStartupFailed?.Invoke();
                     AbortUnshownDesktopStartup(desktop);
                 }
             }, DispatcherPriority.Background);
@@ -95,12 +121,41 @@ public partial class App : Application
         FrontendApplicationContext context,
         IClassicDesktopStyleApplicationLifetime desktop)
     {
+        context.DesktopStopping?.Invoke();
+        // DisposeAsync revokes UI admission synchronously. Let the existing process
+        // exit controller bound transport cleanup instead of waiting invisibly for
+        // an in-flight backend operation after the user has closed the window.
+        var cleanup = DisposeDesktopSessionAsync(session);
+        mainWindow.DataContext = null;
+        context.DesktopExitRequested?.Invoke();
+        TryShutdownDesktop(desktop);
+        await cleanup;
+    }
+
+    private static async Task DisposeDesktopSessionAsync(FrontendUiSession session)
+    {
         try { await session.DisposeAsync(); }
-        finally
+        catch (Exception exception)
         {
-            mainWindow.DataContext = null;
-            context.DesktopExitRequested?.Invoke();
-            TryShutdownDesktop(desktop);
+            System.Diagnostics.Trace.TraceError($"Frontend cleanup failed: {exception.GetType().Name}");
+        }
+    }
+
+    private static async Task CompleteDesktopInitializationAsync(FrontendUiSession session)
+    {
+        try
+        {
+            // Give the dispatcher a rendering/input opportunity before beginning
+            // restoration, including when the initial connection already completed.
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            if (session.IsDisposed)
+                return;
+            await session.InitializeAsync();
+        }
+        catch (OperationCanceledException) when (session.IsDisposed) { }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Trace.TraceError($"Frontend backend initialization failed: {exception.GetType().Name}");
         }
     }
 

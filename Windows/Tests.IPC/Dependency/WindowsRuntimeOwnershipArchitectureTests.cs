@@ -69,26 +69,60 @@ public sealed class WindowsRuntimeOwnershipArchitectureTests
     }
 
     [TestMethod]
-    public void WindowsUiStartupOrdersLockIdentityControlEndpointAndFrontendContext()
+    public void WindowsUiStartupAcquiresOwnershipBeforeStartingBackendConnectionInBackground()
     {
         var program = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(),
-            "Windows",
-            "Frontend",
-            "Program.cs"));
+            GetRepositoryRoot(), "Windows", "Frontend", "Program.cs"));
         var lockIndex = program.IndexOf("names.UiLockFilePath", StringComparison.Ordinal);
         var primaryIndex = program.IndexOf("WindowsUiInstanceRole.Primary", StringComparison.Ordinal);
         var identityIndex = program.IndexOf("new WindowsUiIpcIdentity", StringComparison.Ordinal);
-        var controlIndex = program.IndexOf("agentConnection.ConnectAsync", StringComparison.Ordinal);
-        var endpointIndex = program.IndexOf("backendClient.ConnectAsync", StringComparison.Ordinal);
+        var controlIndex = program.IndexOf("new WindowsAgentControlConnection(", StringComparison.Ordinal);
+        var endpointIndex = program.IndexOf("new WindowsNamedPipeFrontendBackendClient(", StringComparison.Ordinal);
+        var activationIndex = program.IndexOf("activationServer.StartAsync(", StringComparison.Ordinal);
+        var backgroundConnection = Regex.Match(program,
+            @"var\s+(?<task>\w+)\s*=\s*Task\.Run\(\s*\(\)\s*=>\s*backendClient\.ConnectAsync\(",
+            RegexOptions.CultureInvariant);
         var contextIndex = program.IndexOf("new FrontendApplicationContext", StringComparison.Ordinal);
+        var frontendIndex = program.IndexOf("BuildAvaloniaApp(frontendContext)", StringComparison.Ordinal);
 
-        Assert.IsTrue(lockIndex >= 0);
+        Assert.IsTrue(lockIndex >= 0, "UI process ownership must be established first.");
         Assert.IsTrue(primaryIndex > lockIndex);
         Assert.IsTrue(identityIndex > primaryIndex);
         Assert.IsTrue(controlIndex > identityIndex);
         Assert.IsTrue(endpointIndex > controlIndex);
-        Assert.IsTrue(contextIndex > endpointIndex);
+        Assert.IsTrue(activationIndex > endpointIndex, "Early activation must be served before backend startup.");
+        Assert.IsTrue(backgroundConnection.Success, "Backend connection must start as background work.");
+        Assert.IsTrue(backgroundConnection.Index > activationIndex);
+        Assert.IsTrue(contextIndex > backgroundConnection.Index);
+        Assert.IsTrue(frontendIndex > contextIndex);
+
+        var taskName = Regex.Escape(backgroundConnection.Groups["task"].Value);
+        Assert.IsTrue(Regex.IsMatch(program,
+            @"backendConnectionStartup:\s*" + taskName + @"\b", RegexOptions.CultureInvariant),
+            "The frontend must join the same owned connection task.");
+        var beforeFrontend = program[..frontendIndex];
+        Assert.IsFalse(Regex.IsMatch(beforeFrontend,
+            @"await\s+" + taskName + @"\b|\b" + taskName + @"\s*\.(?:GetAwaiter|Wait|Result)\b",
+            RegexOptions.CultureInvariant), "Starting Avalonia must not wait for the background connection.");
+        Assert.IsFalse(Regex.IsMatch(beforeFrontend,
+            @"(?:agentConnection|backendClient)\.(?:ConnectAsync|WaitUntilReadyAsync)\([^;]*?\)\s*\.(?:GetAwaiter|Wait|Result)\b",
+            RegexOptions.CultureInvariant), "Agent/backend readiness must not synchronously gate Avalonia startup.");
+    }
+
+    [TestMethod]
+    public void DesktopShowsPreparedPresentationBeforeContinuingBackendInitialization()
+    {
+        var app = File.ReadAllText(Path.Combine(
+            GetRepositoryRoot(), "Common", "Frontend", "App.axaml.cs"));
+        var prepareIndex = app.IndexOf("await session.PreparePresentationAsync();", StringComparison.Ordinal);
+        var showIndex = app.IndexOf("mainWindow.Show();", StringComparison.Ordinal);
+        var continueIndex = app.IndexOf("_ = CompleteDesktopInitializationAsync(session);", StringComparison.Ordinal);
+
+        Assert.IsTrue(prepareIndex >= 0, "The selected theme and local UI graph must be prepared.");
+        Assert.IsTrue(showIndex > prepareIndex, "The window must not appear before appearance preparation.");
+        Assert.IsTrue(continueIndex > showIndex, "Full initialization continues after the themed window is shown.");
+        Assert.IsFalse(Regex.IsMatch(app[..showIndex], @"await\s+session\.InitializeAsync\(",
+            RegexOptions.CultureInvariant), "The first window must not wait for Remember Me or backend initialization.");
     }
 
     [TestMethod]

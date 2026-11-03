@@ -14,6 +14,7 @@ public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSou
     private readonly FrontendApplicationContext _context;
     private readonly bool _ownsBackendClient;
     private readonly object _disposalGate = new();
+    private Task? _presentation;
     private Task? _initialization;
     private Task? _disposal;
     private readonly FrontendChangeNotificationForwarder? _changeNotificationForwarder;
@@ -52,7 +53,17 @@ public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSou
 
     /// <summary>Metadata-only change hints delivered only during this UI session.</summary>
     public event Action<FrontendChangeStreamDelivery>? ChangeHintReceived;
+    public event EventHandler? BackendInitializationCompleted;
 
+    /// <summary>Completes only local appearance and graph preparation; never waits for the backend.</summary>
+    public Task PreparePresentationAsync()
+    {
+        if (IsDisposed)
+            return Task.CompletedTask;
+        return _presentation ??= PreparePresentationCoreAsync();
+    }
+
+    /// <summary>Joins presentation, connection and automatic session restoration.</summary>
     public Task InitializeAsync()
     {
         if (IsDisposed)
@@ -61,6 +72,21 @@ public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSou
     }
 
     private async Task InitializeCoreAsync()
+    {
+        await PreparePresentationAsync();
+        var token = PlatformServices.LifetimeToken;
+        token.ThrowIfCancellationRequested();
+        if (IsDisposed || ViewModel is not { } model)
+            return;
+        try { await model.InitializeAsync().WaitAsync(token); }
+        finally
+        {
+            if (!IsDisposed && !token.IsCancellationRequested)
+                _refreshCoordinator?.Start(model.GetVisiblePages(), _changeNotificationForwarder?.CurrentPosition);
+        }
+    }
+
+    private async Task PreparePresentationCoreAsync()
     {
         var token = PlatformServices.LifetimeToken;
         try
@@ -82,11 +108,13 @@ public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSou
                 _context.BackgroundSyncSettingsClient,
                 _uiPreferences,
                 Authentication,
-                token);
+                token,
+                backendConnectionStartup: _context.BackendConnectionStartup);
             View.DataContext = ViewModel;
             ViewModel.RefreshNavigationChanged += HandleRefreshNavigationChanged;
             ViewModel.RefreshPageStateChanged += HandleRefreshPageStateChanged;
             ViewModel.RefreshAuthenticationChanged += HandleRefreshAuthenticationChanged;
+            ViewModel.BackendInitializationCompleted += HandleBackendInitializationCompleted;
             _refreshCoordinator = new FrontendRefreshCoordinator(
                 this,
                 ViewModel,
@@ -95,8 +123,6 @@ public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSou
             // Register after the coordinator is listening so even a change arriving during
             // authoritative startup is covered by a fresh watermark/refresh marker.
             _changeNotificationForwarder?.ReconcileOnResume();
-            await ViewModel.InitializeAsync();
-            _refreshCoordinator.Start(ViewModel.GetVisiblePages(), _changeNotificationForwarder?.CurrentPosition);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
     }
@@ -133,11 +159,13 @@ public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSou
             _refreshCoordinator?.Deactivate();
             _changeNotificationForwarder?.Deactivate();
             ChangeHintReceived = null;
+            BackendInitializationCompleted = null;
             if (ViewModel is { } model)
             {
                 model.RefreshNavigationChanged -= HandleRefreshNavigationChanged;
                 model.RefreshPageStateChanged -= HandleRefreshPageStateChanged;
                 model.RefreshAuthenticationChanged -= HandleRefreshAuthenticationChanged;
+                model.BackendInitializationCompleted -= HandleBackendInitializationCompleted;
             }
             _uiPreferences?.Deactivate();
             PlatformServices.Deactivate();
@@ -172,8 +200,13 @@ public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSou
         {
             try
             {
+                if (_presentation is not null)
+                    await _presentation;
                 if (_initialization is not null)
-                    await _initialization;
+                {
+                    try { await _initialization; }
+                    catch (OperationCanceledException) when (PlatformServices.LifetimeToken.IsCancellationRequested) { }
+                }
             }
             finally
             {
@@ -214,6 +247,14 @@ public sealed class FrontendUiSession : IAsyncDisposable, IFrontendChangeHintSou
                 // Observers cannot disrupt UI-session ownership or backend notifications.
             }
         }
+    }
+
+    private void HandleBackendInitializationCompleted(object? sender, EventArgs args)
+    {
+        if (IsDisposed)
+            return;
+        _refreshCoordinator?.RequestAuthoritativeRefresh();
+        BackendInitializationCompleted?.Invoke(this, EventArgs.Empty);
     }
 
     private void HandleRefreshNavigationChanged(object? sender, EventArgs args) =>

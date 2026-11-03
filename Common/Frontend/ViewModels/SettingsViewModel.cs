@@ -8,6 +8,7 @@ namespace PasswordManagerLocal.Common.Frontend.ViewModels;
 public sealed class SettingsViewModel : ViewModelBase
 {
     private readonly DeviceAppPreferencesService _deviceAppPreferences;
+    private bool _backendAvailable = true;
     private bool _isAppearanceSectionExpanded;
     private bool _isBackgroundSectionExpanded;
     private bool _isBackgroundSyncEnabled;
@@ -143,7 +144,7 @@ public sealed class SettingsViewModel : ViewModelBase
     public bool IsBackgroundSyncControlVisible => _isBackgroundSyncAvailable;
 
     public bool IsBackgroundSyncToggleEnabled =>
-        _isBackgroundSyncAvailable &&
+        _backendAvailable && _isBackgroundSyncAvailable &&
         !_isLoadingBackgroundSync &&
         !_isChangingBackgroundSync &&
         !_isExternalBackgroundSyncTransition;
@@ -153,7 +154,7 @@ public sealed class SettingsViewModel : ViewModelBase
         _isExternalBackgroundSyncTransition;
 
     public bool CanAutomaticallyRefreshBackgroundSync =>
-        !_isLoadingBackgroundSync &&
+        _backendAvailable && !_isLoadingBackgroundSync &&
         !_isChangingBackgroundSync &&
         !_isExternalBackgroundSyncTransition;
 
@@ -206,10 +207,16 @@ public sealed class SettingsViewModel : ViewModelBase
     public string AboutTitle => GetTranslation("About_Title");
     public string AboutDescription => GetTranslation("Settings_About_Description");
 
+    internal void SetBackendAvailable(bool available)
+    {
+        _backendAvailable = available;
+        RaiseBackgroundOperationProperties();
+    }
+
     public async Task LoadBackgroundSyncStateAsync(
         CancellationToken cancellationToken = default)
     {
-        if (_isLoadingBackgroundSync || _isChangingBackgroundSync)
+        if (!_backendAvailable || _isLoadingBackgroundSync || _isChangingBackgroundSync)
             return;
 
         _isLoadingBackgroundSync = true;
@@ -217,6 +224,8 @@ public sealed class SettingsViewModel : ViewModelBase
         try
         {
             var state = await _deviceAppPreferences.RefreshBackgroundSyncAsync(cancellationToken);
+            if (IsDisposed || LifetimeToken.IsCancellationRequested || !_backendAvailable)
+                return;
             ApplyBackgroundState(state);
             if (!state.IsAvailable || state.IsDegraded)
                 ShowErrorMessage(() => GetBackgroundSyncFailureMessage(state));

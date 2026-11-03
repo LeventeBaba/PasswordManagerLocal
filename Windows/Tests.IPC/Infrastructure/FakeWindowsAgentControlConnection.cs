@@ -25,6 +25,7 @@ internal sealed class FakeWindowsAgentControlConnection : IWindowsAgentControlCo
     public bool? LastRequestedEnabled { get; private set; }
     public bool MutateBeforeSetFailure { get; set; }
     public bool StallBackgroundRead { get; set; }
+    public TaskCompletionSource? ReloadApplicationPreferencesEntered { get; set; }
     public int ReloadApplicationPreferencesCount { get; private set; }
     public bool ReloadApplicationPreferencesResult { get; set; } = true;
     public Exception? ReloadApplicationPreferencesFailure { get; set; }
@@ -113,6 +114,7 @@ internal sealed class FakeWindowsAgentControlConnection : IWindowsAgentControlCo
     {
         cancellationToken.ThrowIfCancellationRequested();
         ReloadApplicationPreferencesCount++;
+        ReloadApplicationPreferencesEntered?.TrySetResult();
         return ReloadApplicationPreferencesFailure is null
             ? Task.FromResult(ReloadApplicationPreferencesResult)
             : Task.FromException<bool>(ReloadApplicationPreferencesFailure);

@@ -16,6 +16,13 @@ public sealed class WindowsStartupNotification
             ErrorIcon);
     }
 
+    public void ShowFrontendInitializationFailed()
+    {
+        _ = MessageBox(IntPtr.Zero,
+            $"{ApplicationBranding.DisplayName} could not load its appearance and interface. The application will close. Please try opening it again.",
+            ApplicationBranding.DisplayName, ErrorIcon);
+    }
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int MessageBox(
         IntPtr windowHandle,

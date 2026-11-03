@@ -33,6 +33,13 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
     private readonly DeviceAppPreferencesService _deviceAppPreferences;
     private readonly object _initializationGate = new();
     private Task? _initializationTask;
+    private Task? _backendConnectionStartup;
+    private bool _initializationRequested;
+    private bool _startupCompleted;
+    private bool _rememberedUnlockRetryPending;
+    private bool _isInitializing;
+    private bool _backendReady;
+    private long _backendEpoch;
 
     private ViewModelBase _currentPageViewModel;
     private MainPageContentViewModel _currentPageContentViewModel;
@@ -83,7 +90,8 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         IAuthSessionRegistry? authSessionRegistry = null,
         CancellationToken sessionLifetime = default,
         IFrontendDeadlineScheduler? deadlineScheduler = null,
-        string? applicationVersion = null)
+        string? applicationVersion = null,
+        Task? backendConnectionStartup = null)
         : this(
             endpoints,
             backendClient,
@@ -91,7 +99,8 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
             uiPreferences,
             new DeviceAppPreferencesService(backgroundSyncSettingsClient, sessionLifetime),
             deadlineScheduler ?? new AvaloniaFrontendDeadlineScheduler(),
-            applicationVersion ?? ApplicationVersionInfo.GetDisplayVersion())
+            applicationVersion ?? ApplicationVersionInfo.GetDisplayVersion(),
+            backendConnectionStartup)
     {
     }
 
@@ -102,11 +111,13 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         UiPreferencesService uiPreferences,
         DeviceAppPreferencesService deviceAppPreferences,
         IFrontendDeadlineScheduler deadlineScheduler,
-        string? applicationVersion)
+        string? applicationVersion,
+        Task? backendConnectionStartup)
         : base(uiPreferences)
     {
         _endpoints = endpoints ?? throw new ArgumentNullException(nameof(endpoints));
         _backendClient = backendClient ?? throw new ArgumentNullException(nameof(backendClient));
+        _backendConnectionStartup = backendConnectionStartup;
         _authSessionRegistry = authSessionRegistry;
         _deviceAppPreferences = deviceAppPreferences ?? throw new ArgumentNullException(nameof(deviceAppPreferences));
         _deadlineScheduler = deadlineScheduler ?? throw new ArgumentNullException(nameof(deadlineScheduler));
@@ -153,6 +164,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
             OpenPrivacyPolicy);
         SettingsViewModel.PropertyChanged += HandleRefreshPageViewModelPropertyChanged;
 
+        RetryStartupCommand = Own(ReactiveCommand.CreateFromTask(RetryStartupAsync));
         ShowSettingsCommand = Own(ReactiveCommand.Create(NavigateToSettings));
         ShowPasswordsCommand = Own(ReactiveCommand.Create(NavigateToPasswords));
         ShowProfileCommand = Own(ReactiveCommand.Create(NavigateToProfile));
@@ -222,11 +234,23 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         base.DisposeManaged();
     }
 
+    public ReactiveCommand<RxVoid, RxVoid> RetryStartupCommand { get; }
+    public string RetryStartupLabel => GetTranslation("Shell_RetryStartup");
+    public bool IsStartupInProgress => _isInitializing;
+    public bool CanRetryStartup => _initializationRequested && !IsDisposed && !_isInitializing &&
+        !IsDatabaseRecoveryDialogOpen && !_isResettingDatabase &&
+        (!_backendReady || !_startupCompleted || (_rememberedUnlockRetryPending && !IsAuthenticated));
+    public bool CanUseBackend => _backendReady && !_isInitializing && !IsDisposed;
+    public bool IsBackendPageEnabled => IsSettingsSectionVisible ||
+        (!IsMainContentPageVisible && !ReferenceEquals(CurrentPageViewModel, _changeProfileViewModel)) ||
+        (_backendReady && !_isInitializing);
+
     public LoginViewModel LoginViewModel { get; }
 
     public event EventHandler? RefreshNavigationChanged;
     public event EventHandler? RefreshPageStateChanged;
     public event EventHandler? RefreshAuthenticationChanged;
+    public event EventHandler? BackendInitializationCompleted;
 
     public SettingsViewModel SettingsViewModel { get; }
 
@@ -330,6 +354,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
             this.RaisePropertyChanged(nameof(CurrentDesktopPageViewModel));
             CurrentPageContentViewModel = new MainPageContentViewModel(value);
             RaiseNavigationStateProperties();
+            this.RaisePropertyChanged(nameof(IsBackendPageEnabled));
             RaiseHeaderSubtitleProperties();
             RefreshNavigationChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -571,7 +596,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         }
     }
 
-    public bool CanChangeRememberMe => IsAuthenticated && !IsSettingRememberMe;
+    public bool CanChangeRememberMe => IsAuthenticated && _backendReady && !_isInitializing && !IsSettingRememberMe;
 
     public ReactiveCommand<RxVoid, RxVoid> ShowSettingsCommand { get; }
 
@@ -718,6 +743,8 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
             if (TryGetCurrentPageHeaderStatus(out var pageMessage, out _))
                 return pageMessage;
 
+            if (_isInitializing)
+                return GetTranslation("Shell_BackendStarting");
             return IsAuthenticated ? GetTranslation("Shell_SignedInIdle") : string.Empty;
         }
     }
@@ -738,41 +765,59 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
     {
         if (IsDisposed || LifetimeToken.IsCancellationRequested)
             return Task.CompletedTask;
+        _initializationRequested = true;
         Task operation;
         TaskCompletionSource? starter = null;
-
         lock (_initializationGate)
         {
-            if (IsAuthenticated)
-                return Task.CompletedTask;
-
             if (_initializationTask is not null)
-            {
-                operation = _initializationTask;
-            }
-            else
-            {
-                starter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                _initializationTask = starter.Task;
-                operation = starter.Task;
-            }
+                return _initializationTask;
+            if (_backendClient.Snapshot.IsReady && ((_startupCompleted && !_rememberedUnlockRetryPending) || IsAuthenticated))
+                return Task.CompletedTask;
+            starter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _initializationTask = operation = starter.Task;
         }
-
-        if (starter is not null)
-            _ = RunInitializationAsync(starter);
-
+        _isInitializing = true;
+        ApplyBackendAvailability(_backendClient.Snapshot.IsReady);
+        _ = RunInitializationAsync(starter);
         return operation;
+    }
+
+    private async Task RetryStartupAsync()
+    {
+        if (CanRetryStartup)
+            await InitializeAsync();
+    }
+
+    private async Task ObserveInitializationAsync()
+    {
+        try { await InitializeAsync(); }
+        catch (OperationCanceledException) { }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Trace.TraceError($"Frontend startup failed: {exception.GetType().Name}");
+            if (!IsDisposed)
+                ShowLocalizedErrorMessage("Shell_BackendStartupFailed");
+        }
     }
 
     private async Task RunInitializationAsync(TaskCompletionSource completion)
     {
+        var initialEpoch = Interlocked.Read(ref _backendEpoch);
+        var existingTokens = _authSessionRegistry.ListTokens().ToHashSet();
         try
         {
             await InitializeCoreAsync();
             completion.TrySetResult();
         }
+        catch (OperationCanceledException)
+        {
+            DiscardIncompleteStartupSessions(existingTokens);
+            completion.TrySetResult();
+        }
         catch (Exception exception)
         {
+            DiscardIncompleteStartupSessions(existingTokens);
             completion.TrySetException(exception);
         }
         finally
@@ -782,86 +827,161 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
                 if (ReferenceEquals(_initializationTask, completion.Task))
                     _initializationTask = null;
             }
+            _isInitializing = false;
+            if (!IsDisposed && !LifetimeToken.IsCancellationRequested)
+            {
+                ApplyBackendAvailability(_backendClient.Snapshot.IsReady);
+                var handlers = BackendInitializationCompleted;
+                if (handlers is not null)
+                {
+                    foreach (EventHandler handler in handlers.GetInvocationList())
+                    {
+                        try { handler(this, EventArgs.Empty); }
+                        catch { /* An observer cannot fault the owned startup task. */ }
+                    }
+                }
+                // A replacement connection may become Ready while the old attempt is
+                // unwinding. Join that generation once, without retrying restore failures forever.
+                if (!_startupCompleted && _backendReady &&
+                    initialEpoch != Interlocked.Read(ref _backendEpoch))
+                    _ = ObserveInitializationAsync();
+            }
         }
+    }
+
+    private void DiscardIncompleteStartupSessions(HashSet<Guid> existingTokens)
+    {
+        if (IsDisposed || _startupCompleted)
+            return;
+        var discardedSelection = false;
+        foreach (var token in _authSessionRegistry.ListTokens().Where(token => !existingTokens.Contains(token)).ToArray())
+        {
+            discardedSelection |= _authSessionRegistry.CurrentUserToken == token;
+            RemoveSessionDeadlineTimer(token);
+            _authSessionRegistry.TryRemove(token);
+        }
+        if (discardedSelection || _isStartupProfileSelection)
+        {
+            _isStartupProfileSelection = false;
+            IsAuthenticated = false;
+            CurrentUserDisplayName = string.Empty;
+            CurrentUserFirstName = string.Empty;
+            _passwordsViewModel?.Reset();
+            _profileViewModel?.Reset();
+            ApplyRememberMeFromSession(false);
+            SetPageAfterSessionChange(LoginViewModel);
+        }
+    }
+
+    private void EnsureStartupCurrent(long epoch)
+    {
+        LifetimeToken.ThrowIfCancellationRequested();
+        if (IsDisposed || epoch != Interlocked.Read(ref _backendEpoch) || !_backendClient.Snapshot.IsReady)
+            throw new OperationCanceledException("The frontend startup connection was retired.");
     }
 
     private async Task InitializeCoreAsync()
     {
-        if (IsAuthenticated)
-            return;
-
         ShowLocalizedInformationMessage("Shell_BackendStarting");
-
         try
         {
-            await _backendClient.ConnectAsync(LifetimeToken);
+            // Windows starts this task before Avalonia. Join it once; a user retry
+            // starts a fresh connection attempt instead of replaying a failed task.
+            var startup = _backendConnectionStartup;
+            _backendConnectionStartup = null;
+            if (startup is not null)
+                await startup.WaitAsync(LifetimeToken);
+            else
+                await _backendClient.ConnectAsync(LifetimeToken);
             await _backendClient.WaitUntilReadyAsync(LifetimeToken);
             LifetimeToken.ThrowIfCancellationRequested();
-            var snapshot = _backendClient.Snapshot;
-            ApplyBackendAvailability(snapshot.IsReady);
-            if (!snapshot.IsReady)
+            if (!_backendClient.Snapshot.IsReady)
                 return;
         }
+        catch (OperationCanceledException) when (LifetimeToken.IsCancellationRequested) { return; }
         catch (DatabaseRecoveryRequiredException exception)
         {
-            if (!IsAuthenticated)
+            if (!IsDisposed)
                 ShowDatabaseRecoveryDialog(exception);
             return;
         }
         catch (KeyProtectorUnavailableException exception)
         {
-            if (!IsAuthenticated)
+            if (!IsDisposed)
                 ShowPlatformKeyUnavailableMessage(exception);
             return;
         }
         catch
         {
-            if (!IsAuthenticated)
+            if (!IsDisposed)
                 ShowLocalizedErrorMessage("Shell_BackendStartupFailed");
             return;
         }
 
+        if (IsDisposed)
+            return;
+        if ((_startupCompleted && !_rememberedUnlockRetryPending) || IsAuthenticated)
+        {
+            // Existing tokens are revalidated by the refresh coordinator. Reconnection
+            // must not issue new remembered sessions or undo an explicit logout.
+            ClearStatusMessage();
+            return;
+        }
+        var epoch = Interlocked.Read(ref _backendEpoch);
+        _startupCompleted = false;
+        _rememberedUnlockRetryPending = false;
         IReadOnlyList<Guid> rememberedTokens;
         try
         {
-            rememberedTokens = await _endpoints.RestoreRememberedSessionsAsync();
+            rememberedTokens = await _endpoints.RestoreRememberedSessionsAsync(LifetimeToken);
+            EnsureStartupCurrent(epoch);
         }
+        catch (OperationCanceledException) { throw; }
         catch (KeyProtectorUnavailableException exception)
         {
-            if (!IsAuthenticated)
-                ShowPlatformKeyUnavailableMessage(exception);
+            EnsureStartupCurrent(epoch);
+            _startupCompleted = true;
+            _rememberedUnlockRetryPending = true;
+            ShowPlatformKeyUnavailableMessage(exception);
             return;
         }
         catch
         {
-            if (!IsAuthenticated)
-                ShowLocalizedErrorMessage("Shell_RememberedSessionRestoreFailed");
+            EnsureStartupCurrent(epoch);
+            _startupCompleted = true;
+            ShowLocalizedErrorMessage("Shell_RememberedSessionRestoreFailed");
             return;
         }
 
         var loadedRememberedTokens = new List<Guid>();
-
         foreach (var token in rememberedTokens)
         {
-            if (await TryAddRememberedSessionAsync(token, false))
+            EnsureStartupCurrent(epoch);
+            if (await TryAddRememberedSessionAsync(token, false, epoch))
                 loadedRememberedTokens.Add(token);
         }
-
+        EnsureStartupCurrent(epoch);
+        if (loadedRememberedTokens.Count != 0)
+        {
+            LoginViewModel.Reset();
+            _registrationViewModel?.Reset();
+        }
         if (loadedRememberedTokens.Count == 1)
         {
-            await LoadAuthenticatedStateAsync(
-                loadedRememberedTokens[0],
-                () => GetTranslation("Shell_RememberedSessionLoaded"));
+            await LoadAuthenticatedStateAsync(loadedRememberedTokens[0],
+                () => GetTranslation("Shell_RememberedSessionLoaded"), startupEpoch: epoch);
+            EnsureStartupCurrent(epoch);
+            _startupCompleted = true;
             return;
         }
-
         if (loadedRememberedTokens.Count > 1)
         {
-            await ShowStartupProfileSelectionAsync(
-                () => GetTranslation("Shell_ChooseRememberedProfile"));
+            await ShowStartupProfileSelectionAsync(() => GetTranslation("Shell_ChooseRememberedProfile"), epoch);
+            EnsureStartupCurrent(epoch);
+            _startupCompleted = true;
             return;
         }
-
+        _startupCompleted = true;
         if (!IsAuthenticated)
             ClearStatusMessage();
     }
@@ -1033,6 +1153,8 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
     private void ShowDatabaseRecoveryDialog(DatabaseRecoveryRequiredException exception)
     {
+        if (IsDisposed || _isResettingDatabase)
+            return;
         _databaseRecoveryException = exception;
         _databaseRecoveryStage = DatabaseRecoveryStage.RecoveryRequired;
         _isResettingDatabase = false;
@@ -1053,6 +1175,8 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         }
 
         _isResettingDatabase = true;
+        _backendConnectionStartup = null;
+        _startupCompleted = false;
         RaiseDatabaseRecoveryProperties();
 
         try
@@ -1072,6 +1196,9 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         {
             _isResettingDatabase = false;
             RaiseDatabaseRecoveryProperties();
+            ApplyBackendAvailability(_backendClient.Snapshot.IsReady);
+            if (_backendReady && !IsDatabaseRecoveryDialogOpen)
+                _ = ObserveInitializationAsync();
         }
     }
 
@@ -1104,6 +1231,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
     private void RaiseDatabaseRecoveryProperties()
     {
+        this.RaisePropertyChanged(nameof(CanRetryStartup));
         this.RaisePropertyChanged(nameof(IsDatabaseRecoveryDialogOpen));
         this.RaisePropertyChanged(nameof(IsApplicationInteractionEnabled));
         this.RaisePropertyChanged(nameof(IsApplicationSurfaceEnabled));
@@ -1156,6 +1284,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
     private void RaiseHeaderSubtitleProperties()
     {
+        this.RaisePropertyChanged(nameof(RetryStartupLabel));
         this.RaisePropertyChanged(nameof(HeaderSubtitle));
         this.RaisePropertyChanged(nameof(HasHeaderSubtitle));
         this.RaisePropertyChanged(nameof(IsHeaderSubtitleIdle));
@@ -1175,7 +1304,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
             if (TryGetCurrentPageHeaderStatus(out _, out var pageKind))
                 return pageKind;
 
-            return OperationMessageKind.None;
+            return _isInitializing ? OperationMessageKind.Information : OperationMessageKind.None;
         }
     }
 
@@ -1278,23 +1407,27 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         object? sender,
         BackendRuntimeStateChangedEventArgs args)
     {
+        if (IsDisposed)
+            return;
+        if (args.Previous.IsReady && !args.Current.IsReady)
+            Interlocked.Increment(ref _backendEpoch);
         if (Dispatcher.UIThread.CheckAccess())
         {
-            ApplyBackendRuntimeSnapshot(args.Current);
+            ApplyBackendRuntimeSnapshot(_backendClient.Snapshot);
             return;
         }
 
-        Dispatcher.UIThread.Post(() => ApplyBackendRuntimeSnapshot(args.Current));
+        Dispatcher.UIThread.Post(() => ApplyBackendRuntimeSnapshot(_backendClient.Snapshot));
     }
 
     private void ApplyBackendRuntimeSnapshot(BackendRuntimeSnapshot snapshot)
     {
         if (IsDisposed)
             return;
+        var wasReady = _backendReady;
         ApplyBackendAvailability(snapshot.IsReady);
-
-        if (IsAuthenticated)
-            return;
+        if (wasReady && !snapshot.IsReady)
+            HideVisibleSensitiveData();
 
         switch (snapshot.State)
         {
@@ -1314,8 +1447,10 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
                 ShowLocalizedErrorMessage("Shell_BackendStartupFailed");
                 break;
             case BackendRuntimeState.Ready:
-                ClearStatusMessage();
-                _ = InitializeAsync();
+                if (!wasReady && _startupCompleted && !_isInitializing)
+                    ClearStatusMessage();
+                if (_initializationRequested && !_startupCompleted && !_isInitializing && !_isResettingDatabase)
+                    _ = ObserveInitializationAsync();
                 break;
             case BackendRuntimeState.Stopping:
             case BackendRuntimeState.Stopped:
@@ -1324,14 +1459,21 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         }
     }
 
-    private void ApplyBackendAvailability(bool isInitialized)
+    private void ApplyBackendAvailability(bool isReady)
     {
-        if (_isBackendInitialized == isInitialized)
-            return;
-
-        _isBackendInitialized = isInitialized;
-        LoginViewModel.SetBackendInitialized(isInitialized);
-        _registrationViewModel?.SetBackendInitialized(isInitialized);
+        _backendReady = isReady;
+        var canAuthenticate = isReady && _startupCompleted && !_isInitializing && !IsDatabaseRecoveryDialogOpen;
+        _isBackendInitialized = canAuthenticate;
+        LoginViewModel.SetBackendInitialized(canAuthenticate);
+        _registrationViewModel?.SetBackendInitialized(canAuthenticate);
+        SettingsViewModel.SetBackendAvailable(isReady);
+        RaiseHeaderSubtitleProperties();
+        this.RaisePropertyChanged(nameof(CanUseBackend));
+        this.RaisePropertyChanged(nameof(IsStartupInProgress));
+        this.RaisePropertyChanged(nameof(CanRetryStartup));
+        this.RaisePropertyChanged(nameof(IsBackendPageEnabled));
+        this.RaisePropertyChanged(nameof(CanChangeRememberMe));
+        RefreshPageStateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private bool IsInformationViewModel(ViewModelBase page) =>
@@ -1351,8 +1493,15 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         var route = new InformationRoute(InformationDestination.Settings);
         _informationNavigation.Reset(route);
         ShowInformationRoute(route, fromInformation);
-        if (!fromInformation)
-            _ = SettingsViewModel.LoadBackgroundSyncStateAsync();
+        if (!fromInformation && _backendReady)
+            _ = LoadSettingsStateAsync();
+    }
+
+    private async Task LoadSettingsStateAsync()
+    {
+        try { await SettingsViewModel.LoadBackgroundSyncStateAsync(LifetimeToken); }
+        catch (OperationCanceledException) when (LifetimeToken.IsCancellationRequested) { }
+        catch { /* State remains unavailable and can be refreshed after reconnection. */ }
     }
 
     private void SetPageAfterSessionChange(ViewModelBase destination)
@@ -1591,7 +1740,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         ClearStatusMessage();
     }
 
-    private async Task ShowStartupProfileSelectionAsync(Func<string?>? messageFactory = null)
+    private async Task ShowStartupProfileSelectionAsync(Func<string?>? messageFactory = null, long? startupEpoch = null)
     {
         _isAddingProfile = false;
         _isStartupProfileSelection = true;
@@ -1606,13 +1755,17 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         ChangeProfileViewModel.SetStartupSelectionMode(true);
         ConfigureAuthBackNavigation();
         await ChangeProfileViewModel.LoadAsync();
+        if (startupEpoch is { } epoch)
+            EnsureStartupCurrent(epoch);
+        if (IsDisposed || LifetimeToken.IsCancellationRequested)
+            return;
         SetPageAfterSessionChange(ChangeProfileViewModel);
         ShowShellMessage(messageFactory, OperationMessageKind.Information);
     }
 
     private async Task ShowChangeProfileAsync()
     {
-        if (!IsAuthenticated)
+        if (!_backendReady || _isInitializing || !IsAuthenticated)
             return;
 
         _isAddingProfile = false;
@@ -1891,7 +2044,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         return true;
     }
 
-    private async Task<bool> TryAddRememberedSessionAsync(Guid token, bool select)
+    private async Task<bool> TryAddRememberedSessionAsync(Guid token, bool select, long epoch)
     {
         if (token == Guid.Empty)
             return false;
@@ -1899,6 +2052,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         try
         {
             var status = await _endpoints.GetAuthSessionStatusAsync(token);
+            EnsureStartupCurrent(epoch);
             if (!status.IsAuthenticated)
                 return false;
 
@@ -1909,13 +2063,16 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
                 return false;
             }
 
+            EnsureStartupCurrent(epoch);
             _authSessionRegistry.TryAdd(token, select);
             SetSessionProfile(token, profile);
             SetSessionExpiry(token, status.ExpiresAtUtc);
             return true;
         }
+        catch (OperationCanceledException) { throw; }
         catch
         {
+            EnsureStartupCurrent(epoch);
             try { await _endpoints.LogoutAsync(token); } catch { }
             _authSessionRegistry.TryRemove(token);
             return false;
@@ -1972,7 +2129,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
     private async Task OnAuthenticationSucceededAsync(Guid token)
     {
-        if (IsDisposed)
+        if (IsDisposed || LifetimeToken.IsCancellationRequested)
             return;
         var profileTask = _endpoints.GetUserProfileInfoAsync(token);
         var statusTask = _endpoints.GetAuthSessionStatusAsync(token);
@@ -2008,18 +2165,26 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
     private async Task<bool> LoadAuthenticatedStateAsync(
         Guid token,
         Func<string?>? messageFactory = null,
-        OperationMessageKind messageKind = OperationMessageKind.Success)
+        OperationMessageKind messageKind = OperationMessageKind.Success,
+        long? startupEpoch = null)
     {
         var profile = await _endpoints.GetUserProfileInfoAsync(token);
-        return await LoadAuthenticatedStateAsync(token, profile, messageFactory, messageKind);
+        if (startupEpoch is { } epoch)
+            EnsureStartupCurrent(epoch);
+        if (IsDisposed || LifetimeToken.IsCancellationRequested)
+            return false;
+        return await LoadAuthenticatedStateAsync(token, profile, messageFactory, messageKind, startupEpoch);
     }
 
     private async Task<bool> LoadAuthenticatedStateAsync(
         Guid token,
         UserProfileInfoResponse profile,
         Func<string?>? messageFactory = null,
-        OperationMessageKind messageKind = OperationMessageKind.Success)
+        OperationMessageKind messageKind = OperationMessageKind.Success,
+        long? startupEpoch = null)
     {
+        if (startupEpoch is { } initialEpoch)
+            EnsureStartupCurrent(initialEpoch);
         var previousToken = _authSessionRegistry.CurrentUserToken;
         var previousUserId = CurrentUserId;
         _authSessionRegistry.CurrentUserToken = token;
@@ -2044,6 +2209,10 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         var passwordsLoaded = await passwordsLoadTask;
         var profileLoaded = await profileLoadTask;
 
+        if (startupEpoch is { } currentEpoch)
+            EnsureStartupCurrent(currentEpoch);
+        if (IsDisposed || LifetimeToken.IsCancellationRequested)
+            return false;
         SetPageAfterSessionChange(passwordsViewModel);
         SetCurrentMobileNavigationIndex(0);
 
@@ -2798,7 +2967,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
     bool IFrontendRefreshTarget.CanRefreshPage(FrontendRefreshPage page) => CanRefreshPage(page);
 
-    public bool CanRefreshPage(FrontendRefreshPage page) => page switch
+    public bool CanRefreshPage(FrontendRefreshPage page) => _backendReady && !_isInitializing && (page switch
     {
         FrontendRefreshPage.Passwords =>
             IsAuthenticated && _passwordsViewModel is not null && _passwordsViewModel.CanAutomaticallyRefresh,
@@ -2819,7 +2988,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
             ReferenceEquals(CurrentPageViewModel, SettingsViewModel) &&
             SettingsViewModel.CanAutomaticallyRefreshBackgroundSync,
         _ => false
-    };
+    });
 
     Task<bool> IFrontendRefreshTarget.RefreshPageAsync(
         FrontendRefreshPage page,

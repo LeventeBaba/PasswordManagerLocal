@@ -90,6 +90,12 @@
                          Classes="errorText"
                          TextWrapping="Wrap" />
             </Grid>
+            <Button Content="{Binding RetryStartupLabel}"
+                    Command="{Binding RetryStartupCommand}"
+                    IsVisible="{Binding CanRetryStartup}"
+                    IsEnabled="{Binding CanRetryStartup}"
+                    HorizontalAlignment="Left"
+                    AutomationProperties.Name="{Binding RetryStartupLabel}" />
           </StackPanel>
 
           <Button Grid.Column="1"
@@ -161,12 +167,14 @@
                               HorizontalAlignment="Stretch"
                               HorizontalContentAlignment="Center"
                               Command="{Binding ShowChangeProfileCommand}"
+                              IsEnabled="{Binding CanUseBackend}"
                               Click="HandleAccountMenuActionClick"
                               Content="{Binding ChangeProfileLabel}" />
                       <Button Classes="ghost"
                               HorizontalAlignment="Stretch"
                               HorizontalContentAlignment="Center"
                               Command="{Binding LogoutCommand}"
+                              IsEnabled="{Binding CanUseBackend}"
                               Click="HandleAccountMenuActionClick"
                               Content="{Binding LogoutLabel}" />
                     </StackPanel>
@@ -233,6 +241,11 @@
                          TextTrimming="CharacterEllipsis"
                          TextWrapping="NoWrap" />
             </Grid>
+            <Button Content="{Binding RetryStartupLabel}"
+                    Command="{Binding RetryStartupCommand}"
+                    IsVisible="{Binding CanRetryStartup}"
+                    IsEnabled="{Binding CanRetryStartup}"
+                    HorizontalAlignment="Left" />
           </StackPanel>
 
           <Grid Grid.Column="1"
@@ -312,12 +325,14 @@
                                 HorizontalAlignment="Stretch"
                                 HorizontalContentAlignment="Center"
                                 Command="{Binding ShowChangeProfileCommand}"
+                              IsEnabled="{Binding CanUseBackend}"
                                 Click="HandleAccountMenuActionClick"
                                 Content="{Binding ChangeProfileLabel}" />
                         <Button Classes="ghost"
                                 HorizontalAlignment="Stretch"
                                 HorizontalContentAlignment="Center"
                                 Command="{Binding LogoutCommand}"
+                              IsEnabled="{Binding CanUseBackend}"
                                 Click="HandleAccountMenuActionClick"
                                 Content="{Binding LogoutLabel}" />
                       </StackPanel>
@@ -417,7 +432,7 @@
       </Border>
     </Grid>
 
-    <Grid x:Name="PageViewport" Grid.Row="2">
+    <Grid x:Name="PageViewport" Grid.Row="2" IsEnabled="{Binding IsBackendPageEnabled}">
       <Carousel x:Name="MobileMainCarousel"
                 ClipToBounds="True"
                 ItemsSource="{Binding MobileMainPages}"

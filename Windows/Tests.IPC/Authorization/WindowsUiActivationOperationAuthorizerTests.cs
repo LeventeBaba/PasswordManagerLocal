@@ -40,6 +40,14 @@ public sealed class WindowsUiActivationOperationAuthorizerTests
     }
 
     [TestMethod]
+    public void AgentCannotRequestShutdownBeforeItsProcessIdentityIsKnown()
+    {
+        var authorizer = new WindowsUiActivationOperationAuthorizer(() => null);
+        Assert.IsFalse(authorizer.Authorize(CreateContext(
+            IpcPeerRole.Agent, 200, UiActivationCommand.IntentionalAgentShutdown)).IsAuthorized);
+    }
+
+    [TestMethod]
     public void OrdinaryActivationDoesNotGrantArbitraryOperations()
     {
         var authorizer = new WindowsUiActivationOperationAuthorizer(() => 200);
