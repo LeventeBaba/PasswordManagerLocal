@@ -2856,14 +2856,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
                 return await ProfileViewModel.RefreshDevicesAutomaticallyAsync(isCurrent, cancellationToken);
 
             case FrontendRefreshPage.LocalDevice:
-            {
-                var localDevice = await _endpoints.GetLocalDeviceInfoAsync(cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
-                if (!isCurrent() || !CanRefreshPage(page))
-                    return false;
-                ProfileViewModel.ApplyLocalDeviceProjection(localDevice);
-                return true;
-            }
+                return await ProfileViewModel.RefreshLocalUserSyncAutomaticallyAsync(isCurrent, cancellationToken);
 
             case FrontendRefreshPage.Enrollment:
                 return await LoginViewModel.RefreshEnrollmentAutomaticallyAsync(isCurrent, cancellationToken);
@@ -2939,7 +2932,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
                 "IsExportConfirmationOpen") ||
             (sender is ProfileViewModel && property is
                 "IsDeviceDisconnectDialogOpen" or "IsLocalSyncDialogOpen" or "IsHistoryRecoveryDialogOpen" or "IsAddDeviceDialogOpen" or
-                "IsAddingDevice" or "IsRunningSelfDiagnostics" or "AreDevicesLoaded") ||
+                "IsAddingDevice" or "IsRunningSelfDiagnostics" or "IsChangingDeviceSync" or "AreDevicesLoaded") ||
             (sender is ChangeProfileViewModel && property == "IsBusy") ||
             (sender is SettingsViewModel && property == nameof(SettingsViewModel.CanAutomaticallyRefreshBackgroundSync)))
         {

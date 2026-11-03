@@ -2,6 +2,7 @@
 <UserControl
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Controls"
     xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
     x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Profile.DeviceListView"
     x:DataType="vm:ProfileViewModel">
@@ -136,10 +137,13 @@
                   </WrapPanel>
                 </StackPanel>
               </Button>
-              <ToggleSwitch
+              <controls:ConfirmedToggleSwitch
                   Grid.Column="2"
                   PointerEntered="InteractiveListItem_PointerEntered"
-                  IsChecked="{Binding IsSyncOn, Mode=OneWay}"
+                  ConfirmedIsChecked="{Binding IsSyncOn, Mode=OneWay}"
+                  IsEnabled="{Binding Owner.CanToggleDeviceSync}"
+                  AutomationProperties.Name="{Binding Name}"
+                  AutomationProperties.HelpText="{Binding SyncStateText}"
                   Command="{Binding Owner.ToggleDeviceSyncCommand}"
                   CommandParameter="{Binding}"
                   OnContent="{Binding SyncToggleOnLabel}"

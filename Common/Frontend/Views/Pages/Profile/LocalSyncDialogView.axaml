@@ -3,26 +3,40 @@
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
+    xmlns:controls="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Controls"
     x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Profile.LocalSyncDialogView"
     x:DataType="vm:ProfileViewModel"
     IsVisible="{Binding IsLocalSyncDialogOpen}">
-  <Border Background="{DynamicResource AppBrush.Dialog.Overlay}" IsVisible="{Binding IsLocalSyncDialogOpen}" Padding="24">
-    <Border Classes="card" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="560">
-      <StackPanel Spacing="14">
-        <TextBlock Text="{Binding LocalSyncDialogTitle}" Classes="sectionTitle" />
-        <TextBlock Text="{Binding LocalSyncDeviceName}" FontWeight="SemiBold" TextWrapping="Wrap" />
-        <Border Classes="dangerZone">
-          <TextBlock Text="{Binding LocalSyncDialogWarning}" TextWrapping="Wrap" />
-        </Border>
-        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-          <Button Classes="secondary" Command="{Binding CancelLocalSyncToggleCommand}" Content="{Binding CancelLabel}" />
-          <Button
-              Grid.Column="1"
-              Classes="primary"
-              Command="{Binding ConfirmLocalSyncToggleCommand}"
-              Content="{Binding LocalSyncConfirmLabel}" />
-        </Grid>
-      </StackPanel>
+  <Border Background="{DynamicResource AppBrush.Dialog.Overlay}" Padding="16">
+    <Border Classes="card" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+            MaxWidth="560" MaxHeight="640" Margin="0,12"
+            KeyboardNavigation.TabNavigation="Cycle">
+      <Grid RowDefinitions="*,Auto" RowSpacing="14">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                      Classes="comfortableListScroller" Classes.androidComfortableListScroller="{Binding IsAndroidUi}">
+          <StackPanel Spacing="14">
+            <TextBlock Text="{Binding LocalSyncDialogTitle}" Classes="sectionTitle" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding LocalSyncDeviceName}" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <Border Classes="dangerZone">
+              <TextBlock Text="{Binding LocalSyncDialogWarning}" TextWrapping="Wrap" />
+            </Border>
+            <TextBlock Text="{Binding LocalSyncWorkingLabel}" Classes="subtleText" TextWrapping="Wrap"
+                       IsVisible="{Binding IsChangingDeviceSync}" />
+            <controls:OperationMessageView />
+          </StackPanel>
+        </ScrollViewer>
+        <StackPanel Grid.Row="1" Spacing="10">
+          <Button Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                  Command="{Binding ConfirmLocalSyncToggleCommand}" IsEnabled="{Binding CanConfirmLocalSyncToggle}">
+            <TextBlock Text="{Binding LocalSyncConfirmLabel}" TextWrapping="Wrap" TextAlignment="Center" />
+          </Button>
+          <Button x:Name="LocalSyncCancelButton" Classes="secondary"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                  Command="{Binding CancelLocalSyncToggleCommand}" IsEnabled="{Binding CanCancelLocalSyncToggle}">
+            <TextBlock Text="{Binding CancelLabel}" TextWrapping="Wrap" TextAlignment="Center" />
+          </Button>
+        </StackPanel>
+      </Grid>
     </Border>
   </Border>
 </UserControl>

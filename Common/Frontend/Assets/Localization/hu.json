@@ -287,6 +287,7 @@
   "Profile_LocalSync_TurnOff": "Szinkronizáció kikapcsolása ennél a profilnál",
   "Profile_LocalSync_OnSuccess": "A szinkronizáció be lett kapcsolva ennél a profilnál a jelenlegi eszközön.",
   "Profile_LocalSync_OffSuccess": "A szinkronizáció ki lett kapcsolva ennél a profilnál a jelenlegi eszközön.",
+  "Profile_LocalSync_Working": "Szinkronizációs beállítás mentése…",
   "Common_Search": "Keresés",
   "Common_ClearSelection": "Kijelölés törlése",
   "Passwords_Search_Placeholder": "Keresés név vagy leírás alapján",

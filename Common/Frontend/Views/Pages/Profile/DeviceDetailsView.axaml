@@ -130,8 +130,11 @@
         </StackPanel>
         <StackPanel Spacing="4">
           <TextBlock Text="{Binding SyncEnabledLabel}" Classes="subtleText" />
-          <ToggleSwitch
-              IsChecked="{Binding SelectedDevice.IsSyncOn, Mode=OneWay}"
+          <controls:ConfirmedToggleSwitch
+              ConfirmedIsChecked="{Binding SelectedDevice.IsSyncOn, Mode=OneWay}"
+              IsEnabled="{Binding CanToggleDeviceSync}"
+              AutomationProperties.Name="{Binding SelectedDevice.Name}"
+              AutomationProperties.HelpText="{Binding SelectedDevice.SyncStateText}"
               Command="{Binding ToggleDeviceSyncCommand}" CommandParameter="{Binding SelectedDevice}"
               OnContent="{Binding SelectedDevice.SyncToggleOnLabel}"
               OffContent="{Binding SelectedDevice.SyncToggleOffLabel}" />

@@ -168,6 +168,7 @@ public sealed class ProfileViewModel : ViewModelBase
         nameof(CancelLabel),
         nameof(LocalSyncDialogTitle),
         nameof(LocalSyncDialogWarning),
+        nameof(LocalSyncWorkingLabel),
         nameof(LocalSyncConfirmLabel),
     ];
 
@@ -206,6 +207,8 @@ public sealed class ProfileViewModel : ViewModelBase
     private DeviceItemViewModel? _pendingLocalSyncDevice;
     private bool _isDeviceDisconnectDialogOpen;
     private bool _isLocalSyncDialogOpen;
+    private object? _deviceSyncOperation;
+    private long _deviceSyncStateVersion;
     private bool _isAddDeviceDialogOpen;
     private bool _pendingLocalSyncEnabled;
     private bool _isAddingDevice;
@@ -568,8 +571,18 @@ public sealed class ProfileViewModel : ViewModelBase
     public bool IsLocalSyncDialogOpen
     {
         get => _isLocalSyncDialogOpen;
-        private set => this.RaiseAndSetIfChanged(ref _isLocalSyncDialogOpen, value);
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _isLocalSyncDialogOpen, value);
+            RaiseDeviceSyncAvailabilityChanged();
+        }
     }
+
+    public bool IsChangingDeviceSync => _deviceSyncOperation is not null;
+    public bool CanToggleDeviceSync => _token != Guid.Empty && !IsChangingDeviceSync && !IsLocalSyncDialogOpen;
+    public bool CanConfirmLocalSyncToggle => _token != Guid.Empty && IsLocalSyncDialogOpen &&
+        PendingLocalSyncDevice is not null && !IsChangingDeviceSync;
+    public bool CanCancelLocalSyncToggle => !IsChangingDeviceSync;
 
     public bool IsAddDeviceDialogOpen
     {
@@ -803,6 +816,7 @@ public sealed class ProfileViewModel : ViewModelBase
         {
             this.RaiseAndSetIfChanged(ref _pendingLocalSyncDevice, value);
             this.RaisePropertyChanged(nameof(LocalSyncDeviceName));
+            this.RaisePropertyChanged(nameof(CanConfirmLocalSyncToggle));
         }
     }
 
@@ -1187,6 +1201,8 @@ public sealed class ProfileViewModel : ViewModelBase
 
     public string LocalSyncDialogWarning => GetTranslation("Profile_LocalSync_Warning");
 
+    public string LocalSyncWorkingLabel => GetTranslation("Profile_LocalSync_Working");
+
     public string LocalSyncConfirmLabel => PendingLocalSyncEnabled
         ? GetTranslation("Profile_LocalSync_TurnOn")
         : GetTranslation("Profile_LocalSync_TurnOff");
@@ -1252,6 +1268,7 @@ public sealed class ProfileViewModel : ViewModelBase
         !IsHistoryRecoveryDialogOpen &&
         !IsAddDeviceDialogOpen &&
         !IsAddingDevice &&
+        !IsChangingDeviceSync &&
         !_isRunningSelfDiagnostics;
 
     /// <summary>Updates only authoritative profile labels; all edit drafts remain untouched.</summary>
@@ -1276,12 +1293,13 @@ public sealed class ProfileViewModel : ViewModelBase
 
         var token = _token;
         var selectedId = SelectedDevice?.DeviceId;
+        var version = _deviceSyncStateVersion;
         try
         {
             // Automatic refresh is a cached read; presence observations arrive through backend sync/discovery.
             var devices = await _endpoints.GetUserDevicesAsync(token, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            if (_token != token || !CanAutomaticallyRefreshDevices || !isCurrent())
+            if (_token != token || version != _deviceSyncStateVersion || !CanAutomaticallyRefreshDevices || !isCurrent())
                 return false;
 
             ApplyLoadedDevices(devices, selectedId);
@@ -1297,11 +1315,28 @@ public sealed class ProfileViewModel : ViewModelBase
         }
     }
 
-    public void ApplyLocalDeviceProjection(LocalDeviceInfoResponse localDevice)
+    public async Task<bool> RefreshLocalUserSyncAutomaticallyAsync(
+        Func<bool> isCurrent,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(localDevice);
-        var current = _allDevices.FirstOrDefault(device => device.DeviceId == localDevice.DeviceId);
-        current?.ApplyLocalDeviceSyncState(localDevice.IsSyncOn);
+        if (!CanAutomaticallyRefreshDevices)
+            return false;
+        var token = _token;
+        var version = _deviceSyncStateVersion;
+        try
+        {
+            // The installation-wide identity flag can be on for another profile.
+            // This switch represents only the signed-in profile's local link.
+            var enabled = await _endpoints.GetLocalUserSyncOnAsync(token, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_token != token || version != _deviceSyncStateVersion ||
+                !CanAutomaticallyRefreshDevices || !isCurrent())
+                return false;
+            _allDevices.FirstOrDefault(device => device.IsCurrentDevice)?.ApplyLocalDeviceSyncState(enabled);
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch { return false; }
     }
 
     public void RequestDeviceListScrollToTop() => DeviceListScrollToTopRequested?.Invoke(this, EventArgs.Empty);
@@ -1330,6 +1365,8 @@ public sealed class ProfileViewModel : ViewModelBase
 
     private void ResetDeviceNavigationState()
     {
+        // Navigation can close an unsubmitted dialog, but an authorized save
+        // stays busy until it finishes. Returning must not start a second write.
         SetSelfDiagnosticsResult(null);
         SelectedDevice = null;
         DeviceToDisconnect = null;
@@ -1400,7 +1437,7 @@ public sealed class ProfileViewModel : ViewModelBase
     public async Task<bool> LoadAsync(Guid token, UserProfileInfoResponse profile)
     {
         SetSelfDiagnosticsResult(null);
-        _token = token;
+        SetSessionToken(token);
         Username = profile.Username;
         FirstName = profile.FirstName;
         LastName = profile.LastName;
@@ -1428,14 +1465,25 @@ public sealed class ProfileViewModel : ViewModelBase
 
     public void SetSessionToken(Guid token)
     {
-        if (_token != token) SetSelfDiagnosticsResult(null);
+        if (_token == token)
+            return;
+        SetSelfDiagnosticsResult(null);
         _token = token;
+        _allDevices.Clear();
+        Devices = [];
+        this.RaisePropertyChanged(nameof(Devices));
+        _areDevicesLoaded = false;
+        this.RaisePropertyChanged(nameof(AreDevicesLoaded));
+        SelectedDevice = null;
+        RaiseDeviceCollectionStateChanged();
+        InvalidateDeviceSyncOperation();
     }
 
     public void Reset()
     {
         SetSelfDiagnosticsResult(null);
-        _token = Guid.Empty;
+        SetSessionToken(Guid.Empty);
+        InvalidateDeviceSyncOperation();
         _deviceSearchDebounce.Cancel();
         Username = string.Empty;
         FirstName = string.Empty;
@@ -1675,16 +1723,17 @@ public sealed class ProfileViewModel : ViewModelBase
 
         var selectedId = SelectedDevice?.DeviceId;
         var token = _token;
+        var version = _deviceSyncStateVersion;
         try
         {
             var devices = await _endpoints.GetUserDevicesAsync(token);
-            if (token != _token) return false;
+            if (token != _token || version != _deviceSyncStateVersion) return false;
             ApplyLoadedDevices(devices, selectedId);
             return true;
         }
         catch (Exception ex)
         {
-            if (_token == token) ShowSafeErrorMessage(ex);
+            if (_token == token && version == _deviceSyncStateVersion) ShowSafeErrorMessage(ex);
             return false;
         }
     }
@@ -1934,13 +1983,12 @@ public sealed class ProfileViewModel : ViewModelBase
 
     private async Task ToggleDeviceSyncAsync(DeviceItemViewModel device)
     {
-        if (_token == Guid.Empty)
+        if (device is null || !CanToggleDeviceSync || !ReferenceEquals(device.Owner, this) ||
+            !_allDevices.Contains(device))
             return;
 
         ClearStatusMessage();
-
         var targetState = !device.IsSyncOn;
-
         if (device.IsCurrentDevice)
         {
             PendingLocalSyncDevice = device;
@@ -1949,21 +1997,25 @@ public sealed class ProfileViewModel : ViewModelBase
             return;
         }
 
+        var token = _token;
+        var operation = BeginDeviceSyncOperation();
         try
         {
-            await _endpoints.SetUserDeviceSyncOnAsync(_token, device.DeviceId, targetState);
-            device.ApplySyncState(targetState);
-            if (!await LoadDevicesAsync())
-                return;
-
+            await _endpoints.SetUserDeviceSyncOnAsync(token, device.DeviceId, targetState);
+            if (!IsCurrentDeviceSyncOperation(operation, token)) return;
+            ApplyConfirmedDeviceSyncState(device, targetState);
+            if (!await LoadDevicesAsync() || !IsCurrentDeviceSyncOperation(operation, token)) return;
             ShowLocalizedSuccessMessage(targetState
                 ? "Profile_Device_SyncTurnedOn"
                 : "Profile_Device_SyncTurnedOff");
         }
         catch (Exception ex)
         {
-            ShowSafeErrorMessage(ex);
+            if (!IsCurrentDeviceSyncOperation(operation, token)) return;
+            await ReadBackDeviceSyncStateAsync(operation, token, device);
+            if (IsCurrentDeviceSyncOperation(operation, token)) ShowSafeErrorMessage(ex);
         }
+        finally { EndDeviceSyncOperation(operation); }
     }
 
     private async Task UnblockDeviceAsync(DeviceItemViewModel device)
@@ -2049,7 +2101,15 @@ public sealed class ProfileViewModel : ViewModelBase
 
     private void CancelLocalSyncToggle()
     {
+        // Once the user confirms, a persisted write cannot be canceled by merely
+        // closing the dialog. Keep Back/Cancel from suggesting otherwise.
+        if (!CanCancelLocalSyncToggle) return;
         ClearStatusMessage();
+        CloseLocalSyncDialog();
+    }
+
+    private void CloseLocalSyncDialog()
+    {
         IsLocalSyncDialogOpen = false;
         PendingLocalSyncDevice = null;
         PendingLocalSyncEnabled = false;
@@ -2057,37 +2117,116 @@ public sealed class ProfileViewModel : ViewModelBase
 
     private async Task ConfirmLocalSyncToggleAsync()
     {
-        if (PendingLocalSyncDevice is null)
-            return;
-
-        ClearStatusMessage();
-
+        if (!CanConfirmLocalSyncToggle) return;
+        var device = PendingLocalSyncDevice!;
         var targetState = PendingLocalSyncEnabled;
-
+        var token = _token;
+        var operation = BeginDeviceSyncOperation();
+        ClearStatusMessage();
         try
         {
-            if (targetState && !await FirewallPermissionStartupPrompt.EnsureConfiguredAsync(UiPreferences))
+            if (targetState)
             {
-                ShowLocalizedErrorMessage("Firewall_RequiredForLocalNetwork");
-                return;
+                var allowed = await FirewallPermissionStartupPrompt.EnsureConfiguredAsync(UiPreferences);
+                if (!IsCurrentDeviceSyncOperation(operation, token)) return;
+                if (!allowed)
+                {
+                    ShowLocalizedErrorMessage("Firewall_RequiredForLocalNetwork");
+                    return;
+                }
             }
-
-            await _endpoints.SetLocalUserSyncOnAsync(_token, targetState);
-            PendingLocalSyncDevice.ApplySyncState(targetState);
-            CancelLocalSyncToggle();
-            if (!await LoadDevicesAsync())
-                return;
-
+            await _endpoints.SetLocalUserSyncOnAsync(token, targetState);
+            if (!IsCurrentDeviceSyncOperation(operation, token)) return;
+            ApplyConfirmedDeviceSyncState(device, targetState);
+            CloseLocalSyncDialog();
+            if (!await LoadDevicesAsync() || !IsCurrentDeviceSyncOperation(operation, token)) return;
             ShowLocalizedSuccessMessage(targetState
                 ? "Profile_LocalSync_OnSuccess"
                 : "Profile_LocalSync_OffSuccess");
         }
         catch (Exception ex)
         {
-            await FirewallPermissionStartupPrompt.RevalidateAfterLikelyFirewallFailureAsync(
-                ex,
-                UiPreferences);
-            ShowSafeErrorMessage(ex);
+            if (!IsCurrentDeviceSyncOperation(operation, token)) return;
+            // A backend/IPC failure can occur after the setting was committed.
+            // Read the stored value instead of assuming either rollback or success.
+            await ReadBackDeviceSyncStateAsync(operation, token, device);
+            if (!IsCurrentDeviceSyncOperation(operation, token)) return;
+            await FirewallPermissionStartupPrompt.RevalidateAfterLikelyFirewallFailureAsync(ex, UiPreferences);
+            if (IsCurrentDeviceSyncOperation(operation, token)) ShowSafeErrorMessage(ex);
+        }
+        finally { EndDeviceSyncOperation(operation); }
+    }
+
+    private object BeginDeviceSyncOperation()
+    {
+        var operation = new object();
+        _deviceSyncOperation = operation;
+        _deviceSyncStateVersion++;
+        RaiseDeviceSyncAvailabilityChanged();
+        return operation;
+    }
+
+    private bool IsCurrentDeviceSyncOperation(object operation, Guid token) =>
+        _token == token && ReferenceEquals(_deviceSyncOperation, operation);
+
+    private void EndDeviceSyncOperation(object operation)
+    {
+        if (!ReferenceEquals(_deviceSyncOperation, operation)) return;
+        _deviceSyncOperation = null;
+        _deviceSyncStateVersion++;
+        RaiseDeviceSyncAvailabilityChanged();
+    }
+
+    private void InvalidateDeviceSyncOperation()
+    {
+        _deviceSyncOperation = null;
+        _deviceSyncStateVersion++;
+        CloseLocalSyncDialog();
+        RaiseDeviceSyncAvailabilityChanged();
+    }
+
+    private void RaiseDeviceSyncAvailabilityChanged()
+    {
+        this.RaisePropertyChanged(nameof(IsChangingDeviceSync));
+        this.RaisePropertyChanged(nameof(CanToggleDeviceSync));
+        this.RaisePropertyChanged(nameof(CanConfirmLocalSyncToggle));
+        this.RaisePropertyChanged(nameof(CanCancelLocalSyncToggle));
+    }
+
+    private void ApplyConfirmedDeviceSyncState(DeviceItemViewModel device, bool enabled)
+    {
+        device.ApplySyncState(enabled);
+        foreach (var current in _allDevices.Where(item => item.DeviceId == device.DeviceId && !ReferenceEquals(item, device)))
+            current.ApplySyncState(enabled);
+        if (SelectedDevice?.DeviceId == device.DeviceId && !ReferenceEquals(SelectedDevice, device))
+            SelectedDevice.ApplySyncState(enabled);
+    }
+
+    private async Task ReadBackDeviceSyncStateAsync(object operation, Guid token, DeviceItemViewModel device)
+    {
+        try
+        {
+            bool enabled;
+            if (device.IsCurrentDevice)
+                enabled = await _endpoints.GetLocalUserSyncOnAsync(token);
+            else
+            {
+                var devices = await _endpoints.GetUserDevicesAsync(token);
+                if (!IsCurrentDeviceSyncOperation(operation, token)) return;
+                var readBack = devices.FirstOrDefault(item => item.DeviceId == device.DeviceId && !item.IsDeleted);
+                ApplyLoadedDevices(devices, SelectedDevice?.DeviceId);
+                if (readBack is null) return;
+                enabled = readBack.IsSyncOn;
+            }
+            if (!IsCurrentDeviceSyncOperation(operation, token)) return;
+            ApplyConfirmedDeviceSyncState(device, enabled);
+            if (device.IsCurrentDevice && enabled == PendingLocalSyncEnabled)
+                CloseLocalSyncDialog();
+        }
+        catch
+        {
+            // Retain the last confirmed value and report the original failure.
+            // A later cached refresh can reconcile a temporarily unavailable backend.
         }
     }
 

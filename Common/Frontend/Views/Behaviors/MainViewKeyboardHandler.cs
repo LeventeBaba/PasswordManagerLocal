@@ -3,7 +3,6 @@ using Avalonia.Controls.Platform;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
-using PasswordManagerLocal.Common.Frontend.Views.Controls;
 using System.ComponentModel;
 using PasswordManagerLocal.Common.Frontend.ViewModels;
 using PasswordManagerLocal.Common.Frontend.Views;
@@ -87,8 +86,10 @@ internal sealed class MainViewKeyboardHandler
             return false;
         }
 
+        // Respect the focused button, especially Cancel. A global Enter shortcut
+        // must not approve a change when the user is activating another action.
         if (e.Source is Control source &&
-            (source is ContextHelpButton || source.GetVisualAncestors().OfType<ContextHelpButton>().Any()))
+            (source is Button || source.GetVisualAncestors().OfType<Button>().Any()))
             return false;
 
         // Mark the routed event handled before awaiting so the focused control cannot
