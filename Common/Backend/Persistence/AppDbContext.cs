@@ -164,6 +164,9 @@ public class AppDbContext : DbContext
         device.Property(d => d.PublicKey).IsRequired();
         device.Property(d => d.SignPublicKey).IsRequired();
         device.Property(d => d.SignPublicKeyHash).IsRequired();
+        // EF can update only the changed fields, but the hash covers the entire row.
+        // Reject a stale write before it can pair that hash with another writer's fields.
+        device.Property(d => d.IntegrityHash).IsConcurrencyToken();
         device.Property(d => d.TlsCertFingerprint).IsRequired().HasMaxLength(128);
         device.Property(d => d.DeviceType).HasConversion<byte>().IsRequired();
         device.Property(d => d.BlockedReason).HasMaxLength(512);

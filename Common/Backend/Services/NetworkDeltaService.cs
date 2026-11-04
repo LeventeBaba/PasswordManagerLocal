@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
@@ -99,9 +100,24 @@ public sealed class NetworkDeltaService : INetworkDeltaService
 
     private async Task<NetworkDeltaApplyResult> ApplyInFreshScopeAsync(NetworkDelta delta, CancellationToken ct)
     {
-        using var scope = _scopes!.CreateScope();
-        var service = (NetworkDeltaService)scope.ServiceProvider.GetRequiredService<INetworkDeltaService>();
-        return await service.ApplyCoreAsync(delta, ct);
+        const int maxAttempts = 3;
+        for (var attempt = 1; ; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            using var scope = _scopes!.CreateScope();
+            var service = (NetworkDeltaService)scope.ServiceProvider.GetRequiredService<INetworkDeltaService>();
+            try
+            {
+                return await service.ApplyCoreAsync(delta, ct);
+            }
+            catch (DbUpdateConcurrencyException ex) when (ex.Entries.Count > 0 && ex.Entries.All(entry => entry.Entity is Device))
+            {
+                // Retry the authenticated delta with fresh device state. Durable inbox receipts
+                // and replay checks handle work already committed before the device write.
+                if (attempt == maxAttempts)
+                    throw new SyncStateUnavailableException("A device record changed during synchronization.", ex);
+            }
+        }
     }
 
     private async Task<NetworkDeltaApplyResult> ApplyCoreAsync(NetworkDelta delta, CancellationToken ct)

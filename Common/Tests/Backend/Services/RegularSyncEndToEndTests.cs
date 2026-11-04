@@ -9,6 +9,7 @@ using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Services.Hosted;
 using PasswordManagerLocal.Common.Backend.Sync.Presence;
 using PasswordManagerLocal.Common.Backend.Sync;
+using PasswordManagerLocal.Common.Backend.Utils;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 using System.Text;
@@ -963,10 +964,30 @@ public sealed class RegularSyncEndToEndTests
                 var snapshotDescriptions = new List<string>();
                 var knowledgeDescriptions = new List<string>();
                 var initialReadGates = new List<string>();
+                var hintRoutes = new List<string>();
+                var userDevices = scope.ServiceProvider.GetRequiredService<IUserDeviceRepository>();
+                var localUsers = scope.ServiceProvider.GetRequiredService<ILocalUserDeviceRepository>();
+                var peers = setup.Hosts.Where(peer => !ReferenceEquals(peer, host)).ToArray();
                 var postLogin = scope.ServiceProvider.GetRequiredService<IUserPostLoginWorkScheduler>();
                 foreach (var userId in await users.ListUserIdsAsync(timeout.Token))
                 {
                     initialReadGates.Add($"{userId:N}={postLogin.IsInitialReadPending(userId)}");
+                    var localSyncOn = await localUsers.IsSyncOnAsync(userId, timeout.Token);
+                    var links = (await userDevices.ListByUserWithDevicesAsync(userId, timeout.Token))
+                        .ToDictionary(link => link.DeviceId);
+                    foreach (var peer in peers)
+                    {
+                        var peerId = peer.Identity.LocalDeviceId;
+                        var link = links.GetValueOrDefault(peerId);
+                        var device = link?.Device;
+                        var fingerprintMatches = device is not null && string.Equals(
+                            FingerprintUtil.NormalizeOrEmpty(device.TlsCertFingerprint),
+                            FingerprintUtil.NormalizeOrEmpty(peer.Identity.FingerprintHex), StringComparison.OrdinalIgnoreCase);
+                        hintRoutes.Add($"{userId:N}/{peerId:N}/LocalSync={localSyncOn}/" +
+                            $"LinkSync={link?.IsSyncOn}/Deleted={link?.IsDeleted}/LinkValid={link?.IsIntegrityValid()}/" +
+                            $"Trusted={device?.IsTrusted}/Blocked={device?.IsBlocked}/DeviceValid={device?.IsIntegrityValid()}/" +
+                            $"FingerprintMatches={fingerprintMatches}");
+                    }
                     foreach (var fault in await faults.ListActiveForUserAsync(userId, timeout.Token))
                         faultDescriptions.Add($"{fault.Kind}/{fault.Status}/{fault.DiagnosticCode}/BlocksLogin={fault.BlocksLogin}");
                     foreach (var snapshot in await scope.ServiceProvider.GetRequiredService<IUserSyncSnapshotRepository>().ListForUserAsync(userId, timeout.Token))
@@ -974,12 +995,17 @@ public sealed class RegularSyncEndToEndTests
                     foreach (var knowledge in await scope.ServiceProvider.GetRequiredService<IUserRevisionKnowledgeRepository>().ListForUserAsync(userId, timeout.Token))
                         knowledgeDescriptions.Add($"{knowledge.OriginDeviceId:N}/stored={knowledge.HighestStoredRevision}/merged={knowledge.HighestMergedRevision}");
                 }
-                var discoveredPeers = setup.Hosts.Where(peer => !ReferenceEquals(peer, host))
-                    .Select(peer => $"{peer.Identity.LocalDeviceId:N}=" +
-                        host.EndpointsCache.TryGetByFingerprint(peer.Identity.FingerprintHex, out _))
-                    .ToArray();
+                var discoveredPeers = peers.Select(peer =>
+                {
+                    var fingerprint = peer.Identity.FingerprintHex;
+                    var cached = host.EndpointsCache.TryGetByFingerprint(fingerprint, out _);
+                    var recent = host.EndpointsCache.IsRecentlyDiscovered(fingerprint, TimeSpan.FromMinutes(2));
+                    return $"{peer.Identity.LocalDeviceId:N}={cached}/Recent={recent}";
+                });
+                var inventoryExchanges = peers.Select(peer => $"{peer.Identity.LocalDeviceId:N}/" +
+                    host.Transport.DescribeSnapshotInventoryExchanges(peer.Identity.FingerprintHex));
                 var sendFailures = new List<string>();
-                foreach (var peer in setup.Hosts.Where(peer => !ReferenceEquals(peer, host)))
+                foreach (var peer in peers)
                 {
                     var lastFailure = host.Transport.GetLastDeltaSendFailure(peer.Identity.FingerprintHex);
                     if (lastFailure is not null)
@@ -994,6 +1020,8 @@ public sealed class RegularSyncEndToEndTests
                     $"PenalizedPeers={devices.Count(item => item.IsBlocked || item.InvalidSyncAttemptCount != 0)}; " +
                     $"PenaltyAttempts={host.PeerPenaltyAttempts.Count}; " +
                     $"Endpoints=[{string.Join(",", discoveredPeers)}]; " +
+                    $"HintRoutes=[{string.Join(",", hintRoutes)}]; " +
+                    $"InventoryExchanges=[{string.Join(",", inventoryExchanges)}]; " +
                     $"Faults=[{string.Join(",", faultDescriptions)}]; " +
                     $"Snapshots=[{string.Join(",", snapshotDescriptions)}]; " +
                     $"Knowledge=[{string.Join(",", knowledgeDescriptions)}]; " +

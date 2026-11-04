@@ -1,4 +1,5 @@
 using Google.Protobuf;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
@@ -69,7 +70,7 @@ public sealed class SyncPeerProtocolHandler
             remoteDevice ??= await TryFindRemoteDeviceForInvalidAttemptAsync(scope.ServiceProvider, context, ct);
 
             if (remoteDevice is not null && !remoteDevice.IsBlocked && ShouldRecordHelloFailure(ex))
-                await RecordInvalidAttemptAsync(scope.ServiceProvider, remoteDevice, ex.Message, ct);
+                await RecordInvalidAttemptAsync(remoteDevice, ex.Message, ct);
 
             return new HelloReply { Ok = false };
         }
@@ -157,7 +158,7 @@ public sealed class SyncPeerProtocolHandler
                 IsInvalidIncomingDataStatus(ex.StatusCode) &&
                 ShouldRecordHelloFailure(ex))
             {
-                await RecordInvalidAttemptAsync(scope.ServiceProvider, remoteDevice, ex.Message, ct);
+                await RecordInvalidAttemptAsync(remoteDevice, ex.Message, ct);
             }
 
             throw;
@@ -165,7 +166,7 @@ public sealed class SyncPeerProtocolHandler
         catch (InvalidDataException ex)
         {
             if (remoteDevice is not null && !remoteDevice.IsBlocked)
-                await RecordInvalidAttemptAsync(scope.ServiceProvider, remoteDevice, ex.Message, ct);
+                await RecordInvalidAttemptAsync(remoteDevice, ex.Message, ct);
 
             throw new SyncProtocolException(SyncProtocolStatusCode.InvalidArgument, ex.Message);
         }
@@ -176,7 +177,7 @@ public sealed class SyncPeerProtocolHandler
         catch (UnauthorizedAccessException ex)
         {
             if (remoteDevice is not null && !remoteDevice.IsBlocked)
-                await RecordInvalidAttemptAsync(scope.ServiceProvider, remoteDevice, ex.Message, ct);
+                await RecordInvalidAttemptAsync(remoteDevice, ex.Message, ct);
 
             throw new SyncProtocolException(SyncProtocolStatusCode.PermissionDenied, "Delta is not authorized.");
         }
@@ -207,13 +208,13 @@ public sealed class SyncPeerProtocolHandler
         catch (InvalidDataException ex)
         {
             if (remoteDevice is not null && !remoteDevice.IsBlocked)
-                await RecordInvalidAttemptAsync(scope.ServiceProvider, remoteDevice, ex.Message, ct);
+                await RecordInvalidAttemptAsync(remoteDevice, ex.Message, ct);
             throw new SyncProtocolException(SyncProtocolStatusCode.InvalidArgument, ex.Message);
         }
         catch (UnauthorizedAccessException ex)
         {
             if (remoteDevice is not null && !remoteDevice.IsBlocked)
-                await RecordInvalidAttemptAsync(scope.ServiceProvider, remoteDevice, ex.Message, ct);
+                await RecordInvalidAttemptAsync(remoteDevice, ex.Message, ct);
             throw new SyncProtocolException(SyncProtocolStatusCode.PermissionDenied, ex.Message);
         }
         catch (InvalidOperationException ex)
@@ -297,13 +298,13 @@ public sealed class SyncPeerProtocolHandler
         catch (InvalidDataException ex)
         {
             if (remoteDevice is not null && !remoteDevice.IsBlocked)
-                await RecordInvalidAttemptAsync(scope.ServiceProvider, remoteDevice, ex.Message, ct);
+                await RecordInvalidAttemptAsync(remoteDevice, ex.Message, ct);
             throw new SyncProtocolException(SyncProtocolStatusCode.InvalidArgument, ex.Message);
         }
         catch (UnauthorizedAccessException ex)
         {
             if (remoteDevice is not null && !remoteDevice.IsBlocked)
-                await RecordInvalidAttemptAsync(scope.ServiceProvider, remoteDevice, ex.Message, ct);
+                await RecordInvalidAttemptAsync(remoteDevice, ex.Message, ct);
             throw new SyncProtocolException(SyncProtocolStatusCode.PermissionDenied, ex.Message);
         }
         catch (InvalidOperationException ex)
@@ -335,13 +336,13 @@ public sealed class SyncPeerProtocolHandler
         catch (InvalidDataException ex)
         {
             if (remoteDevice is not null && !remoteDevice.IsBlocked)
-                await RecordInvalidAttemptAsync(scope.ServiceProvider, remoteDevice, ex.Message, ct);
+                await RecordInvalidAttemptAsync(remoteDevice, ex.Message, ct);
             throw new SyncProtocolException(SyncProtocolStatusCode.InvalidArgument, ex.Message);
         }
         catch (UnauthorizedAccessException ex)
         {
             if (remoteDevice is not null && !remoteDevice.IsBlocked)
-                await RecordInvalidAttemptAsync(scope.ServiceProvider, remoteDevice, ex.Message, ct);
+                await RecordInvalidAttemptAsync(remoteDevice, ex.Message, ct);
             throw new SyncProtocolException(SyncProtocolStatusCode.PermissionDenied, ex.Message);
         }
         catch (InvalidOperationException ex)
@@ -375,13 +376,13 @@ public sealed class SyncPeerProtocolHandler
         catch (InvalidDataException ex)
         {
             if (remoteDevice is not null && !remoteDevice.IsBlocked)
-                await RecordInvalidAttemptAsync(scope.ServiceProvider, remoteDevice, ex.Message, ct);
+                await RecordInvalidAttemptAsync(remoteDevice, ex.Message, ct);
             throw new SyncProtocolException(SyncProtocolStatusCode.InvalidArgument, ex.Message);
         }
         catch (UnauthorizedAccessException ex)
         {
             if (remoteDevice is not null && !remoteDevice.IsBlocked)
-                await RecordInvalidAttemptAsync(scope.ServiceProvider, remoteDevice, ex.Message, ct);
+                await RecordInvalidAttemptAsync(remoteDevice, ex.Message, ct);
             throw new SyncProtocolException(SyncProtocolStatusCode.PermissionDenied, ex.Message);
         }
         catch (InvalidOperationException ex)
@@ -975,15 +976,38 @@ public sealed class SyncPeerProtocolHandler
     }
 
 
-    private async Task RecordInvalidAttemptAsync(IServiceProvider services, Device remoteDevice, string reason, CancellationToken ct)
+    private async Task RecordInvalidAttemptAsync(Device remoteDevice, string reason, CancellationToken ct)
     {
-        try
+        const int maxAttempts = 3;
+        for (var attempt = 1; ; attempt++)
         {
-            var deviceSecurity = services.GetRequiredService<IDeviceSecurityService>();
-            await deviceSecurity.RecordInvalidIncomingSyncAsync(remoteDevice, reason, ct);
-        }
-        catch
-        {
+            try
+            {
+                using var scope = _root.CreateScope();
+                var services = scope.ServiceProvider;
+                var devices = services.GetRequiredService<IDeviceRepository>();
+                var current = await devices.GetByTlsCertFingerprintAsync(remoteDevice.TlsCertFingerprint, ct);
+                if (current is null || current.Id != remoteDevice.Id || current.IsBlocked ||
+                    !current.SignPublicKey.SequenceEqual(remoteDevice.SignPublicKey))
+                {
+                    return;
+                }
+
+                var deviceSecurity = services.GetRequiredService<IDeviceSecurityService>();
+                await deviceSecurity.RecordInvalidIncomingSyncAsync(current, reason, ct);
+                return;
+            }
+            catch (DbUpdateConcurrencyException ex) when (attempt < maxAttempts &&
+                ex.Entries.Count > 0 && ex.Entries.All(entry => entry.Entity is Device))
+            {
+                // A concurrent device write can change the hash after the lookup.
+                // Reload the same peer so its invalid-attempt count is not lost.
+            }
+            catch (Exception ex)
+            {
+                BackendDebugLog.Warning($"Could not persist invalid synchronization attempt for peer {remoteDevice.Id:N}.", ex, "Synchronization");
+                return;
+            }
         }
     }
 

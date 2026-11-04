@@ -27,6 +27,15 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
     private IDevicePresenceRegistry? _localPresenceRegistry;
     private readonly ConcurrentDictionary<string, RemotePeer> _remotePeers = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _lastDeltaSendFailures = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, SnapshotInventoryTrace> _snapshotInventoryTraces = new(StringComparer.OrdinalIgnoreCase);
+    private int _snapshotInventoryExchangeCalls;
+
+    private sealed record SnapshotInventoryTrace(int Completed, string LastHints, string? LastFailure);
+
+    public string DescribeSnapshotInventoryExchanges(string fingerprint) =>
+        _snapshotInventoryTraces.TryGetValue(FingerprintUtil.NormalizeOrEmpty(fingerprint), out var trace)
+            ? $"Completed={trace.Completed}/LastHints=[{trace.LastHints}]/LastFailure={trace.LastFailure ?? "none"}"
+            : "NoCalls";
 
     public string? GetLastDeltaSendFailure(string fingerprint) => _lastDeltaSendFailures.GetValueOrDefault(fingerprint);
 
@@ -45,7 +54,7 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
     public int EnrollmentInfoCalls { get; private set; }
     public int EnrollmentCompletionCalls { get; private set; }
     public int DeltaSendCalls { get; private set; }
-    public int SnapshotInventoryExchangeCalls { get; private set; }
+    public int SnapshotInventoryExchangeCalls => Volatile.Read(ref _snapshotInventoryExchangeCalls);
     public int SnapshotRequestCalls { get; private set; }
     public int ControlOperationInventoryExchangeCalls { get; private set; }
     public int ControlOperationRequestCalls { get; private set; }
@@ -279,10 +288,27 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        SnapshotInventoryExchangeCalls++;
-        var destinationHandler = ResolveHandler(serverFingerprintHex);
-        var context = await CreateAuthenticatedSyncContextAsync(destinationHandler, ct);
-        return await destinationHandler.ExchangeUserSnapshotInventoryAsync(request, context, ct);
+        Interlocked.Increment(ref _snapshotInventoryExchangeCalls);
+        var fingerprint = FingerprintUtil.NormalizeOrEmpty(serverFingerprintHex);
+        try
+        {
+            var destinationHandler = ResolveHandler(serverFingerprintHex);
+            var context = await CreateAuthenticatedSyncContextAsync(destinationHandler, ct);
+            var reply = await destinationHandler.ExchangeUserSnapshotInventoryAsync(request, context, ct);
+            var hints = string.Join(",", reply.EndpointHints.Select(hint => hint.DeviceId));
+            _snapshotInventoryTraces.AddOrUpdate(fingerprint, new SnapshotInventoryTrace(1, hints, null),
+                (_, prior) => prior with { Completed = prior.Completed + 1, LastHints = hints });
+            return reply;
+        }
+        catch (Exception ex)
+        {
+            var failure = ex is SyncProtocolException protocol
+                ? $"{protocol.StatusCode}:{protocol.Message}"
+                : ex.GetType().Name;
+            _snapshotInventoryTraces.AddOrUpdate(fingerprint, new SnapshotInventoryTrace(0, string.Empty, failure),
+                (_, prior) => prior with { LastFailure = failure });
+            throw;
+        }
     }
 
     public async Task<IReadOnlyList<NetworkDelta>> RequestUserSnapshotsAsync(
