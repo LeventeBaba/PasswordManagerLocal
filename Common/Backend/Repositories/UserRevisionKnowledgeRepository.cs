@@ -7,19 +7,27 @@ namespace PasswordManagerLocal.Common.Backend.Repositories;
 
 public sealed class UserRevisionKnowledgeRepository : IUserRevisionKnowledgeRepository
 {
+    private readonly AppDbContext _context;
     private readonly DbSet<UserRevisionKnowledge> _knowledge;
 
     public UserRevisionKnowledgeRepository(AppDbContext context)
     {
+        _context = context;
         _knowledge = context.UserRevisionKnowledge;
     }
 
-    public Task<UserRevisionKnowledge?> GetAsync(Guid userId, Guid originDeviceId, Guid originInstanceId, long userKeyEpoch, CancellationToken ct = default) =>
-        _knowledge.FirstOrDefaultAsync(item =>
-            item.UserId == userId &&
-            item.OriginDeviceId == originDeviceId &&
-            item.OriginInstanceId == originInstanceId &&
-            item.UserKeyEpoch == userKeyEpoch, ct);
+    public Task<UserRevisionKnowledge?> GetAsync(Guid userId, Guid originDeviceId, Guid originInstanceId,
+        long userKeyEpoch, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var pending = _knowledge.Local.FirstOrDefault(item =>
+            item.UserId == userId && item.OriginDeviceId == originDeviceId &&
+            item.OriginInstanceId == originInstanceId && item.UserKeyEpoch == userKeyEpoch);
+        return pending is not null ? Task.FromResult<UserRevisionKnowledge?>(pending) :
+            _knowledge.FirstOrDefaultAsync(item =>
+                item.UserId == userId && item.OriginDeviceId == originDeviceId &&
+                item.OriginInstanceId == originInstanceId && item.UserKeyEpoch == userKeyEpoch, ct);
+    }
 
     public async Task<IReadOnlyList<UserRevisionKnowledge>> ListAsync(Guid userId, long userKeyEpoch, CancellationToken ct = default) =>
         await _knowledge
@@ -40,6 +48,10 @@ public sealed class UserRevisionKnowledgeRepository : IUserRevisionKnowledgeRepo
     public Task AddAsync(UserRevisionKnowledge knowledge, CancellationToken ct = default) =>
         _knowledge.AddAsync(knowledge, ct).AsTask();
 
-    public void Update(UserRevisionKnowledge knowledge) => _knowledge.Update(knowledge);
+    public void Update(UserRevisionKnowledge knowledge)
+    {
+        if (_context.Entry(knowledge).State != EntityState.Added)
+            _knowledge.Update(knowledge);
+    }
     public void DeleteRange(IEnumerable<UserRevisionKnowledge> knowledge) => _knowledge.RemoveRange(knowledge);
 }

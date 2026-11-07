@@ -65,6 +65,15 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
         _pending.Add(new SqliteMutation(rowType, operation, userId, changes, sql, parameters));
     }
 
+    public IEnumerable<(T Row, SqliteMutation.Operation Operation)> GetPendingRows<T>() where T : class
+    {
+        foreach (var mutation in _pending)
+        {
+            if (mutation.Row is T row)
+                yield return (row, mutation.Kind);
+        }
+    }
+
     public SqliteMutation.Operation? GetPendingOperation(object row) =>
         _pending.Find(mutation => ReferenceEquals(mutation.Row, row))?.Kind;
 

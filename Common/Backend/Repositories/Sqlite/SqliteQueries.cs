@@ -61,6 +61,15 @@ internal static class SqliteQueries
 
     public static byte[] Blob(this SqliteDataReader row, int ordinal) => row.GetFieldValue<byte[]>(ordinal);
 
+    public static byte[]? NullableBlob(this SqliteDataReader row, int ordinal) =>
+        row.IsDBNull(ordinal) ? null : row.Blob(ordinal);
+
+    public static Guid? NullableGuid(this SqliteDataReader row, int ordinal) =>
+        row.IsDBNull(ordinal) ? null : row.GetGuid(ordinal);
+
+    public static long? NullableInt64(this SqliteDataReader row, int ordinal) =>
+        row.IsDBNull(ordinal) ? null : row.GetInt64(ordinal);
+
     public static DateTime UtcDateTime(this SqliteDataReader row, int ordinal) =>
         UtcDateTimeUtil.ToUtc(row.GetDateTime(ordinal));
 

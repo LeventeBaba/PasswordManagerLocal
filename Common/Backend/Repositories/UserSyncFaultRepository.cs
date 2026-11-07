@@ -7,9 +7,14 @@ namespace PasswordManagerLocal.Common.Backend.Repositories;
 
 public sealed class UserSyncFaultRepository : IUserSyncFaultRepository
 {
+    private readonly AppDbContext _context;
     private readonly DbSet<UserSyncFault> _faults;
 
-    public UserSyncFaultRepository(AppDbContext context) => _faults = context.UserSyncFaults;
+    public UserSyncFaultRepository(AppDbContext context)
+    {
+        _context = context;
+        _faults = context.UserSyncFaults;
+    }
 
     public async Task<UserSyncFault?> GetActiveAsync(
         Guid userId,
@@ -113,6 +118,10 @@ public sealed class UserSyncFaultRepository : IUserSyncFaultRepository
     public Task AddAsync(UserSyncFault fault, CancellationToken ct = default) =>
         _faults.AddAsync(fault, ct).AsTask();
 
-    public void Update(UserSyncFault fault) => _faults.Update(fault);
+    public void Update(UserSyncFault fault)
+    {
+        if (_context.Entry(fault).State != EntityState.Added)
+            _faults.Update(fault);
+    }
     public void DeleteRange(IEnumerable<UserSyncFault> faults) => _faults.RemoveRange(faults);
 }

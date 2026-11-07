@@ -292,20 +292,18 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
 
             await _localLinks.EnsureLocalUserDeviceAsync(devices, localUserDevices, snapshot.PrimaryUserId, ct);
 
-            var syncState = await syncStates.GetAsync(snapshot.PrimaryUserId, ct);
-            if (syncState is null)
-            {
-                syncState = new UserSyncState { UserId = snapshot.PrimaryUserId, NextOriginRevision = 1 };
-                await syncStates.AddAsync(syncState, ct);
-            }
-            else if (syncState.LocalOriginInstanceId != Guid.Empty && syncState.LocalOriginInstanceId != _identity.OriginInstanceId)
-            {
+            var existingSyncState = await syncStates.GetAsync(snapshot.PrimaryUserId, ct);
+            var syncState = existingSyncState ?? new UserSyncState { UserId = snapshot.PrimaryUserId, NextOriginRevision = 1 };
+            if (syncState.LocalOriginInstanceId != Guid.Empty && syncState.LocalOriginInstanceId != _identity.OriginInstanceId)
                 throw new InvalidDataException("The local snapshot state belongs to a different installation origin.");
-            }
             syncState.LocalOriginInstanceId = _identity.OriginInstanceId;
             syncState.NextOriginRevision = Math.Max(1, syncState.NextOriginRevision);
             syncState.LastPublishedContentHash = [];
             syncState.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
+            if (existingSyncState is null)
+                await syncStates.AddAsync(syncState, ct);
+            else
+                syncStates.Update(syncState);
 
             // Enrollment has authenticated the complete canonical graph and bound it to this exact
             // installation identity. Create the installation-local signed checkpoint before exposing

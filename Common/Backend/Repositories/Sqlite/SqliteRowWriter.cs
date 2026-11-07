@@ -11,13 +11,14 @@ internal sealed class SqliteRowWriter<T>(
     (string Column, Func<T, object?> GetValue)[] fields,
     string[]? concurrencyColumns = null,
     Func<T, Guid?>? userId = null,
-    string? targetedColumn = null) where T : class
+    string? targetedColumn = null,
+    bool trackChanges = true) where T : class
 {
     private readonly ConditionalWeakTable<T, object?[]> _originals = new();
 
     public T Remember(T row)
     {
-        SetOriginal(row, Snapshot(row));
+        SetOriginal(row, SnapshotOriginal(ReadValues(row)));
         return row;
     }
 
@@ -33,7 +34,7 @@ internal sealed class SqliteRowWriter<T>(
             operation = SqliteMutation.Operation.Insert;
 
         _originals.TryGetValue(row, out var original);
-        var values = Snapshot(row);
+        var values = ReadValues(row);
         if (original is not null && !original.Take(keyCount).SequenceEqual(values.Take(keyCount)))
             throw new InvalidOperationException("A persisted row's key cannot be changed.");
 
@@ -80,14 +81,18 @@ internal sealed class SqliteRowWriter<T>(
             }
         }
 
-        var changes = new BackendChangeSet();
-        changes.AddEntityMutation(row, operation != SqliteMutation.Operation.Update, property =>
+        BackendChangeSet? changes = null;
+        if (trackChanges)
         {
-            var index = Array.FindIndex(fields, field => field.Column == property);
-            return index >= 0 && (original is null || !SameValue(original[index], values[index]));
-        });
+            changes = new BackendChangeSet();
+            changes.AddEntityMutation(row, operation != SqliteMutation.Operation.Update, property =>
+            {
+                var index = Array.FindIndex(fields, field => field.Column == property);
+                return index >= 0 && (original is null || !SameValue(original[index], values[index]));
+            });
+        }
 
-        var accepted = operation == SqliteMutation.Operation.Delete ? null : values;
+        var accepted = operation == SqliteMutation.Operation.Delete ? null : SnapshotOriginal(values);
         var mutation = new SqliteMutation(typeof(T), operation, userId?.Invoke(row), changes, sql, bindings.ToArray())
         {
             Row = row,
@@ -104,11 +109,18 @@ internal sealed class SqliteRowWriter<T>(
         }
     }
 
-    private object?[] Snapshot(T row) => fields.Select(field =>
+    private object?[] ReadValues(T row) => fields.Select(field => field.GetValue(row)).ToArray();
+
+    private object?[] SnapshotOriginal(object?[] values)
     {
-        var value = field.GetValue(row);
-        return value is byte[] blob ? blob.ToArray() : value;
-    }).ToArray();
+        var snapshot = new object?[values.Length];
+        for (var index = 0; index < values.Length; index++)
+        {
+            if (trackChanges || index < keyCount || concurrencyColumns?.Contains(fields[index].Column) == true)
+                snapshot[index] = values[index] is byte[] blob ? blob.ToArray() : values[index];
+        }
+        return snapshot;
+    }
 
     private void SetOriginal(T row, object?[]? values)
     {

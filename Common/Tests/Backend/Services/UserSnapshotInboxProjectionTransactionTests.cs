@@ -1,6 +1,10 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSec.Cryptography;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
+using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Persistence;
+using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
@@ -21,23 +25,27 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 public sealed class UserSnapshotInboxProjectionTransactionTests
 {
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
     [TestCategory("Security")]
-    public async Task ProjectionPersistenceFailure_RollsBackPendingSnapshotAndKeepsCanonicalIdentity()
+    public async Task ProjectionPersistenceFailure_RollsBackPendingSnapshotAndKeepsCanonicalIdentity(bool sqlite)
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
+        using var session = new SqliteSession(new SqliteConnectionFactory(database.ConnectionString));
+        var (users, snapshots, knowledge, barriers, writes) = SelectStorage(database, session, sqlite);
         var lifecycle = new UserLifecycleCoordinator();
         var membership = new FakeUserMembershipAuthorizationService();
         var canonicalProjection = new UserLoginIdentityProjectionService(
-            database.Users,
-            database.UserSyncSnapshots,
+            users,
+            snapshots,
             membership,
             lifecycle,
-            database.UnitOfWork,
-            database.DeletedUserBarriers);
+            writes,
+            barriers);
         var canonicalVersion = Stamp(1_000, Guid.NewGuid(), Guid.NewGuid());
-        var user = await AddCanonicalUserAsync(database, canonicalProjection, "OldName", canonicalVersion);
+        var user = await AddCanonicalUserAsync(users, writes, canonicalProjection, "OldName", canonicalVersion);
         var throwingProjection = new ThrowingProjectionService(canonicalProjection);
         var clock = new RecordingVersionClock();
         var localIdentity = new FakeDeviceIdentityService
@@ -46,14 +54,14 @@ public sealed class UserSnapshotInboxProjectionTransactionTests
             OriginInstanceId = Guid.NewGuid()
         };
         var inbox = new UserSnapshotInboxService(
-            database.Users,
-            database.UserSyncSnapshots,
-            database.UserRevisionKnowledge,
+            users,
+            snapshots,
+            knowledge,
             localIdentity,
-            database.UnitOfWork,
+            writes,
             lifecycle,
             membership,
-            database.DeletedUserBarriers,
+            barriers,
             throwingProjection,
             clock);
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
@@ -90,22 +98,26 @@ public sealed class UserSnapshotInboxProjectionTransactionTests
 
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
-    public async Task AcceptedPendingUsername_AdvancesDeterministicClockAfterAtomicCommit()
+    public async Task AcceptedPendingUsername_AdvancesDeterministicClockAfterAtomicCommit(bool sqlite)
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
+        using var session = new SqliteSession(new SqliteConnectionFactory(database.ConnectionString));
+        var (users, snapshots, knowledge, barriers, writes) = SelectStorage(database, session, sqlite);
         var lifecycle = new UserLifecycleCoordinator();
         var membership = new FakeUserMembershipAuthorizationService();
         var projection = new UserLoginIdentityProjectionService(
-            database.Users,
-            database.UserSyncSnapshots,
+            users,
+            snapshots,
             membership,
             lifecycle,
-            database.UnitOfWork,
-            database.DeletedUserBarriers);
+            writes,
+            barriers);
         var canonicalVersion = Stamp(1_000, Guid.NewGuid(), Guid.NewGuid());
-        var user = await AddCanonicalUserAsync(database, projection, "OldName", canonicalVersion);
+        var user = await AddCanonicalUserAsync(users, writes, projection, "OldName", canonicalVersion);
         var localIdentity = new FakeDeviceIdentityService
         {
             LocalDeviceId = Guid.NewGuid(),
@@ -113,14 +125,14 @@ public sealed class UserSnapshotInboxProjectionTransactionTests
         };
         var clock = new RecordingVersionClock();
         var inbox = new UserSnapshotInboxService(
-            database.Users,
-            database.UserSyncSnapshots,
-            database.UserRevisionKnowledge,
+            users,
+            snapshots,
+            knowledge,
             localIdentity,
-            database.UnitOfWork,
+            writes,
             lifecycle,
             membership,
-            database.DeletedUserBarriers,
+            barriers,
             projection,
             clock);
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
@@ -140,8 +152,17 @@ public sealed class UserSnapshotInboxProjectionTransactionTests
             (await projection.FindByUsernameAsync(Encoding.UTF8.GetBytes("NewName"))).State);
     }
 
+    private static (IUserRepository Users, IUserSyncSnapshotRepository Snapshots, IUserRevisionKnowledgeRepository Knowledge,
+        IDeletedUserBarrierRepository Barriers, IUnitOfWork Writes) SelectStorage(
+        SqliteIntegrationTestDatabase database, SqliteSession session, bool sqlite) =>
+        sqlite
+            ? (new SqliteUserRepository(session), new SqliteUserSyncSnapshotRepository(session),
+                new SqliteUserRevisionKnowledgeRepository(session), new FakeDeletedUserBarrierRepository(), session)
+            : (database.Users, database.UserSyncSnapshots, database.UserRevisionKnowledge, database.DeletedUserBarriers, database.UnitOfWork);
+
     private static async Task<User> AddCanonicalUserAsync(
-        SqliteIntegrationTestDatabase database,
+        IUserRepository users,
+        IUnitOfWork writes,
         IUserLoginIdentityProjectionService projection,
         string username,
         SyncVersionStamp version)
@@ -169,10 +190,10 @@ public sealed class UserSnapshotInboxProjectionTransactionTests
         };
         user.SetGeneralUserDataVersion(version);
         user.GenerateIntegrityHash();
-        await database.Users.AddAsync(user);
-        await database.UnitOfWork.SaveChangesAsync();
+        await users.AddAsync(user);
+        await writes.SaveChangesAsync();
         await projection.SetCanonicalAsync(user, version);
-        await database.UnitOfWork.SaveChangesAsync();
+        await writes.SaveChangesAsync();
         CryptographicOperations.ZeroMemory(bytes);
         return user;
     }

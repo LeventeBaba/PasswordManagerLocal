@@ -454,6 +454,8 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
             // Canonical replacement, checkpoint, local revision, coverage, queue, projection and
             // fault transitions all remain inside this transaction.
             await _canonicalHealth.UpdateCheckpointAsync(user, ct);
+            // Publication reads coverage from storage inside this transaction.
+            await _uow.SaveChangesAsync(ct);
             var localSnapshot = await _publisher.GetOrCreateAfterRecoveryAsync(user, key, confirmedConfidence, ct);
             await _queueWriter.EnqueueAsync(
                 new SyncItem
@@ -512,6 +514,8 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
                 _faultRepository.Update(fault);
             }
 
+            // The projection must see the final snapshot and fault states before commit.
+            await _uow.SaveChangesAsync(ct);
             await _loginIdentities.RecalculateUnderLifecycleAsync(userId, ct);
             if (await _deletionBarriers.ExistsAsync(userId, ct))
                 throw new AccountDeletedDuringRecoveryException();
@@ -522,7 +526,7 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
                  (finalControlState.AppliedKeyEpoch > 0 && finalControlState.AppliedKeyEpoch != user.KeyEpoch) ||
                  (finalControlState.AppliedMembershipEpoch > 0 && finalControlState.AppliedMembershipEpoch != user.MembershipEpoch)))
             {
-                throw new DbUpdateConcurrencyException("The authoritative account epochs changed during canonical recovery.");
+                throw new StorageWriteException(StorageWriteException.FailureKind.StaleRow, typeof(UserControlState));
             }
 
             await _uow.SaveChangesAsync(ct);
@@ -557,7 +561,8 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
             await PersistTerminalFailureAsync(userId, "deterministic-recovery-conflict", ct);
             return new UserDataRecoveryResult(UserDataRecoveryState.ControlPlaneConflict, DiagnosticCode: "deterministic-recovery-conflict");
         }
-        catch (DbUpdateConcurrencyException)
+        catch (Exception ex) when (ex is DbUpdateConcurrencyException or
+            StorageWriteException { Kind: StorageWriteException.FailureKind.StaleRow })
         {
             await transaction.RollbackAsync(CancellationToken.None);
             _uow.ClearTrackedChanges();
@@ -684,6 +689,7 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
             fault.RecoveryAttemptCount = checked(fault.RecoveryAttemptCount + 1);
             fault.LastRecoveryAttemptAtUtc = now;
             fault.NextRecoveryAttemptAtUtc = now.Add(CalculateBackoff(fault.RecoveryAttemptCount));
+            _faultRepository.Update(fault);
         }
     }
 
@@ -913,6 +919,7 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
         {
             fault.Status = UserSyncHealthStatus.AwaitingEvidence;
             fault.LastRecoveryAttemptAtUtc ??= now;
+            _faultRepository.Update(fault);
         }
     }
 

@@ -1,7 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSec.Cryptography;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
+using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Persistence;
+using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
@@ -21,22 +25,27 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 public sealed class UserSnapshotPublisherServiceTests
 {
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
-    public async Task GetOrCreateAsync_AssignsDurableMonotonicRevisionsAndReusesUnchangedSnapshot()
+    public async Task GetOrCreateAsync_AssignsDurableMonotonicRevisionsAndReusesUnchangedSnapshot(bool sqlite)
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
+        using var session = new SqliteSession(new SqliteConnectionFactory(database.ConnectionString));
+        IUserRepository users = sqlite ? new SqliteUserRepository(session) : database.Users;
+        IUnitOfWork writes = sqlite ? session : database.UnitOfWork;
         var user = CreateUser();
-        await database.Users.AddAsync(user);
-        await database.UnitOfWork.SaveChangesAsync();
+        await users.AddAsync(user);
+        await writes.SaveChangesAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var identity = CreateIdentity(signingKey);
         var service = new UserSnapshotPublisherService(
-            database.UserSyncSnapshots,
-            database.UserSyncStates,
-            database.UserRevisionKnowledge,
+            sqlite ? new SqliteUserSyncSnapshotRepository(session) : database.UserSyncSnapshots,
+            sqlite ? new SqliteUserSyncStateRepository(session) : database.UserSyncStates,
+            sqlite ? new SqliteUserRevisionKnowledgeRepository(session) : database.UserRevisionKnowledge,
             identity,
-            database.UnitOfWork,
+            writes,
             new UserLifecycleCoordinator());
 
         var first = await service.GetOrCreateAsync(user);
@@ -54,7 +63,7 @@ public sealed class UserSnapshotPublisherServiceTests
         user.UserDataLastModifiedAt = user.UserPasswordsDataLastModifiedAt;
         user.LastModifiedAt = user.UserPasswordsDataLastModifiedAt;
         user.GenerateIntegrityHash();
-        database.Users.Update(user);
+        users.Update(user);
         var second = await service.GetOrCreateAsync(user);
 
         database.Db.ChangeTracker.Clear();
@@ -88,22 +97,27 @@ public sealed class UserSnapshotPublisherServiceTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
-    public async Task GetOrCreateAsync_NewInstallationInstance_RestartsRevisionInSeparateOriginNamespace()
+    public async Task GetOrCreateAsync_NewInstallationInstance_RestartsRevisionInSeparateOriginNamespace(bool sqlite)
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
+        using var session = new SqliteSession(new SqliteConnectionFactory(database.ConnectionString));
+        IUserRepository users = sqlite ? new SqliteUserRepository(session) : database.Users;
+        IUnitOfWork writes = sqlite ? session : database.UnitOfWork;
         var user = CreateUser();
-        await database.Users.AddAsync(user);
-        await database.UnitOfWork.SaveChangesAsync();
+        await users.AddAsync(user);
+        await writes.SaveChangesAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var identity = CreateIdentity(signingKey);
         var service = new UserSnapshotPublisherService(
-            database.UserSyncSnapshots,
-            database.UserSyncStates,
-            database.UserRevisionKnowledge,
+            sqlite ? new SqliteUserSyncSnapshotRepository(session) : database.UserSyncSnapshots,
+            sqlite ? new SqliteUserSyncStateRepository(session) : database.UserSyncStates,
+            sqlite ? new SqliteUserRevisionKnowledgeRepository(session) : database.UserRevisionKnowledge,
             identity,
-            database.UnitOfWork,
+            writes,
             new UserLifecycleCoordinator());
 
         var first = await service.GetOrCreateAsync(user);
