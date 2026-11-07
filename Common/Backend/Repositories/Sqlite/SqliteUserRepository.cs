@@ -54,8 +54,17 @@ internal sealed class SqliteUserRepository(SqliteSession session) : IUserReposit
     public async Task<IReadOnlyList<User>> ListAllAsync(CancellationToken ct = default) =>
         await session.ReadAsync(Select, ReadRow, ct);
 
-    public Task<User?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
-        GetAsync(id, remember: true, ct);
+    public Task<User?> GetByIdAsync(Guid id, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        // The canonical update and its checkpoint can both be verified before the flush.
+        // Reuse the staged user so a subsequent update retains the original concurrency values.
+        var pending = session.GetPendingRows<User>().LastOrDefault(item => item.Row.UId == id);
+        return pending.Row is not null && pending.Operation == SqliteMutation.Operation.Update
+            ? Task.FromResult<User?>(pending.Row)
+            : GetAsync(id, remember: true, ct);
+    }
 
     public Task<User?> GetByIdAsNoTrackingAsync(Guid id, CancellationToken ct = default) =>
         GetAsync(id, remember: false, ct);

@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
-using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Sync;
 
 namespace PasswordManagerLocal.Common.Backend.Repositories;
@@ -94,12 +93,8 @@ public sealed class UserMembershipAuthorizationRepository : IUserMembershipAutho
         return rows.Any(row => MatchesCurrentDeviceIdentity(row.SignPublicKeyHash, row.TlsCertFingerprint, device));
     }
 
-    private bool MatchesCurrentDeviceIdentity(byte[] signPublicKeyHash, string tlsCertFingerprint, Device device) =>
-        Hashing.Verify(signPublicKeyHash, device.SignPublicKeyHash) &&
-        string.Equals(
-            SyncIdentityUtil.NormalizeFingerprint(tlsCertFingerprint),
-            SyncIdentityUtil.NormalizeFingerprint(device.TlsCertFingerprint),
-            StringComparison.OrdinalIgnoreCase);
+    private static bool MatchesCurrentDeviceIdentity(byte[] signPublicKeyHash, string tlsCertFingerprint, Device device) =>
+        MembershipDeviceIdentity.Matches(signPublicKeyHash, tlsCertFingerprint, device.SignPublicKeyHash, device.TlsCertFingerprint);
 
     public Task AddAsync(UserMembershipAuthorization authorization, CancellationToken ct = default) =>
         _rows.AddAsync(authorization, ct).AsTask();

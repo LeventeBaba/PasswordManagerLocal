@@ -84,7 +84,7 @@ public sealed class SyncItemLifecycleService : ISyncItemLifecycleService
 
         if (item.ModelType == SyncModelType.User)
         {
-            var user = await _users.GetByIdWithRelationsAsync(item.ModelId, ct);
+            var user = await _users.GetByIdAsync(item.ModelId, ct);
             if (user is null)
                 return;
 

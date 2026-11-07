@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
+using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Security;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Diagnostics;
@@ -9,7 +9,6 @@ using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Internal.Recovery;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
-using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Backend.Sync.Enrollment;
@@ -22,7 +21,9 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 public sealed class UserRecoveryJournalService : IUserRecoveryJournalService
 {
     private const int MaximumPayloadBytes = 128 * 1024 * 1024;
-    private readonly AppDbContext _db;
+    private readonly IUserRecoveryJournalStore _store;
+    private readonly IUserRepository _users;
+    private readonly IDeletedUserBarrierRepository _barriers;
     private readonly IUnitOfWork _uow;
     private readonly IKeyProtector _protector;
     private readonly IDeviceIdentityService _identity;
@@ -33,19 +34,20 @@ public sealed class UserRecoveryJournalService : IUserRecoveryJournalService
     private readonly ISyncVersionClockService _clock;
     private readonly IUserLifecycleCoordinator _lifecycle;
 
-    public UserRecoveryJournalService(AppDbContext db, IUnitOfWork uow, IKeyProtector protector,
+    public UserRecoveryJournalService(IUserRecoveryJournalStore store, IUserRepository users,
+        IDeletedUserBarrierRepository barriers, IUnitOfWork uow, IKeyProtector protector,
         IDeviceIdentityService identity, IUserSyncKeyResolverService keys, IUserCanonicalHealthService health,
         IUserDataReaderService reader, IUserDataWriterService writer, ISyncVersionClockService clock,
         IUserLifecycleCoordinator lifecycle)
     {
-        _db = db; _uow = uow; _protector = protector; _identity = identity;
+        _store = store; _users = users; _barriers = barriers; _uow = uow; _protector = protector; _identity = identity;
         _keys = keys; _health = health; _reader = reader; _writer = writer;
         _clock = clock; _lifecycle = lifecycle;
     }
 
     public async Task<Guid> StageAsync(Guid userId, byte[] snapshot, CancellationToken ct = default)
     {
-        if (_db.Database.CurrentTransaction is null)
+        if (!_store.HasActiveTransaction)
             throw new InvalidOperationException("A recovery journal must share the history-reset transaction.");
         try
         {
@@ -60,7 +62,7 @@ public sealed class UserRecoveryJournalService : IUserRecoveryJournalService
                 State = UserRecoveryJournalState.PendingVerification
             };
             await ProtectPayloadAsync(row, snapshot);
-            _db.UserRecoveryJournals.Add(row);
+            _store.Add(row);
             await _uow.SaveChangesAsync(ct);
             await VerifyPersistedPayloadAsync(row.Id, snapshot, ct);
             return row.Id;
@@ -109,7 +111,8 @@ public sealed class UserRecoveryJournalService : IUserRecoveryJournalService
     private async Task VerifyPersistedPayloadAsync(Guid id, byte[] expected, CancellationToken ct)
     {
         // A separate no-tracking query reads the stored row, not the mutable staged object.
-        var persisted = await _db.UserRecoveryJournals.AsNoTracking().SingleAsync(row => row.Id == id, ct);
+        var persisted = await _store.ReadPersistedAsync(id, ct)
+            ?? throw new InvalidDataException("The stored recovery journal is missing.");
         var restored = await ReadPayloadAsync(persisted);
         try
         {
@@ -121,20 +124,19 @@ public sealed class UserRecoveryJournalService : IUserRecoveryJournalService
 
     public async Task<bool> CompleteAsync(Guid journalId, CancellationToken ct = default)
     {
-        var userId = await _db.UserRecoveryJournals.AsNoTracking().Where(row => row.Id == journalId)
-            .Select(row => (Guid?)row.UserId).SingleOrDefaultAsync(ct);
+        var userId = await _store.ReadUserIdAsync(journalId, ct);
         if (!userId.HasValue) return false;
         return await _lifecycle.ExecuteAsync(userId.Value, inner => CompleteUnderLifecycleAsync(journalId, inner), ct);
     }
 
     private async Task<bool> CompleteUnderLifecycleAsync(Guid journalId, CancellationToken ct)
     {
-        var row = await _db.UserRecoveryJournals.SingleOrDefaultAsync(item => item.Id == journalId, ct);
+        var row = await _store.GetForWriteAsync(journalId, ct);
         if (row is null) return false;
         // Missing canonical rows are not proof of explicit account deletion. The account
         // deletion transaction removes its journals itself; orphan evidence stays protected.
-        var user = await _db.Users.AsNoTracking().SingleOrDefaultAsync(item => item.UId == row.UserId, ct);
-        if (user is null || await _db.DeletedUserBarriers.AnyAsync(item => item.UserId == row.UserId, ct)) return true;
+        var user = await _users.GetByIdAsNoTrackingAsync(row.UserId, ct);
+        if (user is null || await _barriers.ExistsAsync(row.UserId, ct)) return true;
         if (!_keys.TryResolve(user, out var key, out var confidence) || key is null) return true;
         using (key)
         {
@@ -157,21 +159,18 @@ public sealed class UserRecoveryJournalService : IUserRecoveryJournalService
             if (snapshot.TargetKeyEpoch <= 0 || user.KeyEpoch < snapshot.TargetKeyEpoch ||
                 !Hashing.Verify(snapshot.User.EncryptedUserPasswordsDataPayload, user.EncryptedUserPasswordsDataPayload) ||
                 !Hashing.Verify(snapshot.User.EncryptedGeneralUserDataPayload, user.EncryptedGeneralUserDataPayload)) return true;
-            var state = await _db.UserControlStates.AsNoTracking().SingleOrDefaultAsync(item => item.UserId == user.UId, ct);
-            var local = await _db.LocalUserDevices.AsNoTracking().SingleOrDefaultAsync(item => item.UserId == user.UId, ct);
-            var own = await _db.UserMembershipAuthorizations.AsNoTracking().Where(item => item.UserId == user.UId &&
-                item.IsActive && item.DeviceId == _identity.LocalDeviceId && item.OriginInstanceId == _identity.OriginInstanceId).ToListAsync(ct);
-            if (state is null || state.HasConflict || state.AppliedKeyEpoch != user.KeyEpoch || state.AppliedMembershipEpoch != user.MembershipEpoch ||
-                local is null || !local.IsIntegrityValid() || local.LocalDeviceIdentityId != _identity.LocalDeviceId || own.Count != 1 ||
-                !Hashing.Verify(own[0].SignPublicKey, _identity.SignPublicKey) ||
-                await _db.UserSyncFaults.AnyAsync(item => item.UserId == user.UId &&
-                    item.Status != UserSyncHealthStatus.Recovered && item.Status != UserSyncHealthStatus.Superseded &&
-                    (item.BlocksPublishing || item.BlocksLogin || item.BlocksMerge || item.BlocksLifecycle), ct)) return true;
+            var stateMatches = await _store.HasAppliedControlStateAsync(user.UId, user.KeyEpoch, user.MembershipEpoch, ct);
+            var local = await _store.ReadLocalLinkAsync(user.UId, ct);
+            var signingKey = await _store.ReadActiveSigningKeyAsync(user.UId, _identity.LocalDeviceId, _identity.OriginInstanceId, ct);
+            if (!stateMatches || local is null || !local.IsIntegrityValid() || local.LocalDeviceIdentityId != _identity.LocalDeviceId ||
+                signingKey is null || !Hashing.Verify(signingKey, _identity.SignPublicKey) ||
+                await _store.HasBlockingFaultsAsync(user.UId, ct)) return true;
 
             // Resume only the already-authorized presentation cleanup. Never restore old
             // memberships, replay operations, or roll back across the new causal namespace.
             if (snapshot.Confirmed) await FinishDeviceMetadataAsync(user, key, ct);
-            user = await _db.Users.AsNoTracking().SingleAsync(item => item.UId == row.UserId, ct);
+            user = await _users.GetByIdAsNoTrackingAsync(row.UserId, ct)
+                ?? throw new InvalidOperationException("The canonical account disappeared during recovery verification.");
             if (!(await _health.VerifyAsync(user, key, confidence, recordFault: false, ct: ct)).FullyVerified) return true;
             if (!Hashing.Verify(snapshot.User.EncryptedUserPasswordsDataPayload, user.EncryptedUserPasswordsDataPayload) ||
                 !Hashing.Verify(snapshot.User.EncryptedGeneralUserDataPayload, user.EncryptedGeneralUserDataPayload)) return true;
@@ -202,8 +201,7 @@ public sealed class UserRecoveryJournalService : IUserRecoveryJournalService
 
     private async Task FinishDeviceMetadataAsync(User user, EncryptionKey key, CancellationToken ct)
     {
-        var active = (await _db.UserMembershipAuthorizations.AsNoTracking().Where(item => item.UserId == user.UId && item.IsActive)
-            .Select(item => item.DeviceId).ToListAsync(ct)).ToHashSet();
+        var active = (await _store.ListActiveDeviceIdsAsync(user.UId, ct)).ToHashSet();
         active.Add(_identity.LocalDeviceId);
         using var bundle = await _reader.GetAndVerifyUserDataBundleAsync(user, key, ct);
         var stale = bundle.UserDevicesData.Devices.Where(item => !active.Contains(item.Id)).ToArray();
@@ -216,7 +214,8 @@ public sealed class UserRecoveryJournalService : IUserRecoveryJournalService
         }
         // Use the tracked canonical instance so an earlier reset in this scope cannot
         // create a duplicate tracked user; the verified bundle's generation is checked by the writer.
-        var tracked = await _db.Users.SingleAsync(item => item.UId == user.UId, ct);
+        var tracked = await _users.GetByIdAsync(user.UId, ct)
+            ?? throw new InvalidOperationException("The canonical account disappeared during recovery cleanup.");
         await _writer.UpdateUserDataBundleAsync(bundle, tracked, key, UserDataBlobKind.Devices, true, ct);
     }
 
@@ -228,7 +227,7 @@ public sealed class UserRecoveryJournalService : IUserRecoveryJournalService
         {
             row.State = UserRecoveryJournalState.UnresolvedEvidence;
             await ProtectPayloadAsync(row, bytes);
-            _db.UserRecoveryJournals.Update(row);
+            _store.Update(row);
             await _uow.SaveChangesAsync(ct);
             await VerifyPersistedPayloadAsync(row.Id, bytes, ct);
             await transaction.CommitAsync(ct);
@@ -242,7 +241,7 @@ public sealed class UserRecoveryJournalService : IUserRecoveryJournalService
 
     private async Task DeleteJournalAsync(UserRecoveryJournal row, CancellationToken ct)
     {
-        _db.UserRecoveryJournals.Remove(row);
+        _store.Delete(row);
         await _uow.SaveChangesAsync(ct);
         BackendDebugLog.Info($"Removed verified temporary recovery data. UserId={row.UserId}, JournalId={row.Id}.", "SelfDiagnostics");
     }
@@ -266,30 +265,29 @@ public sealed class UserRecoveryJournalService : IUserRecoveryJournalService
                 UserSnapshotEnvelopeUtil.VerifyWithSigningKey(envelope, authors[0].SignPublicKey);
             }
             catch (Exception ex) when (ex is InvalidDataException or JsonException or ArgumentException or OverflowException) { return false; }
-            var known = await _db.UserRevisionKnowledge.AsNoTracking().SingleOrDefaultAsync(item => item.UserId == user.UId &&
-                item.OriginDeviceId == retained.OriginDeviceId && item.OriginInstanceId == retained.OriginInstanceId && item.UserKeyEpoch == retained.UserKeyEpoch, ct);
+            var known = await _store.ReadKnowledgeAsync(user.UId, retained.OriginDeviceId, retained.OriginInstanceId,
+                retained.UserKeyEpoch, ct);
             if (known is null || known.HighestMergedRevision < retained.OriginRevision ||
                 (known.HighestMergedRevision == retained.OriginRevision && known.HighestStoredRevision == retained.OriginRevision &&
                     !Hashing.Verify(known.HighestStoredSnapshotHash, retained.SnapshotHash))) return false;
         }
         foreach (var retained in snapshot.Knowledge)
         {
-            var known = await _db.UserRevisionKnowledge.AsNoTracking().SingleOrDefaultAsync(item => item.UserId == user.UId &&
-                item.OriginDeviceId == retained.OriginDeviceId && item.OriginInstanceId == retained.OriginInstanceId && item.UserKeyEpoch == retained.UserKeyEpoch, ct);
+            var known = await _store.ReadKnowledgeAsync(user.UId, retained.OriginDeviceId, retained.OriginInstanceId,
+                retained.UserKeyEpoch, ct);
             if (known is null || known.HighestMergedRevision < retained.HighestStoredRevision) return false;
         }
         foreach (var pending in snapshot.Operations.Where(item => item.Status == UserControlOperationStatus.StoredPending))
         {
-            var current = await _db.UserControlOperations.AsNoTracking().SingleOrDefaultAsync(item => item.UserId == user.UId && item.OperationId == pending.OperationId, ct);
-            if (current is null || current.Status != UserControlOperationStatus.Rejected ||
-                !Hashing.Verify(current.OperationHash, pending.OperationHash)) return false;
+            var rejectedHash = await _store.ReadRejectedOperationHashAsync(user.UId, pending.OperationId, ct);
+            if (rejectedHash is null || !Hashing.Verify(rejectedHash, pending.OperationHash)) return false;
         }
         return true;
     }
 
     public async Task MaintainAsync(CancellationToken ct = default)
     {
-        var ids = await _db.UserRecoveryJournals.AsNoTracking().Select(row => row.Id).ToListAsync(ct);
+        var ids = await _store.ListIdsAsync(ct);
         foreach (var id in ids)
         {
             try { await CompleteAsync(id, ct); }

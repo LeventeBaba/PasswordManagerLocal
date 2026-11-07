@@ -526,13 +526,15 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     [Timeout(90_000)]
     [TestCategory("Backend")]
-    public async Task VerifiedRecovery_DeletesTheTemporaryJournalAndCreatesNoRecoveryDirectory()
+    public async Task VerifiedRecovery_DeletesTheTemporaryJournalAndCreatesNoRecoveryDirectory(bool useSqliteStorage)
     {
-        await using var source = await ProductionSyncTestHost.CreateAsync();
+        await using var source = await ProductionSyncTestHost.CreateAsync(useSqliteStorage: useSqliteStorage);
         await using var removed = await ProductionSyncTestHost.CreateAsync();
-        var token = await PrepareAsync(source, removed);
+        var token = await PrepareAsync(source, removed, useSqliteStorage);
         var assessment = await source.Endpoints.RunSelfDiagnosticsAndRepairAsync(token);
         var repaired = await source.Endpoints.ConfirmSelfDiagnosticsRepairAsync(token, assessment.RecoveryPlanId!, Password());
         Assert.IsTrue(repaired.Healthy, string.Join(", ", repaired.Findings));
@@ -725,7 +727,7 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
             }, ct);
     }
 
-    private static async Task<Guid> PrepareAsync(ProductionSyncTestHost source, ProductionSyncTestHost removed)
+    private static async Task<Guid> PrepareAsync(ProductionSyncTestHost source, ProductionSyncTestHost removed, bool useSqliteStorage = false)
     {
         var token = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest("confirmed_recovery"));
         await source.Endpoints.AddNewPasswordAsync(token, new NewPasswordRequest { Name = "Keep", Password = Secret() });
@@ -742,7 +744,11 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
         (await db.UserControlOperations.SingleAsync(row => row.UserId == user.UId && row.OperationType == UserControlOperationType.DeviceRemoval))
             .EnvelopePayload = Encoding.UTF8.GetBytes("{broken history");
         (await db.DeviceEnrollmentCommits.SingleAsync(row => row.UserId == user.UId)).Status = DeviceEnrollmentCommitStatus.TransferFailed;
-        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+        // The SQLite unit of work cannot flush corruption injected through the EF fixture.
+        if (useSqliteStorage)
+            await db.SaveChangesAsync();
+        else
+            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
         return token;
     }
     private static async Task EnrollAsync(ProductionSyncTestHost source, ProductionSyncTestHost target, Guid token)

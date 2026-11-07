@@ -64,7 +64,12 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
     internal IReadOnlyList<(Guid PeerId, string Reason)> PeerPenaltyAttempts =>
         _services.GetRequiredService<PeerPenaltyRecorder>().Snapshot();
 
-    internal static async Task<ProductionSyncTestHost> CreateAsync(ILocalDiscoveryTransport? discoveryTransport = null, string localAddress = "127.0.0.1", DeviceType deviceType = DeviceType.WindowsPc, string? existingDirectory = null)
+    internal static async Task<ProductionSyncTestHost> CreateAsync(
+        ILocalDiscoveryTransport? discoveryTransport = null,
+        string localAddress = "127.0.0.1",
+        DeviceType deviceType = DeviceType.WindowsPc,
+        string? existingDirectory = null,
+        bool useSqliteStorage = false)
     {
         var rootDirectory = existingDirectory ?? Path.Combine(
             Path.GetTempPath(),
@@ -87,6 +92,8 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
             new TestKeyProtector(),
             new FakeLocalDiscoveryNetworkLease(),
             executionProfiles);
+        if (useSqliteStorage)
+            services.UseSqliteStorageCandidate();
 
         // RelationshipIntegrityMaterializationInterceptor is stateless. A stable shared instance
         // prevents each isolated test host from forcing EF Core to build another equivalent

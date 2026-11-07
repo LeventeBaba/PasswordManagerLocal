@@ -186,6 +186,7 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             state.ConflictingOperationId = validated.ControlState.ConflictingOperationId;
             state.ConflictingOperationHash = validated.ControlState.ConflictingOperationHash?.ToArray();
             state.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
+            controlStates.Update(state);
 
             foreach (var row in snapshot.RevisionKnowledge)
             {

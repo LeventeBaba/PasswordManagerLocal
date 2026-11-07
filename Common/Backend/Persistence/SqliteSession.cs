@@ -23,6 +23,8 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
         _publisher = publisher;
     }
 
+    public bool HasActiveTransaction => _active is not null;
+
     // Repository reads and audited immediate operations use the scope's transaction.
     public async Task<SqliteCommand> CreateCommandAsync(string sql, CancellationToken ct = default)
     {

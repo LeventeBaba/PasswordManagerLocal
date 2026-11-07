@@ -108,6 +108,7 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
             UserControlOperationEnvelopeUtil.SerializeKeyEpochReplacementPayload(payload));
         await PersistAppliedEnvelopeAsync(envelope, state, ct);
         state.AppliedKeyEpoch = user.KeyEpoch;
+        _states.Update(state);
         await _uow.SaveChangesAsync(ct);
         return envelope;
     }
@@ -161,6 +162,7 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
             await _canonicalHealth.UpdateCheckpointAsync(user, ct);
         if (_loginIdentities is not null)
             await _loginIdentities.SetCanonicalAsync(user, user.GetGeneralUserDataVersion(), ct);
+        _states.Update(state);
         await _uow.SaveChangesAsync(ct);
         return envelope;
     }
@@ -212,6 +214,7 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
             await _canonicalHealth.UpdateCheckpointAsync(user, ct);
         if (_loginIdentities is not null)
             await _loginIdentities.SetCanonicalAsync(user, user.GetGeneralUserDataVersion(), ct);
+        _states.Update(state);
         await _uow.SaveChangesAsync(ct);
         return envelope;
     }
@@ -245,6 +248,7 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
             user.MembershipEpoch,
             UserControlOperationEnvelopeUtil.SerializeAccountDeletionPayload(payload));
         await PersistAppliedEnvelopeAsync(envelope, state, ct);
+        _states.Update(state);
         await _uow.SaveChangesAsync(ct);
         return envelope;
     }

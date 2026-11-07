@@ -83,7 +83,19 @@ public sealed class SqliteAccountRepositoryParityTests
         first.EncryptedUserPasswordsDataPayload = [0x77];
         first.GenerateIntegrityHash();
         users.Update(first);
+
+        var writeTarget = (await users.GetByIdAsync(original.UId))!;
+        Assert.AreSame(first, writeTarget);
+        var persistedBeforeFlush = (await users.GetByIdAsNoTrackingAsync(original.UId))!;
+        CollectionAssert.AreEqual(original.EncryptedUserPasswordsDataPayload, persistedBeforeFlush.EncryptedUserPasswordsDataPayload);
+
+        writeTarget.LastModifiedAt = writeTarget.LastModifiedAt.AddSeconds(1);
+        writeTarget.GenerateIntegrityHash();
+        users.Update(writeTarget);
         Assert.AreEqual(1, await session.SaveChangesAsync());
+        var afterFlush = (await baseline.Users.GetByIdAsNoTrackingAsync(original.UId))!;
+        Assert.AreEqual(writeTarget.LastModifiedAt, afterFlush.LastModifiedAt);
+        CollectionAssert.AreEqual(writeTarget.EncryptedUserPasswordsDataPayload, afterFlush.EncryptedUserPasswordsDataPayload);
 
         var latest = (await otherUsers.GetByIdAsync(original.UId))!;
         latest.MembershipEpoch++;

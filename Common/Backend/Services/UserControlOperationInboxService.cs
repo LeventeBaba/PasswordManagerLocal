@@ -306,7 +306,8 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
             await _uow.SaveChangesAsync(ct);
             return Receipt(envelope, UserControlOperationReceiptState.StoredPending);
         }
-        catch (DbUpdateException ex)
+        catch (Exception ex) when (ex is DbUpdateException or
+            StorageWriteException { Kind: StorageWriteException.FailureKind.UniqueKeyConflict })
         {
             _uow.ClearTrackedChanges();
             return await ResolveConcurrentStoreAsync(envelope, transportPeerDeviceId, ex, ct);
@@ -316,7 +317,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
     private async Task<UserControlOperationReceiptResult> ResolveConcurrentStoreAsync(
         UserControlOperationEnvelope envelope,
         Guid transportPeerDeviceId,
-        DbUpdateException originalException,
+        Exception originalException,
         CancellationToken ct)
     {
         var existing = await _operations.GetByIdAsync(envelope.OperationId, ct);
@@ -630,6 +631,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
             state.AppliedKeyEpoch = Math.Max(state.AppliedKeyEpoch, envelope.ResultingKeyEpoch);
             state.AppliedMembershipEpoch = Math.Max(state.AppliedMembershipEpoch, envelope.ResultingMembershipEpoch);
             state.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
+            _states.Update(state);
             _operations.Update(row);
             if (_loginIdentities is not null)
                 await _loginIdentities.RecalculateUnderLifecycleAsync(user.UId, ct);
@@ -704,6 +706,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         state.AppliedKeyEpoch = envelope.ResultingKeyEpoch;
         state.AppliedMembershipEpoch = envelope.ResultingMembershipEpoch;
         state.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
+        _states.Update(state);
         if (_loginIdentities is not null)
             await _loginIdentities.SetCanonicalAsync(user, user.GetGeneralUserDataVersion(), ct);
 
@@ -1083,6 +1086,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         state.AppliedKeyEpoch = Math.Max(state.AppliedKeyEpoch, envelope.ResultingKeyEpoch);
         state.AppliedMembershipEpoch = Math.Max(state.AppliedMembershipEpoch, envelope.ResultingMembershipEpoch);
         state.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
+        _states.Update(state);
     }
 
     private async Task<UserControlState> GetOrCreateStateAsync(
@@ -1246,6 +1250,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         state.ConflictingOperationId = operationId;
         state.ConflictingOperationHash = operationHash.ToArray();
         state.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
+        _states.Update(state);
     }
 
 

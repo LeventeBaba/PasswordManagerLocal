@@ -7,7 +7,7 @@ namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
 
 internal sealed class SqliteUserRevisionKnowledgeRepository(SqliteSession session) : IUserRevisionKnowledgeRepository
 {
-    private const string Select = """
+    internal const string Select = """
         SELECT "UserId", "OriginDeviceId", "OriginInstanceId", "UserKeyEpoch", "HighestMergedRevision",
                "HighestStoredRevision", "HighestStoredSnapshotHash", "LastUpdatedAtUtc" FROM "UserRevisionKnowledge"
         """;
@@ -74,7 +74,9 @@ internal sealed class SqliteUserRevisionKnowledgeRepository(SqliteSession sessio
             _rows.Stage(row, SqliteMutation.Operation.Delete);
     }
 
-    private UserRevisionKnowledge ReadForWrite(SqliteDataReader row) => _rows.Remember(new UserRevisionKnowledge
+    private UserRevisionKnowledge ReadForWrite(SqliteDataReader row) => _rows.Remember(Read(row));
+
+    internal static UserRevisionKnowledge Read(SqliteDataReader row) => new()
     {
         UserId = row.GetGuid(0),
         OriginDeviceId = row.GetGuid(1),
@@ -84,5 +86,5 @@ internal sealed class SqliteUserRevisionKnowledgeRepository(SqliteSession sessio
         HighestStoredRevision = row.GetInt64(5),
         HighestStoredSnapshotHash = row.Blob(6),
         LastUpdatedAtUtc = row.UtcOffset(7)
-    });
+    };
 }

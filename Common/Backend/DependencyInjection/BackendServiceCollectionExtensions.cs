@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
@@ -13,6 +14,7 @@ using PasswordManagerLocal.Common.Backend.Configuration;
 using PasswordManagerLocal.Common.Backend.Internal.Devices;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Repositories;
+using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Services.Discovery;
@@ -79,6 +81,8 @@ public static class BackendServiceCollectionExtensions
         });
 
         services.AddScoped<IUnitOfWork, AppUnitOfWork>();
+        services.AddScoped<IUserAccountDeletionStore, EfUserAccountDeletionStore>();
+        services.AddScoped<IUserRecoveryJournalStore, EfUserRecoveryJournalStore>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IDeviceRepository, DeviceRepository>();
         services.AddScoped<IUserDeviceRepository, UserDeviceRepository>();
@@ -131,6 +135,35 @@ public static class BackendServiceCollectionExtensions
         services.AddSingleton<IBackendHostedService>(sp => sp.GetRequiredService<PendingUserControlOperationRecoveryHostedService>());
 
         return services;
+    }
+
+    internal static void UseSqliteStorageCandidate(this IServiceCollection services)
+    {
+        services.AddScoped<SqliteSession>();
+        services.Replace(ServiceDescriptor.Scoped<IUnitOfWork>(sp => sp.GetRequiredService<SqliteSession>()));
+        services.Replace(ServiceDescriptor.Scoped<IUserAccountDeletionStore, SqliteUserAccountDeletionStore>());
+        services.Replace(ServiceDescriptor.Scoped<IUserRecoveryJournalStore, SqliteUserRecoveryJournalStore>());
+        services.Replace(ServiceDescriptor.Scoped<IUserRepository, SqliteUserRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IDeviceRepository, SqliteDeviceRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IUserDeviceRepository, SqliteUserDeviceRepository>());
+        services.Replace(ServiceDescriptor.Scoped<ILocalUserDeviceRepository, SqliteLocalUserDeviceRepository>());
+        services.Replace(ServiceDescriptor.Scoped<ISyncRouteRepository, SqliteSyncRouteRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IGroupRepository, SqliteGroupRepository>());
+        services.Replace(ServiceDescriptor.Scoped<ISyncQueueRepository, SqliteSyncQueueRepository>());
+        services.Replace(ServiceDescriptor.Scoped<ISyncItemRepository, SqliteSyncItemRepository>());
+        services.Replace(ServiceDescriptor.Scoped<ISyncTombstoneRepository, SqliteSyncTombstoneRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IDeviceIdentityRepository, SqliteDeviceIdentityRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IUserSyncSnapshotRepository, SqliteUserSyncSnapshotRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IUserSyncStateRepository, SqliteUserSyncStateRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IUserRevisionKnowledgeRepository, SqliteUserRevisionKnowledgeRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IUserControlOperationRepository, SqliteUserControlOperationRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IUserControlStateRepository, SqliteUserControlStateRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IUserMembershipAuthorizationRepository, SqliteUserMembershipAuthorizationRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IUserOriginRemovalCutoffRepository, SqliteUserOriginRemovalCutoffRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IDeviceEnrollmentCommitRepository, SqliteDeviceEnrollmentCommitRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IDeletedUserBarrierRepository, SqliteDeletedUserBarrierRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IUserCanonicalCheckpointRepository, SqliteUserCanonicalCheckpointRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IUserSyncFaultRepository, SqliteUserSyncFaultRepository>());
     }
 
     public static IServiceCollection AddPasswordManagerLocalSynchronization(
