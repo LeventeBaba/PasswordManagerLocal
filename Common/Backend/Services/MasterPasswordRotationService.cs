@@ -141,7 +141,9 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
             await _controlWriter.CreateAppliedKeyEpochReplacementAsync(user, previousKeyEpoch, ct);
             var publishingUser = await _users.GetByIdWithRelationsAsync(user.UId, ct)
                 ?? throw new InvalidOperationException("The canonical user disappeared during password rotation.");
-            await _snapshotPublisher.GetOrCreateAsync(publishingUser, ct);
+            // The session still holds the old key until the transaction commits.
+            await _snapshotPublisher.GetOrCreateAfterRecoveryAsync(
+                publishingUser, newKey, UserSyncKeyConfidence.ExplicitlyTrusted, ct);
             await _queueWriter.EnqueueAsync(
                 new SyncItem
                 {

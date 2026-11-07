@@ -27,7 +27,8 @@ public sealed class BackendTestHost : IDisposable
     public BackendTestHost(
         bool useRealSnapshotMergeCoordinator = false,
         IKeyProtector? keyProtector = null,
-        bool enableDeferredLogin = false)
+        bool enableDeferredLogin = false,
+        TimeProvider? timeProvider = null)
     {
         var sc = new ServiceCollection();
         _signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
@@ -73,7 +74,7 @@ public sealed class BackendTestHost : IDisposable
         sc.AddSingleton<ISyncRuntimeService, FakeSyncRuntimeService>();
         sc.AddSingleton<ISyncDeviceIdentityService, FakeSyncDeviceIdentityService>();
         sc.AddSingleton<IDiscoveredDeviceEndpointRegistry, DiscoveredDeviceEndpointRegistry>();
-        sc.AddSingleton(TimeProvider.System);
+        sc.AddSingleton(timeProvider ?? TimeProvider.System);
         sc.AddSingleton<IDevicePresenceRegistry, DevicePresenceRegistry>();
         sc.AddSingleton<FakeSyncTransportClientService>();
         sc.AddSingleton<ISyncTransportClientService>(sp => sp.GetRequiredService<FakeSyncTransportClientService>());

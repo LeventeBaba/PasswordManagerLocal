@@ -53,27 +53,33 @@ public sealed partial class RegularSyncEndToEndTests
         Assert.IsTrue(removal.OperationId.HasValue);
         var removalOperationId = removal.OperationId.Value;
         Assert.AreNotEqual(Guid.Empty, removalOperationId);
-        Assert.IsFalse((await setup.Original.Endpoints.GetUserDevicesAsync(setup.OriginalToken))
-            .Any(device => device.DeviceId == setup.Middle.Identity.LocalDeviceId));
+        AssertDeviceIds(
+            (await setup.Original.Endpoints.GetUserDevicesAsync(setup.OriginalToken)).Select(device => device.DeviceId),
+            setup.Original.Identity.LocalDeviceId,
+            setup.NewDevice.Identity.LocalDeviceId);
 
         await SynchronizeOneWayUntilAsync(
             setup.Original, setup.Middle,
             "removed installation receives its signed revocation",
-            async () => await HasAppliedRemovalAsync(setup.Middle, removalOperationId) &&
+            async () => await HasAppliedLifecycleOperationAsync(
+                setup.Middle, removalOperationId, UserControlOperationType.DeviceRemoval) &&
                 !setup.Middle.Services.GetRequiredService<ITokenService>()
                     .TryGetUid(setup.MiddleToken, out _));
 
-        await Assert.ThrowsExactlyAsync<InvalidTokenException>(async () =>
-            await setup.Middle.Endpoints.GetSavedPasswordsAsync(setup.MiddleToken));
+        await AssertSessionInvalidatedAsync(
+            setup.Middle, setup.MiddleToken, AuthSessionInvalidationReason.ProfileRemoved);
         await AssertLoginDeniedAsync(setup.Middle, setup.Username);
 
         await SynchronizeOneWayUntilAsync(
             setup.Middle, setup.NewDevice,
             "removed installation relays signed revocation to third device",
-            () => HasAppliedRemovalAsync(setup.NewDevice, removalOperationId));
+            () => HasAppliedLifecycleOperationAsync(
+                setup.NewDevice, removalOperationId, UserControlOperationType.DeviceRemoval));
 
-        Assert.IsFalse((await setup.NewDevice.Endpoints.GetUserDevicesAsync(setup.NewDeviceToken))
-            .Any(device => device.DeviceId == setup.Middle.Identity.LocalDeviceId));
+        AssertDeviceIds(
+            (await setup.NewDevice.Endpoints.GetUserDevicesAsync(setup.NewDeviceToken)).Select(device => device.DeviceId),
+            setup.Original.Identity.LocalDeviceId,
+            setup.NewDevice.Identity.LocalDeviceId);
         Assert.IsTrue((await setup.Original.Endpoints.GetSavedPasswordsAsync(setup.OriginalToken))
             .Passwords.Any(password => password.Name == "Original device credential"));
         Assert.IsTrue((await setup.NewDevice.Endpoints.GetSavedPasswordsAsync(setup.NewDeviceToken))
@@ -83,28 +89,8 @@ public sealed partial class RegularSyncEndToEndTests
         await AssertLoginDeniedAsync(restarted, setup.Username);
     }
 
-    private static async Task AssertLoginDeniedAsync(ProductionSyncTestHost host, string username)
-    {
-        try
-        {
-            await host.Endpoints.LoginAsync(host.CreateLoginRequest(username));
-            Assert.Fail("A removed installation must never issue another account session.");
-        }
-        catch (UnauthorizedAccessException) { }
-        catch (UserNotFoundException) { }
-    }
-
-    private static async Task<bool> HasAppliedRemovalAsync(ProductionSyncTestHost host, Guid operationId)
-    {
-        using var scope = host.Services.CreateScope();
-        var operation = await scope.ServiceProvider.GetRequiredService<IUserControlOperationRepository>()
-            .GetByIdAsync(operationId);
-        return operation is
-        {
-            OperationType: UserControlOperationType.DeviceRemoval,
-            Status: UserControlOperationStatus.Applied
-        };
-    }
+    private static Task AssertLoginDeniedAsync(ProductionSyncTestHost host, string username) =>
+        Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(() => host.Endpoints.LoginAsync(host.CreateLoginRequest(username)));
 
     [TestMethod]
     [Timeout(TestTimeoutMilliseconds)]

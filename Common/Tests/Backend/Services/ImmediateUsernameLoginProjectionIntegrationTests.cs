@@ -3,7 +3,6 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSec.Cryptography;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
-using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
@@ -102,7 +101,7 @@ public sealed class ImmediateUsernameLoginProjectionIntegrationTests
             scenario.UserId,
             (await lookup.GetUserByUsernameAsync(Encoding.UTF8.GetBytes(scenario.AdvertisedUsername)))?.UId);
 
-        await MSTestAssert.ThrowsExactlyAsync<UsernameChangedDuringLoginException>(() =>
+        await MSTestAssert.ThrowsExactlyAsync<UnauthorizedAccessException>(() =>
             auth.LoginAsync(host.CreateValidLoginRequest(scenario.AdvertisedUsername)));
 
         var canonicalAfter = await users.GetByIdAsync(scenario.UserId)

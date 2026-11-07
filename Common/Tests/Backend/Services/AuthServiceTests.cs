@@ -101,9 +101,10 @@ public sealed class AuthServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Unit")]
-    public async Task Login_WrongPassword_DoesNotCreateSessionState()
+    public async Task Login_UnknownUsernameAndWrongPassword_ShareFailureAndDoNotCreateSessionState()
     {
-        using var host = new BackendTestHost();
+        var timeProvider = new LoginDelayTimeProvider();
+        using var host = new BackendTestHost(timeProvider: timeProvider);
 
         var auth = host.Services.GetRequiredService<IAuthService>();
         var users = host.Services.GetRequiredService<IUserService>();
@@ -116,7 +117,15 @@ public sealed class AuthServiceTests
         var request = host.CreateValidLoginRequest("failed_login");
         request.Password = Encoding.UTF8.GetBytes("WrongPassword12345678");
 
-        await ExpectThrowsAsync<UnauthorizedAccessException>(() => auth.LoginAsync(request));
+        var wrongPassword = await MSTestAssert.ThrowsExactlyAsync<UnauthorizedAccessException>(() => auth.LoginAsync(request));
+        request.Username = "missing_user";
+        var unknownUsername = await MSTestAssert.ThrowsExactlyAsync<UnauthorizedAccessException>(() => auth.LoginAsync(request));
+
+        MSTestAssert.AreEqual("Authentication failed.", wrongPassword.Message);
+        MSTestAssert.AreEqual(wrongPassword.Message, unknownUsername.Message);
+        CollectionAssert.AreEqual(
+            new[] { TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(250) },
+            timeProvider.RequestedDelays);
 
         var tokensAfter = tokens.ListTokensByUid(uid).OrderBy(token => token).ToArray();
         CollectionAssert.AreEqual(tokensBefore, tokensAfter);
@@ -479,6 +488,19 @@ public sealed class AuthServiceTests
         }
         catch (TException)
         {
+        }
+    }
+
+    private sealed class LoginDelayTimeProvider : TimeProvider
+    {
+        public List<TimeSpan> RequestedDelays { get; } = [];
+
+        public override long GetTimestamp() => 0;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            RequestedDelays.Add(dueTime);
+            return base.CreateTimer(callback, state, TimeSpan.Zero, period);
         }
     }
 

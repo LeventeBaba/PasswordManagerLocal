@@ -89,7 +89,7 @@ public sealed class UserProfileServiceTests
         var info = await profile.GetUserProfileInfoAsync(token);
         MSTestAssert.AreEqual("carol2", info.Username);
 
-        await ExpectThrowsAsync<UserNotFoundException>(async () =>
+        await ExpectThrowsAsync<UnauthorizedAccessException>(async () =>
         {
             await auth.LoginAsync(host.CreateValidLoginRequest("carol"));
         });

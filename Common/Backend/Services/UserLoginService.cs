@@ -1,5 +1,4 @@
 using PasswordManagerLocal.Common.Backend.Constants;
-using PasswordManagerLocal.Common.Backend.Diagnostics;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Exceptions;
@@ -15,6 +14,10 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 
 public sealed class UserLoginService : IUserLoginService
 {
+    private static readonly TimeSpan MinimumCredentialFailureTime = TimeSpan.FromMilliseconds(250);
+    private static readonly byte[] DummyPasswordSalt = Hashing.GenerateSalt();
+
+    private readonly TimeProvider _timeProvider;
     private readonly IUserLoginIdentityProjectionService _loginIdentities;
     private readonly IUserLookupService _userLookup;
     private readonly IUserDataReaderService _userDataReader;
@@ -44,6 +47,7 @@ public sealed class UserLoginService : IUserLoginService
         IUserLifecycleCoordinator lifecycle,
         ISyncVersionClockService versionClock,
         IAuthenticatedSessionIssuer sessionIssuer,
+        TimeProvider timeProvider,
         IUserTombstoneGarbageCollector? garbageCollector = null,
         IUserCanonicalHealthService? canonicalHealth = null,
         IUserDataRecoveryCoordinator? recoveryCoordinator = null,
@@ -63,6 +67,7 @@ public sealed class UserLoginService : IUserLoginService
         _lifecycle = lifecycle;
         _versionClock = versionClock;
         _sessionIssuer = sessionIssuer;
+        _timeProvider = timeProvider;
         _garbageCollector = garbageCollector;
         _canonicalHealth = canonicalHealth;
         _recoveryCoordinator = recoveryCoordinator;
@@ -75,6 +80,42 @@ public sealed class UserLoginService : IUserLoginService
         if (!request.Validate())
             throw new InvalidInputException();
 
+        var startedAt = _timeProvider.GetTimestamp();
+        var passwordDerivationStarted = false;
+        try
+        {
+            return await ResolveAndLoginAsync(request, DerivePasswordKey, ct);
+        }
+        catch (Exception ex) when (ex is UserNotFoundException or UnauthorizedAccessException)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!passwordDerivationStarted)
+            {
+                // A rejected identity still incurs the same password KDF. The result is discarded.
+                using var dummyKey = DerivePasswordKey(DummyPasswordSalt);
+            }
+
+            // Pad only the remaining time, after the account lifecycle lock has been released.
+            var remaining = MinimumCredentialFailureTime - _timeProvider.GetElapsedTime(startedAt);
+            if (remaining > TimeSpan.Zero)
+            {
+                var delay = TimeSpan.FromMilliseconds(Math.Ceiling(remaining.TotalMilliseconds));
+                await Task.Delay(delay, _timeProvider, ct);
+            }
+            ct.ThrowIfCancellationRequested();
+            throw new UnauthorizedAccessException("Authentication failed.");
+        }
+
+        EncryptionKey DerivePasswordKey(byte[] salt)
+        {
+            passwordDerivationStarted = true;
+            return EncryptionKey.FromPassword(request.Password, salt);
+        }
+    }
+
+    private async Task<Guid> ResolveAndLoginAsync(
+        LoginRequest request, Func<byte[], EncryptionKey> derivePasswordKey, CancellationToken ct)
+    {
         var usernameBytes = Encoding.UTF8.GetBytes(request.Username);
         try
         {
@@ -82,22 +123,12 @@ public sealed class UserLoginService : IUserLoginService
             if (!CanAttemptLogin(initialResolution) && _recoveryCoordinator is not null &&
                 initialResolution.State is (UserLoginIdentityMatchState.InvalidProjection or UserLoginIdentityMatchState.ProjectionOutdated))
                 initialResolution = await _loginIdentities.FindSignedRecoveryCandidateAsync(usernameBytes, ct);
-            if (!CanAttemptLogin(initialResolution))
-            {
-                BackendDebugLog.Warning(
-                    $"Login username resolution failed. State={initialResolution.State}, " +
-                    $"HasProjectedUserId={initialResolution.UserId.HasValue}, " +
-                    $"Diagnostic={initialResolution.Diagnostic ?? "<none>"}.",
-                    category: "Authentication");
+            if (!CanAttemptLogin(initialResolution) || initialResolution.UserId is not Guid userId)
                 throw new UserNotFoundException();
-            }
 
-            // CanAttemptLogin establishes this invariant at runtime, but the
-            // nullable property must also be checked at the point of use.
-            var userId = initialResolution.UserId ?? throw new UserNotFoundException();
             return await _lifecycle.ExecuteAsync(
                 userId,
-                token => LoginResolvedUnderLifecycleAsync(request, usernameBytes, userId, token),
+                token => LoginResolvedUnderLifecycleAsync(request, usernameBytes, userId, derivePasswordKey, token),
                 ct);
         }
         finally
@@ -115,6 +146,7 @@ public sealed class UserLoginService : IUserLoginService
         LoginRequest request,
         byte[] usernameBytes,
         Guid expectedUserId,
+        Func<byte[], EncryptionKey> derivePasswordKey,
         CancellationToken ct)
     {
         if (_preparation is not null)
@@ -164,7 +196,7 @@ public sealed class UserLoginService : IUserLoginService
             if (passwordSalt.Length != CryptographyConstants.Sha256HashSizeInBytes)
                 throw new UnauthorizedAccessException("Authentication failed.");
 
-            using var key = EncryptionKey.FromPassword(request.Password, passwordSalt);
+            using var key = derivePasswordKey(passwordSalt);
 
             using var localBundle = _preparation is not null && _postLogin is not null
                 ? await _preparation.TryPrepareLocalAsync(user, key, UserSyncKeyConfidence.UnconfirmedPassword, ct)
