@@ -8,6 +8,15 @@ public sealed class ExternalLinkButton : Button
     public static readonly StyledProperty<Uri?> ExternalUriProperty =
         AvaloniaProperty.Register<ExternalLinkButton, Uri?>(nameof(ExternalUri));
 
+    public static readonly StyledProperty<bool> AllowMailtoProperty =
+        AvaloniaProperty.Register<ExternalLinkButton, bool>(nameof(AllowMailto));
+
+    public bool AllowMailto
+    {
+        get => GetValue(AllowMailtoProperty);
+        set => SetValue(AllowMailtoProperty, value);
+    }
+
     public Uri? ExternalUri
     {
         get => GetValue(ExternalUriProperty);
@@ -20,7 +29,7 @@ public sealed class ExternalLinkButton : Button
         var uri = ExternalUri;
         if (uri is null ||
             !uri.IsAbsoluteUri ||
-            !uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            (uri.Scheme != Uri.UriSchemeHttps && !(AllowMailto && uri.Scheme == Uri.UriSchemeMailto)))
         {
             return;
         }
@@ -35,7 +44,7 @@ public sealed class ExternalLinkButton : Button
         }
         catch
         {
-            // The offline notice remains readable even when no browser handler exists.
+            // The page remains readable when no external handler is available.
         }
     }
 }

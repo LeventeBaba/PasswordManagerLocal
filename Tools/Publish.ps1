@@ -11,6 +11,8 @@ param(
 
     [switch]$SignWindows,
 
+    [switch]$ReadyToRun,
+
     [Parameter(Position = 0)]
     [string]$AndroidVersion
 )
@@ -35,6 +37,7 @@ $script:AndroidApiLevels = @{
 function Write-Usage {
     Write-Host 'Usage:'
     Write-Host '  .\publish.cmd -W           Publish trimmed, self-contained Windows x64'
+    Write-Host '  .\publish.cmd -W -ReadyToRun   Publish the Windows frontend and Agent with ReadyToRun'
     Write-Host '  .\publish.cmd -W -SignWindows  Publish Windows with verified Authenticode signatures'
     Write-Host '  .\publish.cmd -A           Publish Android APKs supporting Android 10 and later'
     Write-Host '  .\publish.cmd -A 16        Publish an ARM64 APK requiring Android 16 or later'
@@ -299,7 +302,7 @@ function Publish-WindowsApp {
     $script = Join-Path $script:Root 'Tools\Windows\PublishWindowsProduct.ps1'
 
     Invoke-CommandChecked 'Publishing minimal shared Windows x64 product' {
-        & $script -Configuration Release -RuntimeIdentifier win-x64 -Sign:$SignWindows
+        & $script -Configuration Release -RuntimeIdentifier win-x64 -Sign:$SignWindows -ReadyToRun:$ReadyToRun
     }
 }
 
@@ -461,6 +464,12 @@ if (-not [string]::IsNullOrWhiteSpace($AndroidVersion) -and -not ($Android.IsPre
 
 if ($SignWindows.IsPresent -and -not ($Windows.IsPresent -or $Full.IsPresent)) {
     Write-Host '-SignWindows can only be supplied with -W or -F.' -ForegroundColor Red
+    Write-Usage
+    exit 2
+}
+
+if ($ReadyToRun.IsPresent -and -not $Windows.IsPresent) {
+    Write-Host '-ReadyToRun can only be supplied with -W.' -ForegroundColor Red
     Write-Usage
     exit 2
 }

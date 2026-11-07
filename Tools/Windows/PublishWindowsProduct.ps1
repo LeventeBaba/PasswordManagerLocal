@@ -14,7 +14,9 @@ param(
 
     [switch]$RunSmokeTests,
 
-    [switch]$Sign
+    [switch]$Sign,
+
+    [switch]$ReadyToRun
 )
 
 $ErrorActionPreference = 'Stop'
@@ -28,6 +30,7 @@ if ($Sign) {
 }
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $repositoryRoot 'artifacts\publish\PasswordManagerLocal.Windows'
+    if ($ReadyToRun) { $OutputRoot += '-ReadyToRun' }
 }
 if ([string]::IsNullOrWhiteSpace($BaselineTreePath)) {
     $BaselineTreePath = Join-Path $repositoryRoot 'Docs\Baselines\PHASE6_SUPPLIED_WINDOWS_PUBLISH_TREE.txt'
@@ -53,6 +56,9 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw 'The dotnet
 if (Test-Path -LiteralPath $outputRootPath) { Remove-Item -LiteralPath $outputRootPath -Recurse -Force }
 New-Item -ItemType Directory -Path $frontendStage, $agentStage, $reportRoot -Force | Out-Null
 
+$readyToRunValue = if ($ReadyToRun) { 'true' } else { 'false' }
+Write-Host "Windows ReadyToRun: $readyToRunValue"
+
 $commonPublishArguments = @(
     '--configuration', $Configuration,
     '--framework', 'net10.0-windows',
@@ -61,7 +67,7 @@ $commonPublishArguments = @(
     '-p:PublishTrimmed=true',
     '-p:TrimMode=partial',
     '-p:PublishSingleFile=false',
-    '-p:PublishReadyToRun=false',
+    "-p:PublishReadyToRun=$readyToRunValue",
     '-p:DebugType=None',
     '-p:DebugSymbols=false',
     '-p:CopyOutputSymbolsToPublishDirectory=false',
@@ -153,13 +159,20 @@ function Remove-StagedUnownedDlls {
     }
 }
 
-function Reset-ProjectLinkerIntermediate {
+function Reset-ProjectPublishIntermediates {
     param([Parameter(Mandatory = $true)][string]$ProjectPath)
 
     $projectDirectory = Split-Path -Parent $ProjectPath
-    $linkDirectory = Join-Path $projectDirectory "obj\$Configuration\net10.0-windows\$RuntimeIdentifier\linked"
+    $intermediateDirectory = Join-Path $projectDirectory "obj\$Configuration\net10.0-windows\$RuntimeIdentifier"
+    $linkDirectory = Join-Path $intermediateDirectory 'linked'
     if (Test-Path -LiteralPath $linkDirectory) {
         Remove-Item -LiteralPath $linkDirectory -Recurse -Force
+    }
+
+    # Crossgen2 must use the current pass's linked inputs and references.
+    $readyToRunDirectory = Join-Path $intermediateDirectory 'R2R'
+    if ($ReadyToRun -and (Test-Path -LiteralPath $readyToRunDirectory)) {
+        Remove-Item -LiteralPath $readyToRunDirectory -Recurse -Force
     }
 }
 
@@ -192,8 +205,8 @@ function Publish-IsolatedStages(
     # Link.semaphore can make one project reuse another project's linker output.
     # Keep the SDK's project-local default and delete it before every publish so
     # changes to direct ILLink actions can never be skipped incrementally.
-    Reset-ProjectLinkerIntermediate -ProjectPath $frontendProject
-    Reset-ProjectLinkerIntermediate -ProjectPath $agentProject
+    Reset-ProjectPublishIntermediates -ProjectPath $frontendProject
+    Reset-ProjectPublishIntermediates -ProjectPath $agentProject
 
     Write-Host 'Publishing isolated trimmed Windows frontend staging output...'
     & dotnet publish $frontendProject @publishArguments --output $frontendStage
@@ -204,9 +217,9 @@ function Publish-IsolatedStages(
         -FileNames $frontendStageRequiredFiles -Moment "after the $passName frontend publish"
 
     # The frontend build may build the Agent through its non-runtime project
-    # reference. Clear the Agent linker output again before its authoritative
-    # standalone publication.
-    Reset-ProjectLinkerIntermediate -ProjectPath $agentProject
+    # reference. Clear the Agent publish intermediates again before its
+    # authoritative standalone publication.
+    Reset-ProjectPublishIntermediates -ProjectPath $agentProject
 
     Write-Host 'Publishing isolated trimmed Windows Agent staging output...'
     & dotnet publish $agentProject @publishArguments --output $agentStage

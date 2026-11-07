@@ -1,5 +1,7 @@
 <Project>
   <PropertyGroup>
+    <!-- Shared product version for the About page, Windows binaries, and Android package. -->
+    <Version>1.0.0</Version>
     <RepositoryRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)'))</RepositoryRoot>
     <ArtifactsRoot>$(RepositoryRoot)artifacts\</ArtifactsRoot>
     <PublishArtifactsRoot>$(ArtifactsRoot)publish\</PublishArtifactsRoot>

@@ -3,6 +3,7 @@
     x:Class="PasswordManagerLocal.Common.Frontend.Views.Information.AboutView"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Controls"
     xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Information"
     x:DataType="vm:AboutViewModel">
 
@@ -55,11 +56,50 @@
               <TextBlock Text="{Binding VersionText}"
                          FontWeight="SemiBold"
                          TextWrapping="Wrap" />
+              <TextBlock Text="{Binding BuildTimeText}"
+                         TextWrapping="Wrap" />
               <TextBlock Text="{Binding ProductDescription}"
                          Classes="subtleText"
                          TextWrapping="Wrap" />
             </StackPanel>
           </Grid>
+        </Border>
+
+        <Border Classes="card">
+          <StackPanel Spacing="8">
+            <TextBlock Text="{Binding ProjectTitle}" Classes="sectionTitle" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding CreatorText}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding ProjectDescription}" Classes="subtleText" TextWrapping="Wrap" />
+            <controls:ExternalLinkButton Classes="secondary" MinHeight="44"
+                                         ExternalUri="{Binding SourceCodeUri}"
+                                         AutomationProperties.Name="{Binding SourceCodeLabel}">
+              <TextBlock Text="{Binding SourceCodeLabel}" Classes="descriptionLink" TextWrapping="Wrap" />
+            </controls:ExternalLinkButton>
+            <controls:ExternalLinkButton Classes="secondary" MinHeight="44"
+                                         ExternalUri="{Binding ProjectLicenseUri}"
+                                         AutomationProperties.Name="{Binding ProjectLicenseLabel}">
+              <TextBlock Text="{Binding ProjectLicenseLabel}" Classes="descriptionLink" TextWrapping="Wrap" />
+            </controls:ExternalLinkButton>
+            <controls:ExternalLinkButton Classes="secondary" MinHeight="44"
+                                         ExternalUri="{Binding CreatorProfileUri}"
+                                         AutomationProperties.Name="{Binding CreatorProfileLabel}">
+              <TextBlock Text="{Binding CreatorProfileLabel}" Classes="descriptionLink" TextWrapping="Wrap" />
+            </controls:ExternalLinkButton>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+          <StackPanel Spacing="8">
+            <TextBlock Text="{Binding FeedbackTitle}" Classes="sectionTitle" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding FeedbackDescription}" TextWrapping="Wrap" />
+            <SelectableTextBlock Text="{Binding FeedbackEmail}" TextWrapping="Wrap" />
+            <controls:ExternalLinkButton Classes="secondary" MinHeight="44"
+                                         AllowMailto="True"
+                                         ExternalUri="{Binding FeedbackEmailUri}"
+                                         AutomationProperties.Name="{Binding OpenEmailLabel}">
+              <TextBlock Text="{Binding OpenEmailLabel}" Classes="descriptionLink" TextWrapping="Wrap" />
+            </controls:ExternalLinkButton>
+          </StackPanel>
         </Border>
 
         <Border Classes="card"

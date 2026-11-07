@@ -69,14 +69,22 @@ public sealed class WindowsPublicationArchitectureTests
     public void WindowsPublishToolingStagesSeparateProjectsAndValidatesSharedProductLayout()
     {
         var root = GetRepositoryRoot();
+        var publish = File.ReadAllText(Path.Combine(root, "Tools", "Publish.ps1"));
         var packager = File.ReadAllText(Path.Combine(root, "Tools", "Windows", "PublishWindowsProduct.ps1"));
         var verifier = File.ReadAllText(Path.Combine(root, "Tools", "Windows", "VerifyWindowsPublishedLayout.ps1"));
+
+        StringAssert.Contains(publish, "[switch]$ReadyToRun");
+        StringAssert.Contains(publish, "$ReadyToRun.IsPresent -and -not $Windows.IsPresent");
+        StringAssert.Contains(publish, "-ReadyToRun:$ReadyToRun");
 
         foreach (var required in new[]
         {
             "Remove-Item -LiteralPath $outputRootPath -Recurse -Force", @"staging\frontend", @"staging\agent",
             @"product\PasswordManagerLocal", "reports", "-p:PublishTrimmed=true", "-p:PublishSingleFile=false",
-            "-p:PublishReadyToRun=false", "--frontend", "--agent", "--output", "--report"
+            "[switch]$ReadyToRun", "$readyToRunValue = if ($ReadyToRun) { 'true' } else { 'false' }",
+            "-p:PublishReadyToRun=$readyToRunValue", "$publishArguments = @($commonPublishArguments)",
+            "dotnet publish $frontendProject @publishArguments", "dotnet publish $agentProject @publishArguments",
+            "--frontend", "--agent", "--output", "--report"
         })
             StringAssert.Contains(packager, required);
         foreach (var required in new[]
@@ -169,6 +177,9 @@ public sealed class WindowsPublicationArchitectureTests
         StringAssert.Contains(targets, "--action copyused %(Identity)");
         StringAssert.Contains(targets, "--action copy %(Identity)");
         StringAssert.Contains(targets, "_ExtraTrimmerArgs");
+        StringAssert.Contains(targets, "PublishReadyToRunExclude");
+        StringAssert.Contains(targets, "@(_SharedCopyUsedAssembly->'%(Identity).dll')");
+        StringAssert.Contains(targets, "@(_SharedCopyAssembly->'%(Identity).dll')");
         Assert.IsTrue(
             targets.IndexOf("--action copyused %(Identity)", StringComparison.Ordinal) <
             targets.IndexOf("--action copy %(Identity)", StringComparison.Ordinal));
@@ -188,9 +199,12 @@ public sealed class WindowsPublicationArchitectureTests
         Assert.IsFalse(script.Contains("-p:SharedCopyUsedAssemblies=", StringComparison.Ordinal));
         Assert.IsFalse(script.Contains("$copyUsedAssemblies -join \",\"", StringComparison.Ordinal));
         Assert.IsFalse(script.Contains("-p:IntermediateLinkDir=", StringComparison.Ordinal));
-        StringAssert.Contains(script, "Reset-ProjectLinkerIntermediate");
-        StringAssert.Contains(script, "obj\\$Configuration\\net10.0-windows\\$RuntimeIdentifier\\linked");
+        StringAssert.Contains(script, "Reset-ProjectPublishIntermediates");
+        StringAssert.Contains(script, "obj\\$Configuration\\net10.0-windows\\$RuntimeIdentifier");
+        StringAssert.Contains(script, "Join-Path $intermediateDirectory 'linked'");
         StringAssert.Contains(script, "Remove-Item -LiteralPath $linkDirectory -Recurse -Force");
+        StringAssert.Contains(script, "Join-Path $intermediateDirectory 'R2R'");
+        StringAssert.Contains(script, "$ReadyToRun -and (Test-Path -LiteralPath $readyToRunDirectory)");
         StringAssert.Contains(script, "Assert-StagedFiles");
         StringAssert.Contains(script, "after the $passName frontend publish");
         StringAssert.Contains(script, "after the $passName Agent publish");

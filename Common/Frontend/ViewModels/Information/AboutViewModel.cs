@@ -1,4 +1,5 @@
 using System.Globalization;
+using PasswordManagerLocal.Common.Frontend.Information;
 using PasswordManagerLocal.Common.Frontend.Services;
 using ReactiveUI;
 using ReactiveUI.Primitives;
@@ -7,7 +8,11 @@ namespace PasswordManagerLocal.Common.Frontend.ViewModels.Information;
 
 public sealed class AboutViewModel : ViewModelBase
 {
+    private const string CreatorName = "Levente Baba";
+    private const string FeedbackEmailAddress = "levente.baba.dev@gmail.com";
+
     private readonly string? _applicationVersion;
+    private readonly DateTime? _buildTimestampUtc = ApplicationVersionInfo.GetBuildTimestampUtc();
 
     public AboutViewModel(
         UiPreferencesService uiPreferences,
@@ -31,6 +36,12 @@ public sealed class AboutViewModel : ViewModelBase
     public ReactiveCommand<RxVoid, RxVoid> NavigateToLicensesCommand { get; }
     public bool AreLicensesAvailable { get; }
 
+    public Uri SourceCodeUri { get; } = new("https://github.com/LeventeBaba/PasswordManagerLocal");
+    public Uri ProjectLicenseUri { get; } = new("https://github.com/LeventeBaba/PasswordManagerLocal/blob/master/LICENSE.txt");
+    public Uri CreatorProfileUri { get; } = new("https://github.com/LeventeBaba");
+    public Uri FeedbackEmailUri { get; } = new($"mailto:{FeedbackEmailAddress}");
+    public string FeedbackEmail => FeedbackEmailAddress;
+
     public string Title => GetTranslation("About_Title");
     public string Subtitle => GetTranslation("About_Subtitle");
     public string BackLabel => GetTranslation("Common_Back");
@@ -42,6 +53,22 @@ public sealed class AboutViewModel : ViewModelBase
             CultureInfo.CurrentCulture,
             GetTranslation("About_Version_Format"),
             _applicationVersion);
+    public string BuildTimeText => _buildTimestampUtc is { } timestamp
+        ? string.Format(
+            CultureInfo.GetCultureInfo(CurrentLanguage == AppLanguage.Hungarian ? "hu-HU" : "en-US"),
+            GetTranslation("About_BuildTime_Format"),
+            timestamp)
+        : GetTranslation("About_BuildTime_Unavailable");
+    public string ProjectTitle => GetTranslation("About_Project_Title");
+    public string CreatorText => string.Format(
+        CultureInfo.CurrentCulture, GetTranslation("About_Creator_Format"), CreatorName);
+    public string ProjectDescription => GetTranslation("About_Project_Description");
+    public string SourceCodeLabel => GetTranslation("About_Project_SourceCode");
+    public string ProjectLicenseLabel => GetTranslation("About_Project_License");
+    public string CreatorProfileLabel => GetTranslation("About_Project_CreatorProfile");
+    public string FeedbackTitle => GetTranslation("About_Feedback_Title");
+    public string FeedbackDescription => GetTranslation("About_Feedback_Description");
+    public string OpenEmailLabel => GetTranslation("About_Feedback_OpenEmail");
     public string LicensesTitle => GetTranslation("About_Licenses_Title");
     public string LicensesDescription => GetTranslation("About_Licenses_Description");
 
@@ -54,6 +81,16 @@ public sealed class AboutViewModel : ViewModelBase
             nameof(ApplicationName),
             nameof(ProductDescription),
             nameof(VersionText),
+            nameof(BuildTimeText),
+            nameof(ProjectTitle),
+            nameof(CreatorText),
+            nameof(ProjectDescription),
+            nameof(SourceCodeLabel),
+            nameof(ProjectLicenseLabel),
+            nameof(CreatorProfileLabel),
+            nameof(FeedbackTitle),
+            nameof(FeedbackDescription),
+            nameof(OpenEmailLabel),
             nameof(LicensesTitle),
             nameof(LicensesDescription)
         ]);
