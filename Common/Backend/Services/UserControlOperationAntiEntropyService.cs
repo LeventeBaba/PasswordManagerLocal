@@ -204,15 +204,16 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
             if (!seenIds.Add(operationId))
                 throw new InvalidDataException("The same control operation was requested more than once.");
 
-            var row = await _operations.GetByIdAsync(operationId, ct)
-                ?? throw new SyncStateUnavailableException("The requested control operation is no longer retained locally.");
-            var routeEligible = await _routes.IsEligibleAsync(userId, peerDeviceId, ct);
-            if (!routeEligible && !await CanRelayHistoricallyAsync(row, peerDeviceId, ct))
-                throw new UnauthorizedAccessException("The peer is not authorized for the requested control operation.");
-            if (row.UserId != userId)
-                throw new InvalidDataException("The requested control operation belongs to another account.");
-            if (row.Status is UserControlOperationStatus.Rejected or UserControlOperationStatus.Quarantined)
-                throw new SyncStateUnavailableException("The requested control operation is no longer relayable.");
+            var row = await _operations.GetByIdAsync(operationId, ct);
+            // An operation ID can be guessed or learned out of band. Treat missing and
+            // inaccessible operations alike, including IDs paired with the wrong account.
+            if (row is null || row.UserId != userId ||
+                row.Status is UserControlOperationStatus.Rejected or UserControlOperationStatus.Quarantined ||
+                (!await _routes.IsEligibleAsync(userId, peerDeviceId, ct) &&
+                 !await CanRelayHistoricallyAsync(row, peerDeviceId, ct)))
+            {
+                throw new SyncStateUnavailableException("The requested control operation is unavailable for this peer.");
+            }
             if (!RequestMatchesRow(request, row))
                 throw new InvalidDataException("The requested control-operation identity or hash does not match durable storage.");
 

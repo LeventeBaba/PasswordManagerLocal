@@ -23,7 +23,7 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 
 [TestClass]
 [DoNotParallelize]
-public sealed class RegularSyncEndToEndTests
+public sealed partial class RegularSyncEndToEndTests
 {
     private const int TestTimeoutMilliseconds = 90_000;
     private const int ThreeDeviceTestTimeoutMilliseconds = 180_000;
@@ -453,8 +453,8 @@ public sealed class RegularSyncEndToEndTests
     {
         await using var setup = await CreateThreeDeviceSetupAsync();
 
-        var devicesBeforeSecondEnrollmentSync = await setup.Original.Endpoints
-            .GetUserDevicesAsync(setup.OriginalToken);
+        var devicesBeforeSecondEnrollmentSync = await RunStepAsync("read the original device membership before propagation",
+            ct => setup.Original.Endpoints.GetUserDevicesAsync(setup.OriginalToken, ct));
         Assert.AreEqual(2, devicesBeforeSecondEnrollmentSync.Count);
         Assert.IsFalse(devicesBeforeSecondEnrollmentSync.Any(device =>
             device.DeviceId == setup.NewDevice.Identity.LocalDeviceId),
@@ -475,11 +475,8 @@ public sealed class RegularSyncEndToEndTests
             setup.NewDevice.Identity.LocalDeviceId);
 
         var newDeviceSecret = Encoding.UTF8.GetBytes("third-device-created-secret");
-        await AddPasswordAsync(
-            setup.NewDevice,
-            setup.NewDeviceToken,
-            "Third device credential",
-            newDeviceSecret);
+        await RunStepAsync("write a credential on the newly enrolled third device",
+            ct => AddPasswordAsync(setup.NewDevice, setup.NewDeviceToken, "Third device credential", newDeviceSecret, ct));
 
         var enrolledData = await setup.NewDevice.Endpoints.GetSavedPasswordsAsync(setup.NewDeviceToken);
         CollectionAssert.AreEqual(
@@ -1018,7 +1015,8 @@ public sealed class RegularSyncEndToEndTests
         SignPub = ByteString.CopyFrom(identity.SignPublicKey)
     };
 
-    private static async Task<PeerConnectionContext> AcceptHelloAsync(ProductionSyncTestHost sender, ProductionSyncTestHost receiver)
+    private static async Task<PeerConnectionContext> AcceptHelloAsync(
+        ProductionSyncTestHost sender, ProductionSyncTestHost receiver, CancellationToken ct = default)
     {
         var request = CreateHelloRequest(sender.Identity);
         var context = new PeerConnectionContext
@@ -1026,7 +1024,7 @@ public sealed class RegularSyncEndToEndTests
             ClientCertificateFingerprint = sender.Identity.FingerprintHex,
             RemoteIpAddress = "127.0.0.1"
         };
-        var reply = await receiver.ProtocolHandler.HelloAsync(request, context, CancellationToken.None);
+        var reply = await receiver.ProtocolHandler.HelloAsync(request, context, ct);
         Assert.IsTrue(reply.Ok, "The enrolled device must authenticate before exercising the incoming protocol.");
         context.SyncHelloAccepted = true;
         context.RemoteDatabaseVersion = request.DatabaseVersion;
@@ -1075,10 +1073,10 @@ public sealed class RegularSyncEndToEndTests
         }
     }
 
-    private static async Task<Ack> DeliverDeltaAsync(SyncPair pair, NetworkDelta delta)
+    private static async Task<Ack> DeliverDeltaAsync(SyncPair pair, NetworkDelta delta, CancellationToken ct = default)
     {
-        var context = await AcceptHelloAsync(pair.Source, pair.Target);
-        return await pair.Target.ProtocolHandler.PushDeltaAsync(SingleDeltaAsync(delta), context, CancellationToken.None);
+        var context = await AcceptHelloAsync(pair.Source, pair.Target, ct);
+        return await pair.Target.ProtocolHandler.PushDeltaAsync(SingleDeltaAsync(delta), context, ct);
     }
 
     private static async IAsyncEnumerable<DeltaChunk> SingleDeltaAsync(NetworkDelta delta)
@@ -1098,28 +1096,29 @@ public sealed class RegularSyncEndToEndTests
         ExpectedSnapshotHash = ByteString.CopyFrom(snapshot.SnapshotHash)
     };
 
-    private static async Task PauseAutomaticDeliveryAsync(SyncPair pair)
+    private static async Task PauseAutomaticDeliveryAsync(SyncPair pair, CancellationToken ct = default)
     {
         pair.Source.EndpointsCache.Clear();
         pair.Target.EndpointsCache.Clear();
-        await pair.Source.WaitForSyncIdleAsync(pair.Target.Identity.LocalDeviceId);
-        await pair.Target.WaitForSyncIdleAsync(pair.Source.Identity.LocalDeviceId);
+        await pair.Source.WaitForSyncIdleAsync(pair.Target.Identity.LocalDeviceId, ct);
+        await pair.Target.WaitForSyncIdleAsync(pair.Source.Identity.LocalDeviceId, ct);
         pair.Source.EndpointsCache.Clear();
         pair.Target.EndpointsCache.Clear();
         // Release initial login projection gates before testing synchronous merge admission.
-        await pair.Source.Endpoints.GetSavedPasswordsAsync(pair.SourceToken);
-        await pair.Target.Endpoints.GetSavedPasswordsAsync(pair.TargetToken);
+        await pair.Source.Endpoints.GetSavedPasswordsAsync(pair.SourceToken, ct);
+        await pair.Target.Endpoints.GetSavedPasswordsAsync(pair.TargetToken, ct);
     }
 
-    private static async Task<NetworkDelta> BuildLatestUserDeltaAsync(ProductionSyncTestHost source, ProductionSyncTestHost target)
+    private static async Task<NetworkDelta> BuildLatestUserDeltaAsync(
+        ProductionSyncTestHost source, ProductionSyncTestHost target, Guid? forUser = null, CancellationToken ct = default)
     {
         using var scope = source.Services.CreateScope();
         var services = scope.ServiceProvider;
-        var userId = (await services.GetRequiredService<IUserRepository>().ListUserIdsAsync()).Single();
-        var peer = await services.GetRequiredService<IDeviceRepository>().GetByIdWithUserDevicesAsync(target.Identity.LocalDeviceId)
+        var userId = forUser ?? (await services.GetRequiredService<IUserRepository>().ListUserIdsAsync(ct)).Single();
+        var peer = await services.GetRequiredService<IDeviceRepository>().GetByIdWithUserDevicesAsync(target.Identity.LocalDeviceId, ct)
             ?? throw new InvalidOperationException("The enrolled target is missing.");
         return await services.GetRequiredService<IOutgoingDeltaBuilderService>().BuildAsync(
-            new SyncItem { ModelId = userId, ModelType = SyncModelType.User, ChangeType = SyncChangeType.Updated }, peer);
+            new SyncItem { ModelId = userId, ModelType = SyncModelType.User, ChangeType = SyncChangeType.Updated }, peer, ct);
     }
 
     [TestMethod]
@@ -1351,13 +1350,12 @@ public sealed class RegularSyncEndToEndTests
             newDevice.ConnectTo(middle);
 
             var username = $"sync3device{Guid.NewGuid().ToString("N")[..12]}";
-            var originalToken = await original.Endpoints.RegisterAsync(original.CreateRegistrationRequest(username));
-            await AddPasswordAsync(
-                original,
-                originalToken,
-                "Original device credential",
-                Encoding.UTF8.GetBytes("original-device-secret"));
-            await original.EnableSyncAsync(originalToken);
+            var originalToken = await RunStepAsync("register the original device's profile",
+                ct => original.Endpoints.RegisterAsync(original.CreateRegistrationRequest(username), ct));
+            await RunStepAsync("write the original device credential",
+                ct => AddPasswordAsync(original, originalToken, "Original device credential",
+                    Encoding.UTF8.GetBytes("original-device-secret"), ct));
+            await RunStepAsync("enable synchronization on the original device", ct => original.EnableSyncAsync(originalToken, ct));
 
             var middleEnrollmentCode = await RunStepAsync(
                 "second device enrollment listener startup",
@@ -1369,12 +1367,10 @@ public sealed class RegularSyncEndToEndTests
             var middleToken = await RunStepAsync(
                 "second device first login after enrollment",
                 ct => middle.Endpoints.LoginAsync(middle.CreateLoginRequest(username), ct));
-            await middle.EnableSyncAsync(middleToken);
-            await AddPasswordAsync(
-                middle,
-                middleToken,
-                "Second device credential",
-                Encoding.UTF8.GetBytes("second-device-secret"));
+            await RunStepAsync("enable synchronization on the second device", ct => middle.EnableSyncAsync(middleToken, ct));
+            await RunStepAsync("write the second device credential",
+                ct => AddPasswordAsync(middle, middleToken, "Second device credential",
+                    Encoding.UTF8.GetBytes("second-device-secret"), ct));
 
             var thirdEnrollmentCode = await RunStepAsync(
                 "third device enrollment listener startup",
@@ -1386,7 +1382,8 @@ public sealed class RegularSyncEndToEndTests
             var newDeviceToken = await RunStepAsync(
                 "third device first login after enrollment",
                 ct => newDevice.Endpoints.LoginAsync(newDevice.CreateLoginRequest(username), ct));
-            await newDevice.ActivateImportedSynchronizationAsync();
+            await RunStepAsync("activate imported synchronization on the third device",
+                ct => newDevice.ActivateImportedSynchronizationAsync(ct));
 
             if (automaticDiscovery)
             {
@@ -1440,7 +1437,8 @@ public sealed class RegularSyncEndToEndTests
         ProductionSyncTestHost host,
         Guid token,
         string name,
-        byte[] secret)
+        byte[] secret,
+        CancellationToken ct = default)
     {
         await host.Endpoints.AddNewPasswordAsync(token, new NewPasswordRequest
         {
@@ -1449,7 +1447,7 @@ public sealed class RegularSyncEndToEndTests
             Color = "#FF123456",
             Password = secret,
             TagIds = []
-        });
+        }, ct);
     }
 
     private static async Task AssertPasswordSecretAsync(

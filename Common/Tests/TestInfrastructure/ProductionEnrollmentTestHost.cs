@@ -43,7 +43,8 @@ public sealed class ProductionEnrollmentTestHost : IAsyncDisposable
     public IDeviceIdentityService Identity => _services.GetRequiredService<IDeviceIdentityService>();
     public SyncPeerProtocolHandler ProtocolHandler => _services.GetRequiredService<SyncPeerProtocolHandler>();
 
-    public static async Task<ProductionEnrollmentTestHost> CreateAsync()
+    public static async Task<ProductionEnrollmentTestHost> CreateAsync(
+        Func<IDeviceEnrollmentSnapshotImporterService, IDeviceEnrollmentSnapshotImporterService>? wrapImporter = null)
     {
         var rootDirectory = Path.Combine(
             Path.GetTempPath(),
@@ -88,6 +89,13 @@ public sealed class ProductionEnrollmentTestHost : IAsyncDisposable
                 provider.GetRequiredService<PasswordManagerLocal.Common.Backend.Abstractions.State.IEnrollmentRuntimeState>())));
         services.Replace(ServiceDescriptor.Singleton<IDeviceSyncTaskService, FakeDeviceSyncTaskService>());
         services.Replace(ServiceDescriptor.Singleton<ILocalDiscoveryTransport>(new FakeLocalDiscoveryTransport()));
+
+        if (wrapImporter is not null)
+        {
+            services.AddSingleton<DeviceEnrollmentSnapshotImporterService>();
+            services.Replace(ServiceDescriptor.Singleton<IDeviceEnrollmentSnapshotImporterService>(provider =>
+                wrapImporter(provider.GetRequiredService<DeviceEnrollmentSnapshotImporterService>())));
+        }
 
         var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {

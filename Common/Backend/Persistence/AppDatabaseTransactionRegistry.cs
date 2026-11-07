@@ -20,9 +20,26 @@ internal static class AppDatabaseTransactionRegistry
         var connection = db.Database.GetDbConnection();
         if (connection is SqliteConnection sqlite)
         {
-            var dataSource = sqlite.DataSource;
-            if (string.IsNullOrWhiteSpace(dataSource) || string.Equals(dataSource, ":memory:", StringComparison.OrdinalIgnoreCase))
+            // DataSource changes when SQLite opens a file URI: an open connection reports
+            // the native filename, while a closed one reports the configured URI.
+            var options = new SqliteConnectionStringBuilder(sqlite.ConnectionString);
+            var dataSource = options.DataSource;
+            if (string.IsNullOrWhiteSpace(dataSource) ||
+                string.Equals(dataSource, ":memory:", StringComparison.OrdinalIgnoreCase))
+            {
                 return $"memory:{RuntimeHelpers.GetHashCode(connection)}";
+            }
+
+            if (options.Mode == SqliteOpenMode.Memory)
+                return options.Cache == SqliteCacheMode.Shared
+                    ? $"shared-memory:{dataSource}"
+                    : $"memory:{RuntimeHelpers.GetHashCode(connection)}";
+
+            if (dataSource.StartsWith("file:", StringComparison.OrdinalIgnoreCase) &&
+                Uri.TryCreate(dataSource, UriKind.Absolute, out var uri) && uri.IsFile)
+            {
+                dataSource = uri.LocalPath;
+            }
 
             return Path.GetFullPath(dataSource);
         }

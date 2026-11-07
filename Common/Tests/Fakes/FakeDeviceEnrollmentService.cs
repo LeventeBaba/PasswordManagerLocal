@@ -31,12 +31,6 @@ public sealed class FakeDeviceEnrollmentService : IDeviceEnrollmentService
         CancellationToken ct = default) =>
         throw new NotSupportedException();
 
-    public Task<string> RegisterIncomingEnrollmentValidationFailureAsync(
-        DeviceEnrollmentErrorCode errorCode,
-        string message,
-        CancellationToken ct = default) =>
-        throw new NotSupportedException();
-
     public Task<(bool Ok, DeviceEnrollmentErrorCode ErrorCode, string? Error)> CompleteIncomingEnrollmentAsync(
         string sessionId,
         byte[] codeProof,

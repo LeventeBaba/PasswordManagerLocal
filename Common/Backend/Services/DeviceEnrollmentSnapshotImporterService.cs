@@ -3,6 +3,7 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Constants;
+using PasswordManagerLocal.Common.Backend.Diagnostics;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Sync;
@@ -323,20 +324,21 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             throw;
         }
 
-        versionClock.Observe(
-            validated.PendingSnapshots
-                .Select(item => item.Envelope.User.GeneralUserDataVersion)
-                .Prepend(validated.User.GeneralUserDataVersion));
-
-        foreach (var device in await devices.ListTrustedUnblockedAsync(ct))
-            syncIdentities.TryAdd(device);
         try
         {
+            versionClock.Observe(
+                validated.PendingSnapshots
+                    .Select(item => item.Envelope.User.GeneralUserDataVersion)
+                    .Prepend(validated.User.GeneralUserDataVersion));
+
+            foreach (var device in await devices.ListTrustedUnblockedAsync(CancellationToken.None))
+                syncIdentities.TryAdd(device);
             await services.GetRequiredService<IPendingSyncActivationService>().ActivatePendingAsync(CancellationToken.None);
         }
-        catch
+        catch (Exception ex)
         {
             // The committed queue remains discoverable for normal retry.
+            BackendDebugLog.Error($"Enrollment was imported but refreshing sync state failed: {ex.Message}", ex);
         }
     }
 

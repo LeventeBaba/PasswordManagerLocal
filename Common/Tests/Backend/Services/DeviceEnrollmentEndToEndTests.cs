@@ -18,7 +18,7 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 
 [TestClass]
 [DoNotParallelize]
-public sealed class DeviceEnrollmentEndToEndTests
+public sealed partial class DeviceEnrollmentEndToEndTests
 {
     private const int TestTimeoutMilliseconds = 60_000;
     private static readonly TimeSpan EnrollmentStepTimeout = TimeSpan.FromSeconds(15);
@@ -452,10 +452,11 @@ public sealed class DeviceEnrollmentEndToEndTests
     }
 
     private static async Task AssertNoImportedProfileAsync(
-        ProductionEnrollmentTestHost target, Guid userId, Guid sourceDeviceId)
+        ProductionEnrollmentTestHost target, Guid userId, Guid sourceDeviceId,
+        DeviceEnrollmentState expectedState = DeviceEnrollmentState.Waiting)
     {
         Assert.AreEqual(0, (await GetUserIdsAsync(target)).Count);
-        Assert.AreEqual(DeviceEnrollmentState.Waiting, (await target.Endpoints.GetDeviceEnrollmentStatusAsync()).State);
+        Assert.AreEqual(expectedState, (await target.Endpoints.GetDeviceEnrollmentStatusAsync()).State);
         using var scope = target.Services.CreateScope();
         var services = scope.ServiceProvider;
         Assert.IsNull(await services.GetRequiredService<IDeviceRepository>().GetByIdAsNoTrackingAsync(sourceDeviceId));

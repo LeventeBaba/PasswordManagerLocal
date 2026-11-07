@@ -97,22 +97,20 @@ public sealed class SyncVersionClockService : ISyncVersionClockService
         if (maximum is null)
             return;
 
-        lock (Gate)
+        RememberObservedMaximum(maximum);
+        for (var attempt = 0; attempt < MaxPersistenceAttempts; attempt++)
         {
-            RememberObservedMaximum(maximum);
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var databaseKey = AppDatabaseTransactionRegistry.GetDatabaseKey(db);
 
-            for (var attempt = 0; attempt < MaxPersistenceAttempts; attempt++)
+            // Defer before taking Gate. A concurrent Next can own Gate while waiting
+            // for this very SQLite transaction to release its writer lock.
+            if (AppDatabaseTransactionRegistry.HasActiveTransaction(databaseKey))
+                return;
+
+            lock (Gate)
             {
-                using var scope = _scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var databaseKey = AppDatabaseTransactionRegistry.GetDatabaseKey(db);
-
-                // Verification and merge services legitimately observe authenticated item versions
-                // while their caller owns a transaction on the same SQLite database. Persisting the
-                // clock through this service's separate DbContext at that point would self-deadlock:
-                // the outer transaction waits for Observe, while Observe waits for that transaction.
-                // Retain the maximum in memory and let the next post-transaction Observe/Next call
-                // make it durable.
                 if (AppDatabaseTransactionRegistry.HasActiveTransaction(databaseKey))
                     return;
 
@@ -121,10 +119,12 @@ public sealed class SyncVersionClockService : ISyncVersionClockService
                 try
                 {
                     var state = GetOrCreateState(db);
-                    var pending = _pendingObservedMaximum;
-                    if (pending is null || CompareClockPosition(pending, state) <= 0)
+                    var pending = Volatile.Read(ref _pendingObservedMaximum);
+                    if (pending is null)
+                        return;
+                    if (CompareClockPosition(pending, state) <= 0)
                     {
-                        _pendingObservedMaximum = null;
+                        ClearPersistedPendingObservation(state);
                         return;
                     }
 
@@ -162,24 +162,29 @@ public sealed class SyncVersionClockService : ISyncVersionClockService
 
     private void RememberObservedMaximum(SyncVersionStamp maximum)
     {
-        if (_pendingObservedMaximum is not null &&
-            SyncVersionStampComparer.Instance.Compare(maximum, _pendingObservedMaximum) <= 0)
-        {
-            return;
-        }
-
-        _pendingObservedMaximum = new SyncVersionStamp
+        var observed = new SyncVersionStamp
         {
             PhysicalTimeUnixMilliseconds = maximum.PhysicalTimeUnixMilliseconds,
             LogicalCounter = maximum.LogicalCounter,
             OriginDeviceId = maximum.OriginDeviceId,
             OriginInstanceId = maximum.OriginInstanceId
         };
+
+        // Publish an immutable copy without taking the database gate. A newer observation
+        // can arrive while another thread is persisting an earlier floor.
+        while (true)
+        {
+            var pending = Volatile.Read(ref _pendingObservedMaximum);
+            if (pending is not null && SyncVersionStampComparer.Instance.Compare(observed, pending) <= 0)
+                return;
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _pendingObservedMaximum, observed, pending), pending))
+                return;
+        }
     }
 
     private void ApplyPendingObservedFloor(SyncVersionClockState state)
     {
-        var pending = _pendingObservedMaximum;
+        var pending = Volatile.Read(ref _pendingObservedMaximum);
         if (pending is null || CompareClockPosition(pending, state) <= 0)
             return;
 
@@ -189,11 +194,9 @@ public sealed class SyncVersionClockService : ISyncVersionClockService
 
     private void ClearPersistedPendingObservation(SyncVersionClockState state)
     {
-        if (_pendingObservedMaximum is not null &&
-            CompareClockPosition(_pendingObservedMaximum, state) <= 0)
-        {
-            _pendingObservedMaximum = null;
-        }
+        var pending = Volatile.Read(ref _pendingObservedMaximum);
+        if (pending is not null && CompareClockPosition(pending, state) <= 0)
+            Interlocked.CompareExchange(ref _pendingObservedMaximum, null, pending);
     }
 
     private static int CompareClockPosition(SyncVersionStamp stamp, SyncVersionClockState state)

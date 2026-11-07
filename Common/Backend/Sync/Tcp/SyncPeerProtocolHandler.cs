@@ -527,7 +527,6 @@ public sealed class SyncPeerProtocolHandler
     public async Task<CompleteDeviceEnrollmentReply> CompleteDeviceEnrollmentStreamAsync(IAsyncEnumerable<CompleteDeviceEnrollmentChunk> chunks, PeerConnectionContext context, int sourceDatabaseVersion, CancellationToken ct)
     {
         using var scope = _root.CreateScope();
-        IDeviceEnrollmentService? enrollment = null;
 
         try
         {
@@ -544,7 +543,7 @@ public sealed class SyncPeerProtocolHandler
                 };
             }
 
-            enrollment = scope.ServiceProvider.GetRequiredService<IDeviceEnrollmentService>();
+            var enrollment = scope.ServiceProvider.GetRequiredService<IDeviceEnrollmentService>();
 
             if (!DatabaseVersionCompatibilityUtil.IsIncomingDatabaseVersionSupported(sourceDatabaseVersion))
             {
@@ -563,11 +562,12 @@ public sealed class SyncPeerProtocolHandler
 
             if (string.IsNullOrWhiteSpace(context.ClientCertificateFingerprint))
             {
-                var error = await enrollment.RegisterIncomingEnrollmentValidationFailureAsync(
-                    DeviceEnrollmentErrorCode.NewDeviceRejected,
-                    "Client certificate is missing.",
-                    ct);
-                return new CompleteDeviceEnrollmentReply { Ok = false, Error = error, ErrorCode = DeviceEnrollmentErrorCode.NewDeviceRejected.ToString() };
+                return new CompleteDeviceEnrollmentReply
+                {
+                    Ok = false,
+                    Error = "Client certificate is missing.",
+                    ErrorCode = DeviceEnrollmentErrorCode.NewDeviceRejected.ToString()
+                };
             }
 
             string? sessionId = null;
@@ -583,6 +583,7 @@ public sealed class SyncPeerProtocolHandler
             byte[]? snapshotEncryptionTag = null;
             var chunkSourceDatabaseVersion = 0;
             var totalBytes = 0L;
+            var firstChunk = true;
 
             CompleteDeviceEnrollmentReply InvalidEnrollmentMetadata(string message) => new()
             {
@@ -671,19 +672,19 @@ public sealed class SyncPeerProtocolHandler
                     chunkSourceDatabaseVersion = chunk.SourceDatabaseVersion;
                 }
 
+                if (chunk.SnapshotChunk.Length == 0 && (!firstChunk || string.IsNullOrWhiteSpace(chunk.SessionId)))
+                    return InvalidEnrollmentMetadata("The enrollment chunk does not advance the transfer.");
+                firstChunk = false;
+
                 var bytes = chunk.SnapshotChunk.ToByteArray();
                 totalBytes += bytes.Length;
 
                 if (totalBytes > SyncConstants.MaxDeviceEnrollmentSnapshotBytes)
                 {
-                    var error = await enrollment.RegisterIncomingEnrollmentValidationFailureAsync(
-                        DeviceEnrollmentErrorCode.ProfileDataTooLarge,
-                        "The profile data is too large to transfer in one enrollment request.",
-                        ct);
                     return new CompleteDeviceEnrollmentReply
                     {
                         Ok = false,
-                        Error = error,
+                        Error = "The profile data is too large to transfer in one enrollment request.",
                         ErrorCode = DeviceEnrollmentErrorCode.ProfileDataTooLarge.ToString()
                     };
                 }
@@ -702,27 +703,19 @@ public sealed class SyncPeerProtocolHandler
                 string.IsNullOrWhiteSpace(sourceTlsCertFingerprint) ||
                 chunkSourceDatabaseVersion <= 0)
             {
-                var error = await enrollment.RegisterIncomingEnrollmentValidationFailureAsync(
-                    DeviceEnrollmentErrorCode.ProfileDataInvalid,
-                    "The enrollment transfer metadata is incomplete.",
-                    ct);
                 return new CompleteDeviceEnrollmentReply
                 {
                     Ok = false,
-                    Error = error,
+                    Error = "The enrollment transfer metadata is incomplete.",
                     ErrorCode = DeviceEnrollmentErrorCode.ProfileDataInvalid.ToString()
                 };
             }
             if (chunkSourceDatabaseVersion != sourceDatabaseVersion)
             {
-                var error = await enrollment.RegisterIncomingEnrollmentValidationFailureAsync(
-                    DeviceEnrollmentErrorCode.ProfileDataInvalid,
-                    "The enrollment transfer database version does not match the stream header.",
-                    ct);
                 return new CompleteDeviceEnrollmentReply
                 {
                     Ok = false,
-                    Error = error,
+                    Error = "The enrollment transfer database version does not match the stream header.",
                     ErrorCode = DeviceEnrollmentErrorCode.ProfileDataInvalid.ToString()
                 };
             }
@@ -776,16 +769,14 @@ public sealed class SyncPeerProtocolHandler
                 };
             }
 
-            enrollment ??= scope.ServiceProvider.GetRequiredService<IDeviceEnrollmentService>();
             var errorCode = ex.StatusCode == SyncProtocolStatusCode.ResourceExhausted
                 ? DeviceEnrollmentErrorCode.ProfileDataTooLarge
                 : DeviceEnrollmentErrorCode.ProfileDataInvalid;
-            var error = await enrollment.RegisterIncomingEnrollmentValidationFailureAsync(errorCode, ex.Message, ct);
-            BackendDebugLog.Error($"Incoming streaming CompleteDeviceEnrollment request was rejected: {error}", ex);
+            BackendDebugLog.Error($"Incoming streaming CompleteDeviceEnrollment request was rejected: {ex.Message}", ex);
             return new CompleteDeviceEnrollmentReply
             {
                 Ok = false,
-                Error = error,
+                Error = ex.Message,
                 ErrorCode = errorCode.ToString()
             };
         }

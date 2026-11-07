@@ -46,9 +46,13 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
     }
 
 
+    public Func<IAsyncEnumerable<CompleteDeviceEnrollmentChunk>, CancellationToken, Task<CompleteDeviceEnrollmentReply>>?
+        EnrollmentCompletionOverride { get; set; }
     public bool ThrowAfterNextSuccessfulEnrollmentCompletion { get; set; }
     public bool TamperNextEnrollmentSnapshot { get; set; }
     public Action<CompleteDeviceEnrollmentChunk>? MutateNextEnrollmentStart { get; set; }
+    public Func<IReadOnlyList<NetworkDelta>, CancellationToken, Task<bool>>? DeltaSendOverride { get; set; }
+    public Action<string, UserSnapshotInventoryExchangeReply>? MutateSnapshotInventoryReply { get; set; }
     public bool FailNextDeltaSend { get; set; }
     public string? ClientCertificateFingerprintOverride { get; set; }
     public string? PresentedServerCertificateFingerprintOverride { get; set; }
@@ -86,6 +90,9 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
     public void Disconnect()
     {
         _remotePeers.Clear();
+        EnrollmentCompletionOverride = null;
+        DeltaSendOverride = null;
+        MutateSnapshotInventoryReply = null;
         ThrowAfterNextSuccessfulEnrollmentCompletion = false;
         TamperNextEnrollmentSnapshot = false;
         FailNextDeltaSend = false;
@@ -186,6 +193,9 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
             stream = TamperFirstSnapshotByteAsync(chunks, ct);
         }
 
+        if (EnrollmentCompletionOverride is { } complete)
+            return await complete(stream, ct);
+
         var reply = await destinationHandler.CompleteDeviceEnrollmentStreamAsync(
             stream,
             new PeerConnectionContext
@@ -224,6 +234,9 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
         {
             return RecordDeltaSendFailure(serverFingerprintHex, "batch-limit");
         }
+
+        if (DeltaSendOverride is { } send)
+            return await send(list, ct);
 
         if (FailNextDeltaSend)
         {
@@ -301,6 +314,7 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
             var destinationHandler = ResolveHandler(serverFingerprintHex);
             var context = await CreateAuthenticatedSyncContextAsync(destinationHandler, ct);
             var reply = await destinationHandler.ExchangeUserSnapshotInventoryAsync(request, context, ct);
+            MutateSnapshotInventoryReply?.Invoke(fingerprint, reply);
             var hints = string.Join(",", reply.EndpointHints.Select(hint => hint.DeviceId));
             _snapshotInventoryTraces.AddOrUpdate(fingerprint, new SnapshotInventoryTrace(1, hints, null),
                 (_, prior) => prior with { Completed = prior.Completed + 1, LastHints = hints });

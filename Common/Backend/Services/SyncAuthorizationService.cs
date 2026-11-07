@@ -96,7 +96,16 @@ public sealed class SyncAuthorizationService : ISyncAuthorizationService
                 return false;
 
             if (payload.UserDevice.DeviceId == _identity.LocalDeviceId)
-                return payload.ChangeType == SyncChangeType.Deleted || payload.UserDevice.IsDeleted;
+            {
+                if (!SyncPayloadRules.DeletesLocalUserProfile(payload, _identity))
+                    return false;
+
+                // Legacy links have no signed membership. An authoritative local membership
+                // can only be ended by a verified removal operation.
+                return _membershipHistory is null ||
+                    (await _membershipHistory.ListActiveForDeviceAsync(
+                        payload.UserDevice.UserId, _identity.LocalDeviceId, ct)).Count == 0;
+            }
 
             return await _syncRoutes.IsEligibleAsync(payload.UserDevice.UserId, sourceDeviceId, ct);
         }

@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
@@ -64,22 +65,25 @@ public sealed class SyncVersionClockServiceTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     [Timeout(10_000)]
-    public async Task Observe_InsideActiveUnitOfWorkTransaction_DefersWithoutBlockingAndNextPersistsFloor()
+    public async Task Observe_InsideActiveTransaction_DefersEvenWhileNextHoldsTheClockGate(bool useFileUri)
     {
         var root = Path.Combine(
             Path.GetTempPath(),
             "PasswordManagerLocal.ClockTests",
             Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        var databasePath = Path.Combine(root, "clock.db");
+        var databasePath = Path.Combine(root, "clock state.db");
         var connectionString = new SqliteConnectionStringBuilder
         {
-            DataSource = databasePath
+            DataSource = useFileUri ? $"{new Uri(databasePath).AbsoluteUri}?cache=private" : databasePath
         }.ToString();
 
+        var clockWrite = new ClockWriteGate();
         var services = new ServiceCollection();
-        services.AddDbContext<AppDbContext>(options => options.UseSqlite(connectionString));
+        services.AddDbContext<AppDbContext>(options => options.UseSqlite(connectionString).AddInterceptors(clockWrite));
         services.AddScoped<IUnitOfWork, AppUnitOfWork>();
         var provider = services.BuildServiceProvider();
 
@@ -116,13 +120,35 @@ public sealed class SyncVersionClockServiceTests
                 var unitOfWork = lockScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
                 var databaseKey = AppDatabaseTransactionRegistry.GetDatabaseKey(db);
                 await using var transaction = await unitOfWork.BeginTransactionAsync();
+                MSTestAssert.AreEqual(databaseKey, AppDatabaseTransactionRegistry.GetDatabaseKey(db));
                 _ = await db.SyncVersionClockStates.AsNoTracking().SingleAsync();
                 MSTestAssert.IsTrue(AppDatabaseTransactionRegistry.HasActiveTransaction(databaseKey));
 
-                await Task.Run(() => clock.Observe([observed]))
-                    .WaitAsync(TimeSpan.FromSeconds(2));
+                clockWrite.Arm();
+                var advancing = Task.Run(clock.Next);
+                Task? observing = null;
+                try
+                {
+                    await clockWrite.Entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+                    observing = Task.Run(() => clock.Observe([observed]));
+                    await observing.WaitAsync(TimeSpan.FromSeconds(2));
+                }
+                finally
+                {
+                    // Unblock both tasks even if the clock regresses to the previous lock order.
+                    try
+                    {
+                        await transaction.RollbackAsync();
+                    }
+                    finally
+                    {
+                        clockWrite.Release.TrySetResult();
+                    }
+                    await advancing.WaitAsync(TimeSpan.FromSeconds(2));
+                    if (observing is not null)
+                        await observing.WaitAsync(TimeSpan.FromSeconds(2));
+                }
 
-                await transaction.RollbackAsync();
                 MSTestAssert.IsFalse(AppDatabaseTransactionRegistry.HasActiveTransaction(databaseKey));
             }
 
@@ -153,5 +179,25 @@ public sealed class SyncVersionClockServiceTests
     private static string Format(PasswordManagerLocal.Common.Backend.Models.Encrypted.SyncVersionStamp stamp) =>
         $"{stamp.PhysicalTimeUnixMilliseconds}:{stamp.LogicalCounter}:{stamp.OriginDeviceId:N}:{stamp.OriginInstanceId:N}";
 
+
+
+    private sealed class ClockWriteGate : SaveChangesInterceptor
+    {
+        private int _armed;
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Arm() => Volatile.Write(ref _armed, 1);
+
+        public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
+        {
+            if (Interlocked.Exchange(ref _armed, 0) == 1)
+            {
+                Entered.TrySetResult();
+                Release.Task.GetAwaiter().GetResult();
+            }
+            return result;
+        }
+    }
 
 }
