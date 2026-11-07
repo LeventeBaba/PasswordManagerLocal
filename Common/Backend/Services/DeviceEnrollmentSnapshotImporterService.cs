@@ -88,25 +88,25 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             foreach (var deviceSnapshot in validated.CurrentRemoteDevices)
                 await UpsertRemoteDeviceAsync(devices, userDevices, deviceSnapshot, ct);
 
-            var user = await users.GetByIdAsync(validated.User.UId, ct);
-            if (user is null)
-            {
-                user = new User { UId = validated.User.UId };
-                await users.AddAsync(user, ct);
-            }
+            var existingUser = await users.GetByIdAsync(validated.User.UId, ct);
+            var user = existingUser ?? new User { UId = validated.User.UId };
             ApplyUser(validated.User, user);
+            if (existingUser is null)
+                await users.AddAsync(user, ct);
+            else
+                users.Update(user);
 
             foreach (var groupSnapshot in snapshot.Groups)
             {
-                var group = await groups.GetByIdWithUsersAsync(groupSnapshot.Id, ct);
-                if (group is null)
-                {
-                    group = new Group { Id = groupSnapshot.Id };
-                    await groups.AddAsync(group, ct);
-                }
+                var existingGroup = await groups.GetByIdWithUsersAsync(groupSnapshot.Id, ct);
+                var group = existingGroup ?? new Group { Id = groupSnapshot.Id };
                 group.EncryptedPayload = groupSnapshot.EncryptedPayload.ToArray();
                 group.LastModifiedAt = UtcDateTimeUtil.ToUtc(groupSnapshot.LastModifiedAt);
                 group.IntegrityHash = groupSnapshot.IntegrityHash.ToArray();
+                if (existingGroup is null)
+                    await groups.AddAsync(group, ct);
+                else
+                    groups.Update(group);
             }
             await unitOfWork.SaveChangesAsync(ct);
 
@@ -116,14 +116,14 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
                     ?? throw new InvalidDataException("An enrollment group could not be persisted.");
                 var importedUserIds = groupSnapshot.UserIds.Where(id => id != Guid.Empty).Distinct().ToHashSet();
                 foreach (var current in group.Users.Where(item => !importedUserIds.Contains(item.UId)).ToList())
-                    group.Users.Remove(current);
+                    groups.SetMember(group, current, isMember: false);
                 foreach (var importedUserId in importedUserIds)
                 {
                     if (group.Users.Any(item => item.UId == importedUserId))
                         continue;
                     var importedUser = await users.GetByIdAsync(importedUserId, ct);
                     if (importedUser is not null)
-                        group.Users.Add(importedUser);
+                        groups.SetMember(group, importedUser, isMember: true);
                 }
             }
 
@@ -740,11 +740,9 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
     private async Task UpsertRemoteDeviceAsync(IDeviceRepository devices, IUserDeviceRepository userDevices, DeviceEnrollmentDeviceSnapshot source, CancellationToken ct)
     {
         var existing = await devices.GetByIdAsync(source.Id, ct);
+        var isNew = existing is null;
         if (existing is null)
-        {
             existing = new Device { Id = source.Id };
-            await devices.AddAsync(existing, ct);
-        }
         else
         {
             var identityDiffers = (!existing.SignPublicKey.SequenceEqual(source.SignPublicKey) && existing.SignPublicKey.Length != 0) ||
@@ -769,6 +767,10 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         existing.LastInvalidSyncAttemptAt = UtcDateTimeUtil.ToUtc(source.LastInvalidSyncAttemptAt);
         existing.LastModifiedAt = UtcDateTimeUtil.ToUtc(source.LastModifiedAt);
         existing.GenerateIntegrityHash();
+        if (isNew)
+            await devices.AddAsync(existing, ct);
+        else
+            devices.Update(existing);
     }
 
     private UserSyncSnapshot CreateSnapshotRow(ValidatedPendingSnapshot item, UserSnapshotEnvelope envelope) => new()

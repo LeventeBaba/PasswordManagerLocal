@@ -8,6 +8,8 @@ public sealed class FakeGroupRepository : IGroupRepository
 {
     private readonly Dictionary<Guid, Group> _items = [];
 
+    public void SetMember(Group group, User user, bool isMember) => group.SetMember(user, isMember);
+
     public void Seed(params Group[] groups)
     {
         foreach (var group in groups)

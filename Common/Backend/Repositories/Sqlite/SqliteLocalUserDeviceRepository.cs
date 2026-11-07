@@ -7,7 +7,7 @@ namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
 
 internal sealed class SqliteLocalUserDeviceRepository(SqliteSession session) : ILocalUserDeviceRepository
 {
-    private const string Projection = """
+    internal const string Projection = """
         lu."UserId", lu."LocalDeviceIdentityId", lu."IntegrityHash", lu."IsSyncOn"
         """;
     private const int FieldCount = 4;
@@ -57,6 +57,13 @@ internal sealed class SqliteLocalUserDeviceRepository(SqliteSession session) : I
 
     private static LocalUserDevice ReadWithIdentity(SqliteDataReader row)
     {
+        var link = ReadRow(row);
+        link.LocalDeviceIdentity = SqliteDeviceIdentityRepository.ReadRow(row, FieldCount);
+        return link;
+    }
+
+    internal static LocalUserDevice ReadRow(SqliteDataReader row)
+    {
         var link = new LocalUserDevice
         {
             UserId = row.GetGuid(0),
@@ -65,7 +72,6 @@ internal sealed class SqliteLocalUserDeviceRepository(SqliteSession session) : I
             IsSyncOn = row.GetBoolean(3)
         };
         link.VerifyIntegrity();
-        link.LocalDeviceIdentity = SqliteDeviceIdentityRepository.ReadRow(row, FieldCount);
         return link;
     }
 }

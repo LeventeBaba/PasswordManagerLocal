@@ -8,6 +8,8 @@ namespace PasswordManagerLocal.Common.Backend.Repositories;
 
 public sealed class GroupRepository : GenericRepositoryBase<Group>, IGroupRepository
 {
+    public void SetMember(Group group, User user, bool isMember) => group.SetMember(user, isMember);
+
     public GroupRepository(AppDbContext context) : base(context.Groups) { }
 
     public override Task<bool> ExistsAsync(Guid id, CancellationToken ct = default) =>

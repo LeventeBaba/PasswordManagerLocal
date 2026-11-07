@@ -9,8 +9,9 @@ internal sealed class SqliteRowWriter<T>(
     string table,
     int keyCount,
     (string Column, Func<T, object?> GetValue)[] fields,
-    string? concurrencyColumn = null,
-    Func<T, Guid?>? userId = null) where T : class
+    string[]? concurrencyColumns = null,
+    Func<T, Guid?>? userId = null,
+    string? targetedColumn = null) where T : class
 {
     private readonly ConditionalWeakTable<T, object?[]> _originals = new();
 
@@ -36,15 +37,23 @@ internal sealed class SqliteRowWriter<T>(
         if (original is not null && !original.Take(keyCount).SequenceEqual(values.Take(keyCount)))
             throw new InvalidOperationException("A persisted row's key cannot be changed.");
 
-        var bindings = fields.Select((field, index) => (Name: $"$p{index}", Value: values[index])).ToList();
+        var bindings = new List<(string Name, object? Value)>();
+        var assignments = new List<string>();
         var predicate = string.Join(" AND ", fields.Take(keyCount).Select((field, index) => $"\"{field.Column}\" = $p{index}"));
-        if (operation != SqliteMutation.Operation.Insert && concurrencyColumn is not null)
+        for (var index = 0; index < fields.Length; index++)
         {
-            var index = Array.FindIndex(fields, field => field.Column == concurrencyColumn);
-            if (original is null)
-                throw new InvalidOperationException("A version-checked row must be read in the write scope before it can be changed.");
-            predicate += $" AND \"{concurrencyColumn}\" = $original";
-            bindings.Add(("$original", original[index]));
+            var column = fields[index].Column;
+            if (operation == SqliteMutation.Operation.Delete && index >= keyCount ||
+                operation == SqliteMutation.Operation.Update && column == targetedColumn && original is not null &&
+                SameValue(original[index], values[index]))
+            {
+                continue;
+            }
+
+            var parameter = $"$p{index}";
+            bindings.Add((parameter, values[index]));
+            if (operation == SqliteMutation.Operation.Update && index >= keyCount)
+                assignments.Add($"\"{column}\" = {parameter}");
         }
 
         var sql = operation switch
@@ -53,14 +62,23 @@ internal sealed class SqliteRowWriter<T>(
                 $"INSERT INTO \"{table}\" ({string.Join(", ", fields.Select(field => $"\"{field.Column}\""))}) " +
                 $"VALUES ({string.Join(", ", bindings.Select(binding => binding.Name))});",
             SqliteMutation.Operation.Update =>
-                $"UPDATE \"{table}\" SET {string.Join(", ", fields.Skip(keyCount).Select((field, index) => $"\"{field.Column}\" = $p{index + keyCount}"))} WHERE {predicate};",
-            SqliteMutation.Operation.Delete => $"DELETE FROM \"{table}\" WHERE {predicate};",
+                $"UPDATE \"{table}\" SET {string.Join(", ", assignments)} WHERE {predicate}",
+            SqliteMutation.Operation.Delete => $"DELETE FROM \"{table}\" WHERE {predicate}",
             _ => throw new ArgumentOutOfRangeException(nameof(operation))
         };
 
-        // SQLite rejects parameters absent from the command in some provider paths.
-        if (operation == SqliteMutation.Operation.Delete)
-            bindings.RemoveRange(keyCount, fields.Length - keyCount);
+        if (operation != SqliteMutation.Operation.Insert && concurrencyColumns is not null)
+        {
+            if (original is null)
+                throw new InvalidOperationException("A version-checked row must be read in the write scope before it can be changed.");
+            foreach (var column in concurrencyColumns)
+            {
+                var index = Array.FindIndex(fields, field => field.Column == column);
+                var parameter = $"$original{index}";
+                sql += $" AND \"{column}\" = {parameter}";
+                bindings.Add((parameter, original[index]));
+            }
+        }
 
         var changes = new BackendChangeSet();
         changes.AddEntityMutation(row, operation != SqliteMutation.Operation.Update, property =>

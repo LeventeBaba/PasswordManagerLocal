@@ -15,6 +15,26 @@ public sealed class Group : IntegrityCheckableBase
 
 
 
+    internal void SetMember(User user, bool isMember)
+    {
+        var currentUser = Users.FirstOrDefault(member => member.UId == user.UId);
+        var currentGroup = user.Groups.FirstOrDefault(group => group.Id == Id);
+        if (isMember)
+        {
+            if (currentUser is null)
+                Users.Add(user);
+            if (currentGroup is null)
+                user.Groups.Add(this);
+        }
+        else
+        {
+            if (currentUser is not null)
+                Users.Remove(currentUser);
+            if (currentGroup is not null)
+                user.Groups.Remove(currentGroup);
+        }
+    }
+
     public override byte[] CalculateIntegrityHash() =>
         Hashing.SHA256Hash(hash =>
         {

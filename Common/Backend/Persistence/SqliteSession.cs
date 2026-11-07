@@ -14,6 +14,7 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
     private readonly IBackendChangePublisher? _publisher;
     private readonly List<SqliteMutation> _pending = [];
     private SessionTransaction? _active;
+    private SqliteTransaction? _readSnapshot;
     private bool _disposed;
 
     public SqliteSession(SqliteConnectionFactory connections, IBackendChangePublisher? publisher = null)
@@ -27,9 +28,28 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
     {
         await EnsureOpenAsync(ct);
         var command = _connection.CreateCommand();
-        command.Transaction = _active?.Native;
+        command.Transaction = _active?.Native ?? _readSnapshot;
         command.CommandText = sql;
         return command;
+    }
+
+    public async Task<T> ReadSnapshotAsync<T>(Func<Task<T>> read, CancellationToken ct)
+    {
+        await EnsureOpenAsync(ct);
+        if (_active is not null || _readSnapshot is not null)
+            return await read();
+
+        // A relationship graph spans several bounded queries and needs one consistent read view.
+        using var transaction = _connection.BeginTransaction(deferred: true);
+        _readSnapshot = transaction;
+        try
+        {
+            return await read();
+        }
+        finally
+        {
+            _readSnapshot = null;
+        }
     }
 
     public void Stage<TRow>(
@@ -137,7 +157,7 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
 
     private async Task<SessionTransaction> BeginTransactionAsync(bool discardPendingOnRollback, CancellationToken ct)
     {
-        if (_active is not null)
+        if (_active is not null || _readSnapshot is not null)
             throw new InvalidOperationException("A unit-of-work transaction is already active.");
 
         IDisposable? lease = null;

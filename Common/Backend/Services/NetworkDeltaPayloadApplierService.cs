@@ -97,12 +97,14 @@ public sealed class NetworkDeltaPayloadApplierService : INetworkDeltaPayloadAppl
         var group = existing ?? CreateGroup(delta.Group);
         CopyGroupData(delta.Group, group);
         group.LastModifiedAt = FromTimestamp(ts);
+        group.GenerateIntegrityHash();
 
         if (existing is null)
             await _groups.AddAsync(group, ct);
 
         await _relationships.SyncGroupUsersAsync(group, delta.Group.UserIds, ct);
-        group.GenerateIntegrityHash();
+        if (existing is not null)
+            _groups.Update(group);
         await RemoveTombstoneAsync(delta, ct);
         return true;
     }
@@ -141,12 +143,14 @@ public sealed class NetworkDeltaPayloadApplierService : INetworkDeltaPayloadAppl
         var device = existing ?? CreateDevice(delta.Device);
         CopyDeviceData(delta.Device, device, isNew);
         device.LastModifiedAt = FromTimestamp(ts);
+        device.GenerateIntegrityHash();
 
         if (isNew)
             await _devices.AddAsync(device, ct);
+        else
+            _devices.Update(device);
 
         await _relationships.SyncDeviceUsersAsync(device, delta.Device.UserIds, device.LastModifiedAt, ct);
-        device.GenerateIntegrityHash();
         await RemoveTombstoneAsync(delta, ct);
 
         await RefreshCachedDeviceAsync(device, ct);

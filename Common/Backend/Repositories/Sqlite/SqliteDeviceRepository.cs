@@ -39,7 +39,7 @@ internal sealed class SqliteDeviceRepository(SqliteSession session) : IDeviceRep
         (nameof(Device.SignPublicKey), row => row.SignPublicKey),
         (nameof(Device.SignPublicKeyHash), row => row.SignPublicKeyHash),
         (nameof(Device.TlsCertFingerprint), row => row.TlsCertFingerprint)
-    ], concurrencyColumn: nameof(Device.IntegrityHash));
+    ], concurrencyColumns: [nameof(Device.IntegrityHash)]);
 
     public async Task<IReadOnlyList<Device>> ListAllAsync(CancellationToken ct = default) =>
         await session.ReadAsync(Select, ReadDetached, ct);
