@@ -68,20 +68,13 @@ public static class BackendServiceCollectionExtensions
         services.AddSingleton<IDeviceEnrollmentAvailability>(executionProfileProvider);
         services.AddSingleton<IKeyProtector>(keyProtector);
         services.AddSingleton<ILocalDiscoveryNetworkLease>(discoveryNetworkLease);
+        services.AddSingleton<SqliteConnectionFactory>();
         services.AddSingleton<IBackendInitializationService, BackendInitializationService>();
         services.AddSingleton<RelationshipIntegrityMaterializationInterceptor>();
 
         services.AddDbContextPool<AppDbContext>((sp, opts) =>
         {
-            var paths = sp.GetRequiredService<BackendStoragePaths>();
-            var protector = sp.GetRequiredService<IKeyProtector>();
-            var dbPassword = DbConfigManager.GetOrCreateDatabasePassword(paths, protector);
-
-            var connStr = DatabaseEncryptionMigrator.CreateRuntimeConnectionString(
-                paths.DatabasePath,
-                dbPassword);
-
-            opts.UseSqlite(connStr);
+            opts.UseSqlite(sp.GetRequiredService<SqliteConnectionFactory>().ConnectionString);
             opts.AddInterceptors(sp.GetRequiredService<RelationshipIntegrityMaterializationInterceptor>());
         });
 
@@ -145,6 +138,7 @@ public static class BackendServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        services.AddSingleton<ISyncVersionClockStore, SyncVersionClockStore>();
         services.AddSingleton<ISyncVersionClockService, SyncVersionClockService>();
         services.AddSingleton<IDeviceIdentityService, DeviceIdentityService>();
         services.AddSingleton<ISyncDeviceIdentityService, SyncDeviceIdentityService>();

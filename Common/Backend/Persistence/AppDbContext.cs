@@ -101,19 +101,11 @@ public class AppDbContext : DbContext
 
         foreach (var entry in ChangeTracker.Entries<Device>()
                      .Where(entry => entry.State is EntityState.Added or EntityState.Modified))
-        {
-            entry.Entity.SignPublicKeyHash = entry.Entity.SignPublicKey.Length == 0
-                ? []
-                : Security.Hashing.SHA256Hash(entry.Entity.SignPublicKey);
             entry.Entity.GenerateIntegrityHash();
-        }
 
         foreach (var entry in ChangeTracker.Entries<UserDevice>()
                      .Where(entry => entry.State is EntityState.Added or EntityState.Modified))
-        {
-            entry.Entity.ModelId = Sync.SyncIdentityUtil.BuildUserDeviceModelId(entry.Entity.UserId, entry.Entity.DeviceId);
             entry.Entity.GenerateIntegrityHash();
-        }
 
         foreach (var entry in ChangeTracker.Entries<LocalUserDevice>()
                      .Where(entry => entry.State is EntityState.Added or EntityState.Modified))

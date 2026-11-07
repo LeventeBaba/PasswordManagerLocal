@@ -5,28 +5,26 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Diagnostics;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Configuration;
-using PasswordManagerLocal.Common.Backend.Abstractions.Security;
-using PasswordManagerLocal.Common.Backend.Security;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
 
-public sealed class BackendInitializationService : IBackendInitializationService
+internal sealed class BackendInitializationService : IBackendInitializationService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDeviceIdentityService _deviceIdentity;
     private readonly BackendStoragePaths _storagePaths;
-    private readonly IKeyProtector _keyProtector;
+    private readonly SqliteConnectionFactory _connections;
 
     public BackendInitializationService(
         IServiceScopeFactory scopeFactory,
         IDeviceIdentityService deviceIdentity,
         BackendStoragePaths storagePaths,
-        IKeyProtector keyProtector)
+        SqliteConnectionFactory connections)
     {
         _scopeFactory = scopeFactory;
         _deviceIdentity = deviceIdentity;
         _storagePaths = storagePaths;
-        _keyProtector = keyProtector;
+        _connections = connections;
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -48,10 +46,9 @@ public sealed class BackendInitializationService : IBackendInitializationService
     {
         BackendDebugLog.OperationStarted("Backend database and device identity initialization", "Initialization");
 
-        var dbPassword = DbConfigManager.GetOrCreateDatabasePassword(_storagePaths, _keyProtector);
         if (await DatabaseEncryptionMigrator.MigrateIfRequiredAsync(
                 _storagePaths,
-                dbPassword,
+                _connections.GetDatabasePassword(),
                 cancellationToken))
         {
             BackendDebugLog.Info(
@@ -59,10 +56,9 @@ public sealed class BackendInitializationService : IBackendInitializationService
                 "Initialization");
         }
 
-        using (var scope = _scopeFactory.CreateScope())
+        await using (var connection = _connections.CreateConnection())
         {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            await AppDatabaseInitializer.InitializeAsync(db, cancellationToken);
+            await AppDatabaseInitializer.InitializeAsync(connection, cancellationToken);
         }
 
         await _deviceIdentity.InitializeAsync(cancellationToken);

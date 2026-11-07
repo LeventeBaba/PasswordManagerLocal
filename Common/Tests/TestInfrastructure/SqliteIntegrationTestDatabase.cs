@@ -63,9 +63,17 @@ public sealed class SqliteIntegrationTestDatabase : IAsyncDisposable
     public UserCanonicalCheckpointRepository UserCanonicalCheckpoints { get; }
     public UserSyncFaultRepository UserSyncFaults { get; }
 
-    public static async Task<SqliteIntegrationTestDatabase> CreateAsync()
+    internal string ConnectionString => _connection.ConnectionString;
+
+    public static Task<SqliteIntegrationTestDatabase> CreateAsync() =>
+        CreateAsync("Data Source=:memory:");
+
+    internal static Task<SqliteIntegrationTestDatabase> CreateSharedAsync() =>
+        CreateAsync($"Data Source=Recovery-{Guid.NewGuid():N};Mode=Memory;Cache=Shared;Pooling=False");
+
+    private static async Task<SqliteIntegrationTestDatabase> CreateAsync(string connectionString)
     {
-        var connection = new SqliteConnection("Data Source=:memory:");
+        var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite(connection)

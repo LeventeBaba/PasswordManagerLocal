@@ -40,7 +40,7 @@ public sealed class AppUnitOfWork : IUnitOfWork
 
     public async Task<int> SaveChangesAsync(CancellationToken ct = default)
     {
-        var pendingChanges = BackendChangeSet.Capture(_db.ChangeTracker);
+        var pendingChanges = EfBackendChangeCapture.Capture(_db.ChangeTracker);
         var affectedRows = await _db.SaveChangesAsync(ct);
         if (affectedRows == 0 || pendingChanges.IsEmpty)
             return affectedRows;

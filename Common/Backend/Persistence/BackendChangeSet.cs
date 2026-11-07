@@ -1,5 +1,3 @@
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
 using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Contracts.Notifications;
@@ -50,224 +48,172 @@ internal sealed class BackendChangeSet
         }
     }
 
-    public static BackendChangeSet Capture(ChangeTracker changeTracker)
+    public void AddEntityMutation(object entity, bool addedOrDeleted, Func<string, bool> changed)
     {
-        var result = new BackendChangeSet();
-        foreach (var entry in changeTracker.Entries())
+        switch (entity)
         {
-            if (entry.State is EntityState.Unchanged or EntityState.Detached)
-                continue;
-
-            switch (entry.Entity)
-            {
-                case User user:
-                    CaptureUser(result, entry, user);
-                    break;
-                case UserLoginIdentityState loginIdentity:
-                    CaptureLoginIdentity(result, entry, loginIdentity);
-                    break;
-                case UserDevice userDevice:
-                    CaptureUserDevice(result, entry, userDevice);
-                    break;
-                case LocalUserDevice localUserDevice:
-                    CaptureLocalUserDevice(result, entry, localUserDevice);
-                    break;
-                case Device device:
-                    CaptureDevice(result, entry, device);
-                    break;
-                case Group group:
-                    CaptureGroup(result, entry, group);
-                    break;
-                case LocalDeviceIdentity identity:
-                    CaptureLocalDeviceIdentity(result, entry, identity);
-                    break;
-                case DeviceEnrollmentCommit commit:
-                    CaptureEnrollmentCommit(result, entry, commit);
-                    break;
-                case UserMembershipAuthorization authorization:
-                    CaptureMembershipAuthorization(result, entry, authorization);
-                    break;
-                case DeletedUserBarrier barrier:
-                    result.Add(barrier.UserId, FrontendChangeScope.Everything);
-                    break;
-                default:
-                    CaptureGroupMembership(result, entry);
-                    break;
-            }
+            case User user:
+                CaptureUser(addedOrDeleted, changed, user);
+                break;
+            case UserLoginIdentityState loginIdentity:
+                CaptureLoginIdentity(addedOrDeleted, changed, loginIdentity);
+                break;
+            case UserDevice userDevice:
+                CaptureUserDevice(addedOrDeleted, changed, userDevice);
+                break;
+            case LocalUserDevice localUserDevice:
+                CaptureLocalUserDevice(addedOrDeleted, changed, localUserDevice);
+                break;
+            case Device:
+                CaptureDevice(addedOrDeleted, changed);
+                break;
+            case Group group:
+                CaptureGroup(addedOrDeleted, changed, group);
+                break;
+            case LocalDeviceIdentity:
+                CaptureLocalDeviceIdentity(addedOrDeleted, changed);
+                break;
+            case DeviceEnrollmentCommit commit:
+                CaptureEnrollmentCommit(addedOrDeleted, changed, commit);
+                break;
+            case UserMembershipAuthorization authorization:
+                CaptureMembershipAuthorization(addedOrDeleted, changed, authorization);
+                break;
+            case DeletedUserBarrier barrier:
+                Add(barrier.UserId, FrontendChangeScope.Everything);
+                break;
         }
-
-        return result;
     }
 
-    private static void CaptureUser(BackendChangeSet changes, EntityEntry entry, User user)
+    private void CaptureUser(bool addedOrDeleted, Func<string, bool> changed, User user)
     {
-        if (entry.State is EntityState.Added or EntityState.Deleted)
+        if (addedOrDeleted)
         {
-            changes.Add(user.UId, FrontendChangeScope.UserProfile | FrontendChangeScope.Passwords | FrontendChangeScope.Devices);
+            Add(user.UId, FrontendChangeScope.UserProfile | FrontendChangeScope.Passwords | FrontendChangeScope.Devices);
             return;
         }
 
         var scope = FrontendChangeScope.None;
-        if (Changed(entry, nameof(User.EncryptedGeneralUserDataPayload)))
+        if (changed(nameof(User.EncryptedGeneralUserDataPayload)))
             scope |= FrontendChangeScope.UserProfile;
-        if (Changed(entry, nameof(User.EncryptedUserPasswordsDataPayload)))
+        if (changed(nameof(User.EncryptedUserPasswordsDataPayload)))
             scope |= FrontendChangeScope.Passwords;
-        if (Changed(entry, nameof(User.EncryptedUserDevicesDataPayload)))
+        if (changed(nameof(User.EncryptedUserDevicesDataPayload)))
             scope |= FrontendChangeScope.Devices;
-        if (Changed(entry, nameof(User.UsernameHash)) || Changed(entry, nameof(User.UsernameSalt)))
+        if (changed(nameof(User.UsernameHash)) || changed(nameof(User.UsernameSalt)))
             scope |= FrontendChangeScope.UserProfile | FrontendChangeScope.AuthenticationSessions;
-        if (Changed(entry, nameof(User.KeyEpoch)) || Changed(entry, nameof(User.MembershipEpoch)))
+        if (changed(nameof(User.KeyEpoch)) || changed(nameof(User.MembershipEpoch)))
             scope |= FrontendChangeScope.AllAuthenticatedData | FrontendChangeScope.AuthenticationSessions;
-        else if (Changed(entry, nameof(User.EncryptedPayload)))
+        else if (changed(nameof(User.EncryptedPayload)))
             scope |= FrontendChangeScope.AuthenticationSessions;
 
-        changes.Add(user.UId, scope);
+        Add(user.UId, scope);
     }
 
-    private static void CaptureLoginIdentity(BackendChangeSet changes, EntityEntry entry, UserLoginIdentityState identity)
+    private void CaptureLoginIdentity(bool addedOrDeleted, Func<string, bool> changed, UserLoginIdentityState identity)
     {
-        if (entry.State is EntityState.Added or EntityState.Deleted ||
-            Changed(entry, nameof(UserLoginIdentityState.UsernameHash)) ||
-            Changed(entry, nameof(UserLoginIdentityState.UsernameSalt)) ||
-            Changed(entry, nameof(UserLoginIdentityState.Status)))
+        if (addedOrDeleted ||
+            changed(nameof(UserLoginIdentityState.UsernameHash)) ||
+            changed(nameof(UserLoginIdentityState.UsernameSalt)) ||
+            changed(nameof(UserLoginIdentityState.Status)))
         {
-            changes.Add(
+            Add(
                 identity.UserId,
                 FrontendChangeScope.UserProfile | FrontendChangeScope.AuthenticationSessions);
         }
     }
 
-    private static void CaptureUserDevice(BackendChangeSet changes, EntityEntry entry, UserDevice link)
+    private void CaptureUserDevice(bool addedOrDeleted, Func<string, bool> changed, UserDevice link)
     {
-        if (entry.State is EntityState.Added or EntityState.Deleted ||
-            Changed(entry, nameof(UserDevice.IsSyncOn)) ||
-            Changed(entry, nameof(UserDevice.IsDeleted)) ||
-            Changed(entry, nameof(UserDevice.DeletedAt)))
+        if (addedOrDeleted ||
+            changed(nameof(UserDevice.IsSyncOn)) ||
+            changed(nameof(UserDevice.IsDeleted)) ||
+            changed(nameof(UserDevice.DeletedAt)))
         {
-            changes.Add(link.UserId, FrontendChangeScope.Devices);
+            Add(link.UserId, FrontendChangeScope.Devices);
         }
     }
 
-    private static void CaptureLocalUserDevice(BackendChangeSet changes, EntityEntry entry, LocalUserDevice link)
+    private void CaptureLocalUserDevice(bool addedOrDeleted, Func<string, bool> changed, LocalUserDevice link)
     {
-        if (entry.State is EntityState.Added or EntityState.Deleted || Changed(entry, nameof(LocalUserDevice.IsSyncOn)))
+        if (addedOrDeleted || changed(nameof(LocalUserDevice.IsSyncOn)))
         {
-            changes.Add(
+            Add(
                 link.UserId,
                 FrontendChangeScope.LocalDevice | FrontendChangeScope.Devices | FrontendChangeScope.BackgroundSync);
         }
     }
 
-    private static void CaptureDevice(BackendChangeSet changes, EntityEntry entry, Device device)
+    private void CaptureDevice(bool addedOrDeleted, Func<string, bool> changed)
     {
         // Heartbeat timestamps are deliberately excluded: authenticated contact can update them
         // frequently, while presence transitions have their own edge-triggered notification.
-        if (entry.State is EntityState.Added or EntityState.Deleted ||
-            Changed(entry, nameof(Device.DeviceType)) ||
-            Changed(entry, nameof(Device.IsTrusted)) ||
-            Changed(entry, nameof(Device.IsBlocked)) ||
-            Changed(entry, nameof(Device.BlockedReason)) ||
-            Changed(entry, nameof(Device.BlockedAt)) ||
-            Changed(entry, nameof(Device.InvalidSyncAttemptCount)) ||
-            Changed(entry, nameof(Device.PublicKey)) ||
-            Changed(entry, nameof(Device.SignPublicKey)) ||
-            Changed(entry, nameof(Device.TlsCertFingerprint)))
+        if (addedOrDeleted ||
+            changed(nameof(Device.DeviceType)) ||
+            changed(nameof(Device.IsTrusted)) ||
+            changed(nameof(Device.IsBlocked)) ||
+            changed(nameof(Device.BlockedReason)) ||
+            changed(nameof(Device.BlockedAt)) ||
+            changed(nameof(Device.InvalidSyncAttemptCount)) ||
+            changed(nameof(Device.PublicKey)) ||
+            changed(nameof(Device.SignPublicKey)) ||
+            changed(nameof(Device.TlsCertFingerprint)))
         {
             // Device rows can be shared by several accounts. A global metadata-only invalidation
             // avoids doing database work in this post-save path to discover every owner.
-            changes.Add(null, FrontendChangeScope.Devices);
+            Add(null, FrontendChangeScope.Devices);
         }
     }
 
-    private static void CaptureLocalDeviceIdentity(
-        BackendChangeSet changes,
-        EntityEntry entry,
-        LocalDeviceIdentity identity)
+    private void CaptureLocalDeviceIdentity(bool addedOrDeleted, Func<string, bool> changed)
     {
-        if (entry.State is EntityState.Added or EntityState.Deleted ||
-            Changed(entry, nameof(LocalDeviceIdentity.IsSyncOn)) ||
-            Changed(entry, nameof(LocalDeviceIdentity.DeviceType)) ||
-            Changed(entry, nameof(LocalDeviceIdentity.OriginInstanceId)) ||
-            Changed(entry, nameof(LocalDeviceIdentity.AgreementPrivateKeyBlob)) ||
-            Changed(entry, nameof(LocalDeviceIdentity.SignPrivateKeyBlob)) ||
-            Changed(entry, nameof(LocalDeviceIdentity.PFXCertificate)))
+        if (addedOrDeleted ||
+            changed(nameof(LocalDeviceIdentity.IsSyncOn)) ||
+            changed(nameof(LocalDeviceIdentity.DeviceType)) ||
+            changed(nameof(LocalDeviceIdentity.OriginInstanceId)) ||
+            changed(nameof(LocalDeviceIdentity.AgreementPrivateKeyBlob)) ||
+            changed(nameof(LocalDeviceIdentity.SignPrivateKeyBlob)) ||
+            changed(nameof(LocalDeviceIdentity.PFXCertificate)))
         {
-            changes.Add(null, FrontendChangeScope.LocalDevice | FrontendChangeScope.BackgroundSync);
+            Add(null, FrontendChangeScope.LocalDevice | FrontendChangeScope.BackgroundSync);
         }
     }
 
-    private static void CaptureGroup(BackendChangeSet changes, EntityEntry entry, Group group)
+    private void CaptureGroup(bool addedOrDeleted, Func<string, bool> changed, Group group)
     {
-        if (entry.State is not (EntityState.Added or EntityState.Deleted) &&
-            !Changed(entry, nameof(Group.EncryptedPayload)))
+        if (!addedOrDeleted &&
+            !changed(nameof(Group.EncryptedPayload)))
         {
             return;
         }
 
         if (group.Users.Count == 0)
-            changes.Add(null, FrontendChangeScope.Passwords);
+            Add(null, FrontendChangeScope.Passwords);
         else
             foreach (var user in group.Users)
-                changes.Add(user.UId, FrontendChangeScope.Passwords);
+                Add(user.UId, FrontendChangeScope.Passwords);
     }
 
-    private static void CaptureEnrollmentCommit(
-        BackendChangeSet changes,
-        EntityEntry entry,
+    private void CaptureEnrollmentCommit(bool addedOrDeleted, Func<string, bool> changed,
         DeviceEnrollmentCommit commit)
     {
-        if (entry.State is EntityState.Added or EntityState.Deleted ||
-            Changed(entry, nameof(DeviceEnrollmentCommit.Status)))
+        if (addedOrDeleted ||
+            changed(nameof(DeviceEnrollmentCommit.Status)))
         {
-            changes.Add(commit.UserId, FrontendChangeScope.Enrollment | FrontendChangeScope.Devices);
+            Add(commit.UserId, FrontendChangeScope.Enrollment | FrontendChangeScope.Devices);
         }
     }
 
-    private static void CaptureMembershipAuthorization(
-        BackendChangeSet changes,
-        EntityEntry entry,
+    private void CaptureMembershipAuthorization(bool addedOrDeleted, Func<string, bool> changed,
         UserMembershipAuthorization authorization)
     {
-        if (entry.State is EntityState.Added or EntityState.Deleted ||
-            Changed(entry, nameof(UserMembershipAuthorization.IsActive)) ||
-            Changed(entry, nameof(UserMembershipAuthorization.EndedMembershipEpoch)))
+        if (addedOrDeleted ||
+            changed(nameof(UserMembershipAuthorization.IsActive)) ||
+            changed(nameof(UserMembershipAuthorization.EndedMembershipEpoch)))
         {
-            changes.Add(
+            Add(
                 authorization.UserId,
                 FrontendChangeScope.Devices | FrontendChangeScope.AuthenticationSessions);
         }
     }
-
-    private static void CaptureGroupMembership(BackendChangeSet changes, EntityEntry entry)
-    {
-        if (!string.Equals(entry.Metadata.GetTableName(), "GroupMembers", StringComparison.Ordinal))
-            return;
-
-        Guid? userId = null;
-        foreach (var property in entry.Properties)
-        {
-            if (!property.Metadata.Name.Contains("User", StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            var value = property.CurrentValue ?? property.OriginalValue;
-            if (value is Guid candidate && candidate != Guid.Empty)
-            {
-                userId = candidate;
-                break;
-            }
-        }
-
-        changes.Add(userId, FrontendChangeScope.Passwords);
-    }
-
-    private static bool Changed(EntityEntry entry, string propertyName)
-    {
-        var property = entry.Property(propertyName);
-        return property.IsModified && !ValuesEqual(property.OriginalValue, property.CurrentValue);
-    }
-
-    private static bool ValuesEqual(object? original, object? current) =>
-        original is byte[] originalBytes && current is byte[] currentBytes
-            ? originalBytes.AsSpan().SequenceEqual(currentBytes)
-            : Equals(original, current);
 }

@@ -4,6 +4,7 @@ using NSecKey = NSec.Cryptography.Key;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
+using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Sync;
@@ -181,7 +182,7 @@ internal sealed class CoordinatorHarness : IDisposable
             lifecycle,
             database.DeletedUserBarriers,
             new FakeInteractiveSessionStateService(),
-            databaseHealth ?? new DatabaseHealthService(database.Db));
+            databaseHealth ?? new DatabaseHealthService(new SqliteConnectionFactory(database.ConnectionString)));
 
         return new CoordinatorHarness(
             material.UserId,

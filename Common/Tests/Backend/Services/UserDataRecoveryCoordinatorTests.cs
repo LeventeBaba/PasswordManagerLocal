@@ -27,7 +27,7 @@ public sealed class UserDataRecoveryCoordinatorTests
     [TestCategory("Recovery")]
     public async Task TryRecoverAsync_CorruptCanonicalAndHealthyCandidate_CommitsCompleteRecoveryAtomically()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
         using var harness = await CoordinatorHarness.CreateAsync(database, includeHealthyCandidate: true);
 
         var result = await harness.Coordinator.TryRecoverAsync(
@@ -81,7 +81,7 @@ public sealed class UserDataRecoveryCoordinatorTests
     [TestCategory("Recovery")]
     public async Task TryRecoverAsync_NoHealthySource_RemainsBlockedWithoutFabricatingData()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
         using var harness = await CoordinatorHarness.CreateAsync(database, includeHealthyCandidate: false);
         var damagedCiphertext = (await database.Users.GetByIdAsync(harness.UserId))!.EncryptedPayload.ToArray();
 
@@ -116,7 +116,7 @@ public sealed class UserDataRecoveryCoordinatorTests
     [TestCategory("Recovery")]
     public async Task TryRecoverAsync_UnconfirmedWrongPassword_DoesNotAttributeCanonicalCorruption()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
         using var harness = await CoordinatorHarness.CreateAsync(database, includeHealthyCandidate: true);
         using var wrongKey = EncryptionKey.Create();
 
@@ -141,7 +141,7 @@ public sealed class UserDataRecoveryCoordinatorTests
     [TestCategory("Recovery")]
     public async Task TryRecoverAsync_DatabaseStructuralFailure_BlocksRowLevelRecovery()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
         using var harness = await CoordinatorHarness.CreateAsync(
             database,
             includeHealthyCandidate: true,
@@ -163,7 +163,7 @@ public sealed class UserDataRecoveryCoordinatorTests
     [TestCategory("Recovery")]
     public async Task TryRecoverAsync_DeletionBarrierAlwaysWins()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
         using var harness = await CoordinatorHarness.CreateAsync(database, includeHealthyCandidate: true);
         await database.DeletedUserBarriers.AddAsync(new DeletedUserBarrier
         {
@@ -198,7 +198,7 @@ public sealed class UserDataRecoveryCoordinatorTests
     [TestCategory("Recovery")]
     public async Task TryRecoverAsync_BackoffBlocksMaintenanceButNewEvidenceBypassesIt()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
         using var harness = await CoordinatorHarness.CreateAsync(database, includeHealthyCandidate: true);
         await database.UserSyncFaults.AddAsync(new UserSyncFault
         {
@@ -240,7 +240,7 @@ public sealed class UserDataRecoveryCoordinatorTests
     [TestCategory("Recovery")]
     public async Task TryRecoverAsync_InvalidSignatureCandidate_IsolatedAndIgnored()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
         using var harness = await CoordinatorHarness.CreateAsync(database, includeHealthyCandidate: true);
         var candidate = (await database.UserSyncSnapshots.ListForUserAsync(harness.UserId)).Single();
         var envelope = JsonSerializer.Deserialize(
@@ -277,7 +277,7 @@ public sealed class UserDataRecoveryCoordinatorTests
     [TestCategory("Transaction")]
     public async Task TryRecoverAsync_QueueFailure_RollsBackCanonicalCheckpointAndSnapshot_ThenRetriesIdempotently()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
         using var harness = await CoordinatorHarness.CreateAsync(
             database,
             includeHealthyCandidate: true,
@@ -342,7 +342,7 @@ public sealed class UserDataRecoveryCoordinatorTests
     [TestCategory("Transaction")]
     public async Task TryRecoverAsync_ActivationFailureAfterCommit_RemainsRecoveredAndDurable()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
         using var harness = await CoordinatorHarness.CreateAsync(
             database,
             includeHealthyCandidate: true,
@@ -374,7 +374,7 @@ public sealed class UserDataRecoveryCoordinatorTests
     [TestCategory("Recovery")]
     public async Task TryRecoverAsync_SameRevisionFork_RemainsTerminal()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
         using var harness = await CoordinatorHarness.CreateAsync(database, includeHealthyCandidate: true);
         await database.UserSyncFaults.AddAsync(new UserSyncFault
         {

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -621,14 +622,14 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             await db.Database.ExecuteSqlRawAsync("DROP TABLE UserRecoveryJournals;");
-            await AppDatabaseInitializer.InitializeAsync(db);
+            await AppDatabaseInitializer.InitializeAsync((SqliteConnection)db.Database.GetDbConnection());
             db.UserRecoveryJournals.Add(new UserRecoveryJournal
             {
                 Id = Guid.NewGuid(), UserId = before.UId, State = UserRecoveryJournalState.UnresolvedEvidence,
                 CreatedAtUtc = DateTimeOffset.UtcNow, ProtectedKey = [1], EncryptedPayload = [2], PayloadHash = new byte[32]
             });
             await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
-            await AppDatabaseInitializer.InitializeAsync(db);
+            await AppDatabaseInitializer.InitializeAsync((SqliteConnection)db.Database.GetDbConnection());
             Assert.AreEqual(1, await db.UserRecoveryJournals.CountAsync());
         }
         CollectionAssert.AreEqual(before.IntegrityHash, (await ReadUserAsync(source, token)).IntegrityHash);

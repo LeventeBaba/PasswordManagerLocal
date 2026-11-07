@@ -1,0 +1,310 @@
+using System.Data;
+using Microsoft.Data.Sqlite;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
+using PasswordManagerLocal.Common.Backend.Models;
+
+namespace PasswordManagerLocal.Common.Backend.Persistence;
+
+/// <summary>A sequential use-case scope for direct SQLite repositories.</summary>
+internal sealed class SqliteSession : IUnitOfWork, IDisposable
+{
+    private const string FlushSavepoint = "pml_flush";
+    private readonly SqliteConnection _connection;
+    private readonly IBackendChangePublisher? _publisher;
+    private readonly List<SqliteMutation> _pending = [];
+    private SessionTransaction? _active;
+    private bool _disposed;
+
+    public SqliteSession(SqliteConnectionFactory connections, IBackendChangePublisher? publisher = null)
+    {
+        _connection = connections.CreateConnection();
+        _publisher = publisher;
+    }
+
+    // Repository reads and audited immediate operations use the scope's transaction.
+    public async Task<SqliteCommand> CreateCommandAsync(string sql, CancellationToken ct = default)
+    {
+        await EnsureOpenAsync(ct);
+        var command = _connection.CreateCommand();
+        command.Transaction = _active?.Native;
+        command.CommandText = sql;
+        return command;
+    }
+
+    public void Stage<TRow>(
+        SqliteMutation.Operation operation,
+        string sql,
+        Guid? userId,
+        BackendChangeSet? changes,
+        params (string Name, object? Value)[] parameters)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var rowType = typeof(TRow);
+        if (operation != SqliteMutation.Operation.Delete && userId is null &&
+            (rowType == typeof(User) || rowType == typeof(UserLoginIdentityState) || rowType == typeof(DeletedUserBarrier)))
+        {
+            throw new ArgumentNullException(nameof(userId), "This row write requires its account identity.");
+        }
+
+        _pending.Add(new SqliteMutation(rowType, operation, userId, changes, sql, parameters));
+    }
+
+    public async Task<IUnitOfWorkTransaction> BeginTransactionAsync(CancellationToken ct = default) =>
+        await BeginTransactionAsync(discardPendingOnRollback: true, ct);
+
+    public async Task<int> SaveChangesAsync(CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ct.ThrowIfCancellationRequested();
+        var count = _pending.Count;
+        if (count == 0)
+            return 0;
+
+        var changes = new BackendChangeSet();
+        try
+        {
+            if (_active is { } active)
+            {
+                await FlushWithSavepointAsync(active.Native, changes, ct);
+                active.Changes.Merge(changes);
+                ClearPending();
+            }
+            else
+            {
+                using (var transaction = await BeginTransactionAsync(discardPendingOnRollback: false, ct))
+                {
+                    await FlushAsync(transaction.Native, changes, ct);
+                    await transaction.CommitAsync(ct);
+                    ClearPending();
+                }
+                changes.Publish(_publisher);
+            }
+        }
+        catch (SqliteException exception) when (IsBusy(exception))
+        {
+            throw new StorageWriteException(StorageWriteException.FailureKind.Busy, innerException: exception);
+        }
+
+        return count;
+    }
+
+    public void ClearTrackedChanges()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ClearPending();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        try
+        {
+            _active?.Dispose();
+        }
+        finally
+        {
+            ClearPending();
+            _connection.Dispose();
+        }
+    }
+
+    private async Task<SessionTransaction> BeginTransactionAsync(bool discardPendingOnRollback, CancellationToken ct)
+    {
+        if (_active is not null)
+            throw new InvalidOperationException("A unit-of-work transaction is already active.");
+
+        IDisposable? lease = null;
+        try
+        {
+            await EnsureOpenAsync(ct);
+            lease = AppDatabaseTransactionRegistry.Enter(AppDatabaseTransactionRegistry.GetDatabaseKey(_connection));
+            var transaction = _connection.BeginTransaction(deferred: false);
+            _active = new SessionTransaction(this, transaction, lease, discardPendingOnRollback);
+            lease = null;
+            return _active;
+        }
+        catch (SqliteException exception) when (IsBusy(exception))
+        {
+            throw new StorageWriteException(StorageWriteException.FailureKind.Busy, innerException: exception);
+        }
+        finally
+        {
+            lease?.Dispose();
+        }
+    }
+
+    private async Task FlushWithSavepointAsync(SqliteTransaction transaction, BackendChangeSet changes, CancellationToken ct)
+    {
+        transaction.Save(FlushSavepoint);
+        try
+        {
+            await FlushAsync(transaction, changes, ct);
+            ct.ThrowIfCancellationRequested();
+            transaction.Release(FlushSavepoint);
+        }
+        catch (Exception failure)
+        {
+            try
+            {
+                transaction.Rollback(FlushSavepoint);
+                transaction.Release(FlushSavepoint);
+            }
+            catch (Exception rollbackFailure)
+            {
+                // SQLite may already have rolled back the entire transaction on a fatal error.
+                // Retire this scope rather than risk committing work with an unknown rollback state.
+                try { Dispose(); }
+                catch (Exception disposeFailure)
+                {
+                    throw new AggregateException(failure, rollbackFailure, disposeFailure);
+                }
+                throw new AggregateException(failure, rollbackFailure);
+            }
+            throw;
+        }
+    }
+
+    private async Task FlushAsync(SqliteTransaction transaction, BackendChangeSet changes, CancellationToken ct)
+    {
+        await ValidateAccountWritesAsync(transaction, ct);
+        foreach (var mutation in _pending)
+        {
+            await mutation.ExecuteAsync(_connection, transaction, ct);
+            if (mutation.Changes is { } mutationChanges)
+                changes.Merge(mutationChanges);
+        }
+    }
+
+    private async Task ValidateAccountWritesAsync(SqliteTransaction transaction, CancellationToken ct)
+    {
+        HashSet<Guid> userIds = [];
+        HashSet<Guid> stagedBarriers = [];
+        foreach (var mutation in _pending)
+        {
+            if (mutation.Kind == SqliteMutation.Operation.Delete ||
+                mutation.UserId is not Guid userId || userId == Guid.Empty)
+                continue;
+
+            if (mutation.RowType == typeof(User) || mutation.RowType == typeof(UserLoginIdentityState))
+                userIds.Add(userId);
+            else if (mutation.RowType == typeof(DeletedUserBarrier))
+                stagedBarriers.Add(userId);
+        }
+        if (userIds.Count == 0)
+            return;
+
+        using var command = _connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """SELECT EXISTS (SELECT 1 FROM "DeletedUserBarriers" WHERE "UserId" = $userId);""";
+        var parameter = command.Parameters.Add("$userId", SqliteType.Text);
+        foreach (var userId in userIds)
+        {
+            ct.ThrowIfCancellationRequested();
+            parameter.Value = userId;
+            if (stagedBarriers.Contains(userId) || (long)(await command.ExecuteScalarAsync(ct))! != 0)
+            {
+                throw new InvalidOperationException(
+                    "A permanent account-deletion barrier prevents recreating or updating this user identity.");
+            }
+        }
+    }
+
+    private async Task EnsureOpenAsync(CancellationToken ct)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ct.ThrowIfCancellationRequested();
+        if (_connection.State != ConnectionState.Open)
+            await _connection.OpenAsync(ct);
+        ct.ThrowIfCancellationRequested();
+    }
+
+    private void ClearPending()
+    {
+        foreach (var mutation in _pending)
+            mutation.Dispose();
+        _pending.Clear();
+    }
+
+    private static bool IsBusy(SqliteException exception) => exception.SqliteErrorCode is 5 or 6;
+
+    private sealed class SessionTransaction(
+        SqliteSession owner,
+        SqliteTransaction transaction,
+        IDisposable registryLease,
+        bool discardPendingOnRollback) : IUnitOfWorkTransaction, IDisposable
+    {
+        private bool _completed;
+
+        public SqliteTransaction Native => transaction;
+        public BackendChangeSet Changes { get; } = new();
+
+        public async Task CommitAsync(CancellationToken ct = default)
+        {
+            if (_completed)
+                throw new InvalidOperationException("The unit-of-work transaction has already completed.");
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                await transaction.CommitAsync(ct);
+            }
+            catch (SqliteException exception) when (IsBusy(exception))
+            {
+                // A busy COMMIT can be retried or rolled back by the caller.
+                throw new StorageWriteException(StorageWriteException.FailureKind.Busy, innerException: exception);
+            }
+
+            Complete(committed: true);
+        }
+
+        public async Task RollbackAsync(CancellationToken ct = default)
+        {
+            if (_completed)
+                return;
+
+            ct.ThrowIfCancellationRequested();
+            await transaction.RollbackAsync(ct);
+            Complete(committed: false);
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Dispose();
+            return ValueTask.CompletedTask;
+        }
+
+        public void Dispose()
+        {
+            if (!_completed)
+                Complete(committed: false);
+        }
+
+        private void Complete(bool committed)
+        {
+            _completed = true;
+            try
+            {
+                // Disposing a live provider transaction rolls back any uncommitted work.
+                transaction.Dispose();
+            }
+            catch
+            {
+                // A failed rollback leaves the connection unsuitable for more use.
+                owner.Dispose();
+                throw;
+            }
+            finally
+            {
+                owner._active = null;
+                registryLease.Dispose();
+                if (committed)
+                    Changes.Publish(owner._publisher);
+                else if (discardPendingOnRollback)
+                    owner.ClearPending();
+            }
+        }
+    }
+}
