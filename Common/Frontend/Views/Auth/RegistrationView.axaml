@@ -70,9 +70,27 @@
             </Button>
           </StackPanel>
 
-          <Border Classes="card helpTip" Padding="12">
-            <TextBlock Text="{Binding CredentialNotice}" TextWrapping="Wrap" />
-          </Border>
+          <Button Classes="ghost" MinHeight="44" Padding="8,6"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                  AutomationProperties.Name="{Binding CredentialNoticeTitle}">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" IsHitTestVisible="False">
+              <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
+              <TextBlock Grid.Column="1" Text="{Binding CredentialNoticeTitle}"
+                         VerticalAlignment="Center" TextWrapping="Wrap" />
+              <PathIcon Grid.Column="2" Classes="smallUiIcon" Data="{StaticResource ChevronDownIconGeometry}"
+                        VerticalAlignment="Center" />
+            </Grid>
+            <Button.Flyout>
+              <Flyout>
+                <ScrollViewer MaxWidth="320" MaxHeight="260" Focusable="True"
+                              HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                              AutomationProperties.Name="{Binding CredentialNoticeTitle}"
+                              AutomationProperties.HelpText="{Binding CredentialNotice}">
+                  <TextBlock Text="{Binding CredentialNotice}" TextWrapping="Wrap" />
+                </ScrollViewer>
+              </Flyout>
+            </Button.Flyout>
+          </Button>
 
           <StackPanel Spacing="6" IsVisible="{Binding IsBusy}">
             <ProgressBar IsIndeterminate="True" />

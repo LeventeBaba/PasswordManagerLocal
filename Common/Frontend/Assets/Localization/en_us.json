@@ -89,6 +89,7 @@
   "Shell_SignedIn": "Authentication successful.",
   "Shell_SignedInIdle": "Signed in",
   "Shell_LoggedOut": "You have been logged out.",
+  "Auth_CredentialNotice_Title": "Protect your sign-in details",
   "Auth_CredentialNotice": "Keep your username private and store both credentials securely. You need your username and master password to sign in manually. The app has no forgotten-password reset, and the developer cannot recover your credentials or vault.",
   "Login_Title": "Sign in",
   "Login_Subtitle": "Access your local password vault securely.",

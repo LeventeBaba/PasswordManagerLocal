@@ -7,6 +7,13 @@
     <PublishArtifactsRoot>$(ArtifactsRoot)publish\</PublishArtifactsRoot>
   </PropertyGroup>
 
+  <!-- Inherited by the EF design-time workspace as well as the publishing build. -->
+  <PropertyGroup Condition="'$(PmlWindowsAgentAotArtifactsPath)' != ''">
+    <ArtifactsPath>$(PmlWindowsAgentAotArtifactsPath)</ArtifactsPath>
+    <NuGetLockFilePath>$(ArtifactsPath)\obj\$(MSBuildProjectName)\packages.lock.json</NuGetLockFilePath>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <DebugSymbols>false</DebugSymbols>
     <DebugType>None</DebugType>

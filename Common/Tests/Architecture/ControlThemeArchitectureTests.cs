@@ -2000,10 +2000,15 @@ public sealed class ControlThemeArchitectureTests
 
         var viewRoot = Path.Combine(root, "Common", "Frontend", "Views");
         var flyouts = Directory.EnumerateFiles(viewRoot, "*.axaml", SearchOption.AllDirectories)
-            .SelectMany(path => XDocument.Load(path).Descendants(avalonia + "Flyout"))
+            .SelectMany(path => XDocument.Load(path, LoadOptions.SetBaseUri).Descendants(avalonia + "Flyout"))
             .ToArray();
-        Assert.AreEqual(6, flyouts.Length,
-            "The application-owned default presenter should cover all existing view Flyouts.");
+        Assert.IsTrue(flyouts.Length > 0, "The views should use the application-owned FlyoutPresenter.");
+        foreach (var flyout in flyouts)
+        {
+            Assert.IsTrue(flyout.Attribute("FlyoutPresenterTheme") is null &&
+                          flyout.Element(avalonia + "Flyout.FlyoutPresenterTheme") is null,
+                $"The view Flyout should use the application-owned default presenter in {flyout.BaseUri}.");
+        }
         var codeFlyoutSource = File.ReadAllText(Path.Combine(
             viewRoot, "Controls", "PasswordStrengthInfoButton.axaml.cs"));
         StringAssert.Contains(codeFlyoutSource, "new Flyout");

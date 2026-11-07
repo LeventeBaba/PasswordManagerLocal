@@ -6,6 +6,7 @@
     { "name": "Avalonia.Remote.Protocol", "reason": "designer/remote tooling removed by release publish optimization" },
     { "name": "Grpc.Tools", "reason": "PrivateAssets=All protocol-buffer code generation tooling" },
     { "name": "Microsoft.EntityFrameworkCore.Analyzers", "reason": "compile-time analyzer" },
+    { "name": "Microsoft.EntityFrameworkCore.Design", "reason": "private design-time tooling for generating the EF model and query interceptors in the Windows Agent Native AOT spike" },
     { "name": "ReactiveUI.SourceGenerators", "reason": "compile-time source generator" },
     { "name": "SkiaSharp.NativeAssets.macOS", "reason": "not selected by the Windows or Android release targets" }
   ]

@@ -58,7 +58,7 @@ public sealed class ThirdPartyNoticeCatalogTests
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var developmentOnly = ReadDevelopmentOnlyPackages(root);
 
-        foreach (var projectPath in Directory.EnumerateFiles(root, "*.csproj", SearchOption.AllDirectories)
+        foreach (var projectPath in EnumerateSourceFiles(root, "*.csproj")
                      .Where(IsProductionProject))
         {
             var project = XDocument.Load(projectPath);
@@ -72,7 +72,7 @@ public sealed class ThirdPartyNoticeCatalogTests
             }
         }
 
-        foreach (var lockPath in Directory.EnumerateFiles(root, "packages.lock.json", SearchOption.AllDirectories)
+        foreach (var lockPath in EnumerateSourceFiles(root, "packages.lock.json")
                      .Where(path => !IsTestPath(path)))
         {
             using var document = JsonDocument.Parse(File.ReadAllText(lockPath));
@@ -111,7 +111,7 @@ public sealed class ThirdPartyNoticeCatalogTests
                 item => (string)item.Attribute("Version")!,
                 StringComparer.OrdinalIgnoreCase);
 
-        foreach (var projectPath in Directory.EnumerateFiles(root, "*.csproj", SearchOption.AllDirectories)
+        foreach (var projectPath in EnumerateSourceFiles(root, "*.csproj")
                      .Where(IsProductionProject))
         {
             var project = XDocument.Load(projectPath);
@@ -143,6 +143,12 @@ public sealed class ThirdPartyNoticeCatalogTests
             .Select(entry => entry.GetProperty("name").GetString()!)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
+
+    private static IEnumerable<string> EnumerateSourceFiles(string root, string searchPattern) =>
+        Directory.EnumerateFiles(root, searchPattern, SearchOption.AllDirectories)
+            .Where(path => !Path.GetRelativePath(root, path)
+                .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Any(segment => segment is "artifacts" or "bin" or "obj"));
 
     private static bool IsProductionProject(string path) =>
         !IsTestPath(path) &&

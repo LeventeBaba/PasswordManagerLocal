@@ -89,6 +89,7 @@
   "Shell_SignedIn": "Sikeres hitelesítés.",
   "Shell_SignedInIdle": "Bejelentkezve",
   "Shell_LoggedOut": "Sikeres kijelentkezés.",
+  "Auth_CredentialNotice_Title": "Védd a belépési adataidat",
   "Auth_CredentialNotice": "Kezeld bizalmasan a felhasználónevedet, és tárold biztonságosan mindkét belépési adatot. A kézi bejelentkezéshez a felhasználónév és a mesterjelszó is szükséges. Az elfelejtett mesterjelszó nem állítható vissza, és a fejlesztő sem tudja helyreállítani a belépési adataidat vagy a jelszótáradat.",
   "Login_Title": "Bejelentkezés",
   "Login_Subtitle": "Biztonságosan érd el a helyi jelszó táradat.",
