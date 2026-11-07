@@ -158,11 +158,20 @@ public sealed class NetworkDeltaLifecycleService : INetworkDeltaLifecycleService
 
     public async Task TouchSourceDeviceAsync(Device sourceDevice, CancellationToken ct)
     {
-        sourceDevice.LastSync = DateTime.UtcNow;
-        sourceDevice.LastSeen = DateTime.UtcNow;
-        sourceDevice.GenerateIntegrityHash();
+        var device = _devices.GetObservationWriteTarget(sourceDevice);
+        if (device is null)
+        {
+            _syncDeviceIdentities.TryRemove(sourceDevice);
+            return;
+        }
 
-        await RefreshCachedDeviceAsync(sourceDevice, ct);
+        var now = DateTime.UtcNow;
+        device.LastSync = now;
+        device.LastSeen = now;
+        device.GenerateIntegrityHash();
+        _devices.Update(device);
+
+        await RefreshCachedDeviceAsync(device, ct);
     }
 
 

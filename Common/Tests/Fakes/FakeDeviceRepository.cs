@@ -19,6 +19,8 @@ public sealed class FakeDeviceRepository : IDeviceRepository
             _items[device.Id] = device;
     }
 
+    public Device? GetObservationWriteTarget(Device observed) => _items.GetValueOrDefault(observed.Id);
+
     public Task<IReadOnlyList<Device>> ListAllAsync(CancellationToken ct = default) =>
         Task.FromResult((IReadOnlyList<Device>)_items.Values.ToList());
 

@@ -4,6 +4,7 @@ namespace PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 
 public interface IDeviceRepository : IGenericRepository<Device>
 {
+    Device? GetObservationWriteTarget(Device observed);
     Task<IReadOnlyList<Device>> ListByIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default);
     Task<IReadOnlyList<Device>> ListTrustedUnblockedWithPendingQueueAsync(CancellationToken ct = default);
     Task<Device?> GetByIdAsNoTrackingAsync(Guid id, CancellationToken ct = default);

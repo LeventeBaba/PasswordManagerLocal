@@ -44,6 +44,8 @@ internal sealed class SqliteMutation : IDisposable
     public BackendChangeSet? Changes { get; }
     public object? Row { get; init; }
     public Action<bool>? Settle { get; init; }
+    public Func<SqliteCommand, CancellationToken, Task>? PrepareAsync { get; init; }
+    public Func<Exception>? NoRowsFailure { get; init; }
 
     public async Task ExecuteAsync(SqliteConnection connection, SqliteTransaction transaction, CancellationToken ct)
     {
@@ -56,7 +58,11 @@ internal sealed class SqliteMutation : IDisposable
         try
         {
             ct.ThrowIfCancellationRequested();
+            if (PrepareAsync is not null)
+                await PrepareAsync(command, ct);
             var affectedRows = await command.ExecuteNonQueryAsync(ct);
+            if (affectedRows == 0 && NoRowsFailure is not null)
+                throw NoRowsFailure();
             if (affectedRows == 0 && Kind is Operation.Update or Operation.Delete)
                 throw new StorageWriteException(StorageWriteException.FailureKind.StaleRow, RowType);
             if (affectedRows != 1)

@@ -107,7 +107,9 @@ public sealed class SyncQueueWriterService : ISyncQueueWriterService
 
         // A queue row can already be owned by an in-flight sender. Refresh its generation
         // so that sender cannot acknowledge newly coalesced state with an older payload.
-        await _syncQueue.EnqueueAsync(syncItem.Id, targetDeviceId, ct);
+        await _syncQueue.EnqueueAsync(
+            [new SyncQueueItem { SyncItemId = syncItem.Id, DeviceId = targetDeviceId, EnqueuedAt = SyncQueueGeneration.Next() }],
+            ct);
 
         await _uow.SaveChangesAsync(ct);
 
@@ -143,7 +145,8 @@ public sealed class SyncQueueWriterService : ISyncQueueWriterService
             .Select(id => new SyncQueueItem
             {
                 DeviceId = id,
-                SyncItemId = syncItem.Id
+                SyncItemId = syncItem.Id,
+                EnqueuedAt = SyncQueueGeneration.Next()
             })
             .ToList();
 

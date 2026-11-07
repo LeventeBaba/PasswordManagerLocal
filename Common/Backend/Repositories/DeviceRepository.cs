@@ -7,7 +7,12 @@ namespace PasswordManagerLocal.Common.Backend.Repositories;
 
 public sealed class DeviceRepository : GenericRepositoryBase<Device>, IDeviceRepository
 {
-    public DeviceRepository(AppDbContext context) : base(context.Devices) { }
+    private readonly AppDbContext _context;
+
+    public DeviceRepository(AppDbContext context) : base(context.Devices) => _context = context;
+
+    public Device? GetObservationWriteTarget(Device observed) =>
+        _context.Entry(observed).State is EntityState.Deleted or EntityState.Detached ? null : observed;
 
     public override Task<bool> ExistsAsync(Guid id, CancellationToken ct = default) =>
         Set.AsNoTracking().AnyAsync(d => d.Id == id, ct);

@@ -2,13 +2,12 @@ using Microsoft.EntityFrameworkCore;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
+using PasswordManagerLocal.Common.Backend.Sync;
 
 namespace PasswordManagerLocal.Common.Backend.Repositories;
 
 public sealed class SyncQueueRepository : ISyncQueueRepository
 {
-    private static readonly object EnqueuedAtGenerationGate = new();
-    private static DateTimeOffset _lastEnqueuedAtGeneration = DateTimeOffset.UtcNow;
     private readonly AppDbContext _context;
     private readonly DbSet<SyncQueueItem> _queue;
 
@@ -84,25 +83,13 @@ public sealed class SyncQueueRepository : ISyncQueueRepository
     }
 
 
-    public async Task EnqueueAsync(Guid syncItemId, Guid deviceId, CancellationToken ct = default)
-    {
-        var existing = await _queue.FirstOrDefaultAsync(x => x.SyncItemId == syncItemId && x.DeviceId == deviceId, ct);
-        if (existing is not null)
-        {
-            existing.ProcessedAt = null;
-            _context.Entry(existing).Property(item => item.ProcessedAt).IsModified = true;
-            existing.EnqueuedAt = NextEnqueuedAt(existing.EnqueuedAt);
-            return;
-        }
-
-        var newItem = new SyncQueueItem
+    public Task EnqueueAsync(Guid syncItemId, Guid deviceId, CancellationToken ct = default) =>
+        EnqueueAsync([new SyncQueueItem
         {
             SyncItemId = syncItemId,
-            DeviceId = deviceId
-        };
-
-        await _queue.AddAsync(newItem, ct);
-    }
+            DeviceId = deviceId,
+            EnqueuedAt = SyncQueueGeneration.Next()
+        }], ct);
 
 
     public async Task<bool> TryEnqueueAsync(Guid syncItemId, Guid deviceId, CancellationToken ct = default)
@@ -121,7 +108,7 @@ public sealed class SyncQueueRepository : ISyncQueueRepository
 
     public async Task EnqueueAsync(IEnumerable<SyncQueueItem> items, CancellationToken ct = default)
     {
-        var itemList = items.ToList();
+        var itemList = items.DistinctBy(item => (item.SyncItemId, item.DeviceId)).ToList();
         if (itemList.Count == 0)
             return;
 
@@ -132,20 +119,29 @@ public sealed class SyncQueueRepository : ISyncQueueRepository
             .Where(x => syncItemIds.Contains(x.SyncItemId) && deviceIds.Contains(x.DeviceId))
             .ToListAsync(ct);
 
-        var existingKeys = existingItems
-            .Select(x => (x.SyncItemId, x.DeviceId))
-            .ToHashSet();
-
-        foreach (var existingItem in existingItems)
+        var existingByPair = existingItems.ToDictionary(item => (item.SyncItemId, item.DeviceId));
+        foreach (var local in _queue.Local)
         {
-            existingItem.ProcessedAt = null;
-            _context.Entry(existingItem).Property(item => item.ProcessedAt).IsModified = true;
-            existingItem.EnqueuedAt = NextEnqueuedAt(existingItem.EnqueuedAt);
+            if (_context.Entry(local).State == EntityState.Added)
+                existingByPair.TryAdd((local.SyncItemId, local.DeviceId), local);
         }
 
-        var newItems = itemList
-            .Where(x => !existingKeys.Contains((x.SyncItemId, x.DeviceId)))
-            .ToList();
+        var newItems = new List<SyncQueueItem>();
+        foreach (var requested in itemList)
+        {
+            if (existingByPair.TryGetValue((requested.SyncItemId, requested.DeviceId), out var existing))
+            {
+                existing.ProcessedAt = null;
+                var entry = _context.Entry(existing);
+                if (entry.State != EntityState.Added)
+                    entry.Property(item => item.ProcessedAt).IsModified = true;
+                existing.EnqueuedAt = SyncQueueGeneration.Next(existing.EnqueuedAt, requested.EnqueuedAt);
+            }
+            else
+            {
+                newItems.Add(requested);
+            }
+        }
 
         if (newItems.Count != 0)
             await _queue.AddRangeAsync(newItems, ct);
@@ -155,33 +151,17 @@ public sealed class SyncQueueRepository : ISyncQueueRepository
     public async Task<bool> TryAcknowledgeAsync(
         Guid queueItemId,
         DateTimeOffset expectedEnqueuedAt,
+        DateTimeOffset processedAt,
         CancellationToken ct = default)
     {
-        DateTimeOffset? processedAt = DateTimeOffset.UtcNow;
         return await _queue
             .Where(item =>
                 item.Id == queueItemId &&
                 item.ProcessedAt == null &&
                 item.EnqueuedAt == expectedEnqueuedAt)
             .ExecuteUpdateAsync(
-                setters => setters.SetProperty(item => item.ProcessedAt, processedAt),
+                setters => setters.SetProperty(item => item.ProcessedAt, (DateTimeOffset?)processedAt),
                 ct) == 1;
-    }
-
-
-    private static DateTimeOffset NextEnqueuedAt(DateTimeOffset current)
-    {
-        lock (EnqueuedAtGenerationGate)
-        {
-            var next = DateTimeOffset.UtcNow;
-            if (next <= current)
-                next = current.AddTicks(1);
-            if (next <= _lastEnqueuedAtGeneration)
-                next = _lastEnqueuedAtGeneration.AddTicks(1);
-
-            _lastEnqueuedAtGeneration = next;
-            return next;
-        }
     }
 
 

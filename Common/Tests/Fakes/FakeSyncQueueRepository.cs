@@ -123,6 +123,7 @@ public sealed class FakeSyncQueueRepository : ISyncQueueRepository
     public Task<bool> TryAcknowledgeAsync(
         Guid queueItemId,
         DateTimeOffset expectedEnqueuedAt,
+        DateTimeOffset processedAt,
         CancellationToken ct = default)
     {
         lock (_gate)
@@ -134,7 +135,7 @@ public sealed class FakeSyncQueueRepository : ISyncQueueRepository
             if (index < 0)
                 return Task.FromResult(false);
 
-            _items[index].ProcessedAt = DateTimeOffset.UtcNow;
+            _items[index].ProcessedAt = processedAt;
             return Task.FromResult(true);
         }
     }

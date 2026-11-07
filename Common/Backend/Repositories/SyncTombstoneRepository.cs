@@ -3,6 +3,7 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using static PasswordManagerLocal.Common.Backend.Constants.TombstoneConstants;
 using PasswordManagerLocal.Common.Backend.Persistence;
+using PasswordManagerLocal.Common.Backend.Sync.Tombstones;
 
 namespace PasswordManagerLocal.Common.Backend.Repositories;
 
@@ -61,16 +62,9 @@ public sealed class SyncTombstoneRepository : ISyncTombstoneRepository
 
     private async Task ThrowIfTombstoneCapacityExceededAsync(CancellationToken ct)
     {
-        if (MaxSyncTombstones < 1)
-            throw new InvalidOperationException("Synchronization tombstone storage is disabled; deletion knowledge cannot be safely recorded.");
-
         var persistedCount = await _set.CountAsync(ct);
         var pendingAdds = _set.Local.Count(tombstone => _context.Entry(tombstone).State == EntityState.Added);
-        if (persistedCount + pendingAdds >= MaxSyncTombstones)
-        {
-            throw new InvalidOperationException(
-                "The synchronization tombstone safety limit was reached. Tombstones were preserved to prevent data resurrection; manual maintenance or causal garbage collection is required.");
-        }
+        SyncTombstonePolicy.EnsureCapacity(MaxSyncTombstones, persistedCount, pendingAdds);
     }
 
 }

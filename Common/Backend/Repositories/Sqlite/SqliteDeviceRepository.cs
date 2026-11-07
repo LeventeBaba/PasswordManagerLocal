@@ -20,6 +20,8 @@ internal sealed class SqliteDeviceRepository(SqliteSession session) : IDeviceRep
         FROM "Devices" d LEFT JOIN "UserDevices" ud ON ud."DeviceId" = d."Id"
         """;
 
+    private readonly Dictionary<Guid, Device> _stagedDevices = [];
+
     private readonly SqliteRowWriter<Device> _rows = new(session, "Devices", 1,
     [
         (nameof(Device.Id), row => row.Id),
@@ -65,7 +67,23 @@ internal sealed class SqliteDeviceRepository(SqliteSession session) : IDeviceRep
 
     public void Update(Device entity) => StageWrite(entity, SqliteMutation.Operation.Update);
 
-    public void Delete(Device entity) => _rows.Stage(entity, SqliteMutation.Operation.Delete);
+    public void Delete(Device entity)
+    {
+        _rows.Stage(entity, SqliteMutation.Operation.Delete);
+        _stagedDevices[entity.Id] = entity;
+    }
+
+    public Device? GetObservationWriteTarget(Device observed)
+    {
+        // The authenticated source and an incoming delta's target can be the same row.
+        // Apply the observation to the row already staged by the delta in this scope.
+        if (_stagedDevices.TryGetValue(observed.Id, out var staged) &&
+            session.GetPendingOperation(staged) is { } operation)
+        {
+            return operation == SqliteMutation.Operation.Delete ? null : staged;
+        }
+        return observed;
+    }
 
     public async Task<IReadOnlyList<Device>> ListByIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default) =>
         await session.ReadByIdsAsync(ids, Select + """ WHERE d."Id" IN ({ids});""", Read, ct);
@@ -134,6 +152,7 @@ internal sealed class SqliteDeviceRepository(SqliteSession session) : IDeviceRep
         device.LastInvalidSyncAttemptAt = UtcDateTimeUtil.ToUtc(device.LastInvalidSyncAttemptAt);
         device.GenerateIntegrityHash();
         _rows.Stage(device, operation);
+        _stagedDevices[device.Id] = device;
     }
 
     private Device Read(SqliteDataReader row) => _rows.Remember(ReadRow(row, 0));
