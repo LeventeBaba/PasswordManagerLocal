@@ -45,6 +45,9 @@
                 <TextBlock Grid.Column="1" Text="{Binding LoginHelpLabel}" TextWrapping="Wrap" />
               </Grid>
             </controls:ContextHelpButton>
+            <Border Classes="card helpTip" Padding="12">
+              <TextBlock Text="{Binding CredentialNotice}" TextWrapping="Wrap" />
+            </Border>
             <StackPanel Spacing="6">
               <TextBlock Text="{Binding UsernameLabel}" />
               <TextBox Text="{Binding Username}"

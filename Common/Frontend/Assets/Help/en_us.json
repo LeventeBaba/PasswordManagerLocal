@@ -89,7 +89,7 @@
           "kind": "Step",
           "platform": "All",
           "title": "Enter your profile details",
-          "body": "From Sign in, choose Create a new account. Enter a username, email address, first name, and last name. Follow the validation messages beside each field."
+          "body": "From Sign in, choose Create a new account. Enter a username, email address, first name, and last name. Keep your username private. Save your username and master password securely before creating the profile."
         },
         {
           "id": "master",
@@ -110,7 +110,7 @@
           "kind": "Warning",
           "platform": "All",
           "title": "A matching username does not connect devices",
-          "body": "Creating another account is not a way to retrieve an existing vault. Bring the existing profile from a device where it is already available. There is no email-based password-reset flow in this app."
+          "body": "Creating another account cannot retrieve an existing vault. Use device enrollment to bring an existing profile to another device. Manual sign-in requires your username and master password. There is no forgotten-password reset."
         }
       ],
       "relatedTopicIds": [
@@ -159,7 +159,7 @@
           "kind": "Warning",
           "platform": "All",
           "title": "Do not reset or delete data to fix a failed sign-in",
-          "body": "A failed sign-in does not prove that the vault should be deleted. A database reset deletes local profiles and data. There is no forgotten-password reset option; keep access to any device that still has the profile."
+          "body": "There is no forgotten-master-password reset. The developer cannot look up your username or unlock your vault. If you can still open the profile on a device, check Account overview for the username and preserve that access. Resetting the database deletes local profiles and data."
         }
       ],
       "relatedTopicIds": [
@@ -394,14 +394,14 @@
           "kind": "Explanation",
           "platform": "Android",
           "title": "Android: scan with the camera",
-          "body": "Choose Scan QR code and grant camera permission if requested. Point the camera at the QR code on the new device. You can also choose Upload QR image or enter the code manually."
+          "body": "Choose Scan QR code and grant camera permission if requested. Point the camera at the QR code on the new device. You can also select a QR image from a file or enter the code manually."
         },
         {
           "id": "windows",
           "kind": "Explanation",
           "platform": "Windows",
           "title": "Windows: choose an image or type the code",
-          "body": "Use Upload QR image to select a readable QR picture, or enter the connection code and choose Add device. Camera scanning is not offered by the current Windows app. Approve the app’s Windows Firewall setup if prompted."
+          "body": "Use Choose QR image to select a readable QR picture, or enter the connection code and choose Add device. Camera scanning is not offered by the current Windows app. Approve the app’s Windows Firewall setup if prompted."
         },
         {
           "id": "confirm",
@@ -642,7 +642,7 @@
           "kind": "Warning",
           "platform": "All",
           "title": "There is no forgotten-password reset flow",
-          "body": "The app has no email reset or central service that can send your master password. Remember me is not a replacement for knowing it. Keep a safe way to remember the password outside this vault."
+          "body": "You need both your username and master password for manual sign-in. Keep your username private and store both credentials securely outside this vault. There is no forgotten-password reset. The developer cannot retrieve your credentials or restore your vault. Remember me can preserve access on a device, but it cannot show you the master password."
         },
         {
           "id": "change",
@@ -878,8 +878,8 @@
           "id": "password",
           "kind": "Tip",
           "platform": "All",
-          "title": "Keep a separate way to remember the master password",
-          "body": "Keep a securely stored offline record, for example in a locked place only you can access. Do not keep the only copy inside the vault it unlocks, or in an unprotected note, photo, email, or chat."
+          "title": "Keep a secure record of both credentials",
+          "body": "Keep the username private and store both credentials securely somewhere you can access without opening this vault, such as an offline record kept in a locked place. Avoid unprotected notes, photos, email, or chat."
         },
         {
           "id": "second",
@@ -893,7 +893,7 @@
           "kind": "Warning",
           "platform": "All",
           "title": "Synchronization is not an independent backup",
-          "body": "Edits, deletions, and account deletion can spread to other devices. This app has no complete backup-and-restore workflow in its UI. Copying selected items to another profile is not a complete account backup, and a copied database file alone may be unusable without device-protected keys."
+          "body": "Edits and deletions can sync to other devices. Copying a database file does not transfer the original OS-protected database key. Windows protects it under the Windows account that created it. Android uses the original installation’s Keystore. Use in-app device enrollment to bring your profile to another device while you still have access."
         },
         {
           "id": "preserve",

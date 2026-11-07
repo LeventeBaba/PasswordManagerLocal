@@ -61,6 +61,7 @@
               <TextBlock Text="{Binding ProductDescription}"
                          Classes="subtleText"
                          TextWrapping="Wrap" />
+              <TextBlock Text="{Binding DevelopmentNotice}" TextWrapping="Wrap" />
             </StackPanel>
           </Grid>
         </Border>
@@ -90,8 +91,17 @@
 
         <Border Classes="card">
           <StackPanel Spacing="8">
+            <TextBlock Text="{Binding SecurityTitle}" Classes="sectionTitle" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding SecurityDescription}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding DatabaseProtectionDescription}" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+          <StackPanel Spacing="8">
             <TextBlock Text="{Binding FeedbackTitle}" Classes="sectionTitle" TextWrapping="Wrap" />
             <TextBlock Text="{Binding FeedbackDescription}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding FeedbackSafetyNote}" TextWrapping="Wrap" />
             <SelectableTextBlock Text="{Binding FeedbackEmail}" TextWrapping="Wrap" />
             <controls:ExternalLinkButton Classes="secondary" MinHeight="44"
                                          AllowMailto="True"

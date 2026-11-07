@@ -1581,9 +1581,11 @@ public sealed class ControlThemeArchitectureTests
         var comboBoxes = Directory.EnumerateFiles(viewRoot, "*.axaml", SearchOption.AllDirectories)
             .SelectMany(path => XDocument.Load(path).Descendants(avalonia + "ComboBox"))
             .ToArray();
-        Assert.AreEqual(4, comboBoxes.Length,
-            "The app uses two settings selectors and two password-color selectors; keep their existing bindings in this increment.");
-        foreach (var comboBox in comboBoxes)
+        Assert.AreEqual(5, comboBoxes.Length,
+            "The app uses two settings selectors, two password-color selectors and the privacy section picker.");
+        var sectionPicker = comboBoxes.Single(comboBox => (string?)comboBox.Attribute(xaml + "Name") == "SectionPicker");
+        Assert.AreEqual("{Binding Sections}", (string?)sectionPicker.Attribute("ItemsSource"));
+        foreach (var comboBox in comboBoxes.Where(comboBox => comboBox != sectionPicker))
         {
             Assert.IsNotNull(comboBox.Attribute("ItemsSource"));
             Assert.IsNotNull(comboBox.Attribute("SelectedItem"));

@@ -70,6 +70,10 @@
             </Button>
           </StackPanel>
 
+          <Border Classes="card helpTip" Padding="12">
+            <TextBlock Text="{Binding CredentialNotice}" TextWrapping="Wrap" />
+          </Border>
+
           <StackPanel Spacing="6" IsVisible="{Binding IsBusy}">
             <ProgressBar IsIndeterminate="True" />
             <TextBlock Text="{Binding BusyText}" Classes="subtleText" TextWrapping="Wrap" />

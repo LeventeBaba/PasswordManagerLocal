@@ -9,7 +9,6 @@ namespace PasswordManagerLocal.Common.Frontend.ViewModels.Information;
 public sealed class AboutViewModel : ViewModelBase
 {
     private const string CreatorName = "Levente Baba";
-    private const string FeedbackEmailAddress = "levente.baba.dev@gmail.com";
 
     private readonly string? _applicationVersion;
     private readonly DateTime? _buildTimestampUtc = ApplicationVersionInfo.GetBuildTimestampUtc();
@@ -39,8 +38,8 @@ public sealed class AboutViewModel : ViewModelBase
     public Uri SourceCodeUri { get; } = new("https://github.com/LeventeBaba/PasswordManagerLocal");
     public Uri ProjectLicenseUri { get; } = new("https://github.com/LeventeBaba/PasswordManagerLocal/blob/master/LICENSE.txt");
     public Uri CreatorProfileUri { get; } = new("https://github.com/LeventeBaba");
-    public Uri FeedbackEmailUri { get; } = new($"mailto:{FeedbackEmailAddress}");
-    public string FeedbackEmail => FeedbackEmailAddress;
+    public Uri FeedbackEmailUri { get; } = new($"mailto:{ApplicationBranding.DeveloperEmail}");
+    public string FeedbackEmail => ApplicationBranding.DeveloperEmail;
 
     public string Title => GetTranslation("About_Title");
     public string Subtitle => GetTranslation("About_Subtitle");
@@ -59,6 +58,10 @@ public sealed class AboutViewModel : ViewModelBase
             GetTranslation("About_BuildTime_Format"),
             timestamp)
         : GetTranslation("About_BuildTime_Unavailable");
+    public string DevelopmentNotice => GetTranslation("About_DevelopmentNotice");
+    public string SecurityTitle => GetTranslation("About_Security_Title");
+    public string SecurityDescription => GetTranslation("About_Security_Description");
+    public string DatabaseProtectionDescription => GetTranslation("About_Security_DatabaseProtection");
     public string ProjectTitle => GetTranslation("About_Project_Title");
     public string CreatorText => string.Format(
         CultureInfo.CurrentCulture, GetTranslation("About_Creator_Format"), CreatorName);
@@ -68,6 +71,7 @@ public sealed class AboutViewModel : ViewModelBase
     public string CreatorProfileLabel => GetTranslation("About_Project_CreatorProfile");
     public string FeedbackTitle => GetTranslation("About_Feedback_Title");
     public string FeedbackDescription => GetTranslation("About_Feedback_Description");
+    public string FeedbackSafetyNote => GetTranslation("About_Feedback_SafetyNote");
     public string OpenEmailLabel => GetTranslation("About_Feedback_OpenEmail");
     public string LicensesTitle => GetTranslation("About_Licenses_Title");
     public string LicensesDescription => GetTranslation("About_Licenses_Description");
@@ -82,6 +86,10 @@ public sealed class AboutViewModel : ViewModelBase
             nameof(ProductDescription),
             nameof(VersionText),
             nameof(BuildTimeText),
+            nameof(DevelopmentNotice),
+            nameof(SecurityTitle),
+            nameof(SecurityDescription),
+            nameof(DatabaseProtectionDescription),
             nameof(ProjectTitle),
             nameof(CreatorText),
             nameof(ProjectDescription),
@@ -90,6 +98,7 @@ public sealed class AboutViewModel : ViewModelBase
             nameof(CreatorProfileLabel),
             nameof(FeedbackTitle),
             nameof(FeedbackDescription),
+            nameof(FeedbackSafetyNote),
             nameof(OpenEmailLabel),
             nameof(LicensesTitle),
             nameof(LicensesDescription)

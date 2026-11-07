@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
@@ -386,6 +387,81 @@ public sealed class DeviceEnrollmentEndToEndTests
         using var targetScope = target.Services.CreateScope();
         Assert.IsNotNull(await sourceScope.ServiceProvider.GetRequiredService<IUserControlOperationRepository>().GetByIdAsync(rejectedId));
         Assert.IsNull(await targetScope.ServiceProvider.GetRequiredService<IUserControlOperationRepository>().GetByIdAsync(rejectedId));
+    }
+
+    [TestMethod]
+    [Timeout(TestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    [TestCategory("EndToEnd")]
+    public async Task EnrollmentRejectsWrongInstallationAndProofFromPreviousSession_BeforeImport()
+    {
+        await using var source = await ProductionEnrollmentTestHost.CreateAsync();
+        await using var target = await ProductionEnrollmentTestHost.CreateAsync();
+        Connect(source, target);
+
+        var username = "enrollproof" + Guid.NewGuid().ToString("N")[..16];
+        var token = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest(username));
+        await source.Endpoints.SetLocalUserSyncOnAsync(token, true);
+        var userId = (await GetOnlyUserAsync(source)).UId;
+
+        var firstCode = await RunStepAsync("start original enrollment", ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
+        ByteString? originalProof = null;
+        string? originalSession = null;
+        source.Transport.MutateNextEnrollmentStart = chunk =>
+        {
+            originalProof = chunk.CodeProof;
+            originalSession = chunk.SessionId;
+            chunk.TargetOriginInstanceId = Guid.NewGuid().ToString("N");
+        };
+
+        var wrongInstallation = await Assert.ThrowsExactlyAsync<DeviceEnrollmentPartiallyCommittedException>(() =>
+            RunStepAsync("send transfer for another installation", ct => source.Endpoints.AddDeviceByCodeAsync(token, firstCode.Code, ct)));
+        Assert.AreEqual(DeviceEnrollmentErrorCode.NewDeviceRejected, wrongInstallation.ErrorCode);
+        Assert.AreEqual(DeviceEnrollmentCommitStatus.TransferFailed, (await GetOnlyEnrollmentCommitAsync(source)).Status);
+        Assert.IsTrue(originalProof is { Length: > 0 });
+        Assert.IsFalse(string.IsNullOrEmpty(originalSession));
+        await AssertNoImportedProfileAsync(target, userId, source.Identity.LocalDeviceId);
+
+        var secondCode = await RunStepAsync("start replacement enrollment", ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
+        string? replacementSession = null;
+        source.Transport.MutateNextEnrollmentStart = chunk =>
+        {
+            replacementSession = chunk.SessionId;
+            // Keep the current session ID, ciphertext and TLS identity. Replay only the old proof.
+            chunk.CodeProof = originalProof!;
+        };
+
+        var oldProof = await Assert.ThrowsExactlyAsync<DeviceEnrollmentPartiallyCommittedException>(() =>
+            RunStepAsync("replay the previous session proof", ct => source.Endpoints.AddDeviceByCodeAsync(token, secondCode.Code, ct)));
+        Assert.AreEqual(DeviceEnrollmentErrorCode.CodeProofInvalid, oldProof.ErrorCode);
+        Assert.AreEqual(wrongInstallation.EnrollmentCommitId, oldProof.EnrollmentCommitId);
+        Assert.IsFalse(string.IsNullOrEmpty(replacementSession));
+        Assert.AreNotEqual(originalSession, replacementSession);
+        await AssertNoImportedProfileAsync(target, userId, source.Identity.LocalDeviceId);
+
+        var retryCode = await RunStepAsync("start unmodified enrollment", ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
+        await RunStepAsync("send an unmodified transfer", ct => source.Endpoints.AddDeviceByCodeAsync(token, retryCode.Code, ct));
+        var targetToken = await RunStepAsync("sign in after genuine enrollment",
+            ct => target.Endpoints.LoginAsync(target.CreateLoginRequest(username), ct));
+        Assert.AreNotEqual(Guid.Empty, targetToken);
+        CollectionAssert.AreEqual(new[] { userId }, (await GetUserIdsAsync(target)).ToArray());
+        var commit = await GetOnlyEnrollmentCommitAsync(source);
+        Assert.AreEqual(wrongInstallation.EnrollmentCommitId, commit.CommitId);
+        Assert.AreEqual(DeviceEnrollmentCommitStatus.Transferred, commit.Status);
+    }
+
+    private static async Task AssertNoImportedProfileAsync(
+        ProductionEnrollmentTestHost target, Guid userId, Guid sourceDeviceId)
+    {
+        Assert.AreEqual(0, (await GetUserIdsAsync(target)).Count);
+        Assert.AreEqual(DeviceEnrollmentState.Waiting, (await target.Endpoints.GetDeviceEnrollmentStatusAsync()).State);
+        using var scope = target.Services.CreateScope();
+        var services = scope.ServiceProvider;
+        Assert.IsNull(await services.GetRequiredService<IDeviceRepository>().GetByIdAsNoTrackingAsync(sourceDeviceId));
+        Assert.IsNull(await services.GetRequiredService<IUserCanonicalCheckpointRepository>().GetAsync(userId));
+        Assert.AreEqual(0, (await services.GetRequiredService<IUserControlOperationRepository>().ListForUserAsync(userId)).Count);
+        Assert.AreEqual(0, (await services.GetRequiredService<IUserMembershipAuthorizationRepository>().ListForUserAsync(userId)).Count);
     }
 
     private async Task<T> RunStepAsync<T>(

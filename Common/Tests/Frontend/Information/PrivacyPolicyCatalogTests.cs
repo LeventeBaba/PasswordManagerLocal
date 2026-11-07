@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using PasswordManagerLocal.Common.Contracts.Constants;
 using PasswordManagerLocal.Common.Contracts.Preferences;
 using PasswordManagerLocal.Common.Frontend.Information;
 
@@ -8,15 +9,17 @@ namespace PasswordManagerLocal.Common.Tests.Frontend.Information;
 public sealed class PrivacyPolicyCatalogTests
 {
     [TestMethod]
-    public void BothBundledLanguagesCoverTheAuditedDataFlowsAndDiscloseDraftStatus()
+    public void BothBundledLanguagesContainTheEffectivePolicy()
     {
         var catalog = PrivacyPolicyCatalog.Load();
         foreach (var language in new[] { AppLanguage.English, AppLanguage.Hungarian })
         {
             var document = catalog.ForLanguage(language);
-            Assert.IsTrue(document.IsDraft, "Do not silently present an unreviewed policy as final.");
-            Assert.IsNull(document.EffectiveOn, "The draft review date is not a legal effective date.");
-            Assert.IsFalse(string.IsNullOrWhiteSpace(document.StatusText));
+            Assert.IsFalse(document.IsDraft);
+            Assert.IsNotNull(document.EffectiveOn);
+            StringAssert.Contains(document.StatusText, ApplicationBranding.DeveloperEmail);
+            StringAssert.Contains(document.Sections.Single(section => section.IsRightsSection).Body,
+                ApplicationBranding.DeveloperEmail);
             foreach (var id in new[]
                      {
                          "scope-contact", "profile-data", "vault-data", "device-data", "local-security",

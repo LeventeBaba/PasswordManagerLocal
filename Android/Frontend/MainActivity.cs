@@ -97,14 +97,10 @@ public class MainActivity : AvaloniaMainActivity
 
     private void ReportFrontendFailure(string phase, Exception exception)
     {
-        // Never include exception messages here: storage/backend exceptions may
-        // include private user data. The type and stack identify the failing code.
-        Log.Error("PasswordManagerLocal",
-            $"Android frontend {phase} failed: {exception.GetType().FullName}\n{exception.StackTrace}");
+        // Keep exception messages out of diagnostics because they may include private data.
+        WriteDebugDiagnostic($"Android frontend {phase} failed: {exception.GetType().FullName}\n{exception.StackTrace}");
 
-        // The main view has no DataContext if preferences fail to load. Previously
-        // this looked like an inert/blank launch because TraceError is not a visible
-        // Android failure report. Expose a generic explanation without secret data.
+        // Preferences can fail before the view has a DataContext. Show a generic error.
         RunOnUiThread(() =>
         {
             if (_destroyed || _initializationFailureShown)
@@ -114,11 +110,11 @@ public class MainActivity : AvaloniaMainActivity
             // the Builder instance itself remains valid regardless of a returned null.
             using var builder = new AlertDialog.Builder(this);
             builder.SetTitle("Application startup problem");
-            builder.SetMessage($"{ApplicationBranding.DisplayName} could not initialize. Check Android Logcat for the PasswordManagerLocal tag.");
+            builder.SetMessage($"{ApplicationBranding.DisplayName} could not initialize.");
             builder.SetPositiveButton("OK", (_, _) => { });
             if (builder.Create() is not { } dialog)
             {
-                Log.Error("PasswordManagerLocal", "The Android startup error dialog could not be created.");
+                WriteDebugDiagnostic("The Android startup error dialog could not be created.");
                 return;
             }
 
@@ -126,6 +122,10 @@ public class MainActivity : AvaloniaMainActivity
             dialog.Show();
         });
     }
+
+    [Conditional("DEBUG")]
+    private static void WriteDebugDiagnostic(string message) =>
+        Log.Error("PasswordManagerLocal", message);
 
     protected override void OnPause()
     {
@@ -250,7 +250,7 @@ public class MainActivity : AvaloniaMainActivity
 
         if (builder.Create() is not { } confirmation)
         {
-            Log.Error("PasswordManagerLocal", "The Android exit confirmation dialog could not be created.");
+            WriteDebugDiagnostic("The Android exit confirmation dialog could not be created.");
             return;
         }
 

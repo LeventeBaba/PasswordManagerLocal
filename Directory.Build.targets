@@ -1,4 +1,12 @@
 <Project>
+  <!-- Keep application trace calls out of Release without affecting Debug diagnostics. -->
+  <Target Name="DisableReleaseTraceLogging" BeforeTargets="CoreCompile"
+          Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <DefineConstants>$([System.Text.RegularExpressions.Regex]::Replace('$(DefineConstants)', '(^|[;,\s])TRACE(?=$|[;,\s])', '$1'))</DefineConstants>
+    </PropertyGroup>
+  </Target>
+
   <!-- Only the product packager can publish Windows stages. Optional signing is
        applied to the merged product; independently signed stages break deduplication. -->
   <Target Name="RequireWindowsProductPublisher"

@@ -48,6 +48,7 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
 
     public bool ThrowAfterNextSuccessfulEnrollmentCompletion { get; set; }
     public bool TamperNextEnrollmentSnapshot { get; set; }
+    public Action<CompleteDeviceEnrollmentChunk>? MutateNextEnrollmentStart { get; set; }
     public bool FailNextDeltaSend { get; set; }
     public string? ClientCertificateFingerprintOverride { get; set; }
     public string? PresentedServerCertificateFingerprintOverride { get; set; }
@@ -174,6 +175,11 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
 
         var localIdentity = GetLocalIdentity();
         var stream = chunks;
+        if (MutateNextEnrollmentStart is { } mutate)
+        {
+            MutateNextEnrollmentStart = null;
+            stream = MutateEnrollmentStartAsync(stream, mutate, ct);
+        }
         if (TamperNextEnrollmentSnapshot)
         {
             TamperNextEnrollmentSnapshot = false;
@@ -509,6 +515,28 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
             ct.ThrowIfCancellationRequested();
             yield return DeltaMapping.ToProto(delta);
             await Task.Yield();
+        }
+    }
+
+    private static async IAsyncEnumerable<CompleteDeviceEnrollmentChunk> MutateEnrollmentStartAsync(
+        IAsyncEnumerable<CompleteDeviceEnrollmentChunk> chunks,
+        Action<CompleteDeviceEnrollmentChunk> mutate,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var first = true;
+        await foreach (var chunk in chunks.WithCancellation(ct))
+        {
+            if (first)
+            {
+                first = false;
+                var replacement = chunk.Clone();
+                mutate(replacement);
+                yield return replacement;
+            }
+            else
+            {
+                yield return chunk;
+            }
         }
     }
 

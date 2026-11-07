@@ -32,6 +32,10 @@ public sealed class PrivacyPolicyViewModel : ViewModelBase
             CultureInfo.GetCultureInfo(CurrentLanguage == AppLanguage.Hungarian ? "hu-HU" : "en-US")));
     public IReadOnlyList<PrivacyPolicySection> Sections => Document.Sections;
     public Uri ComplaintAuthorityUri { get; } = new("https://www.naih.hu/");
+    public Uri PrivacyContactUri { get; } = new($"mailto:{ApplicationBranding.DeveloperEmail}");
+    public string PrivacyContactLabel => GetTranslation("Privacy_EmailContact");
+    public string SectionPickerLabel => GetTranslation("Privacy_SectionPicker");
+    public string GoToSectionLabel => GetTranslation("Privacy_GoToSection");
     public string ComplaintAuthorityLabel => GetTranslation("Privacy_AuthorityLink");
     public string ExternalLinkHelpText => GetTranslation("Privacy_ExternalLinkHelp");
     public string BackLabel => GetTranslation("Common_Back");
@@ -43,6 +47,7 @@ public sealed class PrivacyPolicyViewModel : ViewModelBase
     protected override void OnLanguageChanged() => RaisePropertiesChanged([
         nameof(Title), nameof(Summary), nameof(StatusText), nameof(VersionText), nameof(DateText),
         nameof(Sections), nameof(BackLabel), nameof(ReturnToAppLabel),
-        nameof(ComplaintAuthorityLabel), nameof(ExternalLinkHelpText)
+        nameof(ComplaintAuthorityLabel), nameof(ExternalLinkHelpText), nameof(PrivacyContactLabel),
+        nameof(SectionPickerLabel), nameof(GoToSectionLabel)
     ]);
 }

@@ -88,7 +88,7 @@
           "kind": "Step",
           "platform": "All",
           "title": "Add meg a profil adatait",
-          "body": "A Bejelentkezés oldalon válaszd az Új fiók létrehozása lehetőséget. Add meg a felhasználónevet, az e-mail-címet, a keresztnevet és a vezetéknevet. Kövesd a mezők melletti ellenőrzési üzeneteket."
+          "body": "A Bejelentkezés képernyőn válaszd az Új fiók létrehozása lehetőséget. Adj meg felhasználónevet, e-mail-címet, keresztnevet és vezetéknevet. Kezeld bizalmasan a felhasználónevedet. A profil létrehozása előtt tárold biztonságosan a felhasználónevedet és a mesterjelszavadat."
         },
         {
           "id": "master",
@@ -109,7 +109,7 @@
           "kind": "Warning",
           "platform": "All",
           "title": "Azonos felhasználónévvel nem kapcsolódnak össze az eszközök",
-          "body": "Új fiók létrehozásával nem kapod vissza a meglévő jelszótárat. A meglévő profilt olyan eszközről vedd át, ahol már elérhető. Az alkalmazásban nincs e-mailes jelszó-visszaállítás."
+          "body": "Új fiók létrehozásával nem állítható helyre a meglévő jelszótár. A meglévő profil másik eszközre történő átviteléhez használd az eszközcsatlakoztatást. A kézi bejelentkezéshez szükség van a felhasználónévre és a mesterjelszóra. Az elfelejtett mesterjelszó nem állítható vissza."
         }
       ],
       "relatedTopicIds": [
@@ -158,7 +158,7 @@
           "kind": "Warning",
           "platform": "All",
           "title": "Sikertelen belépés miatt ne töröld vagy állítsd alaphelyzetbe az adatokat",
-          "body": "A sikertelen bejelentkezés nem indokolja a jelszótár törlését. Az adatbázis alaphelyzetbe állítása törli a helyi profilokat és adatokat. Nincs elfelejtett jelszó visszaállítására szolgáló lehetőség; őrizd meg a hozzáférést minden eszközhöz, amelyen még megvan a profil."
+          "body": "Az elfelejtett mesterjelszó nem állítható vissza. A fejlesztő nem tudja megkeresni a felhasználónevedet vagy feloldani a jelszótáradat. Ha valamelyik eszközödön még meg tudod nyitni a profilt, a fiók áttekintésében megnézheted a felhasználónevet. Őrizd meg a még működő hozzáférést. Az adatbázis alaphelyzetbe állítása törli a helyi profilokat és adatokat."
         }
       ],
       "relatedTopicIds": [
@@ -640,7 +640,7 @@
           "kind": "Warning",
           "platform": "All",
           "title": "Nincs elfelejtett jelszó visszaállítására szolgáló folyamat",
-          "body": "Az alkalmazásnak nincs e-mailes visszaállítása vagy központi szolgáltatása, amely elküldhetné a mesterjelszót. Az Emlékezz rám beállítás nem helyettesíti a jelszó ismeretét. Gondoskodj a jelszó biztonságos megőrzéséről ezen a jelszótáron kívül is."
+          "body": "A kézi bejelentkezéshez a felhasználónevedre és a mesterjelszavadra is szükség van. Kezeld bizalmasan a felhasználónevedet, és tárold biztonságosan mindkét adatot a jelszótáron kívül. Az elfelejtett mesterjelszó nem állítható vissza. A fejlesztő nem tudja helyreállítani a belépési adataidat vagy a jelszótáradat. Az Emlékezz rám lehetőség megőrizheti a hozzáférést az adott eszközön, de a mesterjelszót nem jeleníti meg."
         },
         {
           "id": "change",
@@ -877,8 +877,8 @@
           "id": "password",
           "kind": "Tip",
           "platform": "All",
-          "title": "A mesterjelszóról legyen külön, biztonságos feljegyzésed",
-          "body": "Őrizz offline feljegyzést például olyan zárt helyen, amelyhez csak te férsz hozzá. Az egyetlen példány ne abban a jelszótárban legyen, amelyet felold, és ne védtelen jegyzetben, fényképen, e-mailben vagy csevegésben."
+          "title": "Mindkét belépési adatot tárold biztonságosan",
+          "body": "Kezeld bizalmasan a felhasználónevedet, és tárold biztonságosan mindkét belépési adatot olyan helyen, amelyhez a jelszótár megnyitása nélkül is hozzáférsz. Ilyen lehet például egy elzárva tartott, offline feljegyzés. Kerüld a védelem nélküli jegyzeteket, fényképeket, e-maileket és üzeneteket."
         },
         {
           "id": "second",
@@ -892,7 +892,7 @@
           "kind": "Warning",
           "platform": "All",
           "title": "A szinkronizálás nem független biztonsági mentés",
-          "body": "A módosítások, törlések és a fiók törlése más eszközökre is eljuthatnak. Az alkalmazás felületén nincs teljes mentési és visszaállítási folyamat. Kijelölt elemek másik profilba másolása nem teljes fiókmentés, és egy adatbázisfájl önmagában használhatatlan lehet az eszköz által védett kulcsok nélkül."
+          "body": "A módosítások és törlések más eszközökre is átszinkronizálódhatnak. Az adatbázisfájl másolásával az operációs rendszer által védett eredeti adatbáziskulcs nem kerül át. Windowson a kulcsot a létrehozásakor használt Windows-fiók védi. Androidon az eredeti telepítéshez tartozó Android Keystore védi. Amíg még hozzáférsz a profilhoz, az alkalmazáson belüli eszközcsatlakoztatással viheted át másik eszközre."
         },
         {
           "id": "preserve",

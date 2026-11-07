@@ -9,22 +9,41 @@
     x:DataType="vm:PrivacyPolicyViewModel">
   <Grid Margin="16,4,16,16" RowDefinitions="Auto,*" RowSpacing="14">
     <Border Classes="card" Padding="12">
-      <WrapPanel Orientation="Horizontal">
-        <Button x:Name="BackButton" Classes="ghost iconButton" Margin="0,0,8,0"
-                Command="{Binding NavigateBackCommand}" ToolTip.Tip="{Binding BackLabel}"
-                AutomationProperties.Name="{Binding BackLabel}">
-          <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
-        </Button>
-        <Button Classes="secondary" MinHeight="44" Command="{Binding ReturnToAppCommand}"
-                Content="{Binding ReturnToAppLabel}" />
-      </WrapPanel>
+      <StackPanel Spacing="8">
+        <WrapPanel Orientation="Horizontal">
+          <Button x:Name="BackButton" Classes="ghost iconButton" Margin="0,0,8,0"
+                  Command="{Binding NavigateBackCommand}" ToolTip.Tip="{Binding BackLabel}"
+                  AutomationProperties.Name="{Binding BackLabel}">
+            <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
+          </Button>
+          <Button Classes="secondary" MinHeight="44" Command="{Binding ReturnToAppCommand}"
+                  Content="{Binding ReturnToAppLabel}" />
+        </WrapPanel>
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <ComboBox x:Name="SectionPicker" MinWidth="0" MinHeight="44" MaxDropDownHeight="320"
+                    HorizontalAlignment="Stretch"
+                    ItemsSource="{Binding Sections}" PlaceholderText="{Binding SectionPickerLabel}"
+                    AutomationProperties.Name="{Binding SectionPickerLabel}">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="info:PrivacyPolicySection">
+                <TextBlock Text="{Binding Heading}" TextWrapping="Wrap" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <Button Grid.Column="1" Classes="secondary" MinHeight="44" Click="GoToSection"
+                  AutomationProperties.Name="{Binding GoToSectionLabel}">
+            <TextBlock Text="{Binding GoToSectionLabel}" TextWrapping="Wrap" />
+          </Button>
+        </Grid>
+      </StackPanel>
     </Border>
     <ScrollViewer x:Name="PageScrollViewer" Grid.Row="1"
                   HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
       <StackPanel Spacing="14" MaxWidth="900" HorizontalAlignment="Stretch">
         <Border Classes="card">
           <StackPanel Spacing="8">
-            <TextBlock Text="{Binding Title}" Classes="pageTitle" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Title}" Classes="pageTitle" TextWrapping="Wrap"
+                       AutomationProperties.HeadingLevel="1" />
             <TextBlock Text="{Binding VersionText}" Classes="subtleText" TextWrapping="Wrap" />
             <TextBlock Text="{Binding DateText}" Classes="subtleText" TextWrapping="Wrap" />
             <SelectableTextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
@@ -33,24 +52,35 @@
         <Border Classes="card helpTip">
           <SelectableTextBlock Text="{Binding StatusText}" TextWrapping="Wrap" />
         </Border>
-        <ItemsControl ItemsSource="{Binding Sections}">
+        <ItemsControl x:Name="PolicySections" ItemsSource="{Binding Sections}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="info:PrivacyPolicySection">
               <Border Classes="card" Margin="0,0,0,12">
                 <StackPanel Spacing="8">
-                  <TextBlock Text="{Binding Heading}" Classes="sectionTitle" TextWrapping="Wrap" />
+                  <TextBlock Tag="{Binding Id}" Text="{Binding Heading}" Classes="sectionTitle" TextWrapping="Wrap"
+                             Focusable="True" IsTabStop="False" AutomationProperties.HeadingLevel="2" />
                   <SelectableTextBlock Text="{Binding Body}" TextWrapping="Wrap" />
+                  <StackPanel Spacing="8" IsVisible="{Binding ShowsDeveloperContact}">
+                    <controls:ExternalLinkButton Classes="secondary" MinHeight="44" AllowMailto="True"
+                                                 ExternalUri="{Binding $parent[ItemsControl].((vm:PrivacyPolicyViewModel)DataContext).PrivacyContactUri}"
+                                                 AutomationProperties.Name="{Binding $parent[ItemsControl].((vm:PrivacyPolicyViewModel)DataContext).PrivacyContactLabel}">
+                      <TextBlock Text="{Binding $parent[ItemsControl].((vm:PrivacyPolicyViewModel)DataContext).PrivacyContactLabel}"
+                                 Classes="descriptionLink" TextWrapping="Wrap" />
+                    </controls:ExternalLinkButton>
+                    <controls:ExternalLinkButton Classes="secondary" MinHeight="44"
+                                                 IsVisible="{Binding IsRightsSection}"
+                                                 ExternalUri="{Binding $parent[ItemsControl].((vm:PrivacyPolicyViewModel)DataContext).ComplaintAuthorityUri}"
+                                                 AutomationProperties.Name="{Binding $parent[ItemsControl].((vm:PrivacyPolicyViewModel)DataContext).ComplaintAuthorityLabel}"
+                                                 AutomationProperties.HelpText="{Binding $parent[ItemsControl].((vm:PrivacyPolicyViewModel)DataContext).ExternalLinkHelpText}">
+                      <TextBlock Text="{Binding $parent[ItemsControl].((vm:PrivacyPolicyViewModel)DataContext).ComplaintAuthorityLabel}"
+                                 Classes="descriptionLink" TextWrapping="Wrap" />
+                    </controls:ExternalLinkButton>
+                  </StackPanel>
                 </StackPanel>
               </Border>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
-        <controls:ExternalLinkButton Classes="secondary" MinHeight="44"
-                                     ExternalUri="{Binding ComplaintAuthorityUri}"
-                                     AutomationProperties.Name="{Binding ComplaintAuthorityLabel}"
-                                     AutomationProperties.HelpText="{Binding ExternalLinkHelpText}">
-          <TextBlock Text="{Binding ComplaintAuthorityLabel}" Classes="descriptionLink" TextWrapping="Wrap" />
-        </controls:ExternalLinkButton>
       </StackPanel>
     </ScrollViewer>
   </Grid>

@@ -1,18 +1,23 @@
+using Google.Protobuf;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Services.Hosted;
 using PasswordManagerLocal.Common.Backend.Sync.Presence;
 using PasswordManagerLocal.Common.Backend.Sync;
+using PasswordManagerLocal.Common.Backend.Sync.Tcp;
 using PasswordManagerLocal.Common.Backend.Utils;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 
@@ -810,6 +815,288 @@ public sealed class RegularSyncEndToEndTests
         Assert.IsTrue(await HasPasswordAsync(pair.Target, pair.TargetToken, "Local edit between receives"),
             "Merging through a reused transport service must start from the current committed local generation.");
     }
+
+    [TestMethod]
+    [Timeout(TestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task SyncHello_BindsClaimedIdentityToConnectedCertificate()
+    {
+        await using var pair = await CreateEnrolledPairAsync();
+        await PauseAutomaticDeliveryAsync(pair);
+        pair.Target.Presence.InvalidateAll("Start the test without prior authenticated presence.");
+
+        var penaltyCountBefore = pair.Target.PeerPenaltyAttempts.Count;
+        var genuine = CreateHelloRequest(pair.Source.Identity);
+        var unaffiliatedFingerprint = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
+        var unaffiliated = await pair.Target.ProtocolHandler.HelloAsync(genuine,
+            new PeerConnectionContext { ClientCertificateFingerprint = unaffiliatedFingerprint }, CancellationToken.None);
+        Assert.IsFalse(unaffiliated.Ok);
+        Assert.AreEqual(penaltyCountBefore, pair.Target.PeerPenaltyAttempts.Count);
+        Assert.IsFalse(pair.Target.IsOnline(pair.Source));
+
+        var wrongSigningKey = genuine.Clone();
+        wrongSigningKey.SignPub = ByteString.CopyFrom(pair.Target.Identity.SignPublicKey);
+        var wrongDeviceId = genuine.Clone();
+        wrongDeviceId.DeviceId = pair.Target.Identity.DeviceIdHex;
+        foreach (var request in new[] { wrongSigningKey, wrongDeviceId })
+        {
+            var rejected = await pair.Target.ProtocolHandler.HelloAsync(request,
+                new PeerConnectionContext { ClientCertificateFingerprint = pair.Source.Identity.FingerprintHex },
+                CancellationToken.None);
+            Assert.IsFalse(rejected.Ok);
+        }
+
+        CollectionAssert.AreEqual(
+            new[] { pair.Source.Identity.LocalDeviceId, pair.Source.Identity.LocalDeviceId },
+            pair.Target.PeerPenaltyAttempts.Skip(penaltyCountBefore).Select(attempt => attempt.PeerId).ToArray());
+        Assert.IsFalse(pair.Target.IsOnline(pair.Source));
+
+        await AcceptHelloAsync(pair.Source, pair.Target);
+        Assert.IsTrue(pair.Target.IsOnline(pair.Source));
+    }
+
+    [TestMethod]
+    [Timeout(TestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task IncomingSnapshot_WrongRecipientAndInvalidAuthenticationLeaveNoStoredSnapshot()
+    {
+        await using var pair = await CreateEnrolledPairAsync();
+        await PauseAutomaticDeliveryAsync(pair);
+        const string name = "Authenticated incoming snapshot";
+        var secret = Encoding.UTF8.GetBytes("test-only-vault-secret");
+        await AddPasswordAsync(pair.Source, pair.SourceToken, name, secret);
+        var genuine = await BuildLatestUserDeltaAsync(pair.Source, pair.Target);
+        var before = await pair.Target.GetOnlyCanonicalCheckpointAsync();
+        Assert.IsNotNull(before);
+
+        var wrongRecipient = DeltaMapping.FromProto(DeltaMapping.ToProto(genuine));
+        wrongRecipient.RecipientDeviceId = pair.Source.Identity.LocalDeviceId.ToString("N");
+        NetDeltaSigner.FillSignature(wrongRecipient, pair.Source.Identity);
+        var wrongRecipientFailure = await Assert.ThrowsExactlyAsync<SyncProtocolException>(() =>
+            DeliverDeltaAsync(pair, wrongRecipient));
+        Assert.AreEqual(SyncProtocolStatusCode.PermissionDenied, wrongRecipientFailure.StatusCode);
+
+        var tamperedSignature = DeltaMapping.FromProto(DeltaMapping.ToProto(genuine));
+        tamperedSignature.Sig[0] ^= 1;
+        var signatureFailure = await Assert.ThrowsExactlyAsync<SyncProtocolException>(() =>
+            DeliverDeltaAsync(pair, tamperedSignature));
+        Assert.AreEqual(SyncProtocolStatusCode.InvalidArgument, signatureFailure.StatusCode);
+
+        var tamperedTag = DeltaMapping.FromProto(DeltaMapping.ToProto(genuine));
+        tamperedTag.Tag[0] ^= 1;
+        // A valid outer signature cannot replace authenticated encryption of the payload.
+        NetDeltaSigner.FillSignature(tamperedTag, pair.Source.Identity);
+        var tagFailure = await Assert.ThrowsExactlyAsync<SyncProtocolException>(() =>
+            DeliverDeltaAsync(pair, tamperedTag));
+        Assert.AreEqual(SyncProtocolStatusCode.InvalidArgument, tagFailure.StatusCode);
+
+        var forgedOrigin = BuildSnapshotWithInvalidOriginSignature(pair, genuine);
+        var originFailure = await Assert.ThrowsExactlyAsync<SyncProtocolException>(() =>
+            DeliverDeltaAsync(pair, forgedOrigin));
+        Assert.AreEqual(SyncProtocolStatusCode.InvalidArgument, originFailure.StatusCode);
+        StringAssert.Contains(originFailure.Message, "origin signature");
+
+        Assert.IsFalse(await HasPasswordAsync(pair.Target, pair.TargetToken, name));
+        var after = await pair.Target.GetOnlyCanonicalCheckpointAsync();
+        Assert.IsNotNull(after);
+        CollectionAssert.AreEqual(before.CanonicalContentHash, after.CanonicalContentHash);
+        using (var scope = pair.Target.Services.CreateScope())
+        {
+            var inbox = scope.ServiceProvider.GetRequiredService<IUserSyncSnapshotRepository>();
+            Assert.IsNull(await inbox.GetExactAsync(genuine.SnapshotUserId, genuine.SnapshotOriginDeviceId,
+                genuine.SnapshotOriginInstanceId, before.KeyEpoch, genuine.SnapshotOriginRevision));
+        }
+
+        var accepted = await DeliverDeltaAsync(pair, genuine);
+        var receipt = accepted.UserSnapshotReceipts.Single();
+        Assert.AreEqual(UserSnapshotReceiptStateProto.UserSnapshotReceiptMergedImmediately, receipt.State);
+        Assert.AreEqual(genuine.SnapshotOriginRevision, receipt.OriginRevision);
+        CollectionAssert.AreEqual(genuine.SnapshotHash, receipt.SnapshotHash.ToByteArray());
+        await AssertPasswordSecretAsync(pair.Target, pair.TargetToken, name, secret);
+    }
+
+    [TestMethod]
+    [Timeout(TestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task IncomingSnapshot_ReplayingAnOlderSignedRevisionCannotResurrectDeletedPassword()
+    {
+        await using var pair = await CreateEnrolledPairAsync();
+        await PauseAutomaticDeliveryAsync(pair);
+        const string name = "Password deleted before replay";
+        await AddPasswordAsync(pair.Source, pair.SourceToken, name, Encoding.UTF8.GetBytes("test-only-deleted-secret"));
+        var oldDelta = await BuildLatestUserDeltaAsync(pair.Source, pair.Target);
+
+        var initial = await DeliverDeltaAsync(pair, oldDelta);
+        Assert.AreEqual(UserSnapshotReceiptStateProto.UserSnapshotReceiptMergedImmediately,
+            initial.UserSnapshotReceipts.Single().State);
+        Assert.IsTrue(await HasPasswordAsync(pair.Target, pair.TargetToken, name));
+
+        var sourcePassword = (await pair.Source.Endpoints.GetSavedPasswordsAsync(pair.SourceToken))
+            .Passwords.Single(password => password.Name == name);
+        await pair.Source.Endpoints.RemovePasswordsAsync(pair.SourceToken, [sourcePassword.Id]);
+        var newerDelta = await BuildLatestUserDeltaAsync(pair.Source, pair.Target);
+        Assert.IsTrue(newerDelta.SnapshotOriginRevision > oldDelta.SnapshotOriginRevision);
+        var deletion = await DeliverDeltaAsync(pair, newerDelta);
+        Assert.AreEqual(UserSnapshotReceiptStateProto.UserSnapshotReceiptMergedImmediately,
+            deletion.UserSnapshotReceipts.Single().State);
+        Assert.IsFalse(await HasPasswordAsync(pair.Target, pair.TargetToken, name));
+
+        var beforeReplay = await pair.Target.GetOnlyCanonicalCheckpointAsync();
+        Assert.IsNotNull(beforeReplay);
+        var replay = await DeliverDeltaAsync(pair, oldDelta);
+        var receipt = replay.UserSnapshotReceipts.Single();
+        Assert.AreEqual(UserSnapshotReceiptStateProto.UserSnapshotReceiptObsoleteRevision, receipt.State);
+        Assert.AreEqual(oldDelta.SnapshotOriginRevision, receipt.OriginRevision);
+        Assert.IsFalse(await HasPasswordAsync(pair.Target, pair.TargetToken, name));
+        var afterReplay = await pair.Target.GetOnlyCanonicalCheckpointAsync();
+        Assert.IsNotNull(afterReplay);
+        CollectionAssert.AreEqual(beforeReplay.CanonicalContentHash, afterReplay.CanonicalContentHash);
+
+        using var scope = pair.Target.Services.CreateScope();
+        var retained = await scope.ServiceProvider.GetRequiredService<IUserSyncSnapshotRepository>().GetAsync(
+            newerDelta.SnapshotUserId, newerDelta.SnapshotOriginDeviceId, newerDelta.SnapshotOriginInstanceId, beforeReplay.KeyEpoch);
+        Assert.IsNotNull(retained);
+        Assert.AreEqual(newerDelta.SnapshotOriginRevision, retained.OriginRevision);
+        CollectionAssert.AreEqual(newerDelta.SnapshotHash, retained.SnapshotHash);
+    }
+
+    [TestMethod]
+    [Timeout(TestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task EnrolledPeer_CannotRequestSnapshotForAnotherProfileEvenWithExactMetadata()
+    {
+        await using var pair = await CreateEnrolledPairAsync();
+        await PauseAutomaticDeliveryAsync(pair);
+        var shared = await BuildLatestUserDeltaAsync(pair.Source, pair.Target);
+        var privateToken = await pair.Source.Endpoints.RegisterAsync(pair.Source.CreateRegistrationRequest("private_vault"));
+        await pair.Source.EnableSyncAsync(privateToken);
+        await AddPasswordAsync(pair.Source, privateToken, "Unshared entry", Encoding.UTF8.GetBytes("test-only-unshared-secret"));
+
+        UserSnapshotRequest privateRequest;
+        UserSnapshotRequest sharedRequest;
+        using (var scope = pair.Source.Services.CreateScope())
+        {
+            var services = scope.ServiceProvider;
+            var users = services.GetRequiredService<IUserRepository>();
+            var publisher = services.GetRequiredService<IUserSnapshotPublisherService>();
+            var sharedUser = await users.GetByIdAsync(shared.SnapshotUserId);
+            var privateUserId = (await users.ListUserIdsAsync()).Single(id => id != shared.SnapshotUserId);
+            var privateUser = await users.GetByIdAsync(privateUserId);
+            Assert.IsNotNull(sharedUser);
+            Assert.IsNotNull(privateUser);
+            sharedRequest = CreateSnapshotRequest(await publisher.GetOrCreateAsync(sharedUser));
+            privateRequest = CreateSnapshotRequest(await publisher.GetOrCreateAsync(privateUser));
+        }
+
+        var context = await AcceptHelloAsync(pair.Target, pair.Source);
+        var mixed = new UserSnapshotRequestBatch();
+        mixed.Requests.Add(sharedRequest);
+        mixed.Requests.Add(privateRequest);
+        var denied = await Assert.ThrowsExactlyAsync<SyncProtocolException>(() =>
+            pair.Source.ProtocolHandler.RequestUserSnapshotsAsync(mixed, context, CancellationToken.None));
+        Assert.AreEqual(SyncProtocolStatusCode.PermissionDenied, denied.StatusCode);
+
+        var allowed = new UserSnapshotRequestBatch();
+        allowed.Requests.Add(sharedRequest);
+        var retryContext = await AcceptHelloAsync(pair.Target, pair.Source);
+        var reply = await pair.Source.ProtocolHandler.RequestUserSnapshotsAsync(allowed, retryContext, CancellationToken.None);
+        var returned = reply.Single();
+        Assert.AreEqual(shared.SnapshotUserId, returned.SnapshotUserId);
+        Assert.AreEqual(pair.Target.Identity.LocalDeviceId.ToString("N"), returned.RecipientDeviceId);
+        Assert.IsTrue(returned.Payload.Length > 0);
+    }
+
+    private static HelloRequest CreateHelloRequest(IDeviceIdentityService identity) => new()
+    {
+        DatabaseVersion = DatabaseConstants.CurrentDbVersion,
+        ProtocolVersion = SyncConstants.SyncProtocolVersion,
+        DeviceId = identity.DeviceIdHex,
+        SignPub = ByteString.CopyFrom(identity.SignPublicKey)
+    };
+
+    private static async Task<PeerConnectionContext> AcceptHelloAsync(ProductionSyncTestHost sender, ProductionSyncTestHost receiver)
+    {
+        var request = CreateHelloRequest(sender.Identity);
+        var context = new PeerConnectionContext
+        {
+            ClientCertificateFingerprint = sender.Identity.FingerprintHex,
+            RemoteIpAddress = "127.0.0.1"
+        };
+        var reply = await receiver.ProtocolHandler.HelloAsync(request, context, CancellationToken.None);
+        Assert.IsTrue(reply.Ok, "The enrolled device must authenticate before exercising the incoming protocol.");
+        context.SyncHelloAccepted = true;
+        context.RemoteDatabaseVersion = request.DatabaseVersion;
+        context.RemoteProtocolVersion = request.ProtocolVersion;
+        return context;
+    }
+
+    private static NetworkDelta BuildSnapshotWithInvalidOriginSignature(SyncPair pair, NetworkDelta genuine)
+    {
+        var receiver = pair.Target.Identity;
+        var plaintext = receiver.DecryptFromDevice(genuine.Payload, genuine.EphemeralPublicKey,
+            genuine.Nonce, genuine.Tag, SyncCryptoUtil.BuildAssociatedData(genuine));
+        SyncDeltaPayload payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize(plaintext, BackendJsonSerializerContext.Default.SyncDeltaPayload)
+                ?? throw new AssertFailedException("The genuine snapshot payload is missing.");
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plaintext);
+        }
+
+        Assert.IsNotNull(payload.UserSnapshot);
+        payload.UserSnapshot.OriginSignature[0] ^= 1;
+        SyncCryptoUtil.ValidatePayloadIntegrity(payload, genuine.Ts);
+
+        // Re-encrypt and sign the transport envelope as the enrolled sender.
+        // This leaves only the separately authenticated snapshot signature invalid.
+        var delta = DeltaMapping.FromProto(DeltaMapping.ToProto(genuine));
+        var modifiedPlaintext = JsonSerializer.SerializeToUtf8Bytes(payload, BackendJsonSerializerContext.Default.SyncDeltaPayload);
+        try
+        {
+            delta.PayloadHash = SHA256.HashData(modifiedPlaintext);
+            delta.Payload = pair.Source.Identity.EncryptForDevice(modifiedPlaintext, receiver.AgreementPublicKey,
+                SyncCryptoUtil.BuildAssociatedData(delta), out var ephemeralKey, out var nonce, out var tag);
+            delta.EphemeralPublicKey = ephemeralKey;
+            delta.Nonce = nonce;
+            delta.Tag = tag;
+            NetDeltaSigner.FillSignature(delta, pair.Source.Identity);
+            return delta;
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(modifiedPlaintext);
+        }
+    }
+
+    private static async Task<Ack> DeliverDeltaAsync(SyncPair pair, NetworkDelta delta)
+    {
+        var context = await AcceptHelloAsync(pair.Source, pair.Target);
+        return await pair.Target.ProtocolHandler.PushDeltaAsync(SingleDeltaAsync(delta), context, CancellationToken.None);
+    }
+
+    private static async IAsyncEnumerable<DeltaChunk> SingleDeltaAsync(NetworkDelta delta)
+    {
+        yield return DeltaMapping.ToProto(delta);
+        await Task.Yield();
+    }
+
+    private static UserSnapshotRequest CreateSnapshotRequest(UserSyncSnapshot snapshot) => new()
+    {
+        UserId = snapshot.UserId.ToString("N"),
+        OriginDeviceId = snapshot.OriginDeviceId.ToString("N"),
+        OriginInstanceId = snapshot.OriginInstanceId.ToString("N"),
+        UserKeyEpoch = snapshot.UserKeyEpoch,
+        MembershipEpoch = snapshot.MembershipEpoch,
+        OriginRevision = snapshot.OriginRevision,
+        ExpectedSnapshotHash = ByteString.CopyFrom(snapshot.SnapshotHash)
+    };
 
     private static async Task PauseAutomaticDeliveryAsync(SyncPair pair)
     {

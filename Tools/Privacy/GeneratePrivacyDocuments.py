@@ -10,6 +10,7 @@ import argparse
 from datetime import date
 from html import escape
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -21,6 +22,7 @@ LABELS = {
         "reviewed": "Last reviewed", "effective": "Effective from", "version": "Version",
         "status": "Notice status", "deletion": "Account and data deletion — Password Manager Local",
         "policy": "Full Privacy Policy", "delete_link": "Account and data deletion",
+        "deletion_status": "Use the in-app steps below to delete your local profile. The developer can handle requests about data in the developer inbox. The developer has no remote access to your vault or devices.",
         "draft": "Draft for testing. This page describes local controls; it cannot receive deletion requests or remotely erase your devices. The public release contact and any required request route still need to be finalized.",
     },
     "hu": {
@@ -28,6 +30,7 @@ LABELS = {
         "reviewed": "Utolsó felülvizsgálat", "effective": "Hatályos ettől", "version": "Változat",
         "status": "A tájékoztató állapota", "deletion": "Fiók és adatok törlése — Password Manager Local",
         "policy": "Teljes adatvédelmi tájékoztató", "delete_link": "Fiók és adatok törlése",
+        "deletion_status": "A helyi profilodat az alábbi, alkalmazáson belüli lépésekkel törölheted. A fejlesztő a fejlesztői postafiókban kezelt adatokra vonatkozó kérelmeket tudja kezelni. Távolról nem fér hozzá a jelszótáradhoz vagy az eszközeidhez.",
         "draft": "Tesztelési tervezet. Ez az oldal a helyi lehetőségeket ismerteti; nem fogad törlési kérelmet és nem törli távolról az eszközeidet. A nyilvános kiadás kapcsolattartóját és az esetleg szükséges kérelmezési lehetőséget még véglegesíteni kell.",
     },
 }
@@ -74,11 +77,21 @@ def load_documents() -> dict:
     return documents
 
 
+PUBLIC_LINKS = {
+    "https://www.naih.hu/": "https://www.naih.hu/",
+    "https://policies.google.com/privacy/frameworks": "https://policies.google.com/privacy/frameworks",
+    "levente.baba.dev@gmail.com": "mailto:levente.baba.dev@gmail.com",
+}
+PUBLIC_LINK_PATTERN = re.compile("|".join(re.escape(text) for text in PUBLIC_LINKS))
+
+
 def paragraphs(text: str) -> str:
-    # This one public authority URL is the only URL in the canonical notice.
-    return "\n".join("<p>" + escape(part).replace(
-        "https://www.naih.hu/", '<a href="https://www.naih.hu/">https://www.naih.hu/</a>')
-        + "</p>" for part in text.split("\n\n"))
+    def link(match: re.Match[str]) -> str:
+        text = match.group()
+        return f'<a href="{PUBLIC_LINKS[text]}">{text}</a>'
+
+    return "\n".join("<p>" + PUBLIC_LINK_PATTERN.sub(link, escape(part)) + "</p>"
+                     for part in text.split("\n\n"))
 
 
 def metadata(document: dict, labels: dict) -> str:
@@ -96,7 +109,9 @@ def page(document: dict, labels: dict, *, deletion: bool = False) -> str:
         sections = [s for s in sections if s["id"] in {"retention-deletion", "backups", "rights"}]
     body = "\n".join(f'<section id="{escape(s["id"], quote=True)}"><h2>{escape(s["heading"])}</h2>\n'
         + paragraphs(s["body"]) + "</section>" for s in sections)
-    notice = labels["draft"] if deletion and document["isDraft"] else document["statusText"]
+    notice = document["statusText"]
+    if deletion:
+        notice = labels["draft"] if document["isDraft"] else labels["deletion_status"]
     return f'''<!doctype html>
 <html lang="{code}">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">

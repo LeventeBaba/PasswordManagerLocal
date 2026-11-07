@@ -349,11 +349,14 @@ public sealed class RegistrationViewModel : ViewModelBase
 
     public string PasswordStrengthInfoAccessibleLabel => GetTranslation("PasswordStrength_Info_AccessibleLabel");
 
+    public string CredentialNotice => GetTranslation("Auth_CredentialNotice");
+
     public string RegistrationHelpLabel => GetTranslation("ContextHelp_CreateAccount");
     public string MasterPasswordHelpLabel => GetTranslation("ContextHelp_MasterPassword");
 
     protected override void OnLanguageChanged()
     {
+        this.RaisePropertyChanged(nameof(CredentialNotice));
         this.RaisePropertyChanged(nameof(RegistrationHelpLabel));
         this.RaisePropertyChanged(nameof(MasterPasswordHelpLabel));
         this.RaisePropertyChanged(nameof(Title));

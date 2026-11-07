@@ -36,7 +36,7 @@ public sealed class LoginPresentationArchitectureTests
             .Where(path => XDocument.Load(path).Descendants()
                 .Any(element => element.Name.Namespace == avalonia && featureControls.Contains(element.Name.LocalName)))
             .ToArray();
-        Assert.AreEqual(5, consumers.Length,
+        Assert.AreEqual(6, consumers.Length,
             "Review resource ownership when adding another feature control view.");
         foreach (var path in consumers)
         {

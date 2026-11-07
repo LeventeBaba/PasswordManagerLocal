@@ -332,6 +332,8 @@ public sealed class LoginViewModel : ViewModelBase
 
     public string BusyText => GetTranslation("Common_Loading");
 
+    public string CredentialNotice => GetTranslation("Auth_CredentialNotice");
+
     public string LoginHelpLabel => GetTranslation("ContextHelp_SignIn");
     public string LoginTroubleshootingLabel => GetTranslation("ContextHelp_LoginProblems");
     public string EnrollmentHelpLabel => GetTranslation("ContextHelp_Enrollment");
@@ -340,6 +342,7 @@ public sealed class LoginViewModel : ViewModelBase
 
     protected override void OnLanguageChanged()
     {
+        this.RaisePropertyChanged(nameof(CredentialNotice));
         this.RaisePropertyChanged(nameof(LoginHelpLabel));
         this.RaisePropertyChanged(nameof(LoginTroubleshootingLabel));
         this.RaisePropertyChanged(nameof(EnrollmentHelpLabel));
