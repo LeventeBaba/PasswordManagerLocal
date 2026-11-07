@@ -1,10 +1,10 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Sync;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
@@ -110,7 +110,7 @@ public sealed class NetworkDeltaService : INetworkDeltaService
             {
                 return await service.ApplyCoreAsync(delta, ct);
             }
-            catch (DbUpdateConcurrencyException ex) when (ex.Entries.Count > 0 && ex.Entries.All(entry => entry.Entity is Device))
+            catch (Exception ex) when (DeviceWriteConflict.IsStaleDevice(ex))
             {
                 // Retry the authenticated delta with fresh device state. Durable inbox receipts
                 // and replay checks handle work already committed before the device write.

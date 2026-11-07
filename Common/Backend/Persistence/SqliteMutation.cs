@@ -42,6 +42,8 @@ internal sealed class SqliteMutation : IDisposable
     public Operation Kind { get; }
     public Guid? UserId { get; }
     public BackendChangeSet? Changes { get; }
+    public object? Row { get; init; }
+    public Action<bool>? Settle { get; init; }
 
     public async Task ExecuteAsync(SqliteConnection connection, SqliteTransaction transaction, CancellationToken ct)
     {

@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
-using PasswordManagerLocal.Common.Backend.Utils;
 
 namespace PasswordManagerLocal.Common.Backend.Repositories;
 
@@ -24,17 +23,13 @@ public sealed class DeviceRepository : GenericRepositoryBase<Device>, IDeviceRep
         return await Set.Where(d => ids.Contains(d.Id)).ToListAsync(ct);
     }
 
-    public async Task<IReadOnlyList<Device>> ListDevicesNeedingSyncAsync(CancellationToken ct = default)
-    {
-        var devices = await Set.AsNoTracking()
+    public async Task<IReadOnlyList<Device>> ListTrustedUnblockedWithPendingQueueAsync(CancellationToken ct = default) =>
+        await Set.AsNoTracking()
             .Where(d => d.IsTrusted &&
                         !d.IsBlocked &&
                         d.TlsCertFingerprint != string.Empty &&
                         d.ItemsNeedingSync.Any(q => q.ProcessedAt == null))
             .ToListAsync(ct);
-
-        return devices.Where(d => d.PublicKey.Length != 0 && d.SignPublicKey.Length != 0).ToList();
-    }
 
     public Task<Device?> GetByIdAsNoTrackingAsync(Guid id, CancellationToken ct = default) =>
         Set.AsNoTracking().FirstOrDefaultAsync(d => d.Id == id, ct);
@@ -57,56 +52,25 @@ public sealed class DeviceRepository : GenericRepositoryBase<Device>, IDeviceRep
             .Distinct()
             .ToListAsync(ct);
 
-    public async Task<Device?> GetBySignPublicKeyAsync(byte[] signPublicKey, CancellationToken ct = default)
-    {
-        if (signPublicKey.Length == 0)
-            return null;
+    public async Task<IReadOnlyList<Device>> ListBySigningKeyHashAsync(byte[] hash, CancellationToken ct = default) =>
+        await Set.Where(d => d.SignPublicKeyHash == hash).ToListAsync(ct);
 
-        var hash = Security.Hashing.SHA256Hash(signPublicKey);
-        var candidates = await Set.Where(d => d.SignPublicKeyHash == hash).ToListAsync(ct);
-        return candidates.FirstOrDefault(d => Security.Hashing.Verify(d.SignPublicKey, signPublicKey));
-    }
+    public Task<Device?> GetByNormalizedFingerprintAsync(string fingerprint, CancellationToken ct = default) =>
+        Set.FirstOrDefaultAsync(d => d.TlsCertFingerprint == fingerprint, ct);
 
-    public Task<Device?> GetByTlsCertFingerprintAsync(string tlsCertFingerprint, CancellationToken ct = default)
-    {
-        if (string.IsNullOrWhiteSpace(tlsCertFingerprint))
-            return Task.FromResult<Device?>(null);
+    public Task<Device?> GetByNormalizedFingerprintWithUserDevicesAsync(string fingerprint, CancellationToken ct = default) =>
+        Set.Include(d => d.UserDevices).FirstOrDefaultAsync(d => d.TlsCertFingerprint == fingerprint, ct);
 
-        var normalized = FingerprintUtil.Normalize(tlsCertFingerprint);
-        return Set.FirstOrDefaultAsync(d => d.TlsCertFingerprint == normalized, ct);
-    }
-
-    public Task<Device?> GetByTlsCertFingerprintWithUserDevicesAsync(string tlsCertFingerprint, CancellationToken ct = default)
-    {
-        if (string.IsNullOrWhiteSpace(tlsCertFingerprint))
-            return Task.FromResult<Device?>(null);
-
-        var normalized = FingerprintUtil.Normalize(tlsCertFingerprint);
-        return Set
-            .Include(d => d.UserDevices)
-            .FirstOrDefaultAsync(d => d.TlsCertFingerprint == normalized, ct);
-    }
-
-    public async Task<IReadOnlyList<Device>> ListLocalSelfDevicesAsync(
+    public async Task<IReadOnlyList<Device>> ListLocalIdentityCandidatesAsync(
         Guid localDeviceId,
-        byte[] signPublicKey,
-        string tlsCertFingerprint,
-        CancellationToken ct = default)
-    {
-        var normalizedFingerprint = FingerprintUtil.Normalize(tlsCertFingerprint);
-        var signPublicKeyHash = signPublicKey.Length == 0 ? [] : Security.Hashing.SHA256Hash(signPublicKey);
-        var candidates = await Set.Include(d => d.UserDevices)
+        byte[] signingKeyHash,
+        string fingerprint,
+        CancellationToken ct = default) =>
+        await Set.Include(d => d.UserDevices)
             .Where(d => d.Id == localDeviceId ||
-                        (signPublicKeyHash.Length != 0 && d.SignPublicKeyHash == signPublicKeyHash) ||
-                        (normalizedFingerprint.Length != 0 && d.TlsCertFingerprint == normalizedFingerprint))
+                        (signingKeyHash.Length != 0 && d.SignPublicKeyHash == signingKeyHash) ||
+                        (fingerprint.Length != 0 && d.TlsCertFingerprint == fingerprint))
             .ToListAsync(ct);
-
-        return candidates.Where(d =>
-                d.Id == localDeviceId ||
-                (signPublicKey.Length != 0 && Security.Hashing.Verify(d.SignPublicKey, signPublicKey)) ||
-                (normalizedFingerprint.Length != 0 && d.TlsCertFingerprint == normalizedFingerprint))
-            .ToList();
-    }
 
     public async Task<IReadOnlyList<Device>> ListByIdsWithUserDevicesAsNoTrackingAsync(
         IReadOnlyCollection<Guid> deviceIds,

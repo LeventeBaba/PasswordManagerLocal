@@ -29,5 +29,12 @@ internal sealed class SqliteConnectionFactory
 
     public string GetDatabasePassword() => new SqliteConnectionStringBuilder(ConnectionString).Password;
 
-    public SqliteConnection CreateConnection() => new(ConnectionString);
+    public SqliteConnection CreateConnection(bool enforceForeignKeys = false)
+    {
+        if (!enforceForeignKeys)
+            return new SqliteConnection(ConnectionString);
+
+        var options = new SqliteConnectionStringBuilder(ConnectionString) { ForeignKeys = true };
+        return new SqliteConnection(options.ToString());
+    }
 }

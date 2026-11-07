@@ -18,7 +18,7 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
 
     public SqliteSession(SqliteConnectionFactory connections, IBackendChangePublisher? publisher = null)
     {
-        _connection = connections.CreateConnection();
+        _connection = connections.CreateConnection(enforceForeignKeys: true);
         _publisher = publisher;
     }
 
@@ -41,13 +41,36 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var rowType = typeof(TRow);
-        if (operation != SqliteMutation.Operation.Delete && userId is null &&
-            (rowType == typeof(User) || rowType == typeof(UserLoginIdentityState) || rowType == typeof(DeletedUserBarrier)))
-        {
-            throw new ArgumentNullException(nameof(userId), "This row write requires its account identity.");
-        }
-
+        RequireAccountId(rowType, operation, userId);
         _pending.Add(new SqliteMutation(rowType, operation, userId, changes, sql, parameters));
+    }
+
+    public SqliteMutation.Operation? GetPendingOperation(object row) =>
+        _pending.Find(mutation => ReferenceEquals(mutation.Row, row))?.Kind;
+
+    public void DiscardPendingRow(object row)
+    {
+        var index = _pending.FindIndex(mutation => ReferenceEquals(mutation.Row, row));
+        if (index < 0)
+            return;
+
+        _pending[index].Dispose();
+        _pending.RemoveAt(index);
+    }
+
+    public void StageRow(SqliteMutation mutation)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(mutation.Row);
+        RequireAccountId(mutation.RowType, mutation.Kind, mutation.UserId);
+        var index = _pending.FindIndex(pending => ReferenceEquals(pending.Row, mutation.Row));
+        if (index < 0)
+            _pending.Add(mutation);
+        else
+        {
+            _pending[index].Dispose();
+            _pending[index] = mutation;
+        }
     }
 
     public async Task<IUnitOfWorkTransaction> BeginTransactionAsync(CancellationToken ct = default) =>
@@ -68,7 +91,7 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
             {
                 await FlushWithSavepointAsync(active.Native, changes, ct);
                 active.Changes.Merge(changes);
-                ClearPending();
+                AcceptPending(active);
             }
             else
             {
@@ -76,7 +99,7 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
                 {
                     await FlushAsync(transaction.Native, changes, ct);
                     await transaction.CommitAsync(ct);
-                    ClearPending();
+                    AcceptPending(transaction: null);
                 }
                 changes.Publish(_publisher);
             }
@@ -222,6 +245,28 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
         ct.ThrowIfCancellationRequested();
     }
 
+    private void AcceptPending(SessionTransaction? transaction)
+    {
+        foreach (var mutation in _pending)
+        {
+            if (mutation.Settle is not { } settle)
+                continue;
+
+            settle(true);
+            transaction?.RegisterRollback(settle);
+        }
+        ClearPending();
+    }
+
+    private static void RequireAccountId(Type rowType, SqliteMutation.Operation operation, Guid? userId)
+    {
+        if (operation != SqliteMutation.Operation.Delete && userId is null &&
+            (rowType == typeof(User) || rowType == typeof(UserLoginIdentityState) || rowType == typeof(DeletedUserBarrier)))
+        {
+            throw new ArgumentNullException(nameof(userId), "This row write requires its account identity.");
+        }
+    }
+
     private void ClearPending()
     {
         foreach (var mutation in _pending)
@@ -237,10 +282,13 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
         IDisposable registryLease,
         bool discardPendingOnRollback) : IUnitOfWorkTransaction, IDisposable
     {
+        private readonly List<Action<bool>> _rollbackActions = [];
         private bool _completed;
 
         public SqliteTransaction Native => transaction;
         public BackendChangeSet Changes { get; } = new();
+
+        public void RegisterRollback(Action<bool> settle) => _rollbackActions.Add(settle);
 
         public async Task CommitAsync(CancellationToken ct = default)
         {
@@ -300,10 +348,16 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
             {
                 owner._active = null;
                 registryLease.Dispose();
+                if (!committed)
+                {
+                    for (var index = _rollbackActions.Count - 1; index >= 0; index--)
+                        _rollbackActions[index](false);
+                    if (discardPendingOnRollback)
+                        owner.ClearPending();
+                }
+                _rollbackActions.Clear();
                 if (committed)
                     Changes.Publish(owner._publisher);
-                else if (discardPendingOnRollback)
-                    owner.ClearPending();
             }
         }
     }

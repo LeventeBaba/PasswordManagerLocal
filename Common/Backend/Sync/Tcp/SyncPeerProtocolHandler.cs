@@ -1,12 +1,13 @@
 using Google.Protobuf;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Security;
+using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Backend.Sync.Tcp;
 using PasswordManagerLocal.Common.Backend.Utils;
@@ -988,8 +989,7 @@ public sealed class SyncPeerProtocolHandler
                 await deviceSecurity.RecordInvalidIncomingSyncAsync(current, reason, ct);
                 return;
             }
-            catch (DbUpdateConcurrencyException ex) when (attempt < maxAttempts &&
-                ex.Entries.Count > 0 && ex.Entries.All(entry => entry.Entity is Device))
+            catch (Exception ex) when (attempt < maxAttempts && DeviceWriteConflict.IsStaleDevice(ex))
             {
                 // A concurrent device write can change the hash after the lookup.
                 // Reload the same peer so its invalid-attempt count is not lost.
