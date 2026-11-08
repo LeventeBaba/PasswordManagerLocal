@@ -2271,7 +2271,7 @@ public sealed class ControlThemeArchitectureTests
             {
                 var (labelProperty, command, automationId) = expectedItems[index];
                 Assert.AreEqual(
-                    $"{{ReflectionBinding $parent[ScrollBar].DataContext.{labelProperty}}}",
+                    $"{{CompiledBinding $parent[ScrollBar].((vm:ViewModelBase)DataContext).{labelProperty}}}",
                     (string?)menuItems[index].Attribute("Header"));
                 Assert.AreEqual(
                     $"{{Binding $parent[ScrollBar].{command}}}",
