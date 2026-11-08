@@ -257,7 +257,7 @@ public sealed class SqliteSessionTests
             try
             {
                 var paths = new BackendStoragePaths(directory);
-                var encrypted = new SqliteConnectionFactory(paths, new TestKeyProtector());
+                using var encrypted = new SqliteConnectionFactory(paths, new TestKeyProtector()).CreateConnection();
                 var options = new SqliteConnectionStringBuilder(encrypted.ConnectionString)
                 {
                     Pooling = false,

@@ -9,7 +9,7 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Persistence;
 [TestClass]
 [TestCategory("Backend")]
 [TestCategory("Integration")]
-public sealed class SqliteControlAndMembershipRepositoryParityTests
+public sealed class SqliteControlAndMembershipRepositoryTests
 {
     [TestMethod]
     public async Task ControlTransitions_ReleaseFilteredBaseOnlyAfterQuarantineAndKeepEvidence()

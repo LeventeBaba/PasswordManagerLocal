@@ -61,7 +61,6 @@ internal static class AppDatabaseInitializer
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        // Match the former EF SQLite initializer's test for an existing schema.
         command.CommandText = "SELECT EXISTS (SELECT 1 FROM sqlite_schema WHERE type = 'table' AND rootpage IS NOT NULL);";
         return (long)(await command.ExecuteScalarAsync(ct))! != 0;
     }

@@ -10,7 +10,7 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Persistence;
 [TestClass]
 [TestCategory("Backend")]
 [TestCategory("Integration")]
-public sealed class SqliteSnapshotRecoveryRepositoryParityTests
+public sealed class SqliteSnapshotRecoveryRepositoryTests
 {
     [TestMethod]
     public async Task SnapshotQueries_KeepExactRevisionAndQuarantineSemantics()

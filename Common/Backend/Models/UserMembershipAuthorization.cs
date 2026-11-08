@@ -29,13 +29,13 @@ public sealed class UserMembershipAuthorization
     // Normalize empty optional hashes to the absent-evidence representation.
     public byte[]? AdditionOperationHash
     {
-        get => _additionOperationHash is { Length: 0 } ? null : _additionOperationHash;
+        get => _additionOperationHash;
         set => _additionOperationHash = value is { Length: 0 } ? null : value;
     }
     public Guid? RemovalOperationId { get; set; }
     public byte[]? RemovalOperationHash
     {
-        get => _removalOperationHash is { Length: 0 } ? null : _removalOperationHash;
+        get => _removalOperationHash;
         set => _removalOperationHash = value is { Length: 0 } ? null : value;
     }
     public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;

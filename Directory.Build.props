@@ -7,7 +7,7 @@
     <PublishArtifactsRoot>$(ArtifactsRoot)publish\</PublishArtifactsRoot>
   </PropertyGroup>
 
-  <!-- Inherited by the EF design-time workspace as well as the publishing build. -->
+  <!-- Keep intermediate output and lock files for each standalone Agent AOT publish together. -->
   <PropertyGroup Condition="'$(PmlWindowsAgentAotArtifactsPath)' != ''">
     <ArtifactsPath>$(PmlWindowsAgentAotArtifactsPath)</ArtifactsPath>
     <NuGetLockFilePath>$(ArtifactsPath)\obj\$(MSBuildProjectName)\packages.lock.json</NuGetLockFilePath>

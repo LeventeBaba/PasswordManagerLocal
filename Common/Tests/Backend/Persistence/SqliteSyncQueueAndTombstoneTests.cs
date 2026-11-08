@@ -11,7 +11,7 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Persistence;
 [TestClass]
 [TestCategory("Backend")]
 [TestCategory("Integration")]
-public sealed class SqliteSyncQueueAndTombstoneParityTests
+public sealed class SqliteSyncQueueAndTombstoneTests
 {
     [TestMethod]
     [DataRow(false)]

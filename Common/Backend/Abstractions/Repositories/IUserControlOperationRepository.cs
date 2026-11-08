@@ -19,5 +19,4 @@ public interface IUserControlOperationRepository
     Task AddAsync(UserControlOperation operation, CancellationToken ct = default);
     void Update(UserControlOperation operation);
     void DeleteRange(IEnumerable<UserControlOperation> operations);
-    void Detach(UserControlOperation operation);
 }

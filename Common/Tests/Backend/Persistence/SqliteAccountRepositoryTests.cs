@@ -14,7 +14,7 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Persistence;
 [TestClass]
 [TestCategory("Backend")]
 [TestCategory("Integration")]
-public sealed class SqliteAccountRepositoryParityTests
+public sealed class SqliteAccountRepositoryTests
 {
     [TestMethod]
     public async Task CanonicalLoginProjection_FollowsFlushCommitAndRollback()

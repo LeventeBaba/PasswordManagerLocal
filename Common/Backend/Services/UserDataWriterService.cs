@@ -140,10 +140,7 @@ public sealed class UserDataWriterService : IUserDataWriterService
             EncryptedUserDevicesDataPayload = user.EncryptedUserDevicesDataPayload
         };
         using (var verified = await _reader.GetAndVerifyUserDataBundleAsync(candidate, key, ct)) { }
-        ReplaceEncryptedPayload(
-            user.EncryptedPayload,
-            newEncryptedPayload,
-            value => user.EncryptedPayload = value);
+        user.EncryptedPayload = newEncryptedPayload;
         user.UserDataLastModifiedAt = DateTimeOffset.UtcNow;
         await UpdateUserAsync(user, enqueueSync, ct);
     }
@@ -440,36 +437,24 @@ public sealed class UserDataWriterService : IUserDataWriterService
         {
             if (!preserveLogicalTimestamps)
                 user.GeneralUserDataLastModifiedAt = now;
-            ReplaceEncryptedPayload(
-                user.EncryptedGeneralUserDataPayload,
-                await generalTask,
-                value => user.EncryptedGeneralUserDataPayload = value);
+            user.EncryptedGeneralUserDataPayload = candidate.EncryptedGeneralUserDataPayload;
         }
 
         if (passwordsTask is not null)
         {
             if (!preserveLogicalTimestamps)
                 user.UserPasswordsDataLastModifiedAt = now;
-            ReplaceEncryptedPayload(
-                user.EncryptedUserPasswordsDataPayload,
-                await passwordsTask,
-                value => user.EncryptedUserPasswordsDataPayload = value);
+            user.EncryptedUserPasswordsDataPayload = candidate.EncryptedUserPasswordsDataPayload;
         }
 
         if (devicesTask is not null)
         {
             if (!preserveLogicalTimestamps)
                 user.UserDevicesDataLastModifiedAt = now;
-            ReplaceEncryptedPayload(
-                user.EncryptedUserDevicesDataPayload,
-                await devicesTask,
-                value => user.EncryptedUserDevicesDataPayload = value);
+            user.EncryptedUserDevicesDataPayload = candidate.EncryptedUserDevicesDataPayload;
         }
 
-        ReplaceEncryptedPayload(
-            user.EncryptedPayload,
-            await userDataTask,
-            value => user.EncryptedPayload = value);
+        user.EncryptedPayload = candidate.EncryptedPayload;
 
         if (rewriteGeneral)
         {
@@ -507,17 +492,6 @@ public sealed class UserDataWriterService : IUserDataWriterService
     {
         if (task.Status == TaskStatus.RanToCompletion)
             CryptographicOperations.ZeroMemory(task.Result);
-    }
-
-    private void ReplaceEncryptedPayload(
-        byte[] currentPayload,
-        byte[] replacementPayload,
-        Action<byte[]> assignReplacement)
-    {
-        // Keep the previous ciphertext intact for rollback and callers that retain it.
-        // Decrypted bundles and key material are disposed separately.
-        _ = currentPayload;
-        assignReplacement(replacementPayload);
     }
 
     private void EnsureBlobTimestamps(User user, DateTimeOffset value)

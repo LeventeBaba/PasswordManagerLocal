@@ -25,7 +25,7 @@ internal sealed class SqliteConnectionFactory
         _connectionString = new(() => connectionString);
     }
 
-    public string ConnectionString => _connectionString.Value;
+    private string ConnectionString => _connectionString.Value;
 
     public string GetDatabasePassword() => new SqliteConnectionStringBuilder(ConnectionString).Password;
 

@@ -67,5 +67,4 @@ public sealed class FakeUserControlOperationRepository : IUserControlOperationRe
         foreach (var operation in operations.ToArray())
             _rows.Remove(operation);
     }
-    public void Detach(UserControlOperation operation) => _rows.Remove(operation);
 }

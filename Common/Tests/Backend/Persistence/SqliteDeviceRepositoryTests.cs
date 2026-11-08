@@ -12,7 +12,7 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Persistence;
 [TestClass]
 [TestCategory("Backend")]
 [TestCategory("Integration")]
-public sealed class SqliteDeviceRepositoryParityTests
+public sealed class SqliteDeviceRepositoryTests
 {
     [TestMethod]
     public async Task LocalIdentity_IndependentReadbackPreservesKeysAndIntegrity()

@@ -934,13 +934,13 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
         }
 
         if (generalTask is not null)
-            ReplaceEncryptedPayload(user.EncryptedGeneralUserDataPayload, await generalTask, value => user.EncryptedGeneralUserDataPayload = value);
+            user.EncryptedGeneralUserDataPayload = await generalTask;
         if (passwordsTask is not null)
-            ReplaceEncryptedPayload(user.EncryptedUserPasswordsDataPayload, await passwordsTask, value => user.EncryptedUserPasswordsDataPayload = value);
+            user.EncryptedUserPasswordsDataPayload = await passwordsTask;
         if (devicesTask is not null)
-            ReplaceEncryptedPayload(user.EncryptedUserDevicesDataPayload, await devicesTask, value => user.EncryptedUserDevicesDataPayload = value);
+            user.EncryptedUserDevicesDataPayload = await devicesTask;
 
-        ReplaceEncryptedPayload(user.EncryptedPayload, await userDataTask, value => user.EncryptedPayload = value);
+        user.EncryptedPayload = await userDataTask;
     }
 
 
@@ -959,15 +959,6 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
     {
         if (task.Status == TaskStatus.RanToCompletion)
             CryptographicOperations.ZeroMemory(task.Result);
-    }
-
-
-    private void ReplaceEncryptedPayload(byte[] currentPayload, byte[] replacementPayload, Action<byte[]> assignReplacement)
-    {
-        // Replace ciphertext without mutating any retained canonical bytes.
-        // Decrypted keys and logical bundles are disposed separately.
-        _ = currentPayload;
-        assignReplacement(replacementPayload);
     }
 
 

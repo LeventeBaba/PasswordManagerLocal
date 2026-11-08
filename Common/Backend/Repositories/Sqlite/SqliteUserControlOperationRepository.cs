@@ -125,8 +125,6 @@ internal sealed class SqliteUserControlOperationRepository(SqliteSession session
             """, row => row.GetInt64(0), ct, ("$user", userId), ("$device", originDeviceId),
             ("$instance", originInstanceId))).Single();
 
-    public void Detach(UserControlOperation operation) => session.DiscardPendingRow(operation);
-
     public Task AddAsync(UserControlOperation operation, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
