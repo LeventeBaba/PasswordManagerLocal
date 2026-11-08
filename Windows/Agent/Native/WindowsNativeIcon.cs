@@ -21,6 +21,19 @@ internal sealed class WindowsNativeIcon : IDisposable
         if (!File.Exists(path))
             throw new FileNotFoundException("The tray icon resource was not found.", path);
 
+        if (Path.GetExtension(path).Equals(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            var count = WindowsNativeMethods.ExtractIconEx(path, 0, 0, out var icon, 1);
+            if (count != 1 || icon == 0)
+            {
+                if (icon != 0)
+                    WindowsNativeMethods.DestroyIcon(icon);
+                throw new InvalidOperationException("The application executable has no usable tray icon.");
+            }
+
+            return new WindowsNativeIcon(icon);
+        }
+
         var handle = WindowsNativeMethods.LoadImage(
             0,
             path,

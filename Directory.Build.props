@@ -7,9 +7,10 @@
     <PublishArtifactsRoot>$(ArtifactsRoot)publish\</PublishArtifactsRoot>
   </PropertyGroup>
 
-  <!-- Keep intermediate output and lock files for each standalone Agent AOT publish together. -->
-  <PropertyGroup Condition="'$(PmlWindowsAgentAotArtifactsPath)' != ''">
-    <ArtifactsPath>$(PmlWindowsAgentAotArtifactsPath)</ArtifactsPath>
+  <!-- Isolate intermediates and package locks for the two Native AOT engineering builds. -->
+  <PropertyGroup Condition="'$(PmlWindowsAgentAotArtifactsPath)' != '' or '$(PmlWindowsUnifiedAotArtifactsPath)' != ''">
+    <ArtifactsPath Condition="'$(PmlWindowsUnifiedAotArtifactsPath)' == ''">$(PmlWindowsAgentAotArtifactsPath)</ArtifactsPath>
+    <ArtifactsPath Condition="'$(PmlWindowsUnifiedAotArtifactsPath)' != ''">$(PmlWindowsUnifiedAotArtifactsPath)</ArtifactsPath>
     <NuGetLockFilePath>$(ArtifactsPath)\obj\$(MSBuildProjectName)\packages.lock.json</NuGetLockFilePath>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
@@ -19,7 +20,7 @@
     <DebugType>None</DebugType>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Agent' or '$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Frontend'">
+  <ItemGroup Condition="'$(PmlWindowsUnifiedAotArtifactsPath)' == '' and ('$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Agent' or '$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Frontend')">
     <Content Include="$(RepositoryRoot)PasswordManagerLocal.ico"
              Link="PasswordManagerLocal.ico"
              CopyToOutputDirectory="PreserveNewest"

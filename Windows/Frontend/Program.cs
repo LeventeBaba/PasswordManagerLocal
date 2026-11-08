@@ -20,9 +20,26 @@ namespace PasswordManagerLocal.Windows.Frontend;
 
 internal sealed class Program
 {
+#if PML_WINDOWS_UNIFIED_NATIVE_AOT
+    internal const bool UseUnifiedExecutable = true;
+#else
+    internal const bool UseUnifiedExecutable = false;
+#endif
+
     [STAThread]
     public static void Main(string[] args)
     {
+#if PML_WINDOWS_UNIFIED_NATIVE_AOT
+        if (args.Contains(WindowsAgentLaunchArguments.AgentRole, StringComparer.OrdinalIgnoreCase))
+        {
+            Environment.ExitCode = string.Equals(
+                args[0], WindowsAgentLaunchArguments.AgentRole, StringComparison.OrdinalIgnoreCase)
+                ? global::PasswordManagerLocal.Windows.Agent.Program.Run(args[1..], unifiedExecutable: true)
+                : 2;
+            return;
+        }
+#endif
+
         // Handle the narrow elevated operation before touching user data, instance
         // locks, Agent IPC, or Avalonia. The regular app remains unelevated.
         if (args.Contains(Firewall.WindowsFirewallSetup.Argument, StringComparer.Ordinal))
@@ -60,7 +77,7 @@ internal sealed class Program
         var agentConnection = new WindowsAgentControlConnection(
             names.ControlPipeName,
             identity,
-            new WindowsAgentLauncher(AppContext.BaseDirectory));
+            new WindowsAgentLauncher(AppContext.BaseDirectory, unifiedExecutable: UseUnifiedExecutable));
         var backendClient = new WindowsNamedPipeFrontendBackendClient(
             agentConnection,
             new WindowsNamedPipeEndpointRpcConnector(

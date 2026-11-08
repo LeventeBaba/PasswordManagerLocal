@@ -10,11 +10,11 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         var iconPath = Path.Combine(AppContext.BaseDirectory, "PasswordManagerLocal.ico");
-        if (File.Exists(iconPath))
-        {
-            using var iconStream = File.OpenRead(iconPath);
+        using var iconStream = File.Exists(iconPath)
+            ? File.OpenRead(iconPath)
+            : typeof(MainWindow).Assembly.GetManifestResourceStream("PasswordManagerLocal.ico");
+        if (iconStream is not null)
             Icon = new WindowIcon(iconStream);
-        }
 
         Deactivated += (_, _) =>
             (DataContext as MainViewModel)?.PlatformServices.SensitiveData.RequestHideVisibleSecrets();

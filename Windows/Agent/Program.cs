@@ -30,7 +30,9 @@ namespace PasswordManagerLocal.Windows.Agent;
 internal sealed class Program
 {
     [STAThread]
-    public static int Main(string[] args)
+    public static int Main(string[] args) => Run(args, unifiedExecutable: false);
+
+    internal static int Run(string[] args, bool unifiedExecutable)
     {
         AgentLocalizer? localizer = null;
         var bootstrapLanguage = ApplicationPreferencesDefaults.Create().Language;
@@ -154,18 +156,21 @@ internal sealed class Program
                 notificationSessions);
             var lifecycleTransitions = new WindowsAgentLifecycleTransitionCoordinator();
             var settingsStore = new FileBackgroundSyncSettingsStore(applicationDataDirectory);
+            var agentExecutableFileName = unifiedExecutable
+                ? WindowsExecutableNames.UiExecutableFileName
+                : WindowsStartupRegistrationConstants.AgentExecutableFileName;
             var processPath = Environment.ProcessPath;
             var agentExecutablePath = !string.IsNullOrWhiteSpace(processPath) &&
                 string.Equals(
                     Path.GetFileName(processPath),
-                    WindowsStartupRegistrationConstants.AgentExecutableFileName,
+                    agentExecutableFileName,
                     StringComparison.OrdinalIgnoreCase)
                 ? processPath
                 : Path.Combine(
                     AppContext.BaseDirectory,
-                    WindowsStartupRegistrationConstants.AgentExecutableFileName);
+                    agentExecutableFileName);
             var startupRegistration = new WindowsRunStartupRegistration(
-                new WindowsAgentStartupCommand(agentExecutablePath));
+                new WindowsAgentStartupCommand(agentExecutablePath, unifiedExecutable));
             var backgroundSyncCoordinator = new WindowsBackgroundSyncCoordinator(
                 settingsStore,
                 startupRegistration,
@@ -178,7 +183,9 @@ internal sealed class Program
             var trayText = WindowsAgentTrayText.Create(localizer!);
             var trayController = new WindowsTrayIconController(
                 new WindowsNativeTrayIconAdapter(
-                    Path.Combine(AppContext.BaseDirectory, "PasswordManagerLocal.ico"),
+                    unifiedExecutable
+                        ? agentExecutablePath
+                        : Path.Combine(AppContext.BaseDirectory, "PasswordManagerLocal.ico"),
                     trayText,
                     applicationLoop.MessageWindow,
                     applicationLoop.Dispatcher));

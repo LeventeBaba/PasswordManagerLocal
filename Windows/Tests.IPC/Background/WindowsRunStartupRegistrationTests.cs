@@ -14,10 +14,15 @@ public sealed class WindowsRunStartupRegistrationTests
         "PasswordManagerLocal.Windows.Agent.exe");
 
     [TestMethod]
-    public async Task RegisterWritesQuotedAbsoluteAgentCommandToCurrentUserRunKey()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task RegisterWritesQuotedAbsoluteAgentCommandToCurrentUserRunKey(bool unifiedExecutable)
     {
         var registry = new FakeWindowsCurrentUserRegistry();
-        var command = new WindowsAgentStartupCommand(AgentPath);
+        var executablePath = unifiedExecutable
+            ? Path.Combine(Path.GetDirectoryName(AgentPath)!, "PasswordManagerLocal.exe")
+            : AgentPath;
+        var command = new WindowsAgentStartupCommand(executablePath, unifiedExecutable);
         var registration = new WindowsRunStartupRegistration(command, registry);
 
         await registration.RegisterAsync();
@@ -25,7 +30,8 @@ public sealed class WindowsRunStartupRegistrationTests
 
         Assert.AreEqual(WindowsStartupRegistrationConstants.RunKeyPath, registry.LastKeyPath);
         Assert.AreEqual(WindowsStartupRegistrationConstants.ValueName, registry.LastValueName);
-        Assert.AreEqual($"\"{Path.GetFullPath(AgentPath)}\" --background", registry.LastValue);
+        var arguments = unifiedExecutable ? "--agent --background" : "--background";
+        Assert.AreEqual($"\"{Path.GetFullPath(executablePath)}\" {arguments}", registry.LastValue);
         Assert.IsTrue(state.EntryExists);
         Assert.IsTrue(state.IsRegistered);
         Assert.AreEqual(1, registry.ValueCount);

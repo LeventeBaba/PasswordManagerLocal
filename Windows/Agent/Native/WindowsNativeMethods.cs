@@ -196,6 +196,14 @@ internal static class WindowsNativeMethods
         int desiredHeight,
         uint loadFlags);
 
+    [DllImport("shell32.dll", EntryPoint = "ExtractIconExW", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    internal static extern uint ExtractIconEx(
+        string path,
+        int iconIndex,
+        nint largeIcons,
+        out nint smallIcon,
+        uint iconCount);
+
     [DllImport("user32.dll", EntryPoint = "DestroyIcon", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool DestroyIcon(nint icon);

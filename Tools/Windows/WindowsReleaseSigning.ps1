@@ -57,8 +57,15 @@ function Get-WindowsReleaseSigningContext {
 }
 
 function Get-WindowsOwnedSigningFiles {
-    param([Parameter(Mandatory = $true)][string]$ProductDirectory)
-    foreach ($required in @('PasswordManagerLocal.exe', 'PasswordManagerLocal.dll', 'PasswordManagerLocal.Windows.Agent.exe', 'PasswordManagerLocal.Windows.Agent.dll')) {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProductDirectory,
+        [switch]$UnifiedNativeAot
+    )
+    $requiredFiles = @('PasswordManagerLocal.exe')
+    if (-not $UnifiedNativeAot) {
+        $requiredFiles += @('PasswordManagerLocal.dll', 'PasswordManagerLocal.Windows.Agent.exe', 'PasswordManagerLocal.Windows.Agent.dll')
+    }
+    foreach ($required in $requiredFiles) {
         if (-not (Test-Path -LiteralPath (Join-Path $ProductDirectory $required) -PathType Leaf)) { throw "Required signing input is missing: $required" }
     }
     return @(Get-ChildItem -LiteralPath $ProductDirectory -Recurse -File | Where-Object {
@@ -81,9 +88,10 @@ function Invoke-WindowsProductSigning {
     param(
         [Parameter(Mandatory = $true)][string]$ProductDirectory,
         [Parameter(Mandatory = $true)][PSCustomObject]$Context,
-        [Parameter(Mandatory = $true)][string]$ReportPath
+        [Parameter(Mandatory = $true)][string]$ReportPath,
+        [switch]$UnifiedNativeAot
     )
-    $files = @(Get-WindowsOwnedSigningFiles -ProductDirectory $ProductDirectory)
+    $files = @(Get-WindowsOwnedSigningFiles -ProductDirectory $ProductDirectory -UnifiedNativeAot:$UnifiedNativeAot)
     $entries = @()
     foreach ($file in $files) {
         $arguments = @('sign', '/sha1', $Context.Thumbprint, '/s', 'My', '/fd', 'SHA256', '/tr', $Context.TimestampUrl, '/td', 'SHA256')

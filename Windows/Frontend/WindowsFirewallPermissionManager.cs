@@ -18,7 +18,7 @@ internal sealed class WindowsFirewallPermissionManager : IFirewallPermissionMana
             ct.ThrowIfCancellationRequested();
             var agentPath = WindowsFirewallSetup.GetAgentPath();
             if (!File.Exists(agentPath))
-                return Failure("The sibling Agent executable could not be found. Reinstall the complete app folder.", false);
+                return Failure("The executable that runs the Agent could not be found. Reinstall the complete app folder.", false);
             try
             {
                 using var policy = new WindowsFirewallPolicy();
