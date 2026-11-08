@@ -3,9 +3,9 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteUserCanonicalCheckpointRepository(SqliteSession session) : IUserCanonicalCheckpointRepository
+internal sealed class UserCanonicalCheckpointRepository(SqliteSession session) : IUserCanonicalCheckpointRepository
 {
     private readonly SqliteRowWriter<UserCanonicalCheckpoint> _rows = new(session, "UserCanonicalCheckpoints", 1,
     [

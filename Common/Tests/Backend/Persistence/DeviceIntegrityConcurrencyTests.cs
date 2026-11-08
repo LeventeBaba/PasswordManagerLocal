@@ -1,7 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Persistence;
@@ -30,7 +30,7 @@ public sealed class DeviceIntegrityConcurrencyTests
         await database.UnitOfWork.SaveChangesAsync();
 
         using var observationSession = database.OpenSession();
-        var observingDevices = new SqliteDeviceRepository(observationSession);
+        var observingDevices = new DeviceRepository(observationSession);
         var observation = (await observingDevices.GetByIdAsync(seeded.Id))!;
 
         // Simulate another delta changing public metadata after the observation scope read the row.
@@ -47,7 +47,7 @@ public sealed class DeviceIntegrityConcurrencyTests
         Assert.AreEqual(typeof(Device), conflict.RowType);
 
         using var freshSession = database.OpenSession();
-        var freshDevices = new SqliteDeviceRepository(freshSession);
+        var freshDevices = new DeviceRepository(freshSession);
         var fresh = (await freshDevices.GetByIdAsync(seeded.Id))!;
         Assert.IsTrue(fresh.IsIntegrityValid());
         Assert.AreEqual(seeded.LastModifiedAt, fresh.LastModifiedAt);

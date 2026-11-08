@@ -1,7 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 
@@ -19,8 +19,8 @@ public sealed class SqliteSnapshotRecoveryRepositoryTests
         var user = await AddUserAsync(baseline);
         using var session = baseline.OpenSession();
         using var otherSession = baseline.OpenSession();
-        var snapshots = new SqliteUserSyncSnapshotRepository(session);
-        var other = new SqliteUserSyncSnapshotRepository(otherSession);
+        var snapshots = new UserSyncSnapshotRepository(session);
+        var other = new UserSyncSnapshotRepository(otherSession);
         var pending = Snapshot(user, UserSyncSnapshotStatus.Pending);
         var candidate = Snapshot(user, UserSyncSnapshotStatus.RecoveryCandidate);
         candidate.MembershipEpoch++;
@@ -64,7 +64,7 @@ public sealed class SqliteSnapshotRecoveryRepositoryTests
         await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         var user = await AddUserAsync(baseline);
         using var session = baseline.OpenSession();
-        var knowledge = new SqliteUserRevisionKnowledgeRepository(session);
+        var knowledge = new UserRevisionKnowledgeRepository(session);
         var first = new UserRevisionKnowledge
         {
             UserId = user.UId, OriginDeviceId = Guid.NewGuid(), OriginInstanceId = Guid.NewGuid(),
@@ -95,7 +95,7 @@ public sealed class SqliteSnapshotRecoveryRepositoryTests
         await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         var user = await AddUserAsync(baseline);
         using var session = baseline.OpenSession();
-        var faults = new SqliteUserSyncFaultRepository(session);
+        var faults = new UserSyncFaultRepository(session);
         var service = new UserSyncFaultService(faults);
         var descriptor = new UserSyncFaultDescriptor
         {

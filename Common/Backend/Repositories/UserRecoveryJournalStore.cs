@@ -3,9 +3,9 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteUserRecoveryJournalStore(SqliteSession session) : IUserRecoveryJournalStore
+internal sealed class UserRecoveryJournalStore(SqliteSession session) : IUserRecoveryJournalStore
 {
     private const string SelectById = """
         SELECT "Id", "UserId", "State", "CreatedAtUtc", "ProtectedKey", "EncryptedPayload", "PayloadHash"
@@ -50,8 +50,8 @@ internal sealed class SqliteUserRecoveryJournalStore(SqliteSession session) : IU
 
     public async Task<LocalUserDevice?> ReadLocalLinkAsync(Guid userId, CancellationToken ct) =>
         (await session.ReadAsync($"""
-            SELECT {SqliteLocalUserDeviceRepository.Projection} FROM "LocalUserDevices" lu WHERE lu."UserId" = $user;
-            """, SqliteLocalUserDeviceRepository.ReadRow, ct, ("$user", userId))).SingleOrDefault();
+            SELECT {LocalUserDeviceRepository.Projection} FROM "LocalUserDevices" lu WHERE lu."UserId" = $user;
+            """, LocalUserDeviceRepository.ReadRow, ct, ("$user", userId))).SingleOrDefault();
 
     public async Task<byte[]?> ReadActiveSigningKeyAsync(Guid userId, Guid deviceId, Guid originInstanceId, CancellationToken ct) =>
         (await session.ReadAsync("""
@@ -74,9 +74,9 @@ internal sealed class SqliteUserRecoveryJournalStore(SqliteSession session) : IU
     public async Task<UserRevisionKnowledge?> ReadKnowledgeAsync(Guid userId, Guid deviceId, Guid originInstanceId,
         long keyEpoch, CancellationToken ct) =>
         (await session.ReadAsync($"""
-            {SqliteUserRevisionKnowledgeRepository.Select}
+            {UserRevisionKnowledgeRepository.Select}
             WHERE "UserId" = $user AND "OriginDeviceId" = $device AND "OriginInstanceId" = $instance AND "UserKeyEpoch" = $epoch;
-            """, SqliteUserRevisionKnowledgeRepository.Read, ct, ("$user", userId), ("$device", deviceId),
+            """, UserRevisionKnowledgeRepository.Read, ct, ("$user", userId), ("$device", deviceId),
             ("$instance", originInstanceId), ("$epoch", keyEpoch))).SingleOrDefault();
 
     public async Task<byte[]?> ReadRejectedOperationHashAsync(Guid userId, Guid operationId, CancellationToken ct) =>

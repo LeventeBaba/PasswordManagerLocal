@@ -3,7 +3,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Persistence;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Tests.Fakes;
 using SQLitePCL;

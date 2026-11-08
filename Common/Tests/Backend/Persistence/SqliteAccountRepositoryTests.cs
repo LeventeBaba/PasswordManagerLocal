@@ -3,7 +3,7 @@ using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Tests.Fakes;
@@ -21,7 +21,7 @@ public sealed class SqliteAccountRepositoryTests
     {
         await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         using var session = baseline.OpenSession();
-        var users = new SqliteUserRepository(session);
+        var users = new UserRepository(session);
         var projection = new UserLoginIdentityProjectionService(
             users, new FakeUserSyncSnapshotRepository(), new FakeUserMembershipAuthorizationService(),
             new UserLifecycleCoordinator(), session);
@@ -73,8 +73,8 @@ public sealed class SqliteAccountRepositoryTests
 
         using var session = baseline.OpenSession();
         using var otherSession = baseline.OpenSession();
-        var users = new SqliteUserRepository(session);
-        var otherUsers = new SqliteUserRepository(otherSession);
+        var users = new UserRepository(session);
+        var otherUsers = new UserRepository(otherSession);
         var first = (await users.GetByIdAsync(original.UId))!;
         CryptographicOperations.ZeroMemory(first.EncryptedUserPasswordsDataPayload);
         first.EncryptedUserPasswordsDataPayload = [0x77];
@@ -121,7 +121,7 @@ public sealed class SqliteAccountRepositoryTests
         await baseline.Users.AddAsync(user);
         await baseline.UnitOfWork.SaveChangesAsync();
         using var session = baseline.OpenSession();
-        var users = new SqliteUserRepository(session);
+        var users = new UserRepository(session);
 
         var change = (await users.GetByIdAsync(user.UId))!;
         change.LastModifiedAt = change.LastModifiedAt.AddSeconds(1);
@@ -153,8 +153,8 @@ public sealed class SqliteAccountRepositoryTests
         await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         using var session = baseline.OpenSession();
         using var otherSession = baseline.OpenSession();
-        var users = new SqliteUserRepository(session);
-        var other = new SqliteUserRepository(otherSession);
+        var users = new UserRepository(session);
+        var other = new UserRepository(otherSession);
         var user = CreateUser([3]);
         await users.AddAsync(user);
         await users.AddLoginIdentityStateAsync(new UserLoginIdentityState { UserId = user.UId, ConcurrencyVersion = 1 });
@@ -180,10 +180,10 @@ public sealed class SqliteAccountRepositoryTests
     {
         await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         using var session = baseline.OpenSession();
-        var users = new SqliteUserRepository(session);
-        var groups = new SqliteGroupRepository(session);
+        var users = new UserRepository(session);
+        var groups = new GroupRepository(session);
         var relationships = new SyncRelationshipReconciliationService(
-            users, groups, new SqliteDeviceRepository(session), new SqliteUserDeviceRepository(session),
+            users, groups, new DeviceRepository(session), new UserDeviceRepository(session),
             new FakeDeviceIdentityService(), new FakeUserMembershipAuthorizationRepository());
 
         var first = CreateUser([4]);
@@ -226,12 +226,12 @@ public sealed class SqliteAccountRepositoryTests
     {
         await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         using var session = baseline.OpenSession();
-        var users = new SqliteUserRepository(session);
-        var identities = new SqliteDeviceIdentityRepository(session);
-        var devices = new SqliteDeviceRepository(session);
-        var remoteLinks = new SqliteUserDeviceRepository(session);
-        var localLinks = new SqliteLocalUserDeviceRepository(session);
-        var routes = new SqliteSyncRouteRepository(session);
+        var users = new UserRepository(session);
+        var identities = new DeviceIdentityRepository(session);
+        var devices = new DeviceRepository(session);
+        var remoteLinks = new UserDeviceRepository(session);
+        var localLinks = new LocalUserDeviceRepository(session);
+        var routes = new SyncRouteRepository(session);
 
         var user = CreateUser([6]);
         var local = new LocalDeviceIdentity { DeviceType = DeviceType.WindowsPc, IsSyncOn = true };

@@ -3,9 +3,9 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteDeviceIdentityRepository(SqliteSession session) : IDeviceIdentityRepository
+internal sealed class DeviceIdentityRepository(SqliteSession session) : IDeviceIdentityRepository
 {
     internal const string Projection = """
         li."Id", li."AgreementPrivateKeyBlob", li."CreatedAt", li."DeviceType", li."IntegrityHash",

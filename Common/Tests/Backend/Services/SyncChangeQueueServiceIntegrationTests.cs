@@ -2,7 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Services;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Tests.Fakes;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
@@ -36,7 +36,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
         // The sender has already read the row in a different SQLite session, before incoming
         // propagation runs. These operations are deliberately sequenced, without sleeps.
         using var senderSession = database.OpenSession();
-        var senderQueue = new SqliteSyncQueueRepository(senderSession);
+        var senderQueue = new SyncQueueRepository(senderSession);
         var inFlight = await senderQueue.GetNextPendingForDeviceAsync(source.Id);
         MSTestAssert.IsNotNull(inFlight);
         var incomingTimestamp = pendingItem.ChangedAtTs + (newerLocalWork ? -1 : 1);
@@ -86,8 +86,8 @@ public sealed class SyncChangeQueueServiceIntegrationTests
 
         using var senderSession = database.OpenSession();
         using var writerSession = database.OpenSession();
-        var senderQueue = new SqliteSyncQueueRepository(senderSession);
-        var writerQueue = new SqliteSyncQueueRepository(writerSession);
+        var senderQueue = new SyncQueueRepository(senderSession);
+        var writerQueue = new SyncQueueRepository(writerSession);
         var target = seeded.EnabledRemotes.Single();
         var inFlight = await senderQueue.GetNextPendingForDeviceAsync(target.Id);
         MSTestAssert.IsNotNull(inFlight);

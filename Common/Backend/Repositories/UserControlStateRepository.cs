@@ -3,9 +3,9 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteUserControlStateRepository(SqliteSession session) : IUserControlStateRepository
+internal sealed class UserControlStateRepository(SqliteSession session) : IUserControlStateRepository
 {
     private const string Select = """
         SELECT "UserId", "AppliedKeyEpoch", "AppliedMembershipEpoch", "ConflictReason", "ConflictingOperationHash",

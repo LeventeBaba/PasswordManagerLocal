@@ -2,7 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Contracts.Notifications;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
@@ -20,7 +20,7 @@ public sealed class BackendChangeUnitOfWorkTests
         await using var database = await SqliteTestVault.CreateAsync();
         using var hub = new BackendChangeEventHub(TimeProvider.System);
         using var unitOfWork = new SqliteSession(database.Connections, hub);
-        var users = new SqliteUserRepository(unitOfWork);
+        var users = new UserRepository(unitOfWork);
         var user = await AddUserAsync(users, unitOfWork);
         await using var subscription = hub.Subscribe(user.UId, capacity: 8);
 
@@ -50,7 +50,7 @@ public sealed class BackendChangeUnitOfWorkTests
         await using var database = await SqliteTestVault.CreateAsync();
         using var hub = new BackendChangeEventHub(TimeProvider.System);
         using var unitOfWork = new SqliteSession(database.Connections, hub);
-        var users = new SqliteUserRepository(unitOfWork);
+        var users = new UserRepository(unitOfWork);
         var user = await AddUserAsync(users, unitOfWork);
         var committedSequence = hub.CurrentPosition.Sequence;
 
@@ -81,7 +81,7 @@ public sealed class BackendChangeUnitOfWorkTests
         await using var database = await SqliteTestVault.CreateAsync();
         using var hub = new BackendChangeEventHub(TimeProvider.System);
         using var unitOfWork = new SqliteSession(database.Connections, hub);
-        var users = new SqliteUserRepository(unitOfWork);
+        var users = new UserRepository(unitOfWork);
         var user = await AddUserAsync(users, unitOfWork);
         await using var subscription = hub.Subscribe(user.UId, capacity: 8);
         var startSequence = hub.CurrentPosition.Sequence;
@@ -112,7 +112,7 @@ public sealed class BackendChangeUnitOfWorkTests
         await using var database = await SqliteTestVault.CreateAsync();
         using var hub = new BackendChangeEventHub(TimeProvider.System);
         using var unitOfWork = new SqliteSession(database.Connections, hub);
-        var users = new SqliteUserRepository(unitOfWork);
+        var users = new UserRepository(unitOfWork);
         var user = await AddUserAsync(users, unitOfWork);
         var identity = new UserLoginIdentityState
         {
@@ -142,7 +142,7 @@ public sealed class BackendChangeUnitOfWorkTests
     }
 
     private static async Task<User> AddUserAsync(
-        SqliteUserRepository users,
+        UserRepository users,
         SqliteSession unitOfWork)
     {
         var now = DateTimeOffset.UtcNow;

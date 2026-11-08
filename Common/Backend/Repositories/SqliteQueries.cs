@@ -2,7 +2,7 @@ using Microsoft.Data.Sqlite;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Utils;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
 internal static class SqliteQueries
 {

@@ -3,7 +3,7 @@ using NSec.Cryptography;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
@@ -79,12 +79,12 @@ public sealed class UserSnapshotInboxProjectionTransactionTests
             inbox.StoreAsync(envelope, Guid.NewGuid()));
 
         using var readback = database.OpenSession();
-        MSTestAssert.IsNull(await new SqliteUserSyncSnapshotRepository(readback).GetAsync(
+        MSTestAssert.IsNull(await new UserSyncSnapshotRepository(readback).GetAsync(
             user.UId,
             originDevice,
             originInstance,
             user.KeyEpoch));
-        MSTestAssert.IsNull(await new SqliteUserRevisionKnowledgeRepository(readback).GetAsync(
+        MSTestAssert.IsNull(await new UserRevisionKnowledgeRepository(readback).GetAsync(
             user.UId,
             originDevice,
             originInstance,

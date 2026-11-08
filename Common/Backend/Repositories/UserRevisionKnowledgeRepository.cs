@@ -3,9 +3,9 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteUserRevisionKnowledgeRepository(SqliteSession session) : IUserRevisionKnowledgeRepository
+internal sealed class UserRevisionKnowledgeRepository(SqliteSession session) : IUserRevisionKnowledgeRepository
 {
     internal const string Select = """
         SELECT "UserId", "OriginDeviceId", "OriginInstanceId", "UserKeyEpoch", "HighestMergedRevision",

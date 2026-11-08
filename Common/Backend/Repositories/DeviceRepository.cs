@@ -4,9 +4,9 @@ using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Utils;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteDeviceRepository(SqliteSession session) : IDeviceRepository
+internal sealed class DeviceRepository(SqliteSession session) : IDeviceRepository
 {
     internal const string Projection = """
         d."Id", d."BlockedAt", d."BlockedReason", d."DeviceType", d."IntegrityHash", d."InvalidSyncAttemptCount",
@@ -16,7 +16,7 @@ internal sealed class SqliteDeviceRepository(SqliteSession session) : IDeviceRep
     private const int FieldCount = 17;
     private const string Select = $"""SELECT {Projection} FROM "Devices" d""";
     private const string SelectWithLinks = $"""
-        SELECT {Projection}, {SqliteUserDeviceRepository.Projection}
+        SELECT {Projection}, {UserDeviceRepository.Projection}
         FROM "Devices" d LEFT JOIN "UserDevices" ud ON ud."DeviceId" = d."Id"
         """;
 
@@ -187,7 +187,7 @@ internal sealed class SqliteDeviceRepository(SqliteSession session) : IDeviceRep
     };
 
     private static (Device Device, UserDevice? Link) ReadWithLink(SqliteDataReader row) =>
-        (ReadRow(row, 0), row.IsDBNull(FieldCount) ? null : SqliteUserDeviceRepository.ReadRow(row, FieldCount));
+        (ReadRow(row, 0), row.IsDBNull(FieldCount) ? null : UserDeviceRepository.ReadRow(row, FieldCount));
 
     private async Task<List<Device>> ListWithLinksAsync(
         string sql, bool remember, CancellationToken ct, params (string Name, object? Value)[] parameters) =>

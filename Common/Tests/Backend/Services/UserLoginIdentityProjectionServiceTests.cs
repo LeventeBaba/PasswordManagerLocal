@@ -1,7 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSec.Cryptography;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
@@ -481,14 +481,14 @@ public sealed class UserLoginIdentityProjectionServiceTests
             (await service.FindByUsernameAsync(Encoding.UTF8.GetBytes("Beta"))).State);
 
         using var restartedSession = database.OpenSession();
-        var restartedUsers = new SqliteUserRepository(restartedSession);
+        var restartedUsers = new UserRepository(restartedSession);
         var restarted = new UserLoginIdentityProjectionService(
             restartedUsers,
-            new SqliteUserSyncSnapshotRepository(restartedSession),
+            new UserSyncSnapshotRepository(restartedSession),
             new FakeUserMembershipAuthorizationService(),
             new UserLifecycleCoordinator(),
             restartedSession,
-            new SqliteDeletedUserBarrierRepository(restartedSession));
+            new DeletedUserBarrierRepository(restartedSession));
         MSTestAssert.AreEqual(UserLoginIdentityMatchState.Matched,
             (await restarted.FindByUsernameAsync(Encoding.UTF8.GetBytes("Beta"))).State);
         MSTestAssert.AreEqual(UserLoginIdentityMatchState.NotFound,

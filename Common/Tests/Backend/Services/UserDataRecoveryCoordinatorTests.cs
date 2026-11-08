@@ -4,7 +4,7 @@ using NSecKey = NSec.Cryptography.Key;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Sync;
@@ -304,17 +304,17 @@ public sealed class UserDataRecoveryCoordinatorTests
 
         MSTestAssert.AreEqual(UserDataRecoveryState.Failed, failed.State);
         using var readback = database.OpenSession();
-        var rolledBackUser = await new SqliteUserRepository(readback).GetByIdAsNoTrackingAsync(harness.UserId);
+        var rolledBackUser = await new UserRepository(readback).GetByIdAsNoTrackingAsync(harness.UserId);
         MSTestAssert.IsNotNull(rolledBackUser);
         CollectionAssert.AreEqual(damagedCiphertext, rolledBackUser.EncryptedPayload);
-        var rolledBackCheckpoint = await new SqliteUserCanonicalCheckpointRepository(readback).GetAsync(harness.UserId);
+        var rolledBackCheckpoint = await new UserCanonicalCheckpointRepository(readback).GetAsync(harness.UserId);
         MSTestAssert.IsNotNull(rolledBackCheckpoint);
         MSTestAssert.AreEqual(1L, rolledBackCheckpoint.CheckpointSequence);
-        var rolledBackSnapshots = await new SqliteUserSyncSnapshotRepository(readback).ListForUserAsync(harness.UserId);
+        var rolledBackSnapshots = await new UserSyncSnapshotRepository(readback).ListForUserAsync(harness.UserId);
         MSTestAssert.HasCount(1, rolledBackSnapshots);
         MSTestAssert.AreEqual(UserSyncSnapshotStatus.RecoveryCandidate, rolledBackSnapshots[0].Status);
         MSTestAssert.HasCount(0, harness.Queue.EnqueuedItems);
-        var retryFault = (await new SqliteUserSyncFaultRepository(readback).ListForUserAsync(harness.UserId))
+        var retryFault = (await new UserSyncFaultRepository(readback).ListForUserAsync(harness.UserId))
             .Single(fault => fault.Scope == UserSyncFaultScope.LocalCanonical);
         MSTestAssert.AreEqual(UserSyncHealthStatus.AwaitingEvidence, retryFault.Status);
         MSTestAssert.IsTrue(retryFault.NextRecoveryAttemptAtUtc.HasValue);

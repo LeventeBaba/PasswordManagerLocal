@@ -1,7 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSec.Cryptography;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Tests.Fakes;
@@ -263,18 +263,18 @@ public sealed class UserControlOperationServiceTests
 
         using var restartedSession = database.OpenSession();
         var restartedService = new UserControlOperationInboxService(
-            new SqliteUserControlOperationRepository(restartedSession),
-            new SqliteUserControlStateRepository(restartedSession),
-            new SqliteUserRepository(restartedSession),
-            new SqliteDeviceRepository(restartedSession),
-            new SqliteUserDeviceRepository(restartedSession),
-            new SqliteUserSyncSnapshotRepository(restartedSession),
+            new UserControlOperationRepository(restartedSession),
+            new UserControlStateRepository(restartedSession),
+            new UserRepository(restartedSession),
+            new DeviceRepository(restartedSession),
+            new UserDeviceRepository(restartedSession),
+            new UserSyncSnapshotRepository(restartedSession),
             new UserLifecycleCoordinator(),
             new FakeInteractiveSessionStateService(new FakeAuthService()),
             restartedSession,
             new FakeUserMembershipAuthorizationService(),
-            new SqliteUserMembershipAuthorizationRepository(restartedSession),
-            new SqliteLocalUserDeviceRepository(restartedSession),
+            new UserMembershipAuthorizationRepository(restartedSession),
+            new LocalUserDeviceRepository(restartedSession),
             new FakeDeviceIdentityService(),
             new FakeSyncRuntimeService());
         var applied = await restartedService.TryApplyStoredAsync(envelope.OperationId);

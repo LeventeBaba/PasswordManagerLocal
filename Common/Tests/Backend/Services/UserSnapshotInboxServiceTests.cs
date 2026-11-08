@@ -3,7 +3,7 @@ using NSec.Cryptography;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Backend.Utils;
@@ -54,11 +54,11 @@ public sealed class UserSnapshotInboxServiceTests
 
         // Read the receipt and revision knowledge from a separate connection after StoreAsync returns.
         using var readback = database.OpenSession();
-        var stored = await new SqliteUserSyncSnapshotRepository(readback).GetAsync(
+        var stored = await new UserSyncSnapshotRepository(readback).GetAsync(
             user.UId, originDeviceId, originInstanceId, user.KeyEpoch);
-        var knowledge = await new SqliteUserRevisionKnowledgeRepository(readback).GetAsync(
+        var knowledge = await new UserRevisionKnowledgeRepository(readback).GetAsync(
             user.UId, originDeviceId, originInstanceId, user.KeyEpoch);
-        var reloadedUser = await new SqliteUserRepository(readback).GetByIdAsNoTrackingAsync(user.UId);
+        var reloadedUser = await new UserRepository(readback).GetByIdAsNoTrackingAsync(user.UId);
 
         MSTestAssert.AreEqual(UserSnapshotReceiptState.StoredPending, receipt.State);
         MSTestAssert.IsNotNull(stored);

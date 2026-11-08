@@ -5,9 +5,9 @@ using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Sync.Tombstones;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteSyncTombstoneRepository(SqliteSession session, int capacity = TombstoneConstants.MaxSyncTombstones)
+internal sealed class SyncTombstoneRepository(SqliteSession session, int capacity = TombstoneConstants.MaxSyncTombstones)
     : ISyncTombstoneRepository
 {
     private readonly Dictionary<(Guid ModelId, SyncModelType ModelType), PendingTombstone> _pending = [];

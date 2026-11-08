@@ -3,9 +3,9 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteDeviceEnrollmentCommitRepository(SqliteSession session) : IDeviceEnrollmentCommitRepository
+internal sealed class DeviceEnrollmentCommitRepository(SqliteSession session) : IDeviceEnrollmentCommitRepository
 {
     private const string Select = """
         SELECT "CommitId", "AdditionOperationHash", "AdditionOperationId", "CompletedAtUtc", "CreatedAtUtc",

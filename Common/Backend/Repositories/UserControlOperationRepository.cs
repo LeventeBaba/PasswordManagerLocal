@@ -3,9 +3,9 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteUserControlOperationRepository(SqliteSession session) : IUserControlOperationRepository
+internal sealed class UserControlOperationRepository(SqliteSession session) : IUserControlOperationRepository
 {
     private const string Select = """
         SELECT "OperationId", "AppliedAtUtc", "ConflictingOperationHash", "CreatedAtUtc", "EnvelopePayload",

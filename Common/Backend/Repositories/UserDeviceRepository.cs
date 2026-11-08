@@ -4,9 +4,9 @@ using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Utils;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteUserDeviceRepository(SqliteSession session) : IUserDeviceRepository
+internal sealed class UserDeviceRepository(SqliteSession session) : IUserDeviceRepository
 {
     internal const string Projection = """
         ud."UserId", ud."DeviceId", ud."DeletedAt", ud."IntegrityHash",
@@ -15,7 +15,7 @@ internal sealed class SqliteUserDeviceRepository(SqliteSession session) : IUserD
     private const int FieldCount = 8;
     private const string Select = $"""SELECT {Projection} FROM "UserDevices" ud""";
     private const string SelectWithDevice = $"""
-        SELECT {Projection}, {SqliteDeviceRepository.Projection}
+        SELECT {Projection}, {DeviceRepository.Projection}
         FROM "UserDevices" ud JOIN "Devices" d ON d."Id" = ud."DeviceId"
         """;
     private const string LinkByPair = """ud."UserId" = $user AND ud."DeviceId" = $device""";
@@ -139,7 +139,7 @@ internal sealed class SqliteUserDeviceRepository(SqliteSession session) : IUserD
     private static UserDevice ReadWithDevice(SqliteDataReader row)
     {
         var link = ReadDetached(row);
-        link.Device = SqliteDeviceRepository.ReadRow(row, FieldCount);
+        link.Device = DeviceRepository.ReadRow(row, FieldCount);
         return link;
     }
 

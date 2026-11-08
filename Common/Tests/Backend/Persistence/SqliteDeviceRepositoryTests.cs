@@ -2,7 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
@@ -19,7 +19,7 @@ public sealed class SqliteDeviceRepositoryTests
     {
         await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var session = database.OpenSession();
-        var repository = new SqliteDeviceIdentityRepository(session);
+        var repository = new DeviceIdentityRepository(session);
         Assert.IsNull(await repository.Get());
 
         var identity = CreateIdentity();
@@ -61,8 +61,8 @@ public sealed class SqliteDeviceRepositoryTests
 
         using var firstSession = database.OpenSession();
         using var secondSession = database.OpenSession();
-        var first = new SqliteDeviceRepository(firstSession);
-        var second = new SqliteDeviceRepository(secondSession);
+        var first = new DeviceRepository(firstSession);
+        var second = new DeviceRepository(secondSession);
         var left = (await first.GetByIdAsync(baseline.Id))!;
         var right = (await second.GetByIdAsync(baseline.Id))!;
 
@@ -109,7 +109,7 @@ public sealed class SqliteDeviceRepositoryTests
             """, ("$hash", expectedHash), ("$device", collision.Id)));
 
         using var session = database.OpenSession();
-        var devices = new SqliteDeviceRepository(session);
+        var devices = new DeviceRepository(session);
         Assert.HasCount(2, await devices.ListBySigningKeyHashAsync(expectedHash));
         Assert.AreEqual(match.Id, (await devices.GetBySignPublicKeyAsync(match.SignPublicKey))!.Id);
         Assert.AreEqual(match.Id, (await devices.GetByTlsCertFingerprintAsync(" aa:bb:cc "))!.Id);
@@ -133,11 +133,11 @@ public sealed class SqliteDeviceRepositoryTests
         using var session = database.OpenSession();
         var identity = CreateIdentity();
         var device = CreateDevice("010203", [5]);
-        var devices = new SqliteDeviceRepository(session);
-        var remoteLinks = new SqliteUserDeviceRepository(session);
-        var localLinks = new SqliteLocalUserDeviceRepository(session);
-        var routes = new SqliteSyncRouteRepository(session);
-        await new SqliteDeviceIdentityRepository(session).Create(identity);
+        var devices = new DeviceRepository(session);
+        var remoteLinks = new UserDeviceRepository(session);
+        var localLinks = new LocalUserDeviceRepository(session);
+        var routes = new SyncRouteRepository(session);
+        await new DeviceIdentityRepository(session).Create(identity);
         await devices.AddAsync(device);
         var link = new UserDevice { UserId = user.UId, DeviceId = device.Id };
         await remoteLinks.AddAsync(link);

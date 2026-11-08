@@ -2,9 +2,9 @@ using Microsoft.Data.Sqlite;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteLoginIdentityStore(SqliteSession session)
+internal sealed class LoginIdentityStore(SqliteSession session)
 {
     private const string Select = """
         SELECT "UserId", "ConcurrencyVersion", "KeyEpoch", "MembershipEpoch", "SourceOriginDeviceId",

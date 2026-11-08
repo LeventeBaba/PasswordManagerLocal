@@ -3,9 +3,9 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteUserOriginRemovalCutoffRepository(SqliteSession session) : IUserOriginRemovalCutoffRepository
+internal sealed class UserOriginRemovalCutoffRepository(SqliteSession session) : IUserOriginRemovalCutoffRepository
 {
     private const string Select = """
         SELECT "CutoffId", "AuthorizationId", "CreatedAtUtc", "DeviceId", "HighestAcceptedControlSequence",

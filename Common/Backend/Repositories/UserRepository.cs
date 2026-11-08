@@ -3,9 +3,9 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteUserRepository(SqliteSession session) : IUserRepository
+internal sealed class UserRepository(SqliteSession session) : IUserRepository
 {
     internal const string Projection = """
         u."UId", u."EncryptedGeneralUserDataPayload", u."EncryptedPayload", u."EncryptedUserDevicesDataPayload",
@@ -17,7 +17,7 @@ internal sealed class SqliteUserRepository(SqliteSession session) : IUserReposit
         """;
     private const string Select = $"""SELECT {Projection} FROM "Users" u""";
 
-    private readonly SqliteLoginIdentityStore _login = new(session);
+    private readonly LoginIdentityStore _login = new(session);
     private readonly SqliteRowWriter<User> _rows = new(session, "Users", 1,
     [
         (nameof(User.UId), row => row.UId),
@@ -147,16 +147,16 @@ internal sealed class SqliteUserRepository(SqliteSession session) : IUserReposit
                 return null;
 
             user.Groups = await session.ReadAsync($"""
-                SELECT {SqliteGroupRepository.Projection}
+                SELECT {GroupRepository.Projection}
                 FROM "GroupMembers" gm JOIN "Groups" g ON g."Id" = gm."GroupsId"
                 WHERE gm."UsersUId" = $id;
-                """, SqliteGroupRepository.ReadRow, ct, ("$id", id));
+                """, GroupRepository.ReadRow, ct, ("$id", id));
             user.UserDevices = await session.ReadAsync($"""
-                SELECT {SqliteUserDeviceRepository.Projection} FROM "UserDevices" ud WHERE ud."UserId" = $id;
-                """, row => SqliteUserDeviceRepository.ReadRow(row, 0), ct, ("$id", id));
+                SELECT {UserDeviceRepository.Projection} FROM "UserDevices" ud WHERE ud."UserId" = $id;
+                """, row => UserDeviceRepository.ReadRow(row, 0), ct, ("$id", id));
             user.LocalUserDevices = await session.ReadAsync($"""
-                SELECT {SqliteLocalUserDeviceRepository.Projection} FROM "LocalUserDevices" lu WHERE lu."UserId" = $id;
-                """, SqliteLocalUserDeviceRepository.ReadRow, ct, ("$id", id));
+                SELECT {LocalUserDeviceRepository.Projection} FROM "LocalUserDevices" lu WHERE lu."UserId" = $id;
+                """, LocalUserDeviceRepository.ReadRow, ct, ("$id", id));
 
             foreach (var group in user.Groups)
                 group.Users.Add(user);

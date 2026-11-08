@@ -1,7 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Persistence;
@@ -16,8 +16,8 @@ public sealed class SqliteControlAndMembershipRepositoryTests
     {
         await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         using var session = baseline.OpenSession();
-        var operations = new SqliteUserControlOperationRepository(session);
-        var states = new SqliteUserControlStateRepository(session);
+        var operations = new UserControlOperationRepository(session);
+        var states = new UserControlStateRepository(session);
         var userId = Guid.NewGuid();
         var first = KeyTransition(userId, UserControlOperationStatus.Applied);
         var competing = KeyTransition(userId, UserControlOperationStatus.StoredPending);
@@ -64,9 +64,9 @@ public sealed class SqliteControlAndMembershipRepositoryTests
         await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         using var session = baseline.OpenSession();
         using var otherSession = baseline.OpenSession();
-        var devices = new SqliteDeviceRepository(session);
-        var memberships = new SqliteUserMembershipAuthorizationRepository(session);
-        var otherMemberships = new SqliteUserMembershipAuthorizationRepository(otherSession);
+        var devices = new DeviceRepository(session);
+        var memberships = new UserMembershipAuthorizationRepository(session);
+        var otherMemberships = new UserMembershipAuthorizationRepository(otherSession);
         var userId = Guid.NewGuid();
         var fingerprint = string.Concat(Enumerable.Repeat("AB", 32));
         var device = new Device { SignPublicKey = [0x42], TlsCertFingerprint = fingerprint };
@@ -126,8 +126,8 @@ public sealed class SqliteControlAndMembershipRepositoryTests
     {
         await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         using var session = baseline.OpenSession();
-        var commits = new SqliteDeviceEnrollmentCommitRepository(session);
-        var cutoffs = new SqliteUserOriginRemovalCutoffRepository(session);
+        var commits = new DeviceEnrollmentCommitRepository(session);
+        var cutoffs = new UserOriginRemovalCutoffRepository(session);
         var commit = new DeviceEnrollmentCommit
         {
             UserId = Guid.NewGuid(), TargetDeviceId = Guid.NewGuid(), TargetOriginInstanceId = Guid.NewGuid()
@@ -162,9 +162,9 @@ public sealed class SqliteControlAndMembershipRepositoryTests
     {
         await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         using var session = baseline.OpenSession();
-        var users = new SqliteUserRepository(session);
-        var barriers = new SqliteDeletedUserBarrierRepository(session);
-        var operations = new SqliteUserControlOperationRepository(session);
+        var users = new UserRepository(session);
+        var barriers = new DeletedUserBarrierRepository(session);
+        var operations = new UserControlOperationRepository(session);
         var user = new User();
         user.GenerateIntegrityHash();
         await users.AddAsync(user);

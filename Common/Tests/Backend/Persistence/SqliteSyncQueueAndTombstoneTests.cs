@@ -2,7 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 
@@ -20,7 +20,7 @@ public sealed class SqliteSyncQueueAndTombstoneTests
     {
         await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         using var session = baseline.OpenSession();
-        ISyncQueueRepository queue = separateWriter ? new SqliteSyncQueueRepository(session) : baseline.SyncQueue;
+        ISyncQueueRepository queue = separateWriter ? new SyncQueueRepository(session) : baseline.SyncQueue;
         IUnitOfWork writes = separateWriter ? session : baseline.UnitOfWork;
 
         var first = NewItem();
@@ -56,10 +56,10 @@ public sealed class SqliteSyncQueueAndTombstoneTests
         await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         using var session = baseline.OpenSession();
         using var senderSession = baseline.OpenSession();
-        var queue = new SqliteSyncQueueRepository(session);
-        var sender = new SqliteSyncQueueRepository(senderSession);
-        var devices = new SqliteDeviceRepository(session);
-        var items = new SqliteSyncItemRepository(session);
+        var queue = new SyncQueueRepository(session);
+        var sender = new SyncQueueRepository(senderSession);
+        var devices = new DeviceRepository(session);
+        var items = new SyncItemRepository(session);
         var device = NewDevice("AABB");
         var first = NewItem();
         var second = NewItem();
@@ -103,8 +103,8 @@ public sealed class SqliteSyncQueueAndTombstoneTests
         await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         using var session = baseline.OpenSession();
         using var otherSession = baseline.OpenSession();
-        var first = new SqliteSyncTombstoneRepository(session, capacity: 1);
-        var other = new SqliteSyncTombstoneRepository(otherSession, capacity: 1);
+        var first = new SyncTombstoneRepository(session, capacity: 1);
+        var other = new SyncTombstoneRepository(otherSession, capacity: 1);
         var abandoned = Guid.NewGuid();
         var retained = Guid.NewGuid();
         await first.UpsertAsync(abandoned, SyncModelType.Group, 3);
@@ -136,7 +136,7 @@ public sealed class SqliteSyncQueueAndTombstoneTests
     {
         await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         using var session = baseline.OpenSession();
-        var devices = new SqliteDeviceRepository(session);
+        var devices = new DeviceRepository(session);
         var seeded = NewDevice("AABB");
         await devices.AddAsync(seeded);
         await session.SaveChangesAsync();

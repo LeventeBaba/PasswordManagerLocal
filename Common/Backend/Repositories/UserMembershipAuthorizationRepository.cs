@@ -4,9 +4,9 @@ using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Sync;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteUserMembershipAuthorizationRepository(SqliteSession session) : IUserMembershipAuthorizationRepository
+internal sealed class UserMembershipAuthorizationRepository(SqliteSession session) : IUserMembershipAuthorizationRepository
 {
     private const string Select = """
         SELECT "AuthorizationId", "AdditionOperationHash", "AdditionOperationId", "AgreementPublicKeyHash",

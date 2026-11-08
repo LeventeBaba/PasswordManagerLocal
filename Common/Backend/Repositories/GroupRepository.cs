@@ -5,9 +5,9 @@ using PasswordManagerLocal.Common.Backend.Models.Projections;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Contracts.Notifications;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteGroupRepository(SqliteSession session) : IGroupRepository
+internal sealed class GroupRepository(SqliteSession session) : IGroupRepository
 {
     internal const string Projection = """g."Id", g."EncryptedPayload", g."IntegrityHash", g."LastModifiedAt" """;
     private const string Select = $"""SELECT {Projection} FROM "Groups" g""";
@@ -71,10 +71,10 @@ internal sealed class SqliteGroupRepository(SqliteSession session) : IGroupRepos
                 return null;
 
             group.Users = await session.ReadAsync($"""
-                SELECT {SqliteUserRepository.Projection}
+                SELECT {UserRepository.Projection}
                 FROM "GroupMembers" gm JOIN "Users" u ON u."UId" = gm."UsersUId"
                 WHERE gm."GroupsId" = $id;
-                """, SqliteUserRepository.ReadRow, ct, ("$id", id));
+                """, UserRepository.ReadRow, ct, ("$id", id));
             foreach (var user in group.Users)
                 user.Groups.Add(group);
             return group;

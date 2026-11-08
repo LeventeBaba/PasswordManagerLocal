@@ -1,7 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Persistence;
@@ -17,8 +17,8 @@ public sealed class SqliteRecoveryJournalStoreTests
         await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         using var session = baseline.OpenSession();
         using var otherSession = baseline.OpenSession();
-        var journal = new SqliteUserRecoveryJournalStore(session);
-        var otherJournal = new SqliteUserRecoveryJournalStore(otherSession);
+        var journal = new UserRecoveryJournalStore(session);
+        var otherJournal = new UserRecoveryJournalStore(otherSession);
         var row = new UserRecoveryJournal
         {
             Id = Guid.NewGuid(),

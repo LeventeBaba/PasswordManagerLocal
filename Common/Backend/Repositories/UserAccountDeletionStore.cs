@@ -4,9 +4,9 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteUserAccountDeletionStore(
+internal sealed class UserAccountDeletionStore(
     SqliteSession session,
     IUserRepository users,
     IGroupRepository groups,

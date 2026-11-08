@@ -3,9 +3,9 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteLocalUserDeviceRepository(SqliteSession session) : ILocalUserDeviceRepository
+internal sealed class LocalUserDeviceRepository(SqliteSession session) : ILocalUserDeviceRepository
 {
     internal const string Projection = """
         lu."UserId", lu."LocalDeviceIdentityId", lu."IntegrityHash", lu."IsSyncOn"
@@ -22,7 +22,7 @@ internal sealed class SqliteLocalUserDeviceRepository(SqliteSession session) : I
 
     public async Task<LocalUserDevice?> GetAsync(Guid userId, CancellationToken ct = default) =>
         (await session.ReadAsync($"""
-            SELECT {Projection}, {SqliteDeviceIdentityRepository.Projection}
+            SELECT {Projection}, {DeviceIdentityRepository.Projection}
             FROM "LocalUserDevices" lu JOIN "LocalDeviceIdentity" li ON li."Id" = lu."LocalDeviceIdentityId"
             WHERE lu."UserId" = $user;
             """, row => _rows.Remember(ReadWithIdentity(row)), ct, ("$user", userId))).SingleOrDefault();
@@ -58,7 +58,7 @@ internal sealed class SqliteLocalUserDeviceRepository(SqliteSession session) : I
     private static LocalUserDevice ReadWithIdentity(SqliteDataReader row)
     {
         var link = ReadRow(row);
-        link.LocalDeviceIdentity = SqliteDeviceIdentityRepository.ReadRow(row, FieldCount);
+        link.LocalDeviceIdentity = DeviceIdentityRepository.ReadRow(row, FieldCount);
         return link;
     }
 

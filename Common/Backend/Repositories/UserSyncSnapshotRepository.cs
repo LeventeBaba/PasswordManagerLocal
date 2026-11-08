@@ -3,9 +3,9 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteUserSyncSnapshotRepository(SqliteSession session) : IUserSyncSnapshotRepository
+internal sealed class UserSyncSnapshotRepository(SqliteSession session) : IUserSyncSnapshotRepository
 {
     private const string Select = """
         SELECT "Id", "ConflictingSnapshotHash", "CreatedAtUtc", "EnvelopePayload", "LastReceivedFromDeviceId",

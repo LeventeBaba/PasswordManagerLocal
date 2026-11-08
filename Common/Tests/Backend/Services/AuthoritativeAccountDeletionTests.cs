@@ -1,7 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSec.Cryptography;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Sync;
@@ -65,7 +65,7 @@ public sealed class AuthoritativeAccountDeletionTests
         await database.UserDevices.AddAsync(new UserDevice { UserId = user.UId, DeviceId = sharedDevice.Id });
         await database.UserDevices.AddAsync(new UserDevice { UserId = otherUser.UId, DeviceId = sharedDevice.Id });
         await database.DeviceEnrollmentCommits.AddAsync(enrollmentCommit);
-        var journals = new SqliteUserRecoveryJournalStore(database.UnitOfWork);
+        var journals = new UserRecoveryJournalStore(database.UnitOfWork);
         journals.Add(journal);
         journals.Add(otherJournal);
         await database.UserDevices.AddAsync(userDevice);
@@ -141,16 +141,16 @@ public sealed class AuthoritativeAccountDeletionTests
 
         // Keep seeding and readback independent from the deletion transaction.
         using var uow = database.OpenSession();
-        var users = new SqliteUserRepository(uow);
-        var operations = new SqliteUserControlOperationRepository(uow);
-        var states = new SqliteUserControlStateRepository(uow);
-        var authorizations = new SqliteUserMembershipAuthorizationRepository(uow);
-        var cutoffs = new SqliteUserOriginRemovalCutoffRepository(uow);
-        var devices = new SqliteDeviceRepository(uow);
-        var links = new SqliteUserDeviceRepository(uow);
-        var barriers = new SqliteDeletedUserBarrierRepository(uow);
-        var cleanupStore = new SqliteUserAccountDeletionStore(
-            uow, users, new SqliteGroupRepository(uow), new SqliteDeviceEnrollmentCommitRepository(uow));
+        var users = new UserRepository(uow);
+        var operations = new UserControlOperationRepository(uow);
+        var states = new UserControlStateRepository(uow);
+        var authorizations = new UserMembershipAuthorizationRepository(uow);
+        var cutoffs = new UserOriginRemovalCutoffRepository(uow);
+        var devices = new DeviceRepository(uow);
+        var links = new UserDeviceRepository(uow);
+        var barriers = new DeletedUserBarrierRepository(uow);
+        var cleanupStore = new UserAccountDeletionStore(
+            uow, users, new GroupRepository(uow), new DeviceEnrollmentCommitRepository(uow));
         var cleanup = new UserAccountDeletionCleanupService(cleanupStore, users);
         var membership = new UserMembershipAuthorizationService(
             authorizations,
@@ -587,7 +587,7 @@ public sealed class AuthoritativeAccountDeletionTests
     }
 
     private static UserAccountDeletionCleanupService CreateCleanup(SqliteRepositoryTestDatabase database) =>
-        new(new SqliteUserAccountDeletionStore(
+        new(new UserAccountDeletionStore(
             database.UnitOfWork, database.Users, database.Groups, database.DeviceEnrollmentCommits), database.Users);
 
     private static UserControlOperationEnvelope CreateDeletionEnvelope(

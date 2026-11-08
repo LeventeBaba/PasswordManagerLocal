@@ -1,9 +1,9 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteSyncRouteRepository(SqliteSession session) : ISyncRouteRepository
+internal sealed class SyncRouteRepository(SqliteSession session) : ISyncRouteRepository
 {
     // Route eligibility is a narrow relationship projection. Peer trust and membership
     // authorization are evaluated by the calling services.

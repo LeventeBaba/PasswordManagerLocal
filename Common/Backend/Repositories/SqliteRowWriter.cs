@@ -1,7 +1,7 @@
 using System.Runtime.CompilerServices;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
 /// <summary>Stages explicit writes for one table and retains original values on materialized rows.</summary>
 internal sealed class SqliteRowWriter<T>(

@@ -5,12 +5,12 @@ using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Backend.Utils;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteSyncQueueRepository(SqliteSession session) : ISyncQueueRepository
+internal sealed class SyncQueueRepository(SqliteSession session) : ISyncQueueRepository
 {
     private const string PendingForDevice = $"""
-        SELECT q."QueueId", q."Id", q."DeviceId", q."SyncItemId", q."EnqueuedAt", q."ProcessedAt", {SqliteSyncItemRepository.Projection}
+        SELECT q."QueueId", q."Id", q."DeviceId", q."SyncItemId", q."EnqueuedAt", q."ProcessedAt", {SyncItemRepository.Projection}
         FROM "SyncQueueItems" q JOIN "SyncItems" s ON s."Id" = q."SyncItemId"
         WHERE q."DeviceId" = $device AND q."ProcessedAt" IS NULL
         ORDER BY q."QueueId"
@@ -135,7 +135,7 @@ internal sealed class SqliteSyncQueueRepository(SqliteSession session) : ISyncQu
 
     private SyncQueueItem ReadForWrite(SqliteDataReader row)
     {
-        var syncItem = SqliteSyncItemRepository.ReadRow(row, 6);
+        var syncItem = SyncItemRepository.ReadRow(row, 6);
         var item = new SyncQueueItem
         {
             QueueId = row.GetInt64(0),

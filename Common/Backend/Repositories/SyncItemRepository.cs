@@ -3,9 +3,9 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteSyncItemRepository(SqliteSession session) : ISyncItemRepository
+internal sealed class SyncItemRepository(SqliteSession session) : ISyncItemRepository
 {
     internal const string Projection = """s."Id", s."ModelId", s."ModelType", s."ChangeType", s."ChangedAtTs" """;
     private const string Select = $"""SELECT {Projection} FROM "SyncItems" s""";

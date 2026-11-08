@@ -1,7 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSec.Cryptography;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
@@ -27,16 +27,16 @@ public sealed class UserSnapshotPublisherServiceTests
     {
         await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var writes = database.OpenSession();
-        var users = new SqliteUserRepository(writes);
+        var users = new UserRepository(writes);
         var user = CreateUser();
         await users.AddAsync(user);
         await writes.SaveChangesAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var identity = CreateIdentity(signingKey);
         var service = new UserSnapshotPublisherService(
-            new SqliteUserSyncSnapshotRepository(writes),
-            new SqliteUserSyncStateRepository(writes),
-            new SqliteUserRevisionKnowledgeRepository(writes),
+            new UserSyncSnapshotRepository(writes),
+            new UserSyncStateRepository(writes),
+            new UserRevisionKnowledgeRepository(writes),
             identity,
             writes,
             new UserLifecycleCoordinator());
@@ -93,16 +93,16 @@ public sealed class UserSnapshotPublisherServiceTests
     {
         await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var writes = database.OpenSession();
-        var users = new SqliteUserRepository(writes);
+        var users = new UserRepository(writes);
         var user = CreateUser();
         await users.AddAsync(user);
         await writes.SaveChangesAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var identity = CreateIdentity(signingKey);
         var service = new UserSnapshotPublisherService(
-            new SqliteUserSyncSnapshotRepository(writes),
-            new SqliteUserSyncStateRepository(writes),
-            new SqliteUserRevisionKnowledgeRepository(writes),
+            new UserSyncSnapshotRepository(writes),
+            new UserSyncStateRepository(writes),
+            new UserRevisionKnowledgeRepository(writes),
             identity,
             writes,
             new UserLifecycleCoordinator());

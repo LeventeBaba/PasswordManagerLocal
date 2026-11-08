@@ -3,9 +3,9 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
-namespace PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-internal sealed class SqliteUserSyncFaultRepository(SqliteSession session) : IUserSyncFaultRepository
+internal sealed class UserSyncFaultRepository(SqliteSession session) : IUserSyncFaultRepository
 {
     private const string Select = """
         SELECT "Id", "AffectedComponent", "BlocksGarbageCollection", "BlocksLifecycle", "BlocksLogin", "BlocksMerge",

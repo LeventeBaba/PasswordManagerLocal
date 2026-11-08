@@ -1,7 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Services;
@@ -20,7 +20,7 @@ public sealed class UserCanonicalCheckpointRepositoryTests
         using var session = database.OpenSession();
         using var observer = database.OpenSession();
         IUserCanonicalCheckpointRepository repository = separateWriter
-            ? new SqliteUserCanonicalCheckpointRepository(session)
+            ? new UserCanonicalCheckpointRepository(session)
             : database.UserCanonicalCheckpoints;
         var checkpoint = new UserCanonicalCheckpoint
         {
@@ -41,7 +41,7 @@ public sealed class UserCanonicalCheckpointRepositoryTests
         var loaded = await repository.GetAsync(checkpoint.UserId);
 
         Assert.AreSame(checkpoint, loaded);
-        var persisted = new SqliteUserCanonicalCheckpointRepository(observer);
+        var persisted = new UserCanonicalCheckpointRepository(observer);
         Assert.IsNull(await persisted.GetAsync(checkpoint.UserId));
     }
 }
