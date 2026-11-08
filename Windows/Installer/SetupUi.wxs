@@ -100,6 +100,18 @@
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
       </Dialog>
 
+      <Dialog Id="PmlAdminSetupFinished" Width="370" Height="270" Title="[ProductName] Setup">
+        <Control Id="Finish" Type="PushButton" X="304" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="&amp;Finish">
+          <Publish Event="EndDialog" Value="Return" />
+        </Control>
+        <Control Id="Logo" Type="Icon" X="314" Y="14" Width="36" Height="36" Text="SetupLogo" />
+        <Control Id="Heading" Type="Text" X="20" Y="18" Width="282" Height="32" NoPrefix="yes"
+                 Text="{\PmlHeading}Administrative setup complete" />
+        <Control Id="Description" Type="Text" X="20" Y="68" Width="330" Height="45" NoPrefix="yes"
+                 Text="{\PmlBody}The administrative installation image was created. Choose Finish to close this window." />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+      </Dialog>
+
       <Publish Dialog="LicenseAgreementDlg" Control="Back" Event="NewDialog" Value="PmlWelcome" />
       <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="PmlInstallOptions"
                Condition="LicenseAccepted = 1" Order="2" />
@@ -117,6 +129,9 @@
         <Show Dialog="PmlWelcome" Before="ProgressDlg" Condition="NOT Installed" />
         <Show Dialog="PmlSetupFinished" OnExit="success" />
       </InstallUISequence>
+      <AdminUISequence>
+        <Show Dialog="PmlAdminSetupFinished" OnExit="success" />
+      </AdminUISequence>
     </UI>
     <UIRef Id="WixUI_Common" />
   </Fragment>
