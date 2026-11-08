@@ -26,8 +26,7 @@ public sealed class UserMembershipAuthorization
     public bool IsGenesis { get; set; }
     public Guid? AdditionOperationId { get; set; }
 
-    // An empty optional hash carries no evidence, just like null. Normalize on
-    // read as well as write because EF can materialize through backing fields.
+    // Normalize empty optional hashes to the absent-evidence representation.
     public byte[]? AdditionOperationHash
     {
         get => _additionOperationHash is { Length: 0 } ? null : _additionOperationHash;

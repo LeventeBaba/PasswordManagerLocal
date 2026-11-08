@@ -42,8 +42,7 @@
     <PackageVersion Include="ZXing.Net" Version="0.16.11" />
     <PackageVersion Include="ZXing.Net.Bindings.SkiaSharp" Version="0.16.24" />
     <!-- Backend -->
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite.Core" Version="10.0.13" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Data.Sqlite.Core" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
     <PackageVersion Include="SQLite3MC.PCLRaw.bundle" Version="2.6.1" />

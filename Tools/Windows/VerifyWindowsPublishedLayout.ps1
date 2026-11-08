@@ -46,7 +46,6 @@ Assert-Files @(
     'hostpolicy.dll',
     'Avalonia.Win32.dll',
     'Avalonia.Skia.dll',
-    'Microsoft.EntityFrameworkCore.Sqlite.dll',
     'Microsoft.Data.Sqlite.dll',
     'SQLitePCLRaw.core.dll',
     'SQLitePCLRaw.batteries_v2.dll',
@@ -76,13 +75,13 @@ foreach ($executable in @('PasswordManagerLocal.exe', 'PasswordManagerLocal.Wind
 
 $frontendDeps = Get-Content -LiteralPath (Join-Path $publish 'PasswordManagerLocal.deps.json') -Raw
 $agentDeps = Get-Content -LiteralPath (Join-Path $publish 'PasswordManagerLocal.Windows.Agent.deps.json') -Raw
-foreach ($name in @('PasswordManagerLocal.Common.Backend', 'PasswordManagerLocal.Windows.Backend', 'PasswordManagerLocal.Windows.EndpointRpc.Server', 'Microsoft.EntityFrameworkCore', 'Microsoft.Data.Sqlite', 'SQLitePCLRaw')) {
-    if ($frontendDeps.Contains($name)) { throw "Frontend manifest contains backend-only dependency: $name" }
+foreach ($name in @('PasswordManagerLocal.Common.Backend', 'PasswordManagerLocal.Windows.Backend', 'PasswordManagerLocal.Windows.EndpointRpc.Server', 'Microsoft.EntityFrameworkCore', 'Microsoft.Data.Sqlite', 'SQLitePCLRaw', 'SQLite3MC.PCLRaw')) {
+    if ($frontendDeps.IndexOf($name, [StringComparison]::OrdinalIgnoreCase) -ge 0) { throw "Frontend manifest contains backend-only dependency: $name" }
 }
-foreach ($name in @('PasswordManagerLocal.Common.Frontend', 'Avalonia', 'ReactiveUI', 'System.Windows.Forms', 'PresentationFramework', 'WindowsBase')) {
-    if ($agentDeps.Contains($name)) { throw "Agent manifest contains frontend/desktop dependency: $name" }
+foreach ($name in @('PasswordManagerLocal.Common.Frontend', 'Avalonia', 'ReactiveUI', 'System.Windows.Forms', 'PresentationFramework', 'WindowsBase', 'Microsoft.EntityFrameworkCore')) {
+    if ($agentDeps.IndexOf($name, [StringComparison]::OrdinalIgnoreCase) -ge 0) { throw "Agent manifest contains a forbidden dependency: $name" }
 }
-foreach ($name in @('PasswordManagerLocal.Common.Backend', 'PasswordManagerLocal.Windows.EndpointRpc.Server', 'Microsoft.EntityFrameworkCore.Sqlite')) {
+foreach ($name in @('PasswordManagerLocal.Common.Backend', 'PasswordManagerLocal.Windows.EndpointRpc.Server', 'Microsoft.Data.Sqlite', 'SQLite3MC.PCLRaw')) {
     if (-not $agentDeps.Contains($name)) { throw "Agent manifest is missing required dependency: $name" }
 }
 if ($frontendDeps.Contains('AgentRuntime') -or $agentDeps.Contains('AgentRuntime')) { throw 'A dependency manifest still references AgentRuntime.' }
@@ -92,6 +91,9 @@ $forbiddenNames = @(
     'mscordaccore.dll', 'mscordbi.dll', 'Microsoft.DiaSymReader.Native.amd64.dll'
 )
 foreach ($file in Get-ChildItem -LiteralPath $publish -Recurse -File) {
+    if ($file.Name -like 'Microsoft.EntityFrameworkCore*') {
+        throw "Entity Framework Core artifact is present: $($file.FullName)"
+    }
     if ($file.Extension -in @('.ps1', '.bat', '.cmd') -or $file.Extension -ieq '.pdb' -or $file.Name -match '\.Tests?(\.|$)' -or $forbiddenNames -contains $file.Name -or $file.Name -like 'mscordaccore_*.dll') {
         throw "Development/debug/test artifact is present: $($file.FullName)"
     }

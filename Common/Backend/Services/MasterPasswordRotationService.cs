@@ -189,7 +189,7 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
         {
             // Canonical state is already committed. Fail closed instead of leaving the initiating
             // token associated with an old or partially refreshed in-memory key state. A failed
-            // local SavedKey write must also not remain pending in the scoped EF change tracker.
+            // local SavedKey write must also not remain pending in the scoped unit of work.
             if (user.SavedKey is not null)
                 CryptographicOperations.ZeroMemory(user.SavedKey);
             user.SavedKey = null;

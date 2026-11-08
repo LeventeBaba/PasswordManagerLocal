@@ -1,5 +1,4 @@
 using PasswordManagerLocal.Common.Backend.Constants;
-using Microsoft.EntityFrameworkCore;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
@@ -561,8 +560,7 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
             await PersistTerminalFailureAsync(userId, "deterministic-recovery-conflict", ct);
             return new UserDataRecoveryResult(UserDataRecoveryState.ControlPlaneConflict, DiagnosticCode: "deterministic-recovery-conflict");
         }
-        catch (Exception ex) when (ex is DbUpdateConcurrencyException or
-            StorageWriteException { Kind: StorageWriteException.FailureKind.StaleRow })
+        catch (StorageWriteException ex) when (ex.Kind == StorageWriteException.FailureKind.StaleRow)
         {
             await transaction.RollbackAsync(CancellationToken.None);
             _uow.ClearTrackedChanges();

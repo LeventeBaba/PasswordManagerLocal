@@ -1,5 +1,4 @@
 using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 
@@ -13,15 +12,6 @@ namespace PasswordManagerLocal.Common.Backend.Persistence;
 internal static class AppDatabaseTransactionRegistry
 {
     private static readonly ConcurrentDictionary<string, int> ActiveTransactions = new(StringComparer.Ordinal);
-
-    public static string GetDatabaseKey(AppDbContext db)
-    {
-        ArgumentNullException.ThrowIfNull(db);
-        var connection = db.Database.GetDbConnection();
-        return connection is SqliteConnection sqlite
-            ? GetDatabaseKey(sqlite)
-            : connection.ConnectionString;
-    }
 
     public static string GetDatabaseKey(SqliteConnection connection)
     {

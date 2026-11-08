@@ -11,7 +11,7 @@ internal sealed class SqliteConnectionFactory
 
     public SqliteConnectionFactory(BackendStoragePaths paths, IKeyProtector keyProtector)
     {
-        // Share the protected key lookup across bootstrap, EF and standalone callers
+        // Share the protected key lookup across schema bootstrap and runtime callers
         // for this host generation. Startup still migrates before opening the vault.
         _connectionString = new(() =>
         {

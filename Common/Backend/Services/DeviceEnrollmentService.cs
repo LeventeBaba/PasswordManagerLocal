@@ -507,7 +507,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
                     canonicalUser = await users.GetAndVerifyUserAsync(token, lifecycleToken);
 
                     // Reserve the encrypted-device item version before opening the authoritative SQLite
-                    // transaction. The durable clock persists through a separate DbContext, so advancing it
+                    // transaction. The durable clock persists through a separate SQLite connection, so advancing it
                     // while this transaction owns the SQLite write lock would deadlock enrollment. Version
                     // stamps may have gaps, therefore reserving one for a recoverable enrollment is safe.
                     var encryptedDeviceVersion = scope.ServiceProvider

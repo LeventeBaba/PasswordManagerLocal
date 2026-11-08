@@ -4,7 +4,7 @@ using PasswordManagerLocal.Common.Backend.Configuration;
 namespace PasswordManagerLocal.Common.Backend.Persistence;
 
 /// <summary>
-/// Moves existing SQLCipher databases to SQLite3MC's default ChaCha20 cipher before EF Core
+/// Moves existing SQLCipher databases to SQLite3MC's default ChaCha20 cipher before the backend
 /// creates any pooled connections. The original database is left untouched until a staged copy
 /// has been re-keyed and verified with the target cipher.
 /// </summary>

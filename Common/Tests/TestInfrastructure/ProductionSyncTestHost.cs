@@ -67,8 +67,7 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
         ILocalDiscoveryTransport? discoveryTransport = null,
         string localAddress = "127.0.0.1",
         DeviceType deviceType = DeviceType.WindowsPc,
-        string? existingDirectory = null,
-        bool useSqliteStorage = true)
+        string? existingDirectory = null)
     {
         var rootDirectory = existingDirectory ?? Path.Combine(
             Path.GetTempPath(),
@@ -91,8 +90,6 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
             new TestKeyProtector(),
             new FakeLocalDiscoveryNetworkLease(),
             executionProfiles);
-        if (!useSqliteStorage)
-            services.UseEfStorageBaseline();
 
         services.Replace(ServiceDescriptor.Singleton<IDeviceIdentityService>(provider =>
             new DeviceIdentityService(

@@ -209,7 +209,7 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
                 throw;
             }
 
-            // The durable version clock writes through a separate DbContext. Reserve the
+            // The durable version clock writes through a separate SQLite connection. Reserve the
             // tombstone version before this SQLite transaction acquires the write lock.
             var encryptedDeviceRemovalVersion = _versionClock.Next();
 

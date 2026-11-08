@@ -478,7 +478,7 @@ public sealed partial class DeviceEnrollmentEndToEndTests
         // Execute the endpoint call on a worker so a synchronous SQLite wait cannot block the
         // MSTest control thread before the watchdog is installed. The cancellation token is passed
         // into the real backend operation; unlike Task.WaitAsync(timeout), timing out here also asks
-        // the underlying operation to unwind and release its enrollment/lifecycle/DbContext leases.
+        // the underlying operation to unwind and release its enrollment and lifecycle leases.
         var operationTask = Task.Run(() => operation(cancellation.Token));
         var watchdog = Task.Delay(EnrollmentStepTimeout);
         var completed = await Task.WhenAny(operationTask, watchdog);
@@ -494,7 +494,7 @@ public sealed partial class DeviceEnrollmentEndToEndTests
 
         // Cancellation callbacks can themselves block, so request cancellation on a worker and do
         // not let that request consume the remaining test timeout. The operation gets a short drain
-        // window to release lifecycle leases and DbContexts.
+        // window to release lifecycle leases and database scopes.
         _ = Task.Run(() =>
         {
             try

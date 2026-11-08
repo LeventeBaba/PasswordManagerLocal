@@ -964,12 +964,8 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
 
     private void ReplaceEncryptedPayload(byte[] currentPayload, byte[] replacementPayload, Action<byte[]> assignReplacement)
     {
-        // These encrypted payload properties are EF Core concurrency tokens. Their tracked
-        // OriginalValue can reference the same byte[] instance as the entity property. Zeroing
-        // that array before SaveChanges would therefore corrupt the optimistic-concurrency
-        // predicate and produce a false DbUpdateConcurrencyException. Ciphertext is replaced
-        // without in-place mutation; decrypted keys and logical bundles retain their existing
-        // explicit disposal/zeroization behavior.
+        // Replace ciphertext without mutating any retained canonical bytes.
+        // Decrypted keys and logical bundles are disposed separately.
         _ = currentPayload;
         assignReplacement(replacementPayload);
     }

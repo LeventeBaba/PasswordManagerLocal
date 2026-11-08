@@ -1,5 +1,4 @@
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
-using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PasswordManagerLocal.Common.Backend.Models;
 
@@ -30,7 +29,6 @@ public sealed class UserLoginIdentityState
     public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
     public long ConcurrencyVersion { get; set; }
 
-    [NotMapped]
     public SyncVersionStamp Version
     {
         get => new()

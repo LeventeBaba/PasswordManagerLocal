@@ -514,10 +514,8 @@ public sealed class UserDataWriterService : IUserDataWriterService
         byte[] replacementPayload,
         Action<byte[]> assignReplacement)
     {
-        // User ciphertext columns are EF Core concurrency tokens. Do not mutate the tracked
-        // current byte[] in place: EF's OriginalValue may reference that same instance, and
-        // zeroing it would make the generated concurrency predicate use zeroed bytes. The old
-        // value is encrypted data and can be released normally after the successful update.
+        // Keep the previous ciphertext intact for rollback and callers that retain it.
+        // Decrypted bundles and key material are disposed separately.
         _ = currentPayload;
         assignReplacement(replacementPayload);
     }

@@ -5,6 +5,8 @@ namespace PasswordManagerLocal.Windows.Packaging;
 
 public sealed class WindowsProductValidator
 {
+    private const string EntityFrameworkPrefix = "Microsoft.EntityFrameworkCore";
+
     private static readonly string[] FrontendRequiredFiles =
     [
         "PasswordManagerLocal.exe",
@@ -36,9 +38,6 @@ public sealed class WindowsProductValidator
         "PasswordManagerLocal.Windows.EndpointRpc.Contracts.dll",
         "PasswordManagerLocal.Windows.EndpointRpc.Server.dll",
         "PasswordManagerLocal.Windows.Ipc.dll",
-        "Microsoft.EntityFrameworkCore.dll",
-        "Microsoft.EntityFrameworkCore.Relational.dll",
-        "Microsoft.EntityFrameworkCore.Sqlite.dll",
         "Microsoft.Data.Sqlite.dll",
         "SQLitePCLRaw.core.dll",
         "SQLitePCLRaw.batteries_v2.dll",
@@ -56,13 +55,23 @@ public sealed class WindowsProductValidator
         "PasswordManagerLocal.Common.Backend.Hosting",
         "PasswordManagerLocal.Windows.Backend",
         "PasswordManagerLocal.Windows.EndpointRpc.Server",
-        "Microsoft.EntityFrameworkCore",
+        EntityFrameworkPrefix,
         "Microsoft.Data.Sqlite",
-        "SQLitePCLRaw"
+        "SQLitePCLRaw",
+        "SQLite3MC.PCLRaw"
+    ];
+
+    private static readonly string[] AgentRequiredDependencies =
+    [
+        "PasswordManagerLocal.Common.Backend",
+        "PasswordManagerLocal.Windows.EndpointRpc.Server",
+        "Microsoft.Data.Sqlite",
+        "SQLite3MC.PCLRaw"
     ];
 
     private static readonly string[] AgentForbiddenDependencies =
     [
+        EntityFrameworkPrefix,
         "PasswordManagerLocal.Common.Frontend",
         "Avalonia",
         "ReactiveUI",
@@ -82,7 +91,7 @@ public sealed class WindowsProductValidator
             "PasswordManagerLocal.Windows.Backend.dll",
             "PasswordManagerLocal.Windows.EndpointRpc.Server.dll"
         ], "frontend staging");
-        AssertNoDevelopmentArtifacts(root);
+        AssertNoForbiddenArtifacts(root);
         var frontendManifest = Path.Combine(root, "PasswordManagerLocal.deps.json");
         AssertManifestBoundary(frontendManifest, FrontendForbiddenDependencies, forbidden: true);
         AssertAllDllsOwnedByManifests(root, [frontendManifest], "frontend staging");
@@ -118,14 +127,10 @@ public sealed class WindowsProductValidator
             "System.ServiceModel.Web.dll",
             "System.Xml.XmlSerializer.dll"
         ], "Agent staging");
-        AssertNoDevelopmentArtifacts(root);
+        AssertNoForbiddenArtifacts(root);
         var agentManifest = Path.Combine(root, "PasswordManagerLocal.Windows.Agent.deps.json");
         AssertManifestBoundary(agentManifest, AgentForbiddenDependencies, forbidden: true);
-        AssertManifestBoundary(agentManifest, [
-            "PasswordManagerLocal.Common.Backend",
-            "PasswordManagerLocal.Windows.EndpointRpc.Server",
-            "Microsoft.EntityFrameworkCore.Sqlite"
-        ], forbidden: false);
+        AssertManifestBoundary(agentManifest, AgentRequiredDependencies, forbidden: false);
         AssertAllDllsOwnedByManifests(root, [agentManifest], "Agent staging");
         AssertRuntimeConfigurationTrimmed(Path.Combine(root, "PasswordManagerLocal.Windows.Agent.runtimeconfig.json"), "Agent");
         AssertExcludedRuntimeTools(root);
@@ -153,7 +158,7 @@ public sealed class WindowsProductValidator
         AssertSingleProductIcon(root);
         if (Directory.Exists(Path.Combine(root, "AgentRuntime")))
             throw new InvalidOperationException("The final product contains the prohibited AgentRuntime directory.");
-        AssertNoDevelopmentArtifacts(root);
+        AssertNoForbiddenArtifacts(root);
 
         var frontendExe = Directory.EnumerateFiles(root, "PasswordManagerLocal.exe", SearchOption.AllDirectories).ToArray();
         var agentExe = Directory.EnumerateFiles(root, "PasswordManagerLocal.Windows.Agent.exe", SearchOption.AllDirectories).ToArray();
@@ -168,6 +173,7 @@ public sealed class WindowsProductValidator
         var agentDeps = Path.Combine(root, "PasswordManagerLocal.Windows.Agent.deps.json");
         AssertManifestBoundary(frontendDeps, FrontendForbiddenDependencies, forbidden: true);
         AssertManifestBoundary(agentDeps, AgentForbiddenDependencies, forbidden: true);
+        AssertManifestBoundary(agentDeps, AgentRequiredDependencies, forbidden: false);
         AssertManifestDoesNotContainLegacyPath(frontendDeps);
         AssertManifestDoesNotContainLegacyPath(agentDeps);
         AssertManifestAssetsExist(root, frontendDeps);
@@ -228,13 +234,14 @@ public sealed class WindowsProductValidator
             throw new InvalidOperationException($"The {scope} contains forbidden files: {string.Join(", ", found)}");
     }
 
-    private static void AssertNoDevelopmentArtifacts(string root)
+    private static void AssertNoForbiddenArtifacts(string root)
     {
         var invalid = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
             .Where(path =>
             {
                 var name = Path.GetFileName(path);
-                return name.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase) ||
+                return name.StartsWith(EntityFrameworkPrefix, StringComparison.OrdinalIgnoreCase) ||
+                       name.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase) ||
                        name.EndsWith(".bat", StringComparison.OrdinalIgnoreCase) ||
                        name.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) ||
                        name.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase) ||
@@ -247,7 +254,7 @@ public sealed class WindowsProductValidator
             })
             .ToArray();
         if (invalid.Length != 0)
-            throw new InvalidOperationException($"Development/report artifacts were shipped: {string.Join(", ", invalid)}");
+            throw new InvalidOperationException($"Forbidden artifacts were shipped: {string.Join(", ", invalid)}");
 
         var invalidDirectories = Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories)
             .Where(path => Path.GetFileName(path).Equals("bin", StringComparison.OrdinalIgnoreCase) ||
@@ -264,7 +271,7 @@ public sealed class WindowsProductValidator
         var text = File.ReadAllText(path);
         foreach (var value in values)
         {
-            var contains = text.Contains(value, StringComparison.Ordinal);
+            var contains = text.Contains(value, forbidden ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
             if (forbidden && contains)
                 throw new InvalidOperationException($"Manifest '{path}' contains forbidden dependency '{value}'.");
             if (!forbidden && !contains)

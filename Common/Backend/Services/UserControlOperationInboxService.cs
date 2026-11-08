@@ -4,7 +4,6 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Backend.Utils;
-using Microsoft.EntityFrameworkCore;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
 
@@ -306,8 +305,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
             await _uow.SaveChangesAsync(ct);
             return Receipt(envelope, UserControlOperationReceiptState.StoredPending);
         }
-        catch (Exception ex) when (ex is DbUpdateException or
-            StorageWriteException { Kind: StorageWriteException.FailureKind.UniqueKeyConflict })
+        catch (StorageWriteException ex) when (ex.Kind == StorageWriteException.FailureKind.UniqueKeyConflict)
         {
             _uow.ClearTrackedChanges();
             return await ResolveConcurrentStoreAsync(envelope, transportPeerDeviceId, ex, ct);

@@ -512,14 +512,12 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
     [Timeout(90_000)]
     [TestCategory("Backend")]
-    public async Task VerifiedRecovery_DeletesTheTemporaryJournalAndCreatesNoRecoveryDirectory(bool useSqliteStorage)
+    public async Task VerifiedRecovery_DeletesTheTemporaryJournalAndCreatesNoRecoveryDirectory()
     {
-        await using var source = await ProductionSyncTestHost.CreateAsync(useSqliteStorage: useSqliteStorage);
-        await using var removed = await ProductionSyncTestHost.CreateAsync(useSqliteStorage: false);
+        await using var source = await ProductionSyncTestHost.CreateAsync();
+        await using var removed = await ProductionSyncTestHost.CreateAsync();
         var token = await PrepareAsync(source, removed);
         var assessment = await source.Endpoints.RunSelfDiagnosticsAndRepairAsync(token);
         var repaired = await source.Endpoints.ConfirmSelfDiagnosticsRepairAsync(token, assessment.RecoveryPlanId!, Password());

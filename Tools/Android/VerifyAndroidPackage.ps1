@@ -60,7 +60,7 @@ function Get-BlobAssemblyInventory(
     [string]$BlobPath,
     [string]$StringsPath) {
     $matches = @(& $StringsPath $BlobPath 2>&1 | Where-Object {
-        $_ -match '(?i)(PasswordManagerLocal|\.Tests?\.dll|Test\.dll)'
+        $_ -match '(?i)(PasswordManagerLocal|Microsoft\.EntityFrameworkCore|\.Tests?\.dll|Test\.dll)'
     })
     if ($LASTEXITCODE -ne 0) {
         throw "Strings tool failed ($LASTEXITCODE): $StringsPath $BlobPath"
@@ -243,6 +243,8 @@ Assert-Package ($managedInventoryText -notmatch '(?im)(^|[/\\])[^/\\\r\n]*\.Test
     'A test assembly is present in the managed assembly inventory.'
 Assert-Package ($managedInventoryText -notmatch '(?i)(FaultInjection|DiagnosticBuild|HiddenTestMode)[^\r\n]*\.dll') `
     'A debug/test helper assembly is present in the managed assembly inventory.'
+Assert-Package ($managedInventoryText -notmatch '(?i)\bMicrosoft\.EntityFrameworkCore\b') `
+    'An Entity Framework Core assembly is present in the managed assembly inventory.'
 
 foreach ($abi in $ExpectedAbis) {
     $abiEntries = @($entries | Where-Object {
@@ -250,8 +252,8 @@ foreach ($abi in $ExpectedAbis) {
     })
     Assert-Package ($abiEntries.Count -gt 0) "No native libraries were found for expected ABI: $abi"
     Assert-Package (($abiEntries | Where-Object {
-        $_ -match '(sqlite3mc|sqlite|sqlcipher|e_sqlcipher)'
-    }).Count -gt 0) "No SQLite3MC/SQLite native dependency was found for ABI: $abi"
+        $_ -match '/libsqlite3mc\.so$'
+    }).Count -gt 0) "The SQLite3MC native library is missing for ABI: $abi"
 }
 
 foreach ($abi in $ExpectedAbis) {
