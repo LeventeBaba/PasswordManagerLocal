@@ -130,7 +130,7 @@ public sealed class SyncItemLifecycleService : ISyncItemLifecycleService
 
         if (item.ModelType == SyncModelType.Device)
         {
-            var device = await _devices.GetByIdWithUserDevicesAsync(item.ModelId, ct);
+            var device = await _devices.GetByIdAsync(item.ModelId, ct);
             if (device is null || _localDevices.IsLocalDevice(device))
                 return;
 

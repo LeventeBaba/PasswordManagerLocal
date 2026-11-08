@@ -1,7 +1,7 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Persistence;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
+using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Persistence;
@@ -14,7 +14,7 @@ public sealed class DeviceIntegrityConcurrencyTests
     [TestCategory("Integration")]
     public async Task StaleDeviceObservation_CannotInvalidateConcurrentMetadataCommit()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var initialTime = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var seeded = new Device
         {
@@ -26,37 +26,39 @@ public sealed class DeviceIntegrityConcurrencyTests
             LastSync = initialTime,
             LastModifiedAt = new DateTimeOffset(initialTime)
         };
-        database.Db.Devices.Add(seeded);
-        await database.Db.SaveChangesAsync();
+        await database.Devices.AddAsync(seeded);
+        await database.UnitOfWork.SaveChangesAsync();
 
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(database.Db.Database.GetDbConnection()).Options;
-        await using var observationDb = new AppDbContext(options);
-        var observation = await observationDb.Devices.SingleAsync(device => device.Id == seeded.Id);
+        using var observationSession = database.OpenSession();
+        var observingDevices = new SqliteDeviceRepository(observationSession);
+        var observation = (await observingDevices.GetByIdAsync(seeded.Id))!;
 
         // Simulate another delta changing public metadata after the observation scope read the row.
         seeded.LastModifiedAt = seeded.LastModifiedAt.AddSeconds(1);
-        await database.Db.SaveChangesAsync();
+        database.Devices.Update(seeded);
+        await database.UnitOfWork.SaveChangesAsync();
 
         var observedAt = initialTime.AddSeconds(2);
         observation.LastSeen = observedAt;
         observation.LastSync = observedAt;
-        await Assert.ThrowsExactlyAsync<DbUpdateConcurrencyException>(async () =>
-        {
-            await observationDb.SaveChangesAsync();
-        });
+        observingDevices.Update(observation);
+        var conflict = await Assert.ThrowsExactlyAsync<StorageWriteException>(() => observationSession.SaveChangesAsync());
+        Assert.AreEqual(StorageWriteException.FailureKind.StaleRow, conflict.Kind);
+        Assert.AreEqual(typeof(Device), conflict.RowType);
 
-        await using var freshDb = new AppDbContext(options);
-        var fresh = await freshDb.Devices.SingleAsync(device => device.Id == seeded.Id);
+        using var freshSession = database.OpenSession();
+        var freshDevices = new SqliteDeviceRepository(freshSession);
+        var fresh = (await freshDevices.GetByIdAsync(seeded.Id))!;
         Assert.IsTrue(fresh.IsIntegrityValid());
         Assert.AreEqual(seeded.LastModifiedAt, fresh.LastModifiedAt);
         Assert.AreEqual(initialTime, fresh.LastSeen);
 
         fresh.LastSeen = observedAt;
         fresh.LastSync = observedAt;
-        await freshDb.SaveChangesAsync();
+        freshDevices.Update(fresh);
+        await freshSession.SaveChangesAsync();
 
-        var persisted = await freshDb.Devices.AsNoTracking().SingleAsync(device => device.Id == seeded.Id);
+        var persisted = (await database.Devices.GetByIdAsNoTrackingAsync(seeded.Id))!;
         Assert.IsTrue(persisted.IsIntegrityValid(), "Endpoint hints require a valid device integrity hash.");
         Assert.AreEqual(seeded.LastModifiedAt, persisted.LastModifiedAt);
         Assert.AreEqual(observedAt, persisted.LastSeen);

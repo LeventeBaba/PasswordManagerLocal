@@ -1,7 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 
@@ -15,10 +14,9 @@ public sealed class SqliteRecoveryJournalStoreTests
     [TestMethod]
     public async Task ReadbackUsesFlushedRowsAndReplacementRejectsAnOlderCiphertext()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
-        var connections = new SqliteConnectionFactory(baseline.ConnectionString);
-        using var session = new SqliteSession(connections);
-        using var otherSession = new SqliteSession(connections);
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var session = baseline.OpenSession();
+        using var otherSession = baseline.OpenSession();
         var journal = new SqliteUserRecoveryJournalStore(session);
         var otherJournal = new SqliteUserRecoveryJournalStore(otherSession);
         var row = new UserRecoveryJournal
@@ -68,7 +66,10 @@ public sealed class SqliteRecoveryJournalStoreTests
         otherJournal.Delete(stale);
         var conflict = await Assert.ThrowsExactlyAsync<StorageWriteException>(() => otherSession.SaveChangesAsync());
         Assert.AreEqual(StorageWriteException.FailureKind.StaleRow, conflict.Kind);
-        var retained = (await new EfUserRecoveryJournalStore(baseline.Db).ReadPersistedAsync(row.Id, default))!;
+        var retained = (await baseline.UnitOfWork.ReadAsync("""
+            SELECT "State", "EncryptedPayload" FROM "UserRecoveryJournals" WHERE "Id" = $id;
+            """, reader => (State: (UserRecoveryJournalState)reader.GetByte(0), EncryptedPayload: reader.Blob(1)),
+            default, ("$id", row.Id))).Single();
         Assert.AreEqual(UserRecoveryJournalState.UnresolvedEvidence, retained.State);
         CollectionAssert.AreEqual(row.EncryptedPayload, retained.EncryptedPayload);
     }

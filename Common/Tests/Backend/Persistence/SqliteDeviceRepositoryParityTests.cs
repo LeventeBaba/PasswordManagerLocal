@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models;
@@ -16,10 +15,10 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Persistence;
 public sealed class SqliteDeviceRepositoryParityTests
 {
     [TestMethod]
-    public async Task LocalIdentity_DirectWritesAndEfReadbackPreserveKeysAndIntegrity()
+    public async Task LocalIdentity_IndependentReadbackPreservesKeysAndIntegrity()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
-        using var session = new SqliteSession(new SqliteConnectionFactory(database.ConnectionString));
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var session = database.OpenSession();
         var repository = new SqliteDeviceIdentityRepository(session);
         Assert.IsNull(await repository.Get());
 
@@ -43,26 +42,25 @@ public sealed class SqliteDeviceRepositoryParityTests
         repository.Update(identity);
         await session.SaveChangesAsync();
 
-        var readByEf = await database.Db.LocalDeviceIdentities.AsNoTracking().SingleAsync();
-        Assert.AreEqual(identity.Id, readByEf.Id);
-        Assert.AreEqual(identity.OriginInstanceId, readByEf.OriginInstanceId);
-        Assert.AreEqual(identity.CreatedAt, readByEf.CreatedAt);
-        CollectionAssert.AreEqual(identity.AgreementPrivateKeyBlob, readByEf.AgreementPrivateKeyBlob);
-        Assert.IsTrue(readByEf.IsSyncOn);
-        Assert.IsTrue(readByEf.IsIntegrityValid());
+        var persisted = (await database.DeviceIdentity.Get())!;
+        Assert.AreEqual(identity.Id, persisted.Id);
+        Assert.AreEqual(identity.OriginInstanceId, persisted.OriginInstanceId);
+        Assert.AreEqual(identity.CreatedAt, persisted.CreatedAt);
+        CollectionAssert.AreEqual(identity.AgreementPrivateKeyBlob, persisted.AgreementPrivateKeyBlob);
+        Assert.IsTrue(persisted.IsSyncOn);
+        Assert.IsTrue(persisted.IsIntegrityValid());
     }
 
     [TestMethod]
     public async Task DeviceUpdate_UsesOriginalTokenAndSupportsRepeatedFlushes()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var baseline = CreateDevice("AABBCC", [1]);
         await database.Devices.AddAsync(baseline);
         await database.UnitOfWork.SaveChangesAsync();
 
-        var factory = new SqliteConnectionFactory(database.ConnectionString);
-        using var firstSession = new SqliteSession(factory);
-        using var secondSession = new SqliteSession(factory);
+        using var firstSession = database.OpenSession();
+        using var secondSession = database.OpenSession();
         var first = new SqliteDeviceRepository(firstSession);
         var second = new SqliteDeviceRepository(secondSession);
         var left = (await first.GetByIdAsync(baseline.Id))!;
@@ -88,17 +86,17 @@ public sealed class SqliteDeviceRepositoryParityTests
         Assert.IsFalse(DeviceWriteConflict.IsStaleDevice(
             new StorageWriteException(StorageWriteException.FailureKind.StaleRow, typeof(UserDevice))));
 
-        var readByEf = (await database.Devices.GetByIdAsNoTrackingAsync(baseline.Id))!;
-        Assert.AreEqual(left.LastModifiedAt, readByEf.LastModifiedAt);
-        Assert.AreEqual(left.LastSeen, readByEf.LastSeen);
-        Assert.IsFalse(readByEf.IsBlocked);
-        Assert.IsTrue(readByEf.IsIntegrityValid());
+        var persisted = (await database.Devices.GetByIdAsNoTrackingAsync(baseline.Id))!;
+        Assert.AreEqual(left.LastModifiedAt, persisted.LastModifiedAt);
+        Assert.AreEqual(left.LastSeen, persisted.LastSeen);
+        Assert.IsFalse(persisted.IsBlocked);
+        Assert.IsTrue(persisted.IsIntegrityValid());
     }
 
     [TestMethod]
     public async Task DeviceLookup_RequiresFullSigningKeyAndNormalizesFingerprint()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var match = CreateDevice("AABBCC", [7]);
         var collision = CreateDevice("DDEEFF", [9]);
         await database.Devices.AddAsync(match);
@@ -106,10 +104,11 @@ public sealed class SqliteDeviceRepositoryParityTests
         await database.UnitOfWork.SaveChangesAsync();
 
         var expectedHash = Hashing.SHA256Hash(match.SignPublicKey);
-        await database.Db.Devices.Where(row => row.Id == collision.Id)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.SignPublicKeyHash, expectedHash));
+        Assert.AreEqual(1, await database.UnitOfWork.ExecuteFixtureSqlAsync("""
+            UPDATE "Devices" SET "SignPublicKeyHash" = $hash WHERE "Id" = $device;
+            """, ("$hash", expectedHash), ("$device", collision.Id)));
 
-        using var session = new SqliteSession(new SqliteConnectionFactory(database.ConnectionString));
+        using var session = database.OpenSession();
         var devices = new SqliteDeviceRepository(session);
         Assert.HasCount(2, await devices.ListBySigningKeyHashAsync(expectedHash));
         Assert.AreEqual(match.Id, (await devices.GetBySignPublicKeyAsync(match.SignPublicKey))!.Id);
@@ -120,17 +119,18 @@ public sealed class SqliteDeviceRepositoryParityTests
     }
 
     [TestMethod]
-    public async Task LinksAndRoutes_MatchEfScopeVerifyIntegrityAndCascade()
+    public async Task LinksAndRoutes_MatchExpectedScopeVerifyIntegrityAndCascade()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var user = new User();
         var disabled = new User();
         user.GenerateIntegrityHash();
         disabled.GenerateIntegrityHash();
-        database.Db.Users.AddRange(user, disabled);
+        await database.Users.AddAsync(user);
+        await database.Users.AddAsync(disabled);
         await database.UnitOfWork.SaveChangesAsync();
 
-        using var session = new SqliteSession(new SqliteConnectionFactory(database.ConnectionString));
+        using var session = database.OpenSession();
         var identity = CreateIdentity();
         var device = CreateDevice("010203", [5]);
         var devices = new SqliteDeviceRepository(session);
@@ -155,11 +155,21 @@ public sealed class SqliteDeviceRepositoryParityTests
         var requested = Enumerable.Range(0, 300).Select(_ => Guid.NewGuid())
             .Concat([disabled.UId, user.UId, user.UId, Guid.Empty]).ToArray();
         CollectionAssert.AreEquivalent(
-            (await database.SyncRoutes.ListEligibleUserIdsAsync(requested, device.Id)).ToArray(),
+            new[] { user.UId },
             (await routes.ListEligibleUserIdsAsync(requested, device.Id)).ToArray());
 
-        await database.Db.UserDevices.Where(row => row.UserId == user.UId && row.DeviceId == device.Id)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.IsSyncOn, false));
+        link.LastModifiedAt = link.LastModifiedAt.AddSeconds(1);
+        remoteLinks.Update(link);
+        var writeTarget = (await remoteLinks.GetByModelIdAsync(link.ModelId))!;
+        Assert.AreSame(link, writeTarget);
+        writeTarget.LastModifiedAt = writeTarget.LastModifiedAt.AddSeconds(1);
+        remoteLinks.Update(writeTarget);
+        Assert.AreEqual(1, await session.SaveChangesAsync());
+        Assert.AreEqual(writeTarget.LastModifiedAt, (await database.UserDevices.GetAsync(user.UId, device.Id))!.LastModifiedAt);
+
+        Assert.AreEqual(1, await database.UnitOfWork.ExecuteFixtureSqlAsync("""
+            UPDATE "UserDevices" SET "IsSyncOn" = 0 WHERE "UserId" = $user AND "DeviceId" = $device;
+            """, ("$user", user.UId), ("$device", device.Id)));
         await Assert.ThrowsExactlyAsync<InvalidDataIntegrityException>(() => remoteLinks.GetWithDeviceAsync(user.UId, device.Id));
         await Assert.ThrowsExactlyAsync<InvalidDataIntegrityException>(() => devices.GetByIdWithUserDevicesAsync(device.Id));
 

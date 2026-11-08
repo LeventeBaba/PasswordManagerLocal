@@ -9,7 +9,6 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Presence;
 using PasswordManagerLocal.Common.Backend.Configuration;
 using PasswordManagerLocal.Common.Backend.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Services.Hosted;
@@ -69,7 +68,7 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
         string localAddress = "127.0.0.1",
         DeviceType deviceType = DeviceType.WindowsPc,
         string? existingDirectory = null,
-        bool useSqliteStorage = false)
+        bool useSqliteStorage = true)
     {
         var rootDirectory = existingDirectory ?? Path.Combine(
             Path.GetTempPath(),
@@ -92,14 +91,8 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
             new TestKeyProtector(),
             new FakeLocalDiscoveryNetworkLease(),
             executionProfiles);
-        if (useSqliteStorage)
-            services.UseSqliteStorageCandidate();
-
-        // RelationshipIntegrityMaterializationInterceptor is stateless. A stable shared instance
-        // prevents each isolated test host from forcing EF Core to build another equivalent
-        // internal service provider.
-        services.Replace(ServiceDescriptor.Singleton<RelationshipIntegrityMaterializationInterceptor>(
-            ProductionTestServiceInstances.RelationshipIntegrityInterceptor));
+        if (!useSqliteStorage)
+            services.UseEfStorageBaseline();
 
         services.Replace(ServiceDescriptor.Singleton<IDeviceIdentityService>(provider =>
             new DeviceIdentityService(

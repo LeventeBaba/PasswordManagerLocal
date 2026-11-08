@@ -46,8 +46,15 @@ internal sealed class SqliteDeviceRepository(SqliteSession session) : IDeviceRep
     public async Task<IReadOnlyList<Device>> ListAllAsync(CancellationToken ct = default) =>
         await session.ReadAsync(Select, ReadDetached, ct);
 
-    public async Task<Device?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
-        (await session.ReadAsync($"""{Select} WHERE d."Id" = $id;""", Read, ct, ("$id", id))).SingleOrDefault();
+    public async Task<Device?> GetByIdAsync(Guid id, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (_stagedDevices.TryGetValue(id, out var staged) &&
+            session.GetPendingOperation(staged) == SqliteMutation.Operation.Update)
+            return staged;
+
+        return (await session.ReadAsync($"""{Select} WHERE d."Id" = $id;""", Read, ct, ("$id", id))).SingleOrDefault();
+    }
 
     public async Task<(bool found, Device? entity)> TryGetByIdAsync(Guid id, CancellationToken ct = default)
     {

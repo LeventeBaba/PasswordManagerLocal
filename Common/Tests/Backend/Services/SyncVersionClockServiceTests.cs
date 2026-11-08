@@ -1,10 +1,9 @@
 using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Persistence;
+using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Tests.Fakes;
 using SQLitePCL;
@@ -125,20 +124,12 @@ public sealed class SyncVersionClockServiceTests
         var clockConnections = new SqliteConnectionFactory(
             new SqliteConnectionStringBuilder { DataSource = databasePath, Pooling = false }.ToString());
         var clockWrite = new ClockWriteGate(new SyncVersionClockStore(clockConnections));
-        var services = new ServiceCollection();
-        services.AddDbContext<AppDbContext>(options => options.UseSqlite(connectionString));
-        services.AddScoped<IUnitOfWork, AppUnitOfWork>();
-        var provider = services.BuildServiceProvider();
+        var writerConnections = new SqliteConnectionFactory(connectionString);
 
         try
         {
-            await using (var initializationScope = provider.CreateAsyncScope())
-            {
-                await initializationScope.ServiceProvider
-                    .GetRequiredService<AppDbContext>()
-                    .Database
-                    .EnsureCreatedAsync();
-            }
+            await using (var initialization = clockConnections.CreateConnection())
+                await AppDatabaseInitializer.InitializeAsync(initialization);
 
             var identity = new FakeDeviceIdentityService();
             var time = new ManualTimeProvider
@@ -156,16 +147,22 @@ public sealed class SyncVersionClockServiceTests
                 OriginInstanceId = Guid.NewGuid()
             };
 
-            await using (var lockScope = provider.CreateAsyncScope())
+            using (var session = new SqliteSession(writerConnections))
             {
-                var db = lockScope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var unitOfWork = lockScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-                var databaseKey = AppDatabaseTransactionRegistry.GetDatabaseKey(db);
+                using var unopened = writerConnections.CreateConnection();
+                var databaseKey = AppDatabaseTransactionRegistry.GetDatabaseKey(unopened);
                 MSTestAssert.AreEqual(databaseKey, clockWrite.DatabaseKey);
-                await using var transaction = await unitOfWork.BeginTransactionAsync();
-                MSTestAssert.AreEqual(databaseKey, AppDatabaseTransactionRegistry.GetDatabaseKey(db));
-                var persisted = await db.SyncVersionClockStates.AsNoTracking().SingleAsync();
-                MSTestAssert.AreEqual(time.UtcNow, persisted.LastUpdatedAtUtc);
+                await using var transaction = await session.BeginTransactionAsync();
+                using (var command = await session.CreateCommandAsync("""
+                    SELECT "LastUpdatedAtUtc" FROM "SyncVersionClockState" WHERE "Id" = 1;
+                    """))
+                {
+                    MSTestAssert.AreEqual(databaseKey, AppDatabaseTransactionRegistry.GetDatabaseKey(command.Connection!));
+                    using var reader = await command.ExecuteReaderAsync(CancellationToken.None);
+                    MSTestAssert.IsTrue(await reader.ReadAsync());
+                    MSTestAssert.AreEqual(time.UtcNow, reader.UtcOffset(0));
+                    MSTestAssert.IsFalse(await reader.ReadAsync());
+                }
                 MSTestAssert.IsTrue(AppDatabaseTransactionRegistry.HasActiveTransaction(databaseKey));
 
                 clockWrite.Arm();
@@ -209,7 +206,6 @@ public sealed class SyncVersionClockServiceTests
         }
         finally
         {
-            await provider.DisposeAsync();
             try
             {
                 Directory.Delete(root, recursive: true);

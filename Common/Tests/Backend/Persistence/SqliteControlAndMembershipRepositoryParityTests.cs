@@ -1,7 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 
@@ -15,8 +14,8 @@ public sealed class SqliteControlAndMembershipRepositoryParityTests
     [TestMethod]
     public async Task ControlTransitions_ReleaseFilteredBaseOnlyAfterQuarantineAndKeepEvidence()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
-        using var session = new SqliteSession(new SqliteConnectionFactory(baseline.ConnectionString));
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var session = baseline.OpenSession();
         var operations = new SqliteUserControlOperationRepository(session);
         var states = new SqliteUserControlStateRepository(session);
         var userId = Guid.NewGuid();
@@ -62,10 +61,9 @@ public sealed class SqliteControlAndMembershipRepositoryParityTests
     [TestMethod]
     public async Task Membership_RetainsExactSignedEpochAndExcludesReusedDeviceIdentity()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
-        var connections = new SqliteConnectionFactory(baseline.ConnectionString);
-        using var session = new SqliteSession(connections);
-        using var otherSession = new SqliteSession(connections);
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var session = baseline.OpenSession();
+        using var otherSession = baseline.OpenSession();
         var devices = new SqliteDeviceRepository(session);
         var memberships = new SqliteUserMembershipAuthorizationRepository(session);
         var otherMemberships = new SqliteUserMembershipAuthorizationRepository(otherSession);
@@ -126,8 +124,8 @@ public sealed class SqliteControlAndMembershipRepositoryParityTests
     [TestMethod]
     public async Task EnrollmentAndCutoffs_KeepInstallationAndKeyEpochBoundaries()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
-        using var session = new SqliteSession(new SqliteConnectionFactory(baseline.ConnectionString));
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var session = baseline.OpenSession();
         var commits = new SqliteDeviceEnrollmentCommitRepository(session);
         var cutoffs = new SqliteUserOriginRemovalCutoffRepository(session);
         var commit = new DeviceEnrollmentCommit
@@ -162,8 +160,8 @@ public sealed class SqliteControlAndMembershipRepositoryParityTests
     [TestMethod]
     public async Task DeletionBarrier_SurvivesAccountDeletionAndRejectsPendingAndLaterWrites()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
-        using var session = new SqliteSession(new SqliteConnectionFactory(baseline.ConnectionString));
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var session = baseline.OpenSession();
         var users = new SqliteUserRepository(session);
         var barriers = new SqliteDeletedUserBarrierRepository(session);
         var operations = new SqliteUserControlOperationRepository(session);

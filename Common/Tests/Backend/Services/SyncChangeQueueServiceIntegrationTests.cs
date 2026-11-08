@@ -1,10 +1,8 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Services;
-using PasswordManagerLocal.Common.Backend.Persistence;
-using PasswordManagerLocal.Common.Backend.Repositories;
+using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Tests.Fakes;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
@@ -25,22 +23,20 @@ public sealed class SyncChangeQueueServiceIntegrationTests
     [TestCategory("Integration")]
     public async Task IncomingPropagationRefreshesOnlyQueueGenerationsThatContainNewWork(bool newerLocalWork)
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 2, disabledRemoteCount: 0);
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
         await service.Queue.EnqueueAsync(new SyncItem
         {
             ModelId = seeded.User.UId, ModelType = SyncModelType.User, ChangeType = SyncChangeType.Updated
         });
-        var pendingItem = await database.Db.SyncItems.SingleAsync();
+        var pendingItem = (await database.SyncItems.ListAllAsync()).Single();
         var source = seeded.EnabledRemotes[0];
         var thirdDevice = seeded.EnabledRemotes[1];
-        // The sender has already read the row in a different EF scope, before incoming
+        // The sender has already read the row in a different SQLite session, before incoming
         // propagation runs. These operations are deliberately sequenced, without sleeps.
-        var senderOptions = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(database.Db.Database.GetDbConnection()).Options;
-        await using var senderDb = new AppDbContext(senderOptions);
-        var senderQueue = new SyncQueueRepository(senderDb);
+        using var senderSession = database.OpenSession();
+        var senderQueue = new SqliteSyncQueueRepository(senderSession);
         var inFlight = await senderQueue.GetNextPendingForDeviceAsync(source.Id);
         MSTestAssert.IsNotNull(inFlight);
         var incomingTimestamp = pendingItem.ChangedAtTs + (newerLocalWork ? -1 : 1);
@@ -48,7 +44,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
         {
             ModelId = seeded.User.UId, ModelType = SyncModelType.User, ChangeType = SyncChangeType.Updated
         }, source.Id, incomingTimestamp);
-        var rows = await database.Db.SyncQueueItems.Where(row => row.ProcessedAt == null).ToListAsync();
+        var rows = (await database.ReadQueueRowsAsync()).Where(row => row.ProcessedAt == null).ToList();
         MSTestAssert.AreEqual(2, rows.Count);
         MSTestAssert.IsTrue(rows.Any(row => row.DeviceId == thirdDevice.Id), "B must still forward to C.");
         MSTestAssert.IsTrue(rows.Any(row => row.Id == inFlight.Id),
@@ -59,9 +55,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
         // that row's generation unchanged and permits its original acknowledgement.
         var acknowledged = await senderQueue.TryAcknowledgeAsync(inFlight.Id, inFlight.EnqueuedAt);
         MSTestAssert.AreEqual(!newerLocalWork, acknowledged);
-        var remaining = await database.Db.SyncQueueItems.AsNoTracking()
-            .Where(row => row.ProcessedAt == null)
-            .ToListAsync();
+        var remaining = (await database.ReadQueueRowsAsync()).Where(row => row.ProcessedAt == null).ToList();
         if (newerLocalWork)
         {
             MSTestAssert.HasCount(2, remaining);
@@ -80,7 +74,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
     [TestCategory("Integration")]
     public async Task ReenqueueThatStartedBeforeAcknowledgement_ReactivatesTheProcessedRow()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 1, disabledRemoteCount: 0);
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
         await service.Queue.EnqueueAsync(new SyncItem
@@ -90,12 +84,10 @@ public sealed class SyncChangeQueueServiceIntegrationTests
             ChangeType = SyncChangeType.Updated
         });
 
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(database.Db.Database.GetDbConnection()).Options;
-        await using var senderDb = new AppDbContext(options);
-        await using var writerDb = new AppDbContext(options);
-        var senderQueue = new SyncQueueRepository(senderDb);
-        var writerQueue = new SyncQueueRepository(writerDb);
+        using var senderSession = database.OpenSession();
+        using var writerSession = database.OpenSession();
+        var senderQueue = new SqliteSyncQueueRepository(senderSession);
+        var writerQueue = new SqliteSyncQueueRepository(writerSession);
         var target = seeded.EnabledRemotes.Single();
         var inFlight = await senderQueue.GetNextPendingForDeviceAsync(target.Id);
         MSTestAssert.IsNotNull(inFlight);
@@ -105,11 +97,9 @@ public sealed class SyncChangeQueueServiceIntegrationTests
         await writerQueue.EnqueueAsync(inFlight.SyncItemId, target.Id);
         MSTestAssert.IsTrue(await senderQueue.TryAcknowledgeAsync(inFlight.Id, inFlight.EnqueuedAt));
 
-        // Saving the enqueue must explicitly reactivate ProcessedAt even though the writer's
-        // tracked value was already null when it began. The row remains pending at its new generation.
-        await new AppUnitOfWork(writerDb).SaveChangesAsync();
-        var pending = await database.Db.SyncQueueItems.AsNoTracking()
-            .SingleAsync(row => row.DeviceId == target.Id);
+        // Saving the enqueue must explicitly reactivate the processed row at its new generation.
+        await writerSession.SaveChangesAsync();
+        var pending = (await database.ReadQueueRowsAsync()).Single(row => row.DeviceId == target.Id);
         MSTestAssert.IsNull(pending.ProcessedAt);
         MSTestAssert.IsTrue(pending.EnqueuedAt > inFlight.EnqueuedAt);
     }
@@ -119,7 +109,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
     [TestCategory("Integration")]
     public async Task EnqueueUserUpdate_QueuesOnlyEnabledRemoteDevice_AndDoesNotDuplicatePendingWork()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 1, disabledRemoteCount: 1);
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
         var originalModifiedAt = seeded.User.LastModifiedAt;
@@ -137,13 +127,14 @@ public sealed class SyncChangeQueueServiceIntegrationTests
             ChangeType = SyncChangeType.Updated
         });
 
-        var syncItem = await database.Db.SyncItems.SingleAsync();
-        var queueItems = await database.Db.SyncQueueItems.ToListAsync();
+        var syncItem = (await database.SyncItems.ListAllAsync()).Single();
+        var queueItems = await database.ReadQueueRowsAsync();
         MSTestAssert.HasCount(1, queueItems);
         MSTestAssert.AreEqual(seeded.EnabledRemotes.Single().Id, queueItems[0].DeviceId);
         MSTestAssert.AreEqual(syncItem.Id, queueItems[0].SyncItemId);
-        MSTestAssert.IsTrue(seeded.User.LastModifiedAt > originalModifiedAt);
-        seeded.User.VerifyIntegrity();
+        var persisted = (await database.Users.GetByIdAsNoTrackingAsync(seeded.User.UId))!;
+        MSTestAssert.IsTrue(persisted.LastModifiedAt > originalModifiedAt);
+        persisted.VerifyIntegrity();
     }
 
 
@@ -152,7 +143,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
     [TestCategory("Integration")]
     public async Task EnqueueDeferred_EnrollmentIntroducesNewDeviceToExistingDeviceOnlyAfterCommit()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 1, disabledRemoteCount: 0);
         var existingDevice = seeded.EnabledRemotes.Single();
         var newDevice = CreateRemoteDevice("CC00");
@@ -176,15 +167,15 @@ public sealed class SyncChangeQueueServiceIntegrationTests
 
         await using (var transaction = await database.UnitOfWork.BeginTransactionAsync())
         {
-            database.Db.Devices.Add(newDevice);
-            database.Db.UserDevices.Add(new UserDevice
+            await database.Devices.AddAsync(newDevice);
+            await database.UserDevices.AddAsync(new UserDevice
             {
                 UserId = seeded.User.UId,
                 DeviceId = newDevice.Id,
                 IsSyncOn = true,
                 IsDeleted = false
             });
-            await database.Db.SaveChangesAsync();
+            await database.UnitOfWork.SaveChangesAsync();
 
             await service.Queue.EnqueueDeferredAsync(new SyncItem
             {
@@ -205,7 +196,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
                 ChangeType = SyncChangeType.Created
             });
 
-            var queuedBeforeCommit = await database.Db.SyncQueueItems.ToListAsync();
+            var queuedBeforeCommit = await database.ReadQueueRowsAsync();
             MSTestAssert.HasCount(4, queuedBeforeCommit);
             MSTestAssert.AreEqual(3, queuedBeforeCommit.Count(item => item.DeviceId == existingDevice.Id));
             MSTestAssert.AreEqual(1, queuedBeforeCommit.Count(item => item.DeviceId == newDevice.Id));
@@ -228,7 +219,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
     [TestCategory("Integration")]
     public async Task EnqueuePropagation_ExcludesSourceDevice_PreservesRemoteTimestamp_AndDoesNotTouchLocalModel()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 2, disabledRemoteCount: 0);
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
         var originalModifiedAt = seeded.User.LastModifiedAt;
@@ -243,12 +234,13 @@ public sealed class SyncChangeQueueServiceIntegrationTests
             ChangeType = SyncChangeType.Updated
         }, source.Id, timestamp);
 
-        var syncItem = await database.Db.SyncItems.SingleAsync();
-        var queueItems = await database.Db.SyncQueueItems.ToListAsync();
+        var syncItem = (await database.SyncItems.ListAllAsync()).Single();
+        var queueItems = await database.ReadQueueRowsAsync();
         MSTestAssert.AreEqual(timestamp, syncItem.ChangedAtTs);
         MSTestAssert.HasCount(1, queueItems);
         MSTestAssert.AreEqual(target.Id, queueItems[0].DeviceId);
-        MSTestAssert.AreEqual(originalModifiedAt, seeded.User.LastModifiedAt);
+        var persisted = (await database.Users.GetByIdAsNoTrackingAsync(seeded.User.UId))!;
+        MSTestAssert.AreEqual(originalModifiedAt, persisted.LastModifiedAt);
     }
 
     [TestMethod]
@@ -256,16 +248,16 @@ public sealed class SyncChangeQueueServiceIntegrationTests
     [TestCategory("Integration")]
     public async Task EnqueueDeletedUserDevice_QueuesRemovedDeviceAndOtherActiveDevices()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 2, disabledRemoteCount: 0);
         var removed = seeded.EnabledRemotes[0];
         var other = seeded.EnabledRemotes[1];
-        var link = await database.Db.UserDevices.SingleAsync(ud => ud.UserId == seeded.User.UId && ud.DeviceId == removed.Id);
+        var link = (await database.UserDevices.GetAsync(seeded.User.UId, removed.Id))!;
         link.IsDeleted = true;
         link.IsSyncOn = false;
         link.DeletedAt = DateTimeOffset.UtcNow;
-        link.GenerateIntegrityHash();
-        await database.Db.SaveChangesAsync();
+        database.UserDevices.Update(link);
+        await database.UnitOfWork.SaveChangesAsync();
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
 
         await service.Queue.EnqueueAsync(new SyncItem
@@ -275,7 +267,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
             ChangeType = SyncChangeType.Deleted
         });
 
-        var queueItems = await database.Db.SyncQueueItems.OrderBy(item => item.DeviceId).ToListAsync();
+        var queueItems = await database.ReadQueueRowsAsync();
         MSTestAssert.HasCount(2, queueItems);
         CollectionAssert.AreEquivalent(new[] { removed.Id, other.Id }, queueItems.Select(item => item.DeviceId).ToArray());
     }
@@ -285,17 +277,17 @@ public sealed class SyncChangeQueueServiceIntegrationTests
     [TestCategory("Integration")]
     public async Task EnqueuePropagationDeletedUserDevice_DoesNotQueueRemovedDevice()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 3, disabledRemoteCount: 0);
         var removed = seeded.EnabledRemotes[0];
         var source = seeded.EnabledRemotes[1];
         var target = seeded.EnabledRemotes[2];
-        var link = await database.Db.UserDevices.SingleAsync(ud => ud.UserId == seeded.User.UId && ud.DeviceId == removed.Id);
+        var link = (await database.UserDevices.GetAsync(seeded.User.UId, removed.Id))!;
         link.IsDeleted = true;
         link.IsSyncOn = false;
         link.DeletedAt = DateTimeOffset.UtcNow;
-        link.GenerateIntegrityHash();
-        await database.Db.SaveChangesAsync();
+        database.UserDevices.Update(link);
+        await database.UnitOfWork.SaveChangesAsync();
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
 
         await service.Queue.EnqueuePropagationAsync(new SyncItem
@@ -305,7 +297,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
             ChangeType = SyncChangeType.Deleted
         }, source.Id, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
 
-        var queueItem = await database.Db.SyncQueueItems.SingleAsync();
+        var queueItem = (await database.ReadQueueRowsAsync()).Single();
         MSTestAssert.AreEqual(target.Id, queueItem.DeviceId);
     }
 
@@ -314,7 +306,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
     [TestCategory("Integration")]
     public async Task EnqueueDeletedGroup_CreatesTombstone_AndQueuesEligibleDevice()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 1, disabledRemoteCount: 0);
         var group = new Group
         {
@@ -322,10 +314,10 @@ public sealed class SyncChangeQueueServiceIntegrationTests
             EncryptedPayload = [4, 5, 6],
             LastModifiedAt = DateTimeOffset.UtcNow.AddMinutes(-2)
         };
-        group.Users.Add(seeded.User);
         group.GenerateIntegrityHash();
-        database.Db.Groups.Add(group);
-        await database.Db.SaveChangesAsync();
+        await database.Groups.AddAsync(group);
+        database.Groups.SetMember(group, seeded.User, isMember: true);
+        await database.UnitOfWork.SaveChangesAsync();
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
 
         await service.Queue.EnqueueAsync(new SyncItem
@@ -335,9 +327,9 @@ public sealed class SyncChangeQueueServiceIntegrationTests
             ChangeType = SyncChangeType.Deleted
         });
 
-        var tombstone = await database.Db.SyncTombstones.SingleAsync();
-        var queueItem = await database.Db.SyncQueueItems.SingleAsync();
-        var syncItem = await database.Db.SyncItems.SingleAsync();
+        var tombstone = (await database.Tombstones.GetAsync(group.Id, SyncModelType.Group))!;
+        var queueItem = (await database.ReadQueueRowsAsync()).Single();
+        var syncItem = (await database.SyncItems.ListAllAsync()).Single();
         MSTestAssert.AreEqual(group.Id, tombstone.ModelId);
         MSTestAssert.AreEqual(SyncModelType.Group, tombstone.ModelType);
         MSTestAssert.AreEqual(syncItem.ChangedAtTs, tombstone.DeletedAtTs);
@@ -350,7 +342,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
     [TestCategory("Integration")]
     public async Task EnqueueForDevice_WhenAuthorizationDenies_PersistsSyncItemWithoutQueueEntry()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 1, disabledRemoteCount: 0);
         var authorization = new FakeSyncAuthorizationService { CanSend = false };
         var service = CreateService(database, seeded.Identity, authorization);
@@ -362,8 +354,8 @@ public sealed class SyncChangeQueueServiceIntegrationTests
             ChangeType = SyncChangeType.Updated
         }, seeded.EnabledRemotes.Single().Id);
 
-        MSTestAssert.AreEqual(1, await database.Db.SyncItems.CountAsync());
-        MSTestAssert.AreEqual(0, await database.Db.SyncQueueItems.CountAsync());
+        MSTestAssert.AreEqual(1, (await database.SyncItems.ListAllAsync()).Count);
+        MSTestAssert.AreEqual(0, (await database.ReadQueueRowsAsync()).Count);
     }
 
     [TestMethod]
@@ -371,7 +363,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
     [TestCategory("Integration")]
     public async Task EnqueuePendingItem_MergesCreatedThenUpdatedAsCreated_AndDeletionWins()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 1, disabledRemoteCount: 0);
         var group = new Group
         {
@@ -379,10 +371,10 @@ public sealed class SyncChangeQueueServiceIntegrationTests
             EncryptedPayload = [7, 8, 9],
             LastModifiedAt = DateTimeOffset.UtcNow.AddMinutes(-1)
         };
-        group.Users.Add(seeded.User);
         group.GenerateIntegrityHash();
-        database.Db.Groups.Add(group);
-        await database.Db.SaveChangesAsync();
+        await database.Groups.AddAsync(group);
+        database.Groups.SetMember(group, seeded.User, isMember: true);
+        await database.UnitOfWork.SaveChangesAsync();
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
 
         await service.Queue.EnqueueAsync(new SyncItem
@@ -398,7 +390,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
             ChangeType = SyncChangeType.Updated
         });
 
-        var syncItem = await database.Db.SyncItems.SingleAsync();
+        var syncItem = (await database.SyncItems.ListAllAsync()).Single();
         MSTestAssert.AreEqual(SyncChangeType.Created, syncItem.ChangeType);
 
         await service.Queue.EnqueueAsync(new SyncItem
@@ -408,8 +400,10 @@ public sealed class SyncChangeQueueServiceIntegrationTests
             ChangeType = SyncChangeType.Deleted
         });
 
-        MSTestAssert.AreEqual(SyncChangeType.Deleted, syncItem.ChangeType);
-        MSTestAssert.AreEqual(1, await database.Db.SyncQueueItems.CountAsync());
+        var deletedItem = (await database.SyncItems.ListAllAsync()).Single();
+        MSTestAssert.AreEqual(syncItem.Id, deletedItem.Id);
+        MSTestAssert.AreEqual(SyncChangeType.Deleted, deletedItem.ChangeType);
+        MSTestAssert.AreEqual(1, (await database.ReadQueueRowsAsync()).Count);
     }
 
     [TestMethod]
@@ -417,7 +411,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
     [TestCategory("Integration")]
     public async Task EnqueueGenericDeletedUser_IsRejectedAndLeavesExistingPendingWorkUntouched()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 1, disabledRemoteCount: 0);
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
 
@@ -435,16 +429,16 @@ public sealed class SyncChangeQueueServiceIntegrationTests
             ChangeType = SyncChangeType.Deleted
         }));
 
-        var syncItems = await database.Db.SyncItems.ToListAsync();
+        var syncItems = await database.SyncItems.ListAllAsync();
         MSTestAssert.HasCount(1, syncItems);
         MSTestAssert.AreEqual(seeded.User.UId, syncItems[0].ModelId);
         MSTestAssert.AreEqual(SyncModelType.User, syncItems[0].ModelType);
         MSTestAssert.AreEqual(SyncChangeType.Updated, syncItems[0].ChangeType);
-        MSTestAssert.AreEqual(1, await database.Db.SyncQueueItems.CountAsync());
+        MSTestAssert.AreEqual(1, (await database.ReadQueueRowsAsync()).Count);
     }
 
     private static (ISyncChangeQueueService Queue, IPendingSyncActivationService Activation) CreateService(
-        SqliteIntegrationTestDatabase database,
+        SqliteRepositoryTestDatabase database,
         FakeDeviceIdentityService identity,
         FakeSyncAuthorizationService authorization,
         FakeSyncDeviceIdentityService? syncIdentities = null,
@@ -492,7 +486,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
     }
 
     private static async Task<SeededUserRoutes> SeedUserRoutesAsync(
-        SqliteIntegrationTestDatabase database,
+        SqliteRepositoryTestDatabase database,
         int enabledRemoteCount,
         int disabledRemoteCount)
     {
@@ -517,9 +511,9 @@ public sealed class SyncChangeQueueServiceIntegrationTests
             LastModifiedAt = DateTimeOffset.UtcNow.AddHours(-1)
         };
         user.GenerateIntegrityHash();
-        database.Db.LocalDeviceIdentities.Add(identityModel);
-        database.Db.Users.Add(user);
-        database.Db.LocalUserDevices.Add(new LocalUserDevice
+        await database.DeviceIdentity.Create(identityModel);
+        await database.Users.AddAsync(user);
+        await database.LocalUserDevices.AddAsync(new LocalUserDevice
         {
             UserId = user.UId,
             LocalDeviceIdentityId = localId,
@@ -531,8 +525,8 @@ public sealed class SyncChangeQueueServiceIntegrationTests
         {
             var device = CreateRemoteDevice($"AA{i:D2}");
             enabledRemotes.Add(device);
-            database.Db.Devices.Add(device);
-            database.Db.UserDevices.Add(new UserDevice
+            await database.Devices.AddAsync(device);
+            await database.UserDevices.AddAsync(new UserDevice
             {
                 UserId = user.UId,
                 DeviceId = device.Id,
@@ -546,8 +540,8 @@ public sealed class SyncChangeQueueServiceIntegrationTests
         {
             var device = CreateRemoteDevice($"BB{i:D2}");
             disabledRemotes.Add(device);
-            database.Db.Devices.Add(device);
-            database.Db.UserDevices.Add(new UserDevice
+            await database.Devices.AddAsync(device);
+            await database.UserDevices.AddAsync(new UserDevice
             {
                 UserId = user.UId,
                 DeviceId = device.Id,
@@ -556,7 +550,7 @@ public sealed class SyncChangeQueueServiceIntegrationTests
             });
         }
 
-        await database.Db.SaveChangesAsync();
+        await database.UnitOfWork.SaveChangesAsync();
         var identity = new FakeDeviceIdentityService
         {
             IsInitialized = true,

@@ -1,11 +1,9 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Contracts.Requests;
@@ -33,11 +31,12 @@ public sealed class DeviceRemovalHistoryRecoveryTests
         await EnrollAsync(source, removed, token);
         using (var scope = source.Services.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var device = await db.Devices.SingleAsync(row => row.Id == removed.Identity.LocalDeviceId);
+            var devices = scope.ServiceProvider.GetRequiredService<IDeviceRepository>();
+            var device = (await devices.GetByIdAsync(removed.Identity.LocalDeviceId))!;
             device.IsBlocked = blocked;
             device.BlockedReason = blocked ? "invalid device removal history" : null;
             device.BlockedAt = blocked ? DateTimeOffset.UtcNow : null;
+            devices.Update(device);
             await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
         }
 
@@ -68,11 +67,13 @@ public sealed class DeviceRemovalHistoryRecoveryTests
         var before = await ReadUserAsync(source, token);
         using (var scope = source.Services.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var cutoff = await db.UserOriginRemovalCutoffs.SingleAsync(row => row.UserId == before.UId);
-            if (missing) db.UserOriginRemovalCutoffs.Remove(cutoff);
-            else cutoff.HighestAcceptedSnapshotRevision += 100;
-            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+            var sql = missing
+                ? """DELETE FROM "UserOriginRemovalCutoffs" WHERE "UserId" = $user;"""
+                : """
+                  UPDATE "UserOriginRemovalCutoffs" SET "HighestAcceptedSnapshotRevision" = "HighestAcceptedSnapshotRevision" + 100
+                  WHERE "UserId" = $user;
+                  """;
+            Assert.AreEqual(1, await scope.ServiceProvider.ExecuteFixtureSqlAsync(sql, ("$user", before.UId)));
         }
 
         var result = await source.Endpoints.RunSelfDiagnosticsAndRepairAsync(token);
@@ -171,11 +172,14 @@ public sealed class DeviceRemovalHistoryRecoveryTests
         await CorruptRemovalAsync(source, before.UId);
         using (var scope = source.Services.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var device = await db.Devices.SingleAsync(row => row.Id == remaining.Identity.LocalDeviceId);
+            var devices = scope.ServiceProvider.GetRequiredService<IDeviceRepository>();
+            var device = (await devices.GetByIdAsync(remaining.Identity.LocalDeviceId))!;
             device.IsBlocked = blocked;
-            var link = await db.UserDevices.SingleAsync(row => row.UserId == before.UId && row.DeviceId == device.Id);
+            devices.Update(device);
+            var links = scope.ServiceProvider.GetRequiredService<IUserDeviceRepository>();
+            var link = (await links.GetAsync(before.UId, device.Id))!;
             link.IsSyncOn = false;
+            links.Update(link);
             await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
         }
 
@@ -207,11 +211,11 @@ public sealed class DeviceRemovalHistoryRecoveryTests
         CollectionAssert.AreEqual(before.IntegrityHash, (await ReadUserAsync(source, token)).IntegrityHash);
         using (var scope = source.Services.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            Assert.IsTrue(await db.UserControlOperations.AnyAsync(row => row.UserId == before.UId &&
-                row.OperationType == UserControlOperationType.DeviceRemoval));
-            Assert.IsTrue(await db.UserOriginRemovalCutoffs.AnyAsync(row => row.UserId == before.UId));
-            Assert.AreEqual(2, await db.UserMembershipAuthorizations.CountAsync(row => row.UserId == before.UId));
+            var services = scope.ServiceProvider;
+            var operations = await services.GetRequiredService<IUserControlOperationRepository>().ListForUserAsync(before.UId);
+            Assert.IsTrue(operations.Any(row => row.OperationType == UserControlOperationType.DeviceRemoval));
+            Assert.IsNotEmpty(await services.GetRequiredService<IUserOriginRemovalCutoffRepository>().ListForUserAsync(before.UId));
+            Assert.HasCount(2, await services.GetRequiredService<IUserMembershipAuthorizationRepository>().ListForUserAsync(before.UId));
         }
         // A clean retry must still pass the original checkpoint and repair successfully.
         Assert.IsTrue((await source.Endpoints.RunSelfDiagnosticsAndRepairAsync(token)).Healthy);
@@ -232,9 +236,10 @@ public sealed class DeviceRemovalHistoryRecoveryTests
         await CorruptRemovalAsync(source, before.UId);
         using (var scope = source.Services.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var knowledge = await db.UserRevisionKnowledge.FirstAsync(row => row.UserId == before.UId);
+            var revisions = scope.ServiceProvider.GetRequiredService<IUserRevisionKnowledgeRepository>();
+            var knowledge = (await revisions.ListForUserAsync(before.UId)).First();
             knowledge.HighestStoredRevision = knowledge.HighestMergedRevision + 1;
+            revisions.Update(knowledge);
             await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
         }
         var result = await source.Endpoints.RunSelfDiagnosticsAndRepairAsync(token);
@@ -284,20 +289,20 @@ public sealed class DeviceRemovalHistoryRecoveryTests
         var before = await ReadUserAsync(source, token);
         using (var scope = source.Services.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var authorization = await db.UserMembershipAuthorizations.SingleAsync(row => row.UserId == before.UId &&
-                row.DeviceId == remote.Identity.LocalDeviceId && row.IsActive);
-            var state = await db.UserControlStates.SingleAsync(row => row.UserId == before.UId);
-            var nextSequence = state.NextOriginSequence;
-            await db.UserOriginRemovalCutoffs.AddAsync(new UserOriginRemovalCutoff
+            var services = scope.ServiceProvider;
+            var authorizations = services.GetRequiredService<IUserMembershipAuthorizationRepository>();
+            var authorization = (await authorizations.ListActiveForDeviceAsync(before.UId, remote.Identity.LocalDeviceId)).Single();
+            var states = services.GetRequiredService<IUserControlStateRepository>();
+            var nextSequence = (await states.GetAsync(before.UId))!.NextOriginSequence;
+            var cutoffs = services.GetRequiredService<IUserOriginRemovalCutoffRepository>();
+            await cutoffs.AddAsync(new UserOriginRemovalCutoff
             {
                 UserId = before.UId, DeviceId = authorization.DeviceId,
                 OriginInstanceId = authorization.OriginInstanceId, AuthorizationId = authorization.AuthorizationId,
                 UserKeyEpoch = before.KeyEpoch, ResultingMembershipEpoch = before.MembershipEpoch + 1,
                 RemovalOperationId = Guid.NewGuid(), RemovalOperationHash = new byte[32]
             });
-            var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-            await uow.SaveChangesAsync();
+            await services.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
             var payload = new DeviceRemovalPayload
             {
                 UserId = before.UId, RemovedDeviceId = authorization.DeviceId, KeyEpoch = before.KeyEpoch,
@@ -313,11 +318,14 @@ public sealed class DeviceRemovalHistoryRecoveryTests
             UserControlOperationEnvelopeUtil.FinalizeDeviceRemovalPayload(payload);
             await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => scope.ServiceProvider
                 .GetRequiredService<IUserControlOperationWriterService>().CreateAppliedDeviceRemovalAsync(before, payload));
-            await uow.SaveChangesAsync();
-            Assert.AreEqual(nextSequence, (await db.UserControlStates.SingleAsync(row => row.UserId == before.UId)).NextOriginSequence);
-            Assert.IsFalse(await db.UserControlOperations.AnyAsync(row => row.UserId == before.UId &&
-                row.OperationType == UserControlOperationType.DeviceRemoval));
-            Assert.IsTrue((await db.UserMembershipAuthorizations.SingleAsync(row => row.AuthorizationId == authorization.AuthorizationId)).IsActive);
+            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+            using var verification = source.Services.CreateScope();
+            var durable = verification.ServiceProvider;
+            Assert.AreEqual(nextSequence, (await durable.GetRequiredService<IUserControlStateRepository>().GetAsync(before.UId))!.NextOriginSequence);
+            var operations = await durable.GetRequiredService<IUserControlOperationRepository>().ListForUserAsync(before.UId);
+            Assert.IsFalse(operations.Any(row => row.OperationType == UserControlOperationType.DeviceRemoval));
+            Assert.IsTrue((await durable.GetRequiredService<IUserMembershipAuthorizationRepository>()
+                .GetByIdAsync(authorization.AuthorizationId))!.IsActive);
         }
     }
 
@@ -347,10 +355,10 @@ public sealed class DeviceRemovalHistoryRecoveryTests
     private static async Task CorruptRemovalAsync(ProductionSyncTestHost host, Guid userId)
     {
         using var scope = host.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var operation = await db.UserControlOperations.SingleAsync(row => row.UserId == userId &&
-            row.OperationType == UserControlOperationType.DeviceRemoval);
+        var operations = scope.ServiceProvider.GetRequiredService<IUserControlOperationRepository>();
+        var operation = (await operations.ListForUserAsync(userId)).Single(row => row.OperationType == UserControlOperationType.DeviceRemoval);
         operation.EnvelopePayload = Encoding.UTF8.GetBytes("{malformed history");
+        operations.Update(operation);
         await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
     }
 

@@ -1,9 +1,7 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
@@ -18,31 +16,32 @@ public sealed class SqliteSyncQueueAndTombstoneParityTests
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
-    public async Task SparseBatch_RefreshesOnlyRequestedPairs(bool sqlite)
+    public async Task SparseBatch_RefreshesOnlyRequestedPairs(bool separateWriter)
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
-        using var session = new SqliteSession(new SqliteConnectionFactory(baseline.ConnectionString));
-        ISyncQueueRepository queue = sqlite ? new SqliteSyncQueueRepository(session) : baseline.SyncQueue;
-        IUnitOfWork writes = sqlite ? session : baseline.UnitOfWork;
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var session = baseline.OpenSession();
+        ISyncQueueRepository queue = separateWriter ? new SqliteSyncQueueRepository(session) : baseline.SyncQueue;
+        IUnitOfWork writes = separateWriter ? session : baseline.UnitOfWork;
 
         var first = NewItem();
         var second = NewItem();
         var left = NewDevice("AAAA");
         var right = NewDevice("BBBB");
-        baseline.Db.AddRange(first, second, left, right);
+        await baseline.SyncItems.AddAsync(first);
+        await baseline.SyncItems.AddAsync(second);
+        await baseline.Devices.AddAsync(left);
+        await baseline.Devices.AddAsync(right);
         await baseline.UnitOfWork.SaveChangesAsync();
         await queue.EnqueueAsync([Pair(first, left), Pair(first, right), Pair(second, left), Pair(second, right)]);
         await writes.SaveChangesAsync();
 
-        var before = await baseline.Db.SyncQueueItems.AsNoTracking()
-            .ToDictionaryAsync(row => (row.SyncItemId, row.DeviceId));
+        var before = (await baseline.ReadQueueRowsAsync()).ToDictionary(row => (row.SyncItemId, row.DeviceId));
         var unrelated = before[(first.Id, right.Id)];
         Assert.IsTrue(await queue.TryAcknowledgeAsync(unrelated.Id, unrelated.EnqueuedAt));
         await queue.EnqueueAsync([Pair(first, left), Pair(second, right), Pair(first, left)]);
         await writes.SaveChangesAsync();
 
-        var after = await baseline.Db.SyncQueueItems.AsNoTracking()
-            .ToDictionaryAsync(row => (row.SyncItemId, row.DeviceId));
+        var after = (await baseline.ReadQueueRowsAsync()).ToDictionary(row => (row.SyncItemId, row.DeviceId));
         Assert.HasCount(4, after);
         Assert.IsTrue(after[(first.Id, left.Id)].EnqueuedAt > before[(first.Id, left.Id)].EnqueuedAt);
         Assert.IsTrue(after[(second.Id, right.Id)].EnqueuedAt > before[(second.Id, right.Id)].EnqueuedAt);
@@ -54,10 +53,9 @@ public sealed class SqliteSyncQueueAndTombstoneParityTests
     [TestMethod]
     public async Task Reenqueue_RefreshesTheExactGenerationAndPreservesBothRowIds()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
-        var factory = new SqliteConnectionFactory(baseline.ConnectionString);
-        using var session = new SqliteSession(factory);
-        using var senderSession = new SqliteSession(factory);
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var session = baseline.OpenSession();
+        using var senderSession = baseline.OpenSession();
         var queue = new SqliteSyncQueueRepository(session);
         var sender = new SqliteSyncQueueRepository(senderSession);
         var devices = new SqliteDeviceRepository(session);
@@ -102,10 +100,9 @@ public sealed class SqliteSyncQueueAndTombstoneParityTests
     [TestMethod]
     public async Task TombstoneCapacity_IsCheckedAtFlushAndOlderEvidenceCannotReplaceNewerEvidence()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
-        var factory = new SqliteConnectionFactory(baseline.ConnectionString);
-        using var session = new SqliteSession(factory);
-        using var otherSession = new SqliteSession(factory);
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var session = baseline.OpenSession();
+        using var otherSession = baseline.OpenSession();
         var first = new SqliteSyncTombstoneRepository(session, capacity: 1);
         var other = new SqliteSyncTombstoneRepository(otherSession, capacity: 1);
         var abandoned = Guid.NewGuid();
@@ -129,7 +126,7 @@ public sealed class SqliteSyncQueueAndTombstoneParityTests
         first.Delete(stale);
         var failure = await Assert.ThrowsExactlyAsync<StorageWriteException>(() => session.SaveChangesAsync());
         Assert.AreEqual(StorageWriteException.FailureKind.StaleRow, failure.Kind);
-        var persisted = await baseline.Db.SyncTombstones.AsNoTracking().SingleAsync();
+        var persisted = (await baseline.Tombstones.GetAsync(retained, SyncModelType.Group))!;
         Assert.AreEqual(stale.Id, persisted.Id);
         Assert.AreEqual(8L, persisted.DeletedAtTs);
     }
@@ -137,8 +134,8 @@ public sealed class SqliteSyncQueueAndTombstoneParityTests
     [TestMethod]
     public async Task DeviceObservation_UsesTheStagedTargetAndPreservesItsMetadata()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
-        using var session = new SqliteSession(new SqliteConnectionFactory(baseline.ConnectionString));
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var session = baseline.OpenSession();
         var devices = new SqliteDeviceRepository(session);
         var seeded = NewDevice("AABB");
         await devices.AddAsync(seeded);
@@ -148,6 +145,8 @@ public sealed class SqliteSyncQueueAndTombstoneParityTests
         var target = (await devices.GetByIdWithUserDevicesAsync(seeded.Id))!;
         target.IsBlocked = true;
         devices.Update(target);
+        Assert.AreSame(target, await devices.GetByIdAsync(seeded.Id));
+        Assert.IsFalse((await devices.GetByIdAsNoTrackingAsync(seeded.Id))!.IsBlocked);
         var observation = devices.GetObservationWriteTarget(source)!;
         Assert.AreSame(target, observation);
         observation.LastSeen = observation.LastSeen.AddSeconds(1);

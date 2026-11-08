@@ -1,7 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
@@ -16,11 +15,10 @@ public sealed class SqliteSnapshotRecoveryRepositoryParityTests
     [TestMethod]
     public async Task SnapshotQueries_KeepExactRevisionAndQuarantineSemantics()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         var user = await AddUserAsync(baseline);
-        var connections = new SqliteConnectionFactory(baseline.ConnectionString);
-        using var session = new SqliteSession(connections);
-        using var otherSession = new SqliteSession(connections);
+        using var session = baseline.OpenSession();
+        using var otherSession = baseline.OpenSession();
         var snapshots = new SqliteUserSyncSnapshotRepository(session);
         var other = new SqliteUserSyncSnapshotRepository(otherSession);
         var pending = Snapshot(user, UserSyncSnapshotStatus.Pending);
@@ -35,7 +33,8 @@ public sealed class SqliteSnapshotRecoveryRepositoryParityTests
         Assert.AreEqual(pending.Id, (await snapshots.ListPendingAsync(user.UId, user.KeyEpoch, user.MembershipEpoch)).Single().Id);
         Assert.AreEqual(2, (await snapshots.ListPendingForKeyEpochAsync(user.UId, user.KeyEpoch)).Count);
         CollectionAssert.AreEqual(
-            (await baseline.UserSyncSnapshots.ListRecoveryEvidenceAsync(user.UId, user.KeyEpoch)).Select(row => row.Id).ToArray(),
+            new[] { pending, candidate }.OrderBy(row => row.OriginDeviceId).ThenBy(row => row.OriginInstanceId)
+                .Select(row => row.Id).ToArray(),
             (await snapshots.ListRecoveryEvidenceAsync(user.UId, user.KeyEpoch)).Select(row => row.Id).ToArray());
         Assert.IsTrue(await snapshots.HasIsolatedForkAsync(user.UId, user.KeyEpoch, user.MembershipEpoch));
         Assert.IsNull(await snapshots.GetLatestLocalAsync(user.UId, pending.OriginDeviceId, pending.OriginInstanceId, user.KeyEpoch));
@@ -62,9 +61,9 @@ public sealed class SqliteSnapshotRecoveryRepositoryParityTests
     [TestMethod]
     public async Task RevisionKnowledge_ReusesPendingOriginEpochAndRetainsSeparateEpochs()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         var user = await AddUserAsync(baseline);
-        using var session = new SqliteSession(new SqliteConnectionFactory(baseline.ConnectionString));
+        using var session = baseline.OpenSession();
         var knowledge = new SqliteUserRevisionKnowledgeRepository(session);
         var first = new UserRevisionKnowledge
         {
@@ -93,9 +92,9 @@ public sealed class SqliteSnapshotRecoveryRepositoryParityTests
     [TestMethod]
     public async Task FaultQueries_MatchNullableScopeAndPendingRecoveryState()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         var user = await AddUserAsync(baseline);
-        using var session = new SqliteSession(new SqliteConnectionFactory(baseline.ConnectionString));
+        using var session = baseline.OpenSession();
         var faults = new SqliteUserSyncFaultRepository(session);
         var service = new UserSyncFaultService(faults);
         var descriptor = new UserSyncFaultDescriptor
@@ -126,7 +125,7 @@ public sealed class SqliteSnapshotRecoveryRepositoryParityTests
         Assert.AreEqual(UserSyncHealthStatus.Recovered, (await baseline.UserSyncFaults.ListForUserAsync(user.UId)).Single().Status);
     }
 
-    private static async Task<User> AddUserAsync(SqliteIntegrationTestDatabase baseline)
+    private static async Task<User> AddUserAsync(SqliteRepositoryTestDatabase baseline)
     {
         var user = new User { KeyEpoch = 2, MembershipEpoch = 3 };
         user.GenerateIntegrityHash();

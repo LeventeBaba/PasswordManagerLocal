@@ -1,8 +1,8 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
+using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Contracts.Notifications;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
@@ -17,16 +17,18 @@ public sealed class BackendChangeUnitOfWorkTests
     [TestCategory("Integration")]
     public async Task CommittedMutation_PublishesCombinedUserScopesOnlyAfterCommit()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteTestVault.CreateAsync();
         using var hub = new BackendChangeEventHub(TimeProvider.System);
-        var unitOfWork = new AppUnitOfWork(database.Db, hub);
-        var user = await AddUserAsync(database, unitOfWork);
+        using var unitOfWork = new SqliteSession(database.Connections, hub);
+        var users = new SqliteUserRepository(unitOfWork);
+        var user = await AddUserAsync(users, unitOfWork);
         await using var subscription = hub.Subscribe(user.UId, capacity: 8);
 
         user.EncryptedUserPasswordsDataPayload = [0x51, 0x52];
         user.EncryptedGeneralUserDataPayload = [0x61, 0x62];
         user.GenerateIntegrityHash();
         await using var transaction = await unitOfWork.BeginTransactionAsync();
+        users.Update(user);
         await unitOfWork.SaveChangesAsync();
 
         Assert.AreEqual(1L, hub.CurrentPosition.Sequence);
@@ -45,14 +47,16 @@ public sealed class BackendChangeUnitOfWorkTests
     [TestCategory("Integration")]
     public async Task RolledBackMutation_DoesNotPublishAndIrrelevantTimestampUpdateIsNoOp()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteTestVault.CreateAsync();
         using var hub = new BackendChangeEventHub(TimeProvider.System);
-        var unitOfWork = new AppUnitOfWork(database.Db, hub);
-        var user = await AddUserAsync(database, unitOfWork);
+        using var unitOfWork = new SqliteSession(database.Connections, hub);
+        var users = new SqliteUserRepository(unitOfWork);
+        var user = await AddUserAsync(users, unitOfWork);
         var committedSequence = hub.CurrentPosition.Sequence;
 
         user.LastModifiedAt = user.LastModifiedAt.AddSeconds(1);
         user.GenerateIntegrityHash();
+        users.Update(user);
         await unitOfWork.SaveChangesAsync();
         Assert.AreEqual(committedSequence, hub.CurrentPosition.Sequence);
 
@@ -60,6 +64,7 @@ public sealed class BackendChangeUnitOfWorkTests
         user.GenerateIntegrityHash();
         await using (var transaction = await unitOfWork.BeginTransactionAsync())
         {
+            users.Update(user);
             await unitOfWork.SaveChangesAsync();
             Assert.AreEqual(committedSequence, hub.CurrentPosition.Sequence);
             await transaction.RollbackAsync();
@@ -73,15 +78,17 @@ public sealed class BackendChangeUnitOfWorkTests
     [TestCategory("Integration")]
     public async Task DurablePartialCommit_IsPublishedEvenWhenLaterWorkFails()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteTestVault.CreateAsync();
         using var hub = new BackendChangeEventHub(TimeProvider.System);
-        var unitOfWork = new AppUnitOfWork(database.Db, hub);
-        var user = await AddUserAsync(database, unitOfWork);
+        using var unitOfWork = new SqliteSession(database.Connections, hub);
+        var users = new SqliteUserRepository(unitOfWork);
+        var user = await AddUserAsync(users, unitOfWork);
         await using var subscription = hub.Subscribe(user.UId, capacity: 8);
         var startSequence = hub.CurrentPosition.Sequence;
 
         user.EncryptedGeneralUserDataPayload = [0x73, 0x74];
         user.GenerateIntegrityHash();
+        users.Update(user);
         await unitOfWork.SaveChangesAsync();
         try
         {
@@ -102,10 +109,11 @@ public sealed class BackendChangeUnitOfWorkTests
     [TestCategory("Integration")]
     public async Task EffectiveLoginProjectionChangesPublishButVersionOnlyUpdatesDoNot()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteTestVault.CreateAsync();
         using var hub = new BackendChangeEventHub(TimeProvider.System);
-        var unitOfWork = new AppUnitOfWork(database.Db, hub);
-        var user = await AddUserAsync(database, unitOfWork);
+        using var unitOfWork = new SqliteSession(database.Connections, hub);
+        var users = new SqliteUserRepository(unitOfWork);
+        var user = await AddUserAsync(users, unitOfWork);
         var identity = new UserLoginIdentityState
         {
             UserId = user.UId,
@@ -115,25 +123,27 @@ public sealed class BackendChangeUnitOfWorkTests
             Status = UserLoginIdentityStatus.Active,
             ConcurrencyVersion = 1
         };
-        await database.Db.UserLoginIdentityStates.AddAsync(identity);
+        await users.AddLoginIdentityStateAsync(identity);
         await unitOfWork.SaveChangesAsync();
         var sequenceAfterProjection = hub.CurrentPosition.Sequence;
 
         identity.VersionLogicalCounter++;
         identity.ConcurrencyVersion++;
+        users.UpdateLoginIdentityState(identity);
         await unitOfWork.SaveChangesAsync();
         Assert.AreEqual(sequenceAfterProjection, hub.CurrentPosition.Sequence);
 
         identity.UsernameHash = Enumerable.Repeat((byte)0x04, 32).ToArray();
         identity.ConcurrencyVersion++;
+        users.UpdateLoginIdentityState(identity);
         await unitOfWork.SaveChangesAsync();
 
         Assert.AreEqual(sequenceAfterProjection + 1, hub.CurrentPosition.Sequence);
     }
 
     private static async Task<User> AddUserAsync(
-        SqliteIntegrationTestDatabase database,
-        AppUnitOfWork unitOfWork)
+        SqliteUserRepository users,
+        SqliteSession unitOfWork)
     {
         var now = DateTimeOffset.UtcNow;
         var user = new User
@@ -159,7 +169,7 @@ public sealed class BackendChangeUnitOfWorkTests
             UserDevicesDataLastModifiedAt = now
         };
         user.GenerateIntegrityHash();
-        await database.Users.AddAsync(user);
+        await users.AddAsync(user);
         await unitOfWork.SaveChangesAsync();
         return user;
     }

@@ -1,13 +1,11 @@
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
-using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Persistence;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
+using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
 using PasswordManagerLocal.Common.Tests.Fakes;
@@ -57,19 +55,7 @@ public sealed class ProfileHistoryRecoveryIntegrationTests
             await source.Endpoints.AddDeviceByCodeAsync(token, code.Code);
             await source.Endpoints.DisconnectUserDeviceAsync(token, removed.Identity.LocalDeviceId, credential);
             using (var scope = source.Services.CreateScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var authorization = await db.UserMembershipAuthorizations.SingleAsync(row =>
-                    row.UserId == userId && row.DeviceId == removed.Identity.LocalDeviceId);
-                authorization.IsActive = true;
-                authorization.Version++;
-                db.UserDevices.Remove(await db.UserDevices.SingleAsync(row =>
-                    row.UserId == userId && row.DeviceId == removed.Identity.LocalDeviceId));
-                (await db.UserControlOperations.SingleAsync(row => row.UserId == userId &&
-                    row.OperationType == UserControlOperationType.DeviceRemoval)).EnvelopePayload = Encoding.UTF8.GetBytes("{broken history");
-                (await db.DeviceEnrollmentCommits.SingleAsync(row => row.UserId == userId)).Status = DeviceEnrollmentCommitStatus.TransferFailed;
-                await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
-            }
+                await RecoveryHistoryTestData.BreakRemovedDeviceHistoryAsync(scope.ServiceProvider, userId, removed.Identity.LocalDeviceId);
 
             await using var preferences = await TestUiPreferencesFactory.CreateAsync();
             using var model = new ProfileViewModel(preferences, source.Endpoints, () => Task.FromResult(true), () => Task.CompletedTask);
@@ -80,7 +66,7 @@ public sealed class ProfileHistoryRecoveryIntegrationTests
             Assert.IsTrue(model.IsHistoryRecoveryDialogOpen);
             long previousKeyEpoch;
             using (var scope = source.Services.CreateScope())
-                previousKeyEpoch = (await scope.ServiceProvider.GetRequiredService<AppDbContext>().Users.SingleAsync(row => row.UId == userId)).KeyEpoch;
+                previousKeyEpoch = (await scope.ServiceProvider.GetRequiredService<IUserRepository>().GetByIdAsNoTrackingAsync(userId))!.KeyEpoch;
 
             model.HistoryRecoveryPassword = "IncorrectPassword!";
             model.IsHistoryRecoveryAcknowledged = true;
@@ -90,9 +76,12 @@ public sealed class ProfileHistoryRecoveryIntegrationTests
             Assert.AreEqual(string.Empty, model.HistoryRecoveryPassword);
             using (var scope = source.Services.CreateScope())
             {
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                Assert.AreEqual(previousKeyEpoch, (await db.Users.SingleAsync(row => row.UId == userId)).KeyEpoch);
-                Assert.AreEqual(0, await db.UserRecoveryJournals.CountAsync(row => row.UserId == userId));
+                var services = scope.ServiceProvider;
+                var user = await services.GetRequiredService<IUserRepository>().GetByIdAsNoTrackingAsync(userId);
+                Assert.AreEqual(previousKeyEpoch, user!.KeyEpoch);
+                var journals = services.GetRequiredService<IUserRecoveryJournalStore>();
+                foreach (var id in await journals.ListIdsAsync(default))
+                    Assert.AreNotEqual<Guid?>(userId, await journals.ReadUserIdAsync(id, default));
             }
 
             model.HistoryRecoveryPassword = masterPassword;
@@ -107,7 +96,7 @@ public sealed class ProfileHistoryRecoveryIntegrationTests
             var saved = (await source.Endpoints.GetSavedPasswordsAsync(token)).Passwords.Single();
             CollectionAssert.AreEqual(secret, await source.Endpoints.GetUnsecurePasswordAsync(token, saved.Id));
             using (var scope = source.Services.CreateScope())
-                Assert.IsTrue((await scope.ServiceProvider.GetRequiredService<AppDbContext>().Users.SingleAsync(row => row.UId == userId)).KeyEpoch > previousKeyEpoch);
+                Assert.IsTrue((await scope.ServiceProvider.GetRequiredService<IUserRepository>().GetByIdAsNoTrackingAsync(userId))!.KeyEpoch > previousKeyEpoch);
         }
         finally
         {

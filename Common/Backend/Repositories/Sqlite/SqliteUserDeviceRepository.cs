@@ -59,9 +59,19 @@ internal sealed class SqliteUserDeviceRepository(SqliteSession session) : IUserD
         (await session.ReadAsync($"""{SelectWithDevice} WHERE {LinkByPair};""",
             row => _rows.Remember(ReadWithDevice(row)), ct, ("$user", userId), ("$device", deviceId))).SingleOrDefault();
 
-    public async Task<UserDevice?> GetByModelIdAsync(Guid modelId, CancellationToken ct = default) =>
-        (await session.ReadAsync($"""{Select} WHERE ud."ModelId" = $model;""",
+    public async Task<UserDevice?> GetByModelIdAsync(Guid modelId, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var pending = session.GetPendingRows<UserDevice>().LastOrDefault(item => item.Row.ModelId == modelId);
+        if (pending.Row is not null && pending.Operation == SqliteMutation.Operation.Update)
+        {
+            pending.Row.VerifyIntegrity();
+            return pending.Row;
+        }
+
+        return (await session.ReadAsync($"""{Select} WHERE ud."ModelId" = $model;""",
             row => _rows.Remember(ReadDetached(row)), ct, ("$model", modelId))).SingleOrDefault();
+    }
 
     public Task<bool> ExistsAsync(Guid userId, Guid deviceId, CancellationToken ct = default) =>
         ExistsAsync(LinkByPair, ct, ("$user", userId), ("$device", deviceId));

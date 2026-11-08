@@ -19,7 +19,7 @@ public sealed class SyncItemLifecycleHealthGateTests
     [TestCategory("Integration")]
     public async Task TouchLocalStateAsync_UnhealthyCanonicalBaseline_DoesNotResignOrMutateUser()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var originalModifiedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
         var user = new User
         {
@@ -31,7 +31,6 @@ public sealed class SyncItemLifecycleHealthGateTests
         user.GenerateIntegrityHash();
         await database.Users.AddAsync(user);
         await database.UnitOfWork.SaveChangesAsync();
-        database.Db.ChangeTracker.Clear();
 
         var health = new RejectingCanonicalHealthService();
         var lifecycle = new SyncItemLifecycleService(
@@ -54,7 +53,6 @@ public sealed class SyncItemLifecycleHealthGateTests
             },
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
 
-        database.Db.ChangeTracker.Clear();
         var reloaded = await database.Users.GetByIdAsync(user.UId);
         MSTestAssert.IsNotNull(reloaded);
         MSTestAssert.AreEqual(originalModifiedAt, reloaded.LastModifiedAt);

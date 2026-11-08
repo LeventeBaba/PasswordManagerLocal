@@ -1,10 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
@@ -21,8 +19,8 @@ public sealed class SqliteAccountRepositoryParityTests
     [TestMethod]
     public async Task CanonicalLoginProjection_FollowsFlushCommitAndRollback()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
-        using var session = new SqliteSession(new SqliteConnectionFactory(baseline.ConnectionString));
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var session = baseline.OpenSession();
         var users = new SqliteUserRepository(session);
         var projection = new UserLoginIdentityProjectionService(
             users, new FakeUserSyncSnapshotRepository(), new FakeUserMembershipAuthorizationService(),
@@ -43,9 +41,9 @@ public sealed class SqliteAccountRepositoryParityTests
             await transaction.CommitAsync();
         }
 
-        var readByEf = (await baseline.Users.ListLoginLookupDataAsync()).Single();
-        Assert.AreEqual(user.UId, readByEf.UId);
-        CollectionAssert.AreEqual(user.UsernameHash, readByEf.UsernameHash);
+        var persisted = (await baseline.Users.ListLoginLookupDataAsync()).Single();
+        Assert.AreEqual(user.UId, persisted.UId);
+        CollectionAssert.AreEqual(user.UsernameHash, persisted.UsernameHash);
 
         await using (var transaction = await session.BeginTransactionAsync())
         {
@@ -68,14 +66,13 @@ public sealed class SqliteAccountRepositoryParityTests
     [TestMethod]
     public async Task UserUpdate_UsesOriginalBlobAfterBufferIsClearedAndRejectsStaleEpoch()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         var original = CreateUser([1]);
         await baseline.Users.AddAsync(original);
         await baseline.UnitOfWork.SaveChangesAsync();
 
-        var factory = new SqliteConnectionFactory(baseline.ConnectionString);
-        using var session = new SqliteSession(factory);
-        using var otherSession = new SqliteSession(factory);
+        using var session = baseline.OpenSession();
+        using var otherSession = baseline.OpenSession();
         var users = new SqliteUserRepository(session);
         var otherUsers = new SqliteUserRepository(otherSession);
         var first = (await users.GetByIdAsync(original.UId))!;
@@ -119,11 +116,11 @@ public sealed class SqliteAccountRepositoryParityTests
     [TestMethod]
     public async Task SavedKeyWrite_IsImmediateAndSurvivesAnUnrelatedStagedUpdate()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
         var user = CreateUser([2]);
         await baseline.Users.AddAsync(user);
         await baseline.UnitOfWork.SaveChangesAsync();
-        using var session = new SqliteSession(new SqliteConnectionFactory(baseline.ConnectionString));
+        using var session = baseline.OpenSession();
         var users = new SqliteUserRepository(session);
 
         var change = (await users.GetByIdAsync(user.UId))!;
@@ -153,10 +150,9 @@ public sealed class SqliteAccountRepositoryParityTests
     [TestMethod]
     public async Task LoginProjectionUpdate_RejectsStaleVersionEvenWhenOnlyProjectionChanged()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
-        var factory = new SqliteConnectionFactory(baseline.ConnectionString);
-        using var session = new SqliteSession(factory);
-        using var otherSession = new SqliteSession(factory);
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var session = baseline.OpenSession();
+        using var otherSession = baseline.OpenSession();
         var users = new SqliteUserRepository(session);
         var other = new SqliteUserRepository(otherSession);
         var user = CreateUser([3]);
@@ -182,8 +178,8 @@ public sealed class SqliteAccountRepositoryParityTests
     [TestMethod]
     public async Task GroupMembership_StagesExactPairsAndRetainsUnrelatedSharedMembership()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
-        using var session = new SqliteSession(new SqliteConnectionFactory(baseline.ConnectionString));
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var session = baseline.OpenSession();
         var users = new SqliteUserRepository(session);
         var groups = new SqliteGroupRepository(session);
         var relationships = new SyncRelationshipReconciliationService(
@@ -218,17 +214,18 @@ public sealed class SqliteAccountRepositoryParityTests
         Assert.AreEqual(second.UId, (await groups.ListUserIdsAsync(shared.Id)).Single());
         Assert.AreEqual(first.UId, (await groups.ListUserIdsAsync(unrelated.Id)).Single());
         Assert.AreEqual(shared.Id, (await groups.ListByUserWithUserIdsAsNoTrackingAsync(second.UId)).Single().Id);
-        CollectionAssert.AreEquivalent(
-            (await baseline.Groups.ListUserIdsAsync(shared.Id)).ToArray(),
-            (await groups.ListUserIdsAsync(shared.Id)).ToArray());
+        var persistedMembers = await baseline.UnitOfWork.ReadAsync("""
+            SELECT "UsersUId" FROM "GroupMembers" WHERE "GroupsId" = $group;
+            """, row => row.GetGuid(0), default, ("$group", shared.Id));
+        CollectionAssert.AreEquivalent(new[] { second.UId }, persistedMembers);
         Assert.IsTrue((await groups.GetByIdWithUsersAsync(shared.Id))!.IsIntegrityValid());
     }
 
     [TestMethod]
     public async Task UserGraph_ReadsCommittedIdentityLinksAndRejectsTampering()
     {
-        await using var baseline = await SqliteIntegrationTestDatabase.CreateSharedAsync();
-        using var session = new SqliteSession(new SqliteConnectionFactory(baseline.ConnectionString));
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var session = baseline.OpenSession();
         var users = new SqliteUserRepository(session);
         var identities = new SqliteDeviceIdentityRepository(session);
         var devices = new SqliteDeviceRepository(session);
@@ -263,8 +260,9 @@ public sealed class SqliteAccountRepositoryParityTests
         Assert.AreEqual(local.Id, graph.LocalUserDevices.Single().LocalDeviceIdentityId);
         Assert.AreSame(graph, graph.UserDevices.Single().User);
 
-        await baseline.Db.LocalUserDevices.Where(link => link.UserId == user.UId)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(link => link.IsSyncOn, false));
+        Assert.AreEqual(1, await baseline.UnitOfWork.ExecuteFixtureSqlAsync("""
+            UPDATE "LocalUserDevices" SET "IsSyncOn" = 0 WHERE "UserId" = $user;
+            """, ("$user", user.UId)));
         await Assert.ThrowsExactlyAsync<InvalidDataIntegrityException>(() => users.GetByIdWithRelationsAsync(user.UId));
     }
 
