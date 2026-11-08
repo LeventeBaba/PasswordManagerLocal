@@ -7,6 +7,9 @@ internal static class WindowsNativeMethods
     internal const uint WmNull = 0x0000;
     internal const uint WmDestroy = 0x0002;
     internal const uint WmClose = 0x0010;
+    internal const uint WmQueryEndSession = 0x0011;
+    internal const uint WmEndSession = 0x0016;
+    internal const int EndSessionCloseApp = 0x00000001;
     internal const uint WmCommand = 0x0111;
     internal const uint WmContextMenu = 0x007B;
     internal const uint WmNcCreate = 0x0081;

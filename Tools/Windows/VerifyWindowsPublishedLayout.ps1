@@ -6,7 +6,9 @@ param(
     [ValidateSet('win-x64')]
     [string]$RuntimeIdentifier = 'win-x64',
 
-    [string]$RepositoryRoot
+    [string]$RepositoryRoot,
+
+    [switch]$NativeAOT
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,6 +21,27 @@ function Assert-Files([string[]]$Names) {
             throw "Required final product file is missing: $name"
         }
     }
+}
+
+if ($NativeAOT) {
+    $requiredFiles = @(
+        'PasswordManagerLocal.exe',
+        'av_libglesv2.dll',
+        'libHarfBuzzSharp.dll',
+        'libSkiaSharp.dll',
+        'libsodium.dll',
+        'sqlite3mc.dll'
+    )
+    Assert-Files $requiredFiles
+    $entries = @(Get-ChildItem -LiteralPath $publish -Force)
+    $unexpected = @($entries | Where-Object { $_.PSIsContainer -or $_.Name -notin $requiredFiles })
+    if ($unexpected.Count -gt 0) {
+        throw "Unexpected Native AOT product entries: $($unexpected.Name -join ', ')"
+    }
+    $totalBytes = ($entries | Measure-Object -Property Length -Sum).Sum
+    Write-Host "Verified unified Native AOT publication for $RuntimeIdentifier."
+    Write-Host "Final files: $($entries.Count); final bytes: $totalBytes"
+    return
 }
 
 Assert-Files @(

@@ -13,6 +13,8 @@ param(
 
     [switch]$ReadyToRun,
 
+    [switch]$NativeAOT,
+
     [Parameter(Position = 0)]
     [string]$AndroidVersion
 )
@@ -38,6 +40,7 @@ function Write-Usage {
     Write-Host 'Usage:'
     Write-Host '  .\publish.cmd -W           Publish trimmed, self-contained Windows x64'
     Write-Host '  .\publish.cmd -W -ReadyToRun   Publish the Windows frontend and Agent with ReadyToRun'
+    Write-Host '  .\publish.cmd -W -NativeAOT    Publish one native Windows executable for both roles'
     Write-Host '  .\publish.cmd -W -SignWindows  Publish Windows with verified Authenticode signatures'
     Write-Host '  .\publish.cmd -A           Publish Android APKs supporting Android 10 and later'
     Write-Host '  .\publish.cmd -A 16        Publish an ARM64 APK requiring Android 16 or later'
@@ -47,6 +50,7 @@ function Write-Usage {
     Write-Host 'All Android builds compile and target Android 16 (API 36).'
     Write-Host 'Android 10-15 builds produce ARM64 and ARM32 APKs; Android 16 produces ARM64.'
     Write-Host 'Android publishing requires PublishKeys\PasswordManagerLocal-release.jks and securely prompts for passwords.'
+    Write-Host 'Windows publishing creates a ZIP and an MSI. See Docs\WINDOWS_INSTALLER.md for WiX setup.'
     Write-Host 'Windows publishing is unsigned for testing unless -SignWindows is supplied.'
     Write-Host 'Signed Windows publishing requires a trusted code-signing certificate. See Docs\RELEASE_SIGNING.md.'
 }
@@ -301,8 +305,13 @@ function Test-AndroidPackage {
 function Publish-WindowsApp {
     $script = Join-Path $script:Root 'Tools\Windows\PublishWindowsProduct.ps1'
 
-    Invoke-CommandChecked 'Publishing minimal shared Windows x64 product' {
-        & $script -Configuration Release -RuntimeIdentifier win-x64 -Sign:$SignWindows -ReadyToRun:$ReadyToRun
+    $description = if ($NativeAOT) {
+        'Publishing Windows x64 Native AOT product'
+    } else {
+        'Publishing minimal shared Windows x64 product'
+    }
+    Invoke-CommandChecked $description {
+        & $script -Configuration Release -RuntimeIdentifier win-x64 -Sign:$SignWindows -ReadyToRun:$ReadyToRun -NativeAOT:$NativeAOT
     }
 }
 
@@ -470,6 +479,18 @@ if ($SignWindows.IsPresent -and -not ($Windows.IsPresent -or $Full.IsPresent)) {
 
 if ($ReadyToRun.IsPresent -and -not $Windows.IsPresent) {
     Write-Host '-ReadyToRun can only be supplied with -W.' -ForegroundColor Red
+    Write-Usage
+    exit 2
+}
+
+if ($NativeAOT.IsPresent -and -not $Windows.IsPresent) {
+    Write-Host '-NativeAOT can only be supplied with -W.' -ForegroundColor Red
+    Write-Usage
+    exit 2
+}
+
+if ($NativeAOT -and $ReadyToRun) {
+    Write-Host 'Choose one Windows compilation mode: -NativeAOT or -ReadyToRun.' -ForegroundColor Red
     Write-Usage
     exit 2
 }

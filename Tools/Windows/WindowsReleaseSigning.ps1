@@ -84,6 +84,18 @@ function Assert-WindowsReleaseSignature {
     }
 }
 
+function Invoke-WindowsReleaseFileSigning {
+    param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][PSCustomObject]$Context)
+
+    $arguments = @('sign', '/sha1', $Context.Thumbprint, '/s', 'My', '/fd', 'SHA256', '/tr', $Context.TimestampUrl, '/td', 'SHA256')
+    if ($Context.StoreLocation -eq 'LocalMachine') { $arguments += '/sm' }
+    $arguments += $Path
+    & $Context.SignTool @arguments | Out-Host
+    # Warnings, including failed timestamping, are failures too (SignTool exit 2).
+    if ($LASTEXITCODE -ne 0) { throw "Windows signing failed: $Path" }
+    Assert-WindowsReleaseSignature -Path $Path -Context $Context
+}
+
 function Invoke-WindowsProductSigning {
     param(
         [Parameter(Mandatory = $true)][string]$ProductDirectory,
@@ -94,13 +106,7 @@ function Invoke-WindowsProductSigning {
     $files = @(Get-WindowsOwnedSigningFiles -ProductDirectory $ProductDirectory -UnifiedNativeAot:$UnifiedNativeAot)
     $entries = @()
     foreach ($file in $files) {
-        $arguments = @('sign', '/sha1', $Context.Thumbprint, '/s', 'My', '/fd', 'SHA256', '/tr', $Context.TimestampUrl, '/td', 'SHA256')
-        if ($Context.StoreLocation -eq 'LocalMachine') { $arguments += '/sm' }
-        $arguments += $file.FullName
-        & $Context.SignTool @arguments | Out-Host
-        # Warnings, including failed timestamping, are failures too (SignTool exit 2).
-        if ($LASTEXITCODE -ne 0) { throw "Windows signing failed: $($file.FullName)" }
-        Assert-WindowsReleaseSignature -Path $file.FullName -Context $Context
+        Invoke-WindowsReleaseFileSigning -Path $file.FullName -Context $Context
         $entries += [PSCustomObject]@{
             File = $file.FullName.Substring([IO.Path]::GetFullPath($ProductDirectory).TrimEnd('\', '/').Length + 1).Replace('\', '/')
             CertificateThumbprint = $Context.Thumbprint

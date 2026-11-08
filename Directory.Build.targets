@@ -7,12 +7,10 @@
     </PropertyGroup>
   </Target>
 
-  <!-- Managed Windows releases must go through the product packager. The standalone
-       Agent AOT spike uses a separate engineering output and never stages a release. -->
+  <!-- Windows releases must go through the product publisher for layout verification and packaging. -->
   <Target Name="RequireWindowsProductPublisher"
           BeforeTargets="Publish"
-          Condition="('$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Frontend' or '$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Agent') and '$(PmlWindowsProductStaging)' != 'true'
-                     and !('$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Agent' and '$(PmlWindowsAgentAotArtifactsPath)' != '' and '$(PublishAot)' == 'true')">
+          Condition="('$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Frontend' or '$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Agent') and '$(PmlWindowsProductStaging)' != 'true'">
     <Error Text="Publish Windows through publish.cmd -W or Tools\Windows\PublishWindowsProduct.ps1. The product publisher assembles the final DLLs and executables, with optional signing; standalone project publishing is not a release artifact." />
   </Target>
 </Project>

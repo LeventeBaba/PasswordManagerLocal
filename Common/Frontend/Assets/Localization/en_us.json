@@ -470,6 +470,7 @@
   "Firewall_Message": "Password Manager Local needs network access for device synchronization and enrollment. Windows will add rules limited to the Agent executable: incoming TCP 26688 and UDP 26689 for device discovery. Outgoing rules are added only when the firewall blocks outgoing traffic by default. The app will replace its old firewall rules without changing other applications or Windows firewall policy. Do you want to allow this? Windows will ask for administrator permission.",
   "Firewall_Allow": "Allow",
   "Firewall_Failed": "Windows Firewall could not be configured or its rules are blocked by the current Windows policy. Check that Block all incoming connections is disabled and that no firewall block rule prevents the Agent from using TCP 26688 or UDP 26689. On a managed PC, contact your administrator. After resolving the cause, try allowing access again.",
+  "Firewall_RecheckHint": "If Windows is asking for network access, finish that prompt first. This window checks the firewall again automatically.",
   "Firewall_RequiredForLocalNetwork": "Windows Firewall access is required before device enrollment or local synchronization can start. Choose Allow and approve the administrator prompt, then try again.",
   "Error_TechnicalDetails": "Technical details",
   "Shell_RetryStartup": "Retry connection",

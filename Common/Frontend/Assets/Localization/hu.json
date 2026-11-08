@@ -470,6 +470,7 @@
   "Firewall_Message": "Az eszközök szinkronizálásához és hozzáadásához a Password Manager Local alkalmazásnak hálózati hozzáférésre van szüksége. A Windows kizárólag az Agent futtatható fájljához ad szabályokat: bejövő TCP 26688 és az eszközfelderítéshez UDP 26689. Kimenő szabályok csak akkor készülnek, ha a tűzfal alapértelmezetten tiltja a kimenő forgalmat. Az alkalmazás lecseréli a saját régi szabályait, más alkalmazások és a Windows tűzfalházirend módosítása nélkül. Engedélyezed? A Windows rendszergazdai engedélyt fog kérni.",
   "Firewall_Allow": "Engedélyezés",
   "Firewall_Failed": "Nem sikerült beállítani a Windows tűzfalat, vagy az aktuális Windows házirend blokkolja a szabályokat. Ellenőrizd, hogy nincs bekapcsolva az összes bejövő kapcsolat tiltása, és nincs olyan tiltó tűzfalszabály, amely akadályozza az Agent TCP 26688 vagy UDP 26689 forgalmát. Felügyelt számítógépen fordulj a rendszergazdához. Az ok megszüntetése után próbáld újra az engedélyezést.",
+  "Firewall_RecheckHint": "Ha a Windows hálózati hozzáférést kér, először válaszolj arra az ablakra. Ez az ablak automatikusan újra ellenőrzi a tűzfalat.",
   "Firewall_RequiredForLocalNetwork": "Az eszközfelvétel és a helyi szinkronizáció elindításához Windows tűzfalengedély szükséges. Válaszd az Engedélyezés lehetőséget, hagyd jóvá a rendszergazdai kérést, majd próbáld újra.",
   "Error_TechnicalDetails": "Technikai részletek",
   "Shell_RetryStartup": "Kapcsolódás újrapróbálása",

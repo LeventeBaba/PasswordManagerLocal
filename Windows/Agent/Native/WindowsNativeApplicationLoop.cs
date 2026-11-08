@@ -201,7 +201,13 @@ internal sealed class WindowsNativeApplicationLoop : IDisposable
             _messageWindow.Destroy();
             return 0;
         }
-        if (message == WindowsNativeMethods.WmClose)
+        // Restart Manager first asks whether the app can close. Wait for the
+        // confirmed end-session notification before starting Agent shutdown.
+        var restartManagerClose = (lParam & WindowsNativeMethods.EndSessionCloseApp) != 0;
+        if (message == WindowsNativeMethods.WmQueryEndSession && restartManagerClose)
+            return 1;
+        if (message == WindowsNativeMethods.WmClose ||
+            (message == WindowsNativeMethods.WmEndSession && restartManagerClose && wParam != 0))
         {
             BeginShellShutdown();
             return 0;

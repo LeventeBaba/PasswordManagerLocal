@@ -10,6 +10,7 @@ using PasswordManagerLocal.Windows.Ipc.Client;
 using PasswordManagerLocal.Windows.Ipc.Contracts;
 using PasswordManagerLocal.Windows.Ipc.Coordination;
 using PasswordManagerLocal.Windows.Ipc.Protocol;
+using PasswordManagerLocal.Windows.Frontend.Installation;
 using PasswordManagerLocal.Windows.Frontend.Lifecycle;
 using PasswordManagerLocal.Windows.Frontend.Notifications;
 using PasswordManagerLocal.Windows.Frontend.Settings;
@@ -47,6 +48,12 @@ internal sealed class Program
             Environment.ExitCode = args.Length == 1
                 ? Firewall.WindowsFirewallSetup.Run()
                 : Firewall.WindowsFirewallSetup.InvalidArgumentsExitCode;
+            return;
+        }
+
+        if (args.Contains(WindowsInteractiveUninstall.Argument, StringComparer.OrdinalIgnoreCase))
+        {
+            Environment.ExitCode = args.Length == 1 ? WindowsInteractiveUninstall.Run() : 2;
             return;
         }
 

@@ -188,7 +188,16 @@ public sealed class WindowsRuntimeOwnershipArchitectureTests
         StringAssert.Contains(source, "SetBackgroundSyncEnabledAsync");
         StringAssert.Contains(settingsView, "IsBackgroundSyncToggleEnabled");
         Assert.IsFalse(source.Contains("FileBackgroundSyncSettingsStore", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("Registry.CurrentUser", StringComparison.Ordinal));
+        // The installer maintenance command may remove its own sign-in entry after
+        // explicit data removal. The running frontend must use the Agent for settings.
+        var currentUserRegistryReaders = Directory.EnumerateFiles(windowsDirectory, "*.cs", SearchOption.AllDirectories)
+            .Where(path => !ContainsGeneratedDirectory(path))
+            .Where(path => File.ReadAllText(path).Contains("Registry.CurrentUser", StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(windowsDirectory, path))
+            .ToArray();
+        CollectionAssert.AreEqual(
+            new[] { Path.Combine("Installation", "WindowsInteractiveUninstall.cs") },
+            currentUserRegistryReaders);
         Assert.IsFalse(source.Contains("BackgroundSyncSettingsFileName", StringComparison.Ordinal));
     }
 

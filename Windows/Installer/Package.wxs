@@ -1,0 +1,95 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="Password Manager Local"
+           Manufacturer="Levente Baba"
+           Version="$(var.ProductVersion)"
+           Scope="perMachine"
+           UpgradeCode="9C319A9F-809B-471F-9EDC-48E32C6C23B4">
+    <!-- Same-version builds share one installation. Early transactional removal also
+         replaces files whose version has not changed when switching publish modes. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes" Schedule="afterInstallInitialize"
+                  DowngradeErrorMessage="A newer version of Password Manager Local is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="PasswordManagerLocal.ico" SourceFile="!(bindpath.Repository)\PasswordManagerLocal.ico" />
+    <Property Id="ARPPRODUCTICON" Value="PasswordManagerLocal.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/LeventeBaba/PasswordManagerLocal" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+    <ui:WixUI Id="WixUI_FeatureTree" />
+
+    <Property Id="MSIDISABLERMRESTART" Value="1" />
+    <util:RestartResource Path="[InstallFolder]PasswordManagerLocal.exe" />
+    <util:RestartResource Path="[InstallFolder]PasswordManagerLocal.Windows.Agent.exe" />
+
+    <!-- Run only after successful MSI changes. No installer property is used
+         as script input. Keep cleanup failures visible in the MSI log. -->
+    <SetProperty Id="CommitWindowsIntegration" Action="SetRemovalIntegrationCommand"
+                 Before="CommitWindowsIntegration" Sequence="execute"
+                 Condition="Installed AND REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE"
+                 Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -EncodedCommand $(var.RemovalScript)" />
+    <SetProperty Id="CommitWindowsIntegration" Action="SetUpgradeIntegrationCommand"
+                 Before="CommitWindowsIntegration" Sequence="execute"
+                 Condition="WIX_UPGRADE_DETECTED AND NOT Installed"
+                 Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -EncodedCommand $(var.UpgradeScript)" />
+    <CustomAction Id="CommitWindowsIntegration" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixQuietExec"
+                  Execute="commit" Impersonate="no" Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="CommitWindowsIntegration" Before="InstallFinalize"
+              Condition="(Installed AND REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE) OR (WIX_UPGRADE_DETECTED AND NOT Installed)" />
+    </InstallExecuteSequence>
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <!-- Private directory. Maintenance derives the same machine path. -->
+      <Directory Id="InstallFolder" Name="PasswordManagerLocal" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppProgramsFolder" Name="Password Manager Local" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Feature Id="Application" Title="Password Manager Local" AllowAbsent="no" Level="1">
+      <ComponentGroupRef Id="ApplicationFiles" />
+    </Feature>
+    <Feature Id="DesktopShortcut" Title="Desktop shortcut" Level="1">
+      <ComponentRef Id="DesktopApplicationShortcut" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <Component Id="DesktopApplicationShortcut" Directory="DesktopFolder" Guid="98D86129-6961-42BF-96A5-2BE347CC8D8A">
+      <Shortcut Id="OpenFromDesktop" Name="Password Manager Local" Target="[#ApplicationExe]"
+                WorkingDirectory="InstallFolder" />
+      <RegistryValue Root="HKMU" Key="Software\PasswordManagerLocal\Installer" Name="DesktopShortcut"
+                     Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    <ComponentGroup Id="ApplicationFiles" Directory="InstallFolder">
+      <Component Id="ApplicationExecutable" Guid="1BF91F68-8EE0-4FE9-80FD-23E4C5EEC8C2">
+        <File Id="ApplicationExe" Source="!(bindpath.Product)\PasswordManagerLocal.exe" KeyPath="yes">
+          <Shortcut Id="OpenApplication" Directory="AppProgramsFolder" Name="Password Manager Local"
+                    Advertise="yes" WorkingDirectory="InstallFolder" />
+          <Shortcut Id="UninstallApplication" Directory="AppProgramsFolder" Name="Uninstall Password Manager Local"
+                    Advertise="yes" WorkingDirectory="InstallFolder" Arguments="--uninstall" />
+        </File>
+        <RemoveFolder Id="RemoveAppProgramsFolder" Directory="AppProgramsFolder" On="uninstall" />
+      </Component>
+      <Component Id="InstalledProductIdentity" Bitness="always64" Guid="454DE54F-263B-4EC5-A9B1-0A34A1D9DEED">
+        <RegistryValue Root="HKLM" Key="Software\PasswordManagerLocal\Installer" Name="ProductCode"
+                       Type="string" Value="[ProductCode]" KeyPath="yes" />
+        <RegistryValue Root="HKLM" Key="Software\PasswordManagerLocal\Installer" Name="InstallLocation"
+                       Type="string" Value="[InstallFolder]" />
+      </Component>
+      <Component Id="ApplicationLicense">
+        <File Source="!(bindpath.Repository)\LICENSE.txt" KeyPath="yes" />
+      </Component>
+      <Component Id="ThirdPartyNotices">
+        <File Source="!(bindpath.Repository)\Docs\THIRD_PARTY_NOTICES.md" KeyPath="yes" />
+      </Component>
+      <Files Include="!(bindpath.Product)\**">
+        <Exclude Files="!(bindpath.Product)\PasswordManagerLocal.exe" />
+      </Files>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

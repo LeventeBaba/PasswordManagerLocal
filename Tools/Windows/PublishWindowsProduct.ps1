@@ -16,10 +16,18 @@ param(
 
     [switch]$Sign,
 
-    [switch]$ReadyToRun
+    [switch]$ReadyToRun,
+
+    [switch]$NativeAOT
 )
 
 $ErrorActionPreference = 'Stop'
+if ($NativeAOT -and $ReadyToRun) {
+    throw 'Choose one Windows compilation mode: -NativeAOT or -ReadyToRun.'
+}
+if ($NativeAOT -and [Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+    throw 'Windows Native AOT must be published on Windows.'
+}
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 . (Join-Path $PSScriptRoot 'WindowsReleaseSigning.ps1')
 # Testing publishes need no certificate, signing provider, or SignTool. An
@@ -31,12 +39,14 @@ if ($Sign) {
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $repositoryRoot 'artifacts\publish\PasswordManagerLocal.Windows'
     if ($ReadyToRun) { $OutputRoot += '-ReadyToRun' }
+    if ($NativeAOT) { $OutputRoot = Join-Path "${OutputRoot}-NativeAot" $RuntimeIdentifier }
 }
 if ([string]::IsNullOrWhiteSpace($BaselineTreePath)) {
     $BaselineTreePath = Join-Path $repositoryRoot 'Docs\Baselines\PHASE6_SUPPLIED_WINDOWS_PUBLISH_TREE.txt'
 }
 
 $outputRootPath = [System.IO.Path]::GetFullPath($OutputRoot)
+$stagingRoot = Join-Path $outputRootPath 'staging'
 $frontendStage = Join-Path $outputRootPath 'staging\frontend'
 $agentStage = Join-Path $outputRootPath 'staging\agent'
 $productRoot = Join-Path $outputRootPath 'product\PasswordManagerLocal'
@@ -54,10 +64,9 @@ $verificationScript = Join-Path $repositoryRoot 'Tools\Windows\VerifyWindowsPubl
 
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw 'The dotnet CLI is unavailable.' }
 if (Test-Path -LiteralPath $outputRootPath) { Remove-Item -LiteralPath $outputRootPath -Recurse -Force }
-New-Item -ItemType Directory -Path $frontendStage, $agentStage, $reportRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $reportRoot -Force | Out-Null
 
 $readyToRunValue = if ($ReadyToRun) { 'true' } else { 'false' }
-Write-Host "Windows ReadyToRun: $readyToRunValue"
 
 $commonPublishArguments = @(
     '--configuration', $Configuration,
@@ -428,96 +437,141 @@ function New-DeterministicProductArchive {
     Write-Host "Verified deterministic ZIP archive: $($expectedEntryNames.Count) entries; fixed timestamp $($fixedZipTimestamp.ToString('O'))."
 }
 
-Reset-StagingDirectories
-Publish-IsolatedStages '' '' 'initial'
-$copyUsedAssemblies = @(Analyze-StagedCollisions)
+function Publish-NativeAotWindowsProduct {
+    $buildDirectory = Join-Path $outputRootPath 'build'
+    $binaryLog = Join-Path $reportRoot 'publish.binlog'
+    $publishArguments = @(
+        'publish', $frontendProject,
+        '--configuration', $Configuration,
+        '--runtime', $RuntimeIdentifier,
+        '--self-contained', 'true',
+        '--artifacts-path', $buildDirectory,
+        '--output', $stagingRoot,
+        '-p:PmlWindowsProductStaging=true',
+        '-p:PmlWindowsUnifiedNativeAot=true',
+        "-bl:$binaryLog"
+    )
 
-if ($copyUsedAssemblies.Count -gt 0) {
-    Copy-Item -LiteralPath $collisionReportPath -Destination (Join-Path $reportRoot 'staged-collision-analysis.initial.json') -Force
-    Copy-Item -LiteralPath $copyUsedAssemblyListPath -Destination $initialCopyUsedAssemblyListPath -Force
-    Write-Host ''
-    Write-Host "Republishing both isolated stages with narrow ILLink copyused actions for: $($copyUsedAssemblies -join ', ')"
-    Reset-StagingDirectories
-    Publish-IsolatedStages $initialCopyUsedAssemblyListPath '' 'copyused'
-
-    $remainingAssemblies = @(Analyze-StagedCollisions)
-    if ($remainingAssemblies.Count -gt 0) {
-        Copy-Item -LiteralPath $collisionReportPath -Destination (Join-Path $reportRoot 'staged-collision-analysis.copyused.json') -Force
-
-        # ILLink can internally promote CopyUsed to Save when it must rewrite
-        # assembly references or type-forwarder scopes after removing other
-        # assemblies. Save rewrites the assembly, so two independent trim graphs
-        # may still produce different bytes. Promote only that residual set to
-        # the stronger Copy action, which copies the original input bytes while
-        # still analyzing dependencies.
-        $copyAssemblies = @($remainingAssemblies)
-        $copyPass = 1
-
-        while ($true) {
-            Write-AssemblyListFile -Path $copyAssemblyListPath -AssemblyNames $copyAssemblies
-            Write-Host ''
-            Write-Host "Residual collisions remain after copyused; republishing with ILLink copy for: $($copyAssemblies -join ', ')"
-            Reset-StagingDirectories
-            Publish-IsolatedStages $initialCopyUsedAssemblyListPath $copyAssemblyListPath "copy harmonization pass $copyPass"
-
-            $remainingAssemblies = @(Analyze-StagedCollisions)
-            if ($remainingAssemblies.Count -eq 0) {
-                break
-            }
-
-            Copy-Item -LiteralPath $collisionReportPath `
-                -Destination (Join-Path $reportRoot "staged-collision-analysis.copy-pass-$copyPass.json") -Force
-
-            $newCopyAssemblies = @(
-                $remainingAssemblies |
-                    Where-Object { $copyAssemblies -notcontains $_ } |
-                    Sort-Object -Unique
-            )
-            if ($newCopyAssemblies.Count -eq 0) {
-                throw "Same-path managed collisions remain even after ILLink copy harmonization: $($remainingAssemblies -join ', ')"
-            }
-
-            $copyAssemblies = @(
-                @($copyAssemblies) + @($newCopyAssemblies) |
-                    Sort-Object -Unique
-            )
-            $copyPass++
+    Write-Host "Publishing Windows Native AOT to '$stagingRoot'."
+    Write-Host "Publish diagnostics: $binaryLog"
+    Push-Location -LiteralPath $repositoryRoot
+    try {
+        & dotnet @publishArguments
+        if ($LASTEXITCODE -ne 0) {
+            throw "Windows Native AOT publish failed with exit code $LASTEXITCODE. See '$binaryLog'."
         }
     }
+    finally {
+        Pop-Location
+    }
+
+    Get-ChildItem -LiteralPath $stagingRoot -File -Recurse -Force -Filter '*.pdb' | Remove-Item -Force
+    & $verificationScript -PublishDirectory $stagingRoot -RuntimeIdentifier $RuntimeIdentifier -NativeAOT
 }
 
-$mergeArguments = @(
-    'run', '--project', $packagingProject,
-    '--configuration', $Configuration,
-    '--', 'merge',
-    '--frontend', $frontendStage,
-    '--agent', $agentStage,
-    '--output', $productRoot,
-    '--report', $reportRoot,
-    '--runtime-identifier', $RuntimeIdentifier,
-    '--target-framework', 'net10.0-windows'
-)
-if (Test-Path -LiteralPath $BaselineTreePath -PathType Leaf) {
-    $mergeArguments += @('--baseline-tree', [System.IO.Path]::GetFullPath($BaselineTreePath))
-}
-if ($null -ne $BaselineTotalBytes) {
-    $mergeArguments += @('--baseline-total-bytes', ([string]$BaselineTotalBytes.Value))
+function Publish-ManagedWindowsProduct {
+    Reset-StagingDirectories
+    Publish-IsolatedStages '' '' 'initial'
+    $copyUsedAssemblies = @(Analyze-StagedCollisions)
+
+    if ($copyUsedAssemblies.Count -gt 0) {
+        Copy-Item -LiteralPath $collisionReportPath -Destination (Join-Path $reportRoot 'staged-collision-analysis.initial.json') -Force
+        Copy-Item -LiteralPath $copyUsedAssemblyListPath -Destination $initialCopyUsedAssemblyListPath -Force
+        Write-Host ''
+        Write-Host "Republishing both isolated stages with narrow ILLink copyused actions for: $($copyUsedAssemblies -join ', ')"
+        Reset-StagingDirectories
+        Publish-IsolatedStages $initialCopyUsedAssemblyListPath '' 'copyused'
+
+        $remainingAssemblies = @(Analyze-StagedCollisions)
+        if ($remainingAssemblies.Count -gt 0) {
+            Copy-Item -LiteralPath $collisionReportPath -Destination (Join-Path $reportRoot 'staged-collision-analysis.copyused.json') -Force
+
+            # ILLink can internally promote CopyUsed to Save when it must rewrite
+            # assembly references or type-forwarder scopes after removing other
+            # assemblies. Save rewrites the assembly, so two independent trim graphs
+            # may still produce different bytes. Promote only that residual set to
+            # the stronger Copy action, which copies the original input bytes while
+            # still analyzing dependencies.
+            $copyAssemblies = @($remainingAssemblies)
+            $copyPass = 1
+
+            while ($true) {
+                Write-AssemblyListFile -Path $copyAssemblyListPath -AssemblyNames $copyAssemblies
+                Write-Host ''
+                Write-Host "Residual collisions remain after copyused; republishing with ILLink copy for: $($copyAssemblies -join ', ')"
+                Reset-StagingDirectories
+                Publish-IsolatedStages $initialCopyUsedAssemblyListPath $copyAssemblyListPath "copy harmonization pass $copyPass"
+
+                $remainingAssemblies = @(Analyze-StagedCollisions)
+                if ($remainingAssemblies.Count -eq 0) {
+                    break
+                }
+
+                Copy-Item -LiteralPath $collisionReportPath `
+                    -Destination (Join-Path $reportRoot "staged-collision-analysis.copy-pass-$copyPass.json") -Force
+
+                $newCopyAssemblies = @(
+                    $remainingAssemblies |
+                        Where-Object { $copyAssemblies -notcontains $_ } |
+                        Sort-Object -Unique
+                )
+                if ($newCopyAssemblies.Count -eq 0) {
+                    throw "Same-path managed collisions remain even after ILLink copy harmonization: $($remainingAssemblies -join ', ')"
+                }
+
+                $copyAssemblies = @(
+                    @($copyAssemblies) + @($newCopyAssemblies) |
+                        Sort-Object -Unique
+                )
+                $copyPass++
+            }
+        }
+    }
+
+    $mergeArguments = @(
+        'run', '--project', $packagingProject,
+        '--configuration', $Configuration,
+        '--', 'merge',
+        '--frontend', $frontendStage,
+        '--agent', $agentStage,
+        '--output', $productRoot,
+        '--report', $reportRoot,
+        '--runtime-identifier', $RuntimeIdentifier,
+        '--target-framework', 'net10.0-windows'
+    )
+    if (Test-Path -LiteralPath $BaselineTreePath -PathType Leaf) {
+        $mergeArguments += @('--baseline-tree', [System.IO.Path]::GetFullPath($BaselineTreePath))
+    }
+    if ($null -ne $BaselineTotalBytes) {
+        $mergeArguments += @('--baseline-total-bytes', ([string]$BaselineTotalBytes.Value))
+    }
+
+    Write-Host 'Validating isolated outputs, hashing, merging, and deduplicating...'
+    & dotnet @mergeArguments
+    if ($LASTEXITCODE -ne 0) { throw "Windows packaging failed with exit code $LASTEXITCODE." }
+
+    & $verificationScript -PublishDirectory $productRoot -RuntimeIdentifier $RuntimeIdentifier -RepositoryRoot $repositoryRoot
 }
 
-Write-Host 'Validating isolated outputs, hashing, merging, and deduplicating...'
-& dotnet @mergeArguments
-if ($LASTEXITCODE -ne 0) { throw "Windows packaging failed with exit code $LASTEXITCODE." }
-
-& $verificationScript -PublishDirectory $productRoot -RuntimeIdentifier $RuntimeIdentifier -RepositoryRoot $repositoryRoot
+if ($NativeAOT) {
+    Publish-NativeAotWindowsProduct
+}
+else {
+    Write-Host "Windows ReadyToRun: $readyToRunValue"
+    Publish-ManagedWindowsProduct
+}
 
 if ($Sign) {
     # Sign once after all trimming, optimization and deduplication. The signed
     # product directory is also the input for a future installer; ZIP is incidental.
-    Invoke-WindowsProductSigning -ProductDirectory $productRoot -Context $windowsSigningContext `
-        -ReportPath (Join-Path $reportRoot 'windows-signing-report.json')
-    & dotnet run --project $packagingProject --configuration $Configuration -- `
-        refresh-signed-report --output $productRoot --report $reportRoot
-    if ($LASTEXITCODE -ne 0) { throw 'Could not refresh the packaging report for signed files.' }
+    $signingDirectory = if ($NativeAOT) { $stagingRoot } else { $productRoot }
+    Invoke-WindowsProductSigning -ProductDirectory $signingDirectory -Context $windowsSigningContext `
+        -ReportPath (Join-Path $reportRoot 'windows-signing-report.json') -UnifiedNativeAot:$NativeAOT
+    if (-not $NativeAOT) {
+        & dotnet run --project $packagingProject --configuration $Configuration -- `
+            refresh-signed-report --output $productRoot --report $reportRoot
+        if ($LASTEXITCODE -ne 0) { throw 'Could not refresh the packaging report for signed files.' }
+    }
 }
 else {
     $unsignedReport = [PSCustomObject]@{
@@ -530,25 +584,44 @@ else {
     Write-Host 'Windows signing skipped: unsigned testing publish.'
 }
 
+if ($NativeAOT) {
+    New-Item -ItemType Directory -Path (Split-Path -Parent $productRoot) -Force | Out-Null
+    [IO.Directory]::Move($stagingRoot, $productRoot)
+}
+
 if ($RunSmokeTests) {
     if (-not $IsWindows -and $PSVersionTable.PSEdition -eq 'Core') {
         throw 'Process smoke tests require Windows.'
     }
-    foreach ($executableName in @('PasswordManagerLocal.Windows.Agent.exe', 'PasswordManagerLocal.exe')) {
-        $executablePath = Join-Path $productRoot $executableName
-        $process = Start-Process -FilePath $executablePath -WorkingDirectory $productRoot -PassThru
-        try {
+    $frontendExecutable = Join-Path $productRoot 'PasswordManagerLocal.exe'
+    $agentLaunch = @{ FilePath = (Join-Path $productRoot 'PasswordManagerLocal.Windows.Agent.exe') }
+    if ($NativeAOT) {
+        $agentLaunch = @{ FilePath = $frontendExecutable; ArgumentList = @('--agent', '--ui-requested') }
+    }
+    $processes = [System.Collections.Generic.List[System.Diagnostics.Process]]::new()
+    try {
+        foreach ($launch in @($agentLaunch, @{ FilePath = $frontendExecutable })) {
+            $process = Start-Process @launch -WorkingDirectory $productRoot -PassThru
+            $processes.Add($process)
             Start-Sleep -Milliseconds 1500
             if ($process.HasExited -and $process.ExitCode -ne 0) {
-                throw "$executableName exited during smoke validation with code $($process.ExitCode)."
+                throw "$($launch.FilePath) exited during smoke validation with code $($process.ExitCode)."
             }
-        } finally {
-            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+        }
+    }
+    finally {
+        for ($index = $processes.Count - 1; $index -ge 0; $index--) {
+            $process = $processes[$index]
+            if (-not $process.HasExited) { Stop-Process -InputObject $process -Force -ErrorAction SilentlyContinue }
+            $process.Dispose()
         }
     }
 }
 
 New-DeterministicProductArchive -SourceDirectory $productRoot -DestinationPath $zipPath
+
+& (Join-Path $PSScriptRoot 'PublishWindowsInstaller.ps1') -RepositoryRoot $repositoryRoot `
+    -ProductDirectory $productRoot -OutputRoot $outputRootPath -ReportRoot $reportRoot -SigningContext $windowsSigningContext
 
 Write-Host ''
 Write-Host "Product directory: $productRoot"

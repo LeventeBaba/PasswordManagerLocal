@@ -9,7 +9,9 @@ param(
 
     [switch]$RunSmokeTests,
 
-    [switch]$Sign
+    [switch]$Sign,
+
+    [switch]$NativeAOT
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,6 +21,7 @@ $arguments = @{
     RuntimeIdentifier = 'win-x64'
     RunSmokeTests = $RunSmokeTests
     Sign = $Sign
+    NativeAOT = $NativeAOT
 }
 if (-not [string]::IsNullOrWhiteSpace($OutputPath)) { $arguments.OutputRoot = $OutputPath }
 if ($null -ne $BaselineTotalBytes) { $arguments.BaselineTotalBytes = $BaselineTotalBytes }
