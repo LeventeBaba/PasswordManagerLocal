@@ -1,10 +1,6 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSec.Cryptography;
-using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
-using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
@@ -22,14 +18,12 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 public sealed class AuthoritativeAccountDeletionTests
 {
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
     [TestCategory("Security")]
-    public async Task LocalDeletion_AtomicallyRetainsSignedEvidence_AndRemovesMutableAccountState(bool useSqliteStorage)
+    public async Task LocalDeletion_AtomicallyRetainsSignedEvidence_AndRemovesMutableAccountState()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateSharedAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var identity = CreateIdentity(signingKey, Guid.NewGuid(), Guid.NewGuid(), 'A');
         var user = CreateUser(Guid.NewGuid(), savedKey: RandomNumberGenerator.GetBytes(32));
@@ -47,13 +41,10 @@ public sealed class AuthoritativeAccountDeletionTests
         userDevice.GenerateIntegrityHash();
         var accountOnlyGroup = new Group { EncryptedPayload = [8], LastModifiedAt = DateTimeOffset.UtcNow };
         accountOnlyGroup.GenerateIntegrityHash();
-        user.Groups.Add(accountOnlyGroup);
 
         var otherUser = CreateUser(Guid.NewGuid(), savedKey: null);
         var sharedGroup = new Group { EncryptedPayload = [9], LastModifiedAt = DateTimeOffset.UtcNow };
         sharedGroup.GenerateIntegrityHash();
-        user.Groups.Add(sharedGroup);
-        otherUser.Groups.Add(sharedGroup);
         var sharedDevice = new Device { TlsCertFingerprint = new string('B', 64), DeviceType = DeviceType.WindowsPc };
         sharedDevice.GenerateIntegrityHash();
         var journal = new UserRecoveryJournal { Id = Guid.NewGuid(), UserId = user.UId, EncryptedPayload = [10] };
@@ -64,12 +55,19 @@ public sealed class AuthoritativeAccountDeletionTests
         };
         await database.Users.AddAsync(user);
         await database.Users.AddAsync(otherUser);
+        await database.Groups.AddAsync(accountOnlyGroup);
+        await database.Groups.AddAsync(sharedGroup);
+        database.Groups.SetMember(accountOnlyGroup, user, isMember: true);
+        database.Groups.SetMember(sharedGroup, user, isMember: true);
+        database.Groups.SetMember(sharedGroup, otherUser, isMember: true);
         await database.Devices.AddAsync(localDevice);
         await database.Devices.AddAsync(sharedDevice);
         await database.UserDevices.AddAsync(new UserDevice { UserId = user.UId, DeviceId = sharedDevice.Id });
         await database.UserDevices.AddAsync(new UserDevice { UserId = otherUser.UId, DeviceId = sharedDevice.Id });
         await database.DeviceEnrollmentCommits.AddAsync(enrollmentCommit);
-        database.Db.UserRecoveryJournals.AddRange(journal, otherJournal);
+        var journals = new SqliteUserRecoveryJournalStore(database.UnitOfWork);
+        journals.Add(journal);
+        journals.Add(otherJournal);
         await database.UserDevices.AddAsync(userDevice);
         await database.UserMembershipAuthorizations.AddAsync(authorization);
         await database.UserControlStates.AddAsync(new UserControlState
@@ -141,21 +139,18 @@ public sealed class AuthoritativeAccountDeletionTests
         await database.Tombstones.UpsertAsync(sharedGroup.Id, SyncModelType.Group, 1);
         await database.UnitOfWork.SaveChangesAsync();
 
-        using var sqlite = useSqliteStorage ? new SqliteSession(new SqliteConnectionFactory(database.ConnectionString)) : null;
-        IUnitOfWork uow = (IUnitOfWork?)sqlite ?? database.UnitOfWork;
-        IUserRepository users = sqlite is null ? database.Users : new SqliteUserRepository(sqlite);
-        IUserControlOperationRepository operations = sqlite is null ? database.UserControlOperations : new SqliteUserControlOperationRepository(sqlite);
-        IUserControlStateRepository states = sqlite is null ? database.UserControlStates : new SqliteUserControlStateRepository(sqlite);
-        IUserMembershipAuthorizationRepository authorizations = sqlite is null
-            ? database.UserMembershipAuthorizations : new SqliteUserMembershipAuthorizationRepository(sqlite);
-        IUserOriginRemovalCutoffRepository cutoffs = sqlite is null
-            ? database.UserOriginRemovalCutoffs : new SqliteUserOriginRemovalCutoffRepository(sqlite);
-        IDeviceRepository devices = sqlite is null ? database.Devices : new SqliteDeviceRepository(sqlite);
-        IUserDeviceRepository links = sqlite is null ? database.UserDevices : new SqliteUserDeviceRepository(sqlite);
-        IDeletedUserBarrierRepository barriers = sqlite is null ? database.DeletedUserBarriers : new SqliteDeletedUserBarrierRepository(sqlite);
-        IUserAccountDeletionStore cleanupStore = sqlite is null
-            ? new EfUserAccountDeletionStore(database.Db)
-            : new SqliteUserAccountDeletionStore(sqlite, users, new SqliteGroupRepository(sqlite), new SqliteDeviceEnrollmentCommitRepository(sqlite));
+        // Keep seeding and readback independent from the deletion transaction.
+        using var uow = database.OpenSession();
+        var users = new SqliteUserRepository(uow);
+        var operations = new SqliteUserControlOperationRepository(uow);
+        var states = new SqliteUserControlStateRepository(uow);
+        var authorizations = new SqliteUserMembershipAuthorizationRepository(uow);
+        var cutoffs = new SqliteUserOriginRemovalCutoffRepository(uow);
+        var devices = new SqliteDeviceRepository(uow);
+        var links = new SqliteUserDeviceRepository(uow);
+        var barriers = new SqliteDeletedUserBarrierRepository(uow);
+        var cleanupStore = new SqliteUserAccountDeletionStore(
+            uow, users, new SqliteGroupRepository(uow), new SqliteDeviceEnrollmentCommitRepository(uow));
         var cleanup = new UserAccountDeletionCleanupService(cleanupStore, users);
         var membership = new UserMembershipAuthorizationService(
             authorizations,
@@ -196,13 +191,11 @@ public sealed class AuthoritativeAccountDeletionTests
             await uow.SaveChangesAsync();
             await transaction.RollbackAsync();
         }
-        uow.ClearTrackedChanges();
-        MSTestAssert.IsTrue(await database.Db.UserRecoveryJournals.AnyAsync(row => row.Id == journal.Id));
+        MSTestAssert.IsNotNull(await journals.ReadPersistedAsync(journal.Id, default));
         MSTestAssert.IsNotNull(await database.SyncItems.GetAsync(user.UId, SyncModelType.User));
 
         await deletion.DeleteUserAsync(user.UId);
 
-        database.Db.ChangeTracker.Clear();
         var barrier = await database.DeletedUserBarriers.GetAsync(user.UId);
         var operation = (await database.UserControlOperations.ListForUserAsync(user.UId)).Single(row =>
             row.OperationType == UserControlOperationType.AccountDeletion);
@@ -229,8 +222,8 @@ public sealed class AuthoritativeAccountDeletionTests
         MSTestAssert.IsNotNull(await database.Tombstones.GetAsync(sharedGroup.Id, SyncModelType.Group));
         MSTestAssert.IsNull(await database.Tombstones.GetAsync(accountOnlyGroup.Id, SyncModelType.Group));
         MSTestAssert.IsNull(await database.DeviceEnrollmentCommits.GetByIdAsync(enrollmentCommit.CommitId));
-        var retainedJournalIds = await database.Db.UserRecoveryJournals.AsNoTracking().Select(row => row.Id).ToListAsync();
-        CollectionAssert.AreEqual(new[] { otherJournal.Id }, retainedJournalIds);
+        var retainedJournalIds = await journals.ListIdsAsync(default);
+        CollectionAssert.AreEqual(new[] { otherJournal.Id }, retainedJournalIds.ToArray());
         MSTestAssert.IsNotNull(await database.Devices.GetByIdAsync(localDevice.Id));
         MSTestAssert.IsNotNull(await database.UserMembershipAuthorizations.GetByIdAsync(authorization.AuthorizationId));
         MSTestAssert.IsNotNull(await database.UserControlStates.GetAsync(user.UId));
@@ -246,7 +239,7 @@ public sealed class AuthoritativeAccountDeletionTests
     [TestCategory("Security")]
     public async Task RemoteDeletion_AppliesWithoutUserOrKey_RejectsOldSnapshot_AndRemainsRelayable()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var sourceSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         using var localSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         using var relayPeerSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
@@ -291,12 +284,11 @@ public sealed class AuthoritativeAccountDeletionTests
             local,
             runtime,
             database.DeletedUserBarriers,
-            new UserAccountDeletionCleanupService(new EfUserAccountDeletionStore(database.Db), database.Users));
+            CreateCleanup(database));
 
         var first = await inbox.StoreAndApplyAsync(envelope, source.LocalDeviceId);
         var duplicate = await inbox.StoreAndApplyAsync(envelope, source.LocalDeviceId);
 
-        database.Db.ChangeTracker.Clear();
         MSTestAssert.AreEqual(UserControlOperationReceiptState.Applied, first.State);
         MSTestAssert.AreEqual(UserControlOperationReceiptState.Applied, duplicate.State);
         MSTestAssert.IsNotNull(await database.DeletedUserBarriers.GetAsync(detachedUser.UId));
@@ -349,7 +341,7 @@ public sealed class AuthoritativeAccountDeletionTests
     [TestCategory("Security")]
     public async Task LocalDeletion_RollsBackAccountAndEvidence_WhenCleanupFailsBeforeCommit()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var identity = CreateIdentity(signingKey, Guid.NewGuid(), Guid.NewGuid(), 'E');
         var user = CreateUser(Guid.NewGuid(), savedKey: RandomNumberGenerator.GetBytes(32));
@@ -397,7 +389,6 @@ public sealed class AuthoritativeAccountDeletionTests
 
         await MSTestAssert.ThrowsExactlyAsync<InvalidOperationException>(() => deletion.DeleteUserAsync(user.UId));
 
-        database.Db.ChangeTracker.Clear();
         MSTestAssert.IsNotNull(await database.Users.GetByIdAsync(user.UId));
         MSTestAssert.IsNull(await database.DeletedUserBarriers.GetAsync(user.UId));
         MSTestAssert.IsFalse((await database.UserControlOperations.ListForUserAsync(user.UId))
@@ -410,7 +401,7 @@ public sealed class AuthoritativeAccountDeletionTests
     [TestCategory("Security")]
     public async Task RemoteDeletion_CleanupFailureLeavesDurablePendingBarrier_AndBlocksUserLookup()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var sourceSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         using var localSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var source = CreateIdentity(sourceSigningKey, Guid.NewGuid(), Guid.NewGuid(), 'H');
@@ -461,7 +452,6 @@ public sealed class AuthoritativeAccountDeletionTests
         UserControlOperationEnvelopeUtil.FillOriginAuthentication(pendingFork, source);
         var forkReceipt = await inbox.StoreAndApplyAsync(pendingFork, source.LocalDeviceId);
 
-        database.Db.ChangeTracker.Clear();
         var stored = await database.UserControlOperations.GetByIdAsync(envelope.OperationId);
         MSTestAssert.AreEqual(UserControlOperationReceiptState.Quarantined, forkReceipt.State);
         MSTestAssert.IsNotNull(stored);
@@ -479,7 +469,7 @@ public sealed class AuthoritativeAccountDeletionTests
     [TestCategory("Security")]
     public async Task RemoteDeletion_InvalidSignatureIsRejected_AndOperationIdForkIsQuarantined()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var sourceSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         using var localSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var source = CreateIdentity(sourceSigningKey, Guid.NewGuid(), Guid.NewGuid(), 'F');
@@ -509,7 +499,7 @@ public sealed class AuthoritativeAccountDeletionTests
             local,
             new FakeSyncRuntimeService(),
             database.DeletedUserBarriers,
-            new UserAccountDeletionCleanupService(new EfUserAccountDeletionStore(database.Db), database.Users));
+            CreateCleanup(database));
 
         var payload = UserControlOperationEnvelopeUtil.CreateAccountDeletionPayload(detachedUser, [sourceAuthorization]);
         var invalidSignature = CreateDeletionEnvelope(detachedUser, source, payload, originSequence: 1);
@@ -542,7 +532,6 @@ public sealed class AuthoritativeAccountDeletionTests
             originSequence: 2);
         var secondApplied = await inbox.StoreAndApplyAsync(secondValidDeletion, source.LocalDeviceId);
 
-        database.Db.ChangeTracker.Clear();
         var retained = await database.UserControlOperations.GetByIdAsync(canonical.OperationId);
         var retainedSecond = await database.UserControlOperations.GetByIdAsync(secondValidDeletion.OperationId);
         var barrier = await database.DeletedUserBarriers.GetAsync(detachedUser.UId);
@@ -563,7 +552,7 @@ public sealed class AuthoritativeAccountDeletionTests
     [TestCategory("Security")]
     public async Task DeletionBarrier_BlocksRepositoryResurrection_AndGenericDeletionProtocol()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var userId = Guid.NewGuid();
         await database.DeletedUserBarriers.AddAsync(new DeletedUserBarrier
         {
@@ -583,7 +572,6 @@ public sealed class AuthoritativeAccountDeletionTests
             OriginSignature = RandomNumberGenerator.GetBytes(64)
         });
         await database.UnitOfWork.SaveChangesAsync();
-        database.Db.ChangeTracker.Clear();
 
         await database.Users.AddAsync(CreateUser(userId, savedKey: null));
         await MSTestAssert.ThrowsExactlyAsync<InvalidOperationException>(() => database.UnitOfWork.SaveChangesAsync());
@@ -597,6 +585,10 @@ public sealed class AuthoritativeAccountDeletionTests
         };
         MSTestAssert.ThrowsExactly<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(legacyDeletion));
     }
+
+    private static UserAccountDeletionCleanupService CreateCleanup(SqliteRepositoryTestDatabase database) =>
+        new(new SqliteUserAccountDeletionStore(
+            database.UnitOfWork, database.Users, database.Groups, database.DeviceEnrollmentCommits), database.Users);
 
     private static UserControlOperationEnvelope CreateDeletionEnvelope(
         User user,

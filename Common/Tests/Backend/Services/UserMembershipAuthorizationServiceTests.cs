@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSec.Cryptography;
 using PasswordManagerLocal.Common.Backend.Models;
@@ -23,8 +22,8 @@ public sealed class UserMembershipAuthorizationServiceTests
     [TestCategory("Security")]
     public async Task RelayedAddition_UsesSignedOperationAsCanonicalAuthorizationIdentityAndEnrollmentTime()
     {
-        await using var firstDatabase = await SqliteIntegrationTestDatabase.CreateAsync();
-        await using var secondDatabase = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var firstDatabase = await SqliteRepositoryTestDatabase.CreateAsync();
+        await using var secondDatabase = await SqliteRepositoryTestDatabase.CreateAsync();
         using var firstSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         using var secondSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var firstIdentity = CreateIdentity(firstSigningKey);
@@ -62,7 +61,7 @@ public sealed class UserMembershipAuthorizationServiceTests
     [TestCategory("Security")]
     public async Task HistoricalAuthorization_UsesExactInstallationKeyAndSurvivesCurrentDeviceDeletion()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         using var substitutedKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var identity = CreateIdentity(signingKey);
@@ -80,12 +79,11 @@ public sealed class UserMembershipAuthorizationServiceTests
 
         database.Devices.Delete(device);
         await database.UnitOfWork.SaveChangesAsync();
-        database.Db.ChangeTracker.Clear();
 
         var valid = CreateSnapshot(user.UId, identity.LocalDeviceId, identity.OriginInstanceId, membershipEpoch: 1, keyEpoch: 1, revision: 1, signingKey);
         var verified = await service.VerifySnapshotAuthorAsync(valid);
         MSTestAssert.AreEqual(genesis.AuthorizationId, verified.AuthorizationId);
-        MSTestAssert.IsFalse(await database.Db.Devices.AnyAsync(row => row.Id == device.Id));
+        MSTestAssert.IsFalse(await database.Devices.ExistsAsync(device.Id));
         MSTestAssert.IsNotNull(await database.UserMembershipAuthorizations.GetByIdAsync(genesis.AuthorizationId));
 
         var substituted = CreateSnapshot(user.UId, identity.LocalDeviceId, identity.OriginInstanceId, 1, 1, 2, substitutedKey);
@@ -101,7 +99,7 @@ public sealed class UserMembershipAuthorizationServiceTests
     [TestCategory("Security")]
     public async Task RemovedOrigin_AcceptsExactSnapshotAndControlCutoffs_AndRejectsContentAboveThem()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var identity = CreateIdentity(signingKey);
         var user = CreateUser();
@@ -128,7 +126,6 @@ public sealed class UserMembershipAuthorizationServiceTests
         UserControlOperationEnvelopeUtil.FinalizeDeviceRemovalPayload(removal);
         await service.EndAuthorizationAsync(authorization, removal, operationId, operationHash, DateTimeOffset.UtcNow);
         await database.UnitOfWork.SaveChangesAsync();
-        database.Db.ChangeTracker.Clear();
 
         await service.VerifySnapshotAuthorAsync(CreateSnapshot(user.UId, identity.LocalDeviceId, identity.OriginInstanceId, 1, 1, 3, signingKey));
         await service.VerifySnapshotAuthorAsync(CreateSnapshot(user.UId, identity.LocalDeviceId, identity.OriginInstanceId, 1, 2, 7, signingKey));
@@ -152,7 +149,7 @@ public sealed class UserMembershipAuthorizationServiceTests
     [TestCategory("Security")]
     public async Task Readdition_RejectsRemovedOriginAndAuthorizesOnlyANewInstallationOrigin()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var identity = CreateIdentity(signingKey);
         var user = CreateUser();
@@ -197,7 +194,7 @@ public sealed class UserMembershipAuthorizationServiceTests
     [TestCategory("Security")]
     public async Task IncompleteRemovalKeyRange_IsRejectedBeforeAuthorizationOrCutoffsChange(long missingEpoch)
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var identity = CreateIdentity(signingKey);
         var user = CreateUser();
@@ -217,7 +214,6 @@ public sealed class UserMembershipAuthorizationServiceTests
             authorization, removal, Guid.NewGuid(), RandomNumberGenerator.GetBytes(32), DateTimeOffset.UtcNow));
         // Even a caller that saves after catching the error must not persist a partial removal.
         await database.UnitOfWork.SaveChangesAsync();
-        database.Db.ChangeTracker.Clear();
         MSTestAssert.IsTrue((await database.UserMembershipAuthorizations.GetByIdAsync(authorization.AuthorizationId))!.IsActive);
         MSTestAssert.AreEqual(0, (await database.UserOriginRemovalCutoffs.ListForUserAsync(user.UId)).Count);
     }
@@ -227,7 +223,7 @@ public sealed class UserMembershipAuthorizationServiceTests
     [TestCategory("Security")]
     public async Task ConflictingLaterCutoff_DoesNotLeaveEarlierCutoffOrEndedAuthorizationTracked()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var identity = CreateIdentity(signingKey);
         var user = CreateUser();
@@ -252,7 +248,6 @@ public sealed class UserMembershipAuthorizationServiceTests
         await MSTestAssert.ThrowsExactlyAsync<InvalidOperationException>(() => service.EndAuthorizationAsync(
             authorization, removal, Guid.NewGuid(), RandomNumberGenerator.GetBytes(32), DateTimeOffset.UtcNow));
         await database.UnitOfWork.SaveChangesAsync();
-        database.Db.ChangeTracker.Clear();
         MSTestAssert.IsTrue((await database.UserMembershipAuthorizations.GetByIdAsync(authorization.AuthorizationId))!.IsActive);
         var retained = await database.UserOriginRemovalCutoffs.ListForUserAsync(user.UId);
         MSTestAssert.AreEqual(1, retained.Count);
@@ -266,7 +261,7 @@ public sealed class UserMembershipAuthorizationServiceTests
     [TestCategory("Integration")]
     public async Task OptionalMembershipHashes_NullAndEmptyStorageRemainAbsentAndDoNotBlockRemoval(bool emptyBlobs)
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var identity = CreateIdentity(signingKey);
         var user = CreateUser();
@@ -277,10 +272,13 @@ public sealed class UserMembershipAuthorizationServiceTests
         {
             // Seed the actual persisted representation rather than going through a
             // model setter that already canonicalizes an empty optional hash.
-            await database.Db.Database.ExecuteSqlRawAsync(
-                "UPDATE UserMembershipAuthorizations SET AdditionOperationHash = X'', RemovalOperationHash = X''");
+            await database.UnitOfWork.ExecuteFixtureSqlAsync(
+                """
+                UPDATE "UserMembershipAuthorizations"
+                SET "AdditionOperationHash" = X'', "RemovalOperationHash" = X''
+                WHERE "AuthorizationId" = $id;
+                """, ("$id", authorization.AuthorizationId));
         }
-        database.Db.ChangeTracker.Clear();
         var retained = (await database.UserMembershipAuthorizations.GetByIdAsync(authorization.AuthorizationId))!;
         MSTestAssert.IsNull(retained.AdditionOperationHash);
         MSTestAssert.IsNull(retained.RemovalOperationHash);
@@ -296,7 +294,6 @@ public sealed class UserMembershipAuthorizationServiceTests
         UserControlOperationEnvelopeUtil.FinalizeDeviceRemovalPayload(removal);
         await service.EndAuthorizationAsync(retained, removal, Guid.NewGuid(), RandomNumberGenerator.GetBytes(32), DateTimeOffset.UtcNow);
         await database.UnitOfWork.SaveChangesAsync();
-        database.Db.ChangeTracker.Clear();
         var ended = (await database.UserMembershipAuthorizations.GetByIdAsync(authorization.AuthorizationId))!;
         MSTestAssert.IsFalse(ended.IsActive);
         MSTestAssert.HasCount(32, ended.RemovalOperationHash!);

@@ -4,7 +4,6 @@ using NSecKey = NSec.Cryptography.Key;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
-using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Sync;
@@ -59,7 +58,7 @@ internal sealed class CoordinatorHarness : IDisposable
     public ControllablePendingActivationService ActivationControl { get; }
 
     public static async Task<CoordinatorHarness> CreateAsync(
-        SqliteIntegrationTestDatabase database,
+        SqliteRepositoryTestDatabase database,
         bool includeHealthyCandidate,
         IDatabaseHealthService? databaseHealth = null,
         bool failNextQueueWrite = false,
@@ -96,15 +95,12 @@ internal sealed class CoordinatorHarness : IDisposable
             await database.UnitOfWork.SaveChangesAsync();
             await canonicalHealth.UpdateCheckpointAsync(localUser);
             await database.UnitOfWork.SaveChangesAsync();
-            // EncryptedPayload is an EF concurrency token. Replace the array instead of
-            // mutating it in place so EF retains the actual persisted bytes as OriginalValue.
-            // In-place mutation would also mutate EF's original-value snapshot and make the
-            // intentional corruption UPDATE match zero rows.
+            // Corrupt the ciphertext after committing the signed checkpoint.
             var corruptedPayload = localUser.EncryptedPayload.ToArray();
             corruptedPayload[0] ^= 0x5A;
-            localUser.EncryptedPayload = corruptedPayload;
-            database.Users.Update(localUser);
-            await database.UnitOfWork.SaveChangesAsync();
+            await database.UnitOfWork.ExecuteFixtureSqlAsync(
+                """UPDATE "Users" SET "EncryptedPayload" = $payload WHERE "UId" = $user;""",
+                ("$payload", corruptedPayload), ("$user", localUser.UId));
         }
 
         if (includeHealthyCandidate)
@@ -122,7 +118,6 @@ internal sealed class CoordinatorHarness : IDisposable
             await database.UnitOfWork.SaveChangesAsync();
         }
 
-        database.Db.ChangeTracker.Clear();
         var bundleSync = new UserDataBundleSyncService(
             database.Users,
             integrity,
@@ -182,7 +177,7 @@ internal sealed class CoordinatorHarness : IDisposable
             lifecycle,
             database.DeletedUserBarriers,
             new FakeInteractiveSessionStateService(),
-            databaseHealth ?? new DatabaseHealthService(new SqliteConnectionFactory(database.ConnectionString)));
+            databaseHealth ?? new DatabaseHealthService(database.Connections));
 
         return new CoordinatorHarness(
             material.UserId,

@@ -15,7 +15,7 @@ public sealed class UserSyncFaultServiceTests
     [TestCategory("Integration")]
     public async Task OriginFault_IsDurableScopedAndSupersededInsteadOfDeleted()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var user = new User { UId = Guid.NewGuid(), KeyEpoch = 1, MembershipEpoch = 1 };
         user.GenerateIntegrityHash();
         await database.Users.AddAsync(user);
@@ -44,7 +44,6 @@ public sealed class UserSyncFaultServiceTests
 
         await service.MarkOriginRecoveredAsync(user.UId, originDeviceId, originInstanceId, 1, 6);
         await database.UnitOfWork.SaveChangesAsync();
-        database.Db.ChangeTracker.Clear();
 
         var faults = await database.UserSyncFaults.ListForUserAsync(user.UId);
         MSTestAssert.HasCount(1, faults);
@@ -59,7 +58,7 @@ public sealed class UserSyncFaultServiceTests
     [TestCategory("Integration")]
     public async Task TerminalFork_RemainsActiveWhenOrdinaryOriginFaultIsRecovered()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var user = new User { UId = Guid.NewGuid(), KeyEpoch = 1, MembershipEpoch = 1 };
         user.GenerateIntegrityHash();
         await database.Users.AddAsync(user);
@@ -94,7 +93,7 @@ public sealed class UserSyncFaultServiceTests
     [TestCategory("Integration")]
     public async Task DifferentFaultKinds_InSameScopeAndEpoch_RemainIndependent()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var user = new User { UId = Guid.NewGuid(), KeyEpoch = 1, MembershipEpoch = 1 };
         user.GenerateIntegrityHash();
         await database.Users.AddAsync(user);
@@ -123,7 +122,6 @@ public sealed class UserSyncFaultServiceTests
             BlocksPublishing = true
         });
         await database.UnitOfWork.SaveChangesAsync();
-        database.Db.ChangeTracker.Clear();
 
         var active = await database.UserSyncFaults.ListActiveForUserAsync(user.UId);
         MSTestAssert.HasCount(2, active);

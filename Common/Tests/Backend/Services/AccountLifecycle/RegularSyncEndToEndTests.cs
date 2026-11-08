@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 using System.Text;
 
@@ -91,9 +92,34 @@ public sealed partial class RegularSyncEndToEndTests
 
         await AssertSessionInvalidatedAsync(
             setup.Middle, setup.MiddleToken, AuthSessionInvalidationReason.ProfilePasswordChanged);
+
+        // Deliver a new-epoch edit while the third device is signed out so its first login
+        // must merge a canonical change while publication still requires keyed verification.
+        setup.Original.Transport.Disconnect();
+        setup.Middle.Transport.Disconnect();
+        setup.NewDevice.Transport.Disconnect();
+        const string rotatedCredential = "Credential added after rotation";
+        var rotatedSecret = Encoding.UTF8.GetBytes("post-rotation-secret");
+        await AddPasswordAsync(setup.Original, setup.OriginalToken, rotatedCredential, rotatedSecret);
+        var delta = await BuildLatestUserDeltaAsync(setup.Original, setup.NewDevice, userId);
+        using (var scope = setup.NewDevice.Services.CreateScope())
+        {
+            var services = scope.ServiceProvider;
+            var receipt = (await services.GetRequiredService<IIncomingDeltaApplierService>().ApplyAsync(delta))
+                .UserSnapshotReceipt;
+            Assert.IsNotNull(receipt);
+            Assert.IsTrue(receipt.State is UserSnapshotReceiptState.StoredPending or UserSnapshotReceiptState.ReplacedOlderPending);
+            Assert.IsTrue((await services.GetRequiredService<IUserSyncFaultRepository>().ListActiveForUserAsync(userId))
+                .Any(fault => fault.Kind == UserSyncFaultKind.CanonicalKeyVerificationPending && fault.BlocksPublishing));
+        }
+
         await setup.Original.Endpoints.LogoutAsync(setup.OriginalToken);
         foreach (var host in setup.Hosts)
-            await AssertRotatedPasswordLoginAsync(host, userId, setup.Username, newPassword);
+        {
+            var token = await AssertRotatedPasswordLoginAsync(host, userId, setup.Username, newPassword);
+            if (ReferenceEquals(host, setup.NewDevice))
+                await AssertPasswordSecretAsync(host, token, rotatedCredential, rotatedSecret);
+        }
     }
 
     [TestMethod]
@@ -171,23 +197,24 @@ public sealed partial class RegularSyncEndToEndTests
     private static Guid GetLifecycleUserId(ThreeDeviceSetup setup) =>
         setup.Original.Services.GetRequiredService<ITokenService>().GetUidOrThrow(setup.OriginalToken);
 
-    private static async Task AssertLifecycleLoginAsync(ProductionSyncTestHost host, Guid userId, LoginRequest request)
+    private static async Task<Guid> AssertLifecycleLoginAsync(ProductionSyncTestHost host, Guid userId, LoginRequest request)
     {
         var token = await host.Endpoints.LoginAsync(request);
         Assert.AreEqual(userId, host.Services.GetRequiredService<ITokenService>().GetUidOrThrow(token));
         Assert.AreEqual(request.Username, (await host.Endpoints.GetUserProfileInfoAsync(token)).Username);
         await AssertPasswordSecretAsync(
             host, token, LifecycleCredentialName, Encoding.UTF8.GetBytes("original-device-secret"));
+        return token;
     }
 
-    private static async Task AssertRotatedPasswordLoginAsync(
+    private static async Task<Guid> AssertRotatedPasswordLoginAsync(
         ProductionSyncTestHost host, Guid userId, string username, string newPassword)
     {
         await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(() =>
             host.Endpoints.LoginAsync(host.CreateLoginRequest(username)));
         var request = host.CreateLoginRequest(username);
         request.Password = Encoding.UTF8.GetBytes(newPassword);
-        await AssertLifecycleLoginAsync(host, userId, request);
+        return await AssertLifecycleLoginAsync(host, userId, request);
     }
 
     private static async Task AssertSessionInvalidatedAsync(

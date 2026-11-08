@@ -307,7 +307,9 @@ public sealed class UserSnapshotMergeCoordinator : IUserSnapshotMergeCoordinator
         // naturally publish the accumulated coverage without creating acknowledgement-of-ack traffic.
         if (mergeResult.CanonicalChanged)
         {
-            var localSnapshot = await _publisher.GetOrCreateAsync(user, ct);
+            // Login can verify the new key before a session exists. Reuse that key so the
+            // publisher can prove the merged canonical data and clear the rotation block.
+            var localSnapshot = await _publisher.GetOrCreateAfterRecoveryAsync(user, key, keyConfidence, ct);
 
             await _queueWriter.EnqueueAsync(
                 new SyncItem

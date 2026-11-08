@@ -1,6 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSec.Cryptography;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Repositories.Sqlite;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
@@ -44,7 +45,7 @@ public sealed class UserLoginIdentityProjectionServiceTests
     [TestCategory("Security")]
     public async Task ExactVersionWithDifferentMetadata_FailsClosed()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var service = CreateService(database);
         var canonicalVersion = Stamp(1_000, 0, CanonicalDevice, CanonicalInstance);
         var user = await AddCanonicalAsync(database, service, "Old", canonicalVersion);
@@ -71,7 +72,7 @@ public sealed class UserLoginIdentityProjectionServiceTests
     [TestCategory("Integration")]
     public async Task OlderUsernameEvidenceArrivingLater_DoesNotRegressEffectiveIdentity()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var service = CreateService(database);
         var user = await AddCanonicalAsync(
             database,
@@ -115,7 +116,7 @@ public sealed class UserLoginIdentityProjectionServiceTests
     [TestCategory("Integration")]
     public async Task ExactVersionWithSameMetadata_IsIdempotent()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var service = CreateService(database);
         var user = await AddCanonicalAsync(
             database,
@@ -154,7 +155,7 @@ public sealed class UserLoginIdentityProjectionServiceTests
     [TestCategory("Integration")]
     public async Task ReceiptEvidence_CannotRegressOrInventUsernameState()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var service = CreateService(database);
         var canonicalVersion = Stamp(3_000, 0, CanonicalDevice, CanonicalInstance);
         var user = await AddCanonicalAsync(database, service, "Current", canonicalVersion);
@@ -201,7 +202,7 @@ public sealed class UserLoginIdentityProjectionServiceTests
     [TestCategory("Security")]
     public async Task PendingUsernameCollision_IsAmbiguousAndLeavesUnrelatedAccountsUsable()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var service = CreateService(database);
         var renamedUser = await AddCanonicalAsync(
             database,
@@ -246,7 +247,7 @@ public sealed class UserLoginIdentityProjectionServiceTests
     [TestCategory("Security")]
     public async Task DuplicateEffectiveUsername_ReturnsAmbiguousWithoutSelectingAnAccount()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var service = CreateService(database);
         await AddCanonicalAsync(database, service, "Collision", Stamp(1_000, 0, CanonicalDevice, CanonicalInstance));
         await AddCanonicalAsync(database, service, "Collision", Stamp(1_001, 0, DeviceA, InstanceA));
@@ -263,7 +264,7 @@ public sealed class UserLoginIdentityProjectionServiceTests
     [TestCategory("Security")]
     public async Task HistoricalPreRemovalUsernameIsAccepted_PostCutoffChangeIsRejected()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var lifecycle = new UserLifecycleCoordinator();
         var identity = new FakeDeviceIdentityService
         {
@@ -380,7 +381,7 @@ public sealed class UserLoginIdentityProjectionServiceTests
     [TestCategory("Integration")]
     public async Task OldKeyEpochSnapshot_CannotOverrideCurrentCanonicalIdentity()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var service = CreateService(database);
         var canonicalVersion = Stamp(3_000, 0, CanonicalDevice, CanonicalInstance);
         var user = await AddCanonicalAsync(database, service, "Current", canonicalVersion, keyEpoch: 2);
@@ -402,7 +403,7 @@ public sealed class UserLoginIdentityProjectionServiceTests
     [TestCategory("Security")]
     public async Task DeletedUserBarrier_RemovesProjectionAndBlocksLookup()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var service = CreateService(database);
         var user = await AddCanonicalAsync(
             database,
@@ -455,7 +456,7 @@ public sealed class UserLoginIdentityProjectionServiceTests
 
     private static async Task<string> ResolveConcurrentWinnerAsync(bool receiveBetaFirst)
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var service = CreateService(database);
         var canonicalVersion = Stamp(1_000, 0, CanonicalDevice, CanonicalInstance);
         var user = await AddCanonicalAsync(database, service, "Old", canonicalVersion);
@@ -479,13 +480,20 @@ public sealed class UserLoginIdentityProjectionServiceTests
         MSTestAssert.AreEqual(UserLoginIdentityMatchState.Matched,
             (await service.FindByUsernameAsync(Encoding.UTF8.GetBytes("Beta"))).State);
 
-        database.Db.ChangeTracker.Clear();
-        var restarted = CreateService(database);
+        using var restartedSession = database.OpenSession();
+        var restartedUsers = new SqliteUserRepository(restartedSession);
+        var restarted = new UserLoginIdentityProjectionService(
+            restartedUsers,
+            new SqliteUserSyncSnapshotRepository(restartedSession),
+            new FakeUserMembershipAuthorizationService(),
+            new UserLifecycleCoordinator(),
+            restartedSession,
+            new SqliteDeletedUserBarrierRepository(restartedSession));
         MSTestAssert.AreEqual(UserLoginIdentityMatchState.Matched,
             (await restarted.FindByUsernameAsync(Encoding.UTF8.GetBytes("Beta"))).State);
         MSTestAssert.AreEqual(UserLoginIdentityMatchState.NotFound,
             (await restarted.FindByUsernameAsync(Encoding.UTF8.GetBytes("Old"))).State);
-        var state = await database.Users.GetLoginIdentityStateAsync(user.UId)
+        var state = await restartedUsers.GetLoginIdentityStateAsync(user.UId)
             ?? throw new AssertFailedException("The durable login projection was not retained.");
         return Hashing.Verify(state.UsernameHash, beta.User.UsernameHash) &&
                Hashing.Verify(state.UsernameSalt, beta.User.UsernameSalt)
@@ -493,7 +501,7 @@ public sealed class UserLoginIdentityProjectionServiceTests
             : "Unexpected";
     }
 
-    private static UserLoginIdentityProjectionService CreateService(SqliteIntegrationTestDatabase database) =>
+    private static UserLoginIdentityProjectionService CreateService(SqliteRepositoryTestDatabase database) =>
         new(
             database.Users,
             database.UserSyncSnapshots,
@@ -503,7 +511,7 @@ public sealed class UserLoginIdentityProjectionServiceTests
             database.DeletedUserBarriers);
 
     private static async Task<User> AddCanonicalAsync(
-        SqliteIntegrationTestDatabase database,
+        SqliteRepositoryTestDatabase database,
         UserLoginIdentityProjectionService service,
         string username,
         SyncVersionStamp version,
@@ -598,7 +606,7 @@ public sealed class UserLoginIdentityProjectionServiceTests
     }
 
     private static async Task AddSnapshotAsync(
-        SqliteIntegrationTestDatabase database,
+        SqliteRepositoryTestDatabase database,
         UserSnapshotEnvelope envelope,
         UserSyncSnapshotStatus status = UserSyncSnapshotStatus.Pending)
     {
