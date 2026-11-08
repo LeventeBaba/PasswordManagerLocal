@@ -223,7 +223,7 @@ public sealed partial class SelfDiagnosticsService
             ? signedSequence : Math.Max(plan.HighestLocalSequence, signedSequence);
         if (plan.MaximumKeyEpoch == long.MaxValue || plan.HighestLocalSequence >= long.MaxValue - 1)
             plan.Blockers.Add("RecoveryBlockedEpochExhausted");
-        UtcDateTimeUtil.NormalizeObjectGraph(archive);
+        UtcDateTimeUtil.NormalizeObjectGraph(archive, BackendJsonSerializerContext.Default.UserRecoveryJournalSnapshot);
         // Retain the exact archive for the journal, but do not expire approval when
         // background services only re-observe the same evidence or reschedule a retry.
         plan.PlanId = SelfDiagnosticsRecoveryPlanFingerprint.Calculate(plan, token, _identity.LocalDeviceId, _identity.OriginInstanceId);

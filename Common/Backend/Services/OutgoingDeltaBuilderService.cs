@@ -163,7 +163,7 @@ public sealed class OutgoingDeltaBuilderService : IOutgoingDeltaBuilderService
     private NetworkDelta BuildEncryptedDelta(SyncDeltaPayload payload, Device device, long timestamp)
     {
         SyncCryptoUtil.ValidatePayloadIntegrity(payload, timestamp);
-        UtcDateTimeUtil.NormalizeObjectGraph(payload);
+        UtcDateTimeUtil.NormalizeObjectGraph(payload, BackendJsonSerializerContext.Default.SyncDeltaPayload);
 
         var plaintextPayload = JsonSerializer.SerializeToUtf8Bytes(
             payload,

@@ -296,7 +296,7 @@ public sealed class NetworkDeltaProtocolService : INetworkDeltaProtocolService
         if (payload is null)
             throw new InvalidDataException("Network delta payload is invalid.");
 
-        return UtcDateTimeUtil.NormalizeObjectGraph(payload);
+        return UtcDateTimeUtil.NormalizeObjectGraph(payload, BackendJsonSerializerContext.Default.SyncDeltaPayload);
     }
 
 

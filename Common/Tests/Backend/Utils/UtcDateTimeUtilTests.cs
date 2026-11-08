@@ -1,7 +1,9 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
+using PasswordManagerLocal.Common.Backend.Sync.Enrollment;
 using PasswordManagerLocal.Common.Backend.Utils;
+using System.Text.Json;
 
 using MSTestAssert = Microsoft.VisualStudio.TestTools.UnitTesting.Assert;
 
@@ -63,13 +65,50 @@ public sealed class UtcDateTimeUtilTests
             ]
         };
 
-        UtcDateTimeUtil.NormalizeObjectGraph(data);
+        UtcDateTimeUtil.NormalizeObjectGraph(data, BackendJsonSerializerContext.Default.UserPasswordsData);
 
         MSTestAssert.AreEqual(DateTimeKind.Utc, data.Passwords[0].CreatedAt.Kind);
         MSTestAssert.AreEqual(DateTimeKind.Utc, data.Passwords[0].LastUpdatedAt.Kind);
         MSTestAssert.AreEqual(DateTimeKind.Utc, data.DeletedPasswords[0].DeletedAt.Kind);
     }
 
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("UtcDates")]
+    public void NormalizeObjectGraph_ProducesCanonicalEnrollmentJson()
+    {
+        var snapshot = new DeviceEnrollmentSnapshot
+        {
+            Devices =
+            [
+                new DeviceEnrollmentDeviceSnapshot
+                {
+                    LastSync = new DateTime(2026, 7, 1, 10, 0, 0, DateTimeKind.Unspecified),
+                    BlockedAt = new DateTimeOffset(2026, 7, 1, 12, 0, 0, TimeSpan.FromHours(2))
+                }
+            ]
+        };
+        var expected = new DeviceEnrollmentSnapshot
+        {
+            Devices =
+            [
+                new DeviceEnrollmentDeviceSnapshot
+                {
+                    LastSync = new DateTime(2026, 7, 1, 10, 0, 0, DateTimeKind.Utc),
+                    LastSeen = DateTime.SpecifyKind(DateTime.MinValue, DateTimeKind.Utc),
+                    BlockedAt = new DateTimeOffset(2026, 7, 1, 10, 0, 0, TimeSpan.Zero)
+                }
+            ]
+        };
+
+        var typeInfo = BackendJsonSerializerContext.Default.DeviceEnrollmentSnapshot;
+        UtcDateTimeUtil.NormalizeObjectGraph(snapshot, typeInfo);
+
+        CollectionAssert.AreEqual(
+            JsonSerializer.SerializeToUtf8Bytes(expected, typeInfo),
+            JsonSerializer.SerializeToUtf8Bytes(snapshot, typeInfo));
+    }
 
     [TestMethod]
     [TestCategory("Backend")]

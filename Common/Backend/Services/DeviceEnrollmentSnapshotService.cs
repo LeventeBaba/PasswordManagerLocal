@@ -83,7 +83,7 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
             if (snapshot.PayloadVersion != SyncConstants.DeviceEnrollmentPayloadVersion)
                 throw new InvalidDataException("The enrollment payload version is invalid.");
 
-            return UtcDateTimeUtil.NormalizeObjectGraph(snapshot);
+            return UtcDateTimeUtil.NormalizeObjectGraph(snapshot, BackendJsonSerializerContext.Default.DeviceEnrollmentSnapshot);
         }
         catch (JsonException ex)
         {
