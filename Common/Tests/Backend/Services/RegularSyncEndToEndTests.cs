@@ -660,6 +660,63 @@ public sealed partial class RegularSyncEndToEndTests
     }
 
     [TestMethod]
+    [DataRow("ordinary")]
+    [DataRow("concurrent")]
+    [DataRow("deletion")]
+    [Timeout(TestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task SnapshotInventory_ReturnsOnlyContentTheOriginStillNeeds(string scenario)
+    {
+        await using var pair = await CreateEnrolledPairAsync();
+        await PauseAutomaticDeliveryAsync(pair);
+
+        const string sourcePassword = "Change from the original device";
+        const string receiverPassword = "Concurrent change from the receiver";
+        if (scenario == "concurrent")
+            await AddPasswordAsync(pair.Target, pair.TargetToken, receiverPassword, Encoding.UTF8.GetBytes("receiver-test-secret"));
+        await AddPasswordAsync(pair.Source, pair.SourceToken, sourcePassword, Encoding.UTF8.GetBytes("origin-test-secret"));
+
+        if (scenario == "deletion")
+        {
+            var initial = await DeliverDeltaAsync(pair, await BuildLatestUserDeltaAsync(pair.Source, pair.Target));
+            Assert.AreEqual(UserSnapshotReceiptStateProto.UserSnapshotReceiptMergedImmediately,
+                initial.UserSnapshotReceipts.Single().State);
+            var item = (await pair.Source.Endpoints.GetSavedPasswordsAsync(pair.SourceToken))
+                .Passwords.Single(password => password.Name == sourcePassword);
+            await pair.Source.Endpoints.RemovePasswordsAsync(pair.SourceToken, [item.Id]);
+        }
+
+        var outgoing = await BuildLatestUserDeltaAsync(pair.Source, pair.Target);
+        var acknowledgement = await DeliverDeltaAsync(pair, outgoing);
+        Assert.AreEqual(UserSnapshotReceiptStateProto.UserSnapshotReceiptMergedImmediately,
+            acknowledgement.UserSnapshotReceipts.Single().State);
+        Assert.AreEqual(scenario != "deletion", await HasPasswordAsync(pair.Target, pair.TargetToken, sourcePassword));
+        if (scenario != "deletion")
+        {
+            Assert.AreEqual(scenario == "concurrent",
+                await pair.Target.HasPendingForAsync(pair.Source.Identity.LocalDeviceId));
+        }
+
+        using var scope = pair.Source.Services.CreateScope();
+        var originInventoryService = scope.ServiceProvider.GetRequiredService<IUserSnapshotAntiEntropyService>();
+        var inventory = await originInventoryService.BuildInventoryAsync(pair.Target.Identity.LocalDeviceId);
+        var reply = await pair.Source.Transport.ExchangeUserSnapshotInventoryAsync("127.0.0.1", 26688,
+            pair.Target.Identity.FingerprintHex, inventory);
+        var receiverRevision = reply.Users.Single().Revisions.Single(revision =>
+            Guid.Parse(revision.OriginDeviceId) == pair.Target.Identity.LocalDeviceId &&
+            Guid.Parse(revision.OriginInstanceId) == pair.Target.Identity.OriginInstanceId);
+        Assert.IsTrue(receiverRevision.HighestStoredRevision > 0,
+            "The receiver must still advertise the exact signed publication.");
+        Assert.AreEqual(scenario == "ordinary", receiverRevision.EquivalentPeerSnapshotHash.Length > 0);
+
+        var missing = originInventoryService.FindMissingSnapshots(inventory, reply.Users, pair.Target.Identity.LocalDeviceId);
+        Assert.AreEqual(scenario != "ordinary",
+            missing.Any(request => Guid.Parse(request.OriginDeviceId) == pair.Target.Identity.LocalDeviceId),
+            "Concurrent changes and deletion receipts still need the receiver snapshot.");
+    }
+
+    [TestMethod]
     [Timeout(TestTimeoutMilliseconds)]
     [TestCategory("Backend")]
     [TestCategory("Integration")]

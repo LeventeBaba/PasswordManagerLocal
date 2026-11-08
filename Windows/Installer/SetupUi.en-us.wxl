@@ -1,0 +1,19 @@
+<WixLocalization Culture="en-US" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <!-- Shrink stock background bitmaps to a pixel so Windows draws the dialog
+       surface, including the area behind text, in the user's system colors. -->
+  <UI Dialog="BrowseDlg" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="DiskCostDlg" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="FatalError" Control="Bitmap" Width="1" Height="1" />
+  <UI Dialog="FilesInUse" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="LicenseAgreementDlg" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="MaintenanceTypeDlg" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="MaintenanceWelcomeDlg" Control="Bitmap" Width="1" Height="1" />
+  <UI Dialog="MsiRMFilesInUse" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="OutOfDiskDlg" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="OutOfRbDiskDlg" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="PrepareDlg" Control="Bitmap" Width="1" Height="1" />
+  <UI Dialog="ProgressDlg" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="ResumeDlg" Control="Bitmap" Width="1" Height="1" />
+  <UI Dialog="UserExit" Control="Bitmap" Width="1" Height="1" />
+  <UI Dialog="VerifyReadyDlg" Control="BannerBitmap" Width="1" Height="1" />
+</WixLocalization>

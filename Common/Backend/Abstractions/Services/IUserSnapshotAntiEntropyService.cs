@@ -13,7 +13,8 @@ public interface IUserSnapshotAntiEntropyService
 
     IReadOnlyList<UserSnapshotRequest> FindMissingSnapshots(
         UserSnapshotInventoryExchangeRequest localInventory,
-        IEnumerable<UserSnapshotUserInventory> remoteInventory);
+        IEnumerable<UserSnapshotUserInventory> remoteInventory,
+        Guid? authenticatedPeerId = null);
 
     Task<IReadOnlyList<NetworkDelta>> BuildRequestedSnapshotDeltasAsync(
         Guid peerDeviceId,

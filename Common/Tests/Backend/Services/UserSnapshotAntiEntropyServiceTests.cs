@@ -381,6 +381,38 @@ public sealed class UserSnapshotAntiEntropyServiceTests
     }
 
 
+    [TestMethod]
+    [DataRow("matching", 0)]
+    [DataRow("different-hash", 1)]
+    [DataRow("missing-authored-envelope", 1)]
+    [DataRow("different-transport-peer", 1)]
+    [DataRow("fork", 1)]
+    [DataRow("receipt-only", 1)]
+    [TestCategory("Backend")]
+    public void FindMissingSnapshots_UsesEquivalenceOnlyForAnExactRetainedAuthoredSnapshot(string scenario, int requestCount)
+    {
+        var userId = Guid.NewGuid();
+        var identity = new FakeDeviceIdentityService();
+        var peerId = Guid.NewGuid();
+        var peerInstanceId = Guid.NewGuid();
+        var authored = scenario == "missing-authored-envelope"
+            ? Revision(identity.LocalDeviceId, identity.OriginInstanceId, stored: 0, merged: 5, marker: 0x00)
+            : Revision(identity.LocalDeviceId, identity.OriginInstanceId, stored: 5, merged: 5, marker: 0x05);
+        var advertised = Revision(peerId, peerInstanceId, stored: 10, merged: 10, marker: 0x10);
+        advertised.EquivalentPeerSnapshotHash = ByteString.CopyFrom(Hash(scenario == "different-hash" ? (byte)0x04 : (byte)0x05));
+
+        var local = Inventory(userId, 1, 1, authored);
+        if (scenario == "fork")
+            local.Users[0].Revisions.Add(Revision(peerId, peerInstanceId, stored: 10, merged: 9, marker: 0x11));
+        if (scenario == "receipt-only")
+            local.Users[0].Revisions.Add(Revision(peerId, peerInstanceId, stored: 0, merged: 10, marker: 0x00));
+
+        var remote = Inventory(userId, 1, 1, advertised);
+        var service = new UserSnapshotAntiEntropyService(null!, null!, null!, null!, null!, null!, null!, identity, null!);
+        var authenticatedPeer = scenario == "different-transport-peer" ? Guid.NewGuid() : peerId;
+        MSTestAssert.HasCount(requestCount, service.FindMissingSnapshots(local, remote.Users, authenticatedPeer));
+    }
+
     private static UserRevisionKnowledge Knowledge(
         Guid userId,
         Guid originDeviceId,

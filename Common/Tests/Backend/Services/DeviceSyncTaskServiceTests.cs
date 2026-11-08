@@ -510,7 +510,7 @@ public sealed class DeviceSyncTaskServiceTests
             UserSnapshotInventoryExchangeRequest remoteInventory, CancellationToken ct = default) =>
             Task.FromResult(new UserSnapshotInventoryExchangeReply());
         public IReadOnlyList<UserSnapshotRequest> FindMissingSnapshots(UserSnapshotInventoryExchangeRequest localInventory,
-            IEnumerable<UserSnapshotUserInventory> remoteInventory) => [request];
+            IEnumerable<UserSnapshotUserInventory> remoteInventory, Guid? authenticatedPeerId = null) => [request];
         public Task<IReadOnlyList<NetworkDelta>> BuildRequestedSnapshotDeltasAsync(Guid peerDeviceId,
             IEnumerable<UserSnapshotRequest> requests, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<NetworkDelta>>([]);
@@ -529,7 +529,7 @@ public sealed class DeviceSyncTaskServiceTests
 
         public IReadOnlyList<UserSnapshotRequest> FindMissingSnapshots(
             UserSnapshotInventoryExchangeRequest localInventory,
-            IEnumerable<UserSnapshotUserInventory> remoteInventory) => Array.Empty<UserSnapshotRequest>();
+            IEnumerable<UserSnapshotUserInventory> remoteInventory, Guid? authenticatedPeerId = null) => Array.Empty<UserSnapshotRequest>();
 
         public Task<IReadOnlyList<NetworkDelta>> BuildRequestedSnapshotDeltasAsync(
             Guid peerDeviceId,

@@ -1,17 +1,113 @@
-# Executed by the MSI as a commit action. The publisher prepends the operation
-# flag and embeds this script. The system PowerShell process receives no user
-# paths or commands from MSI properties.
+# The MSI passes the operation and the resolved directory as encoded data.
+# Validation is read-only and runs before the transaction. Integration cleanup
+# runs as an elevated commit action after the MSI transaction succeeds.
 $ErrorActionPreference = 'Stop'
 
 if (-not [Environment]::Is64BitProcess) {
     throw 'Installer maintenance requires 64-bit Windows PowerShell.'
 }
-$programFiles = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)
-if (-not [IO.Path]::IsPathRooted($programFiles)) {
-    throw 'Windows did not provide the 64-bit Program Files path.'
+
+function Get-LocalInstallPath([string]$Path) {
+    if ($Path -notmatch '^[A-Za-z]:\\' -or $Path.Substring(2).Contains(':')) {
+        throw 'Select an installation folder on a local fixed drive.'
+    }
+    $pathWithoutTrailingSlash = $Path.TrimEnd('\')
+    $fullPath = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+    if ($fullPath.Length -le 2 -or $fullPath -ine $pathWithoutTrailingSlash -or
+        $fullPath -match '[. ](?:\\|$)') {
+        throw 'Select a dedicated installation folder with a full Windows path.'
+    }
+    return $fullPath
 }
-# Matches the private MSI directory rooted at ProgramFiles64Folder.
-$installDirectory = Join-Path $programFiles 'PasswordManagerLocal'
+
+function Assert-ProtectedInstallPath([string]$Path) {
+    $root = [IO.Path]::GetPathRoot($Path)
+    $drive = [IO.DriveInfo]::new($root)
+    if ($drive.DriveType -ne [IO.DriveType]::Fixed -or $drive.DriveFormat -ne 'NTFS') {
+        throw 'Select an installation folder on a local fixed NTFS drive.'
+    }
+
+    $trusted = @(
+        'S-1-5-18', # SYSTEM
+        'S-1-5-32-544', # Administrators
+        'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464' # TrustedInstaller
+    )
+    $sections = [Security.AccessControl.AccessControlSections]'Access, Owner'
+    $modifyExisting = [Security.AccessControl.FileSystemRights]'Delete, DeleteSubdirectoriesAndFiles, ChangePermissions, TakeOwnership, WriteAttributes, WriteExtendedAttributes'
+    $createChild = [Security.AccessControl.FileSystemRights]'CreateFiles, CreateDirectories'
+    $pathInfo = [IO.DirectoryInfo]::new($Path)
+    $protectChildren = $true
+
+    while ($null -ne $pathInfo) {
+        try {
+            $attributes = [IO.File]::GetAttributes($pathInfo.FullName)
+        }
+        catch [IO.FileNotFoundException], [IO.DirectoryNotFoundException] {
+            $protectChildren = $true
+            $pathInfo = $pathInfo.Parent
+            continue
+        }
+
+        if (($attributes -band [IO.FileAttributes]::Directory) -eq 0 -or
+            ($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'The installation folder and its parent folders must be regular directories.'
+        }
+
+        $acl = $pathInfo.GetAccessControl($sections)
+        $sidType = [Security.Principal.SecurityIdentifier]
+        if ($acl.GetOwner($sidType).Value -notin $trusted) {
+            throw 'The installation folder must be in a location controlled by Windows administrators.'
+        }
+
+        $descriptor = [Security.AccessControl.RawSecurityDescriptor]::new($acl.GetSecurityDescriptorBinaryForm(), 0)
+        if ($null -eq $descriptor.DiscretionaryAcl) {
+            throw 'The installation folder must have administrator-controlled access permissions.'
+        }
+        foreach ($rule in $acl.GetAccessRules($true, $true, $sidType)) {
+            $inheritOnly = ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -ne 0
+            if ($rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or
+                $rule.IdentityReference.Value -in $trusted -or
+                ($inheritOnly -and $rule.IdentityReference.Value -eq 'S-1-3-0')) {
+                continue
+            }
+
+            # Existing ancestors can allow creation of other children, provided
+            # users cannot change or remove the directories leading to this app.
+            $rights = [int]$rule.FileSystemRights
+            $canModify = ($rights -band ([int]$modifyExisting -bor 0x50000000)) -ne 0
+            $canCreate = ($rights -band ([int]$createChild -bor 0x50000000)) -ne 0
+            $appliesToChildren = $rule.InheritanceFlags -ne [Security.AccessControl.InheritanceFlags]::None
+            if ((!$inheritOnly -and $canModify) -or
+                ($protectChildren -and ((!$inheritOnly -and $canCreate) -or
+                ($appliesToChildren -and ($canCreate -or $canModify))))) {
+                throw 'Select an installation folder where only administrators can change the program files.'
+            }
+        }
+
+        $protectChildren = $false
+        $pathInfo = $pathInfo.Parent
+    }
+}
+
+$installDirectory = Get-LocalInstallPath $pmlInstallDirectory
+if ($pmlOperation -in @('validate', 'validateInstalled')) {
+    Assert-ProtectedInstallPath $installDirectory
+    $registered = Get-ItemProperty -LiteralPath 'HKLM:\Software\PasswordManagerLocal\Installer' -ErrorAction SilentlyContinue
+    if ($pmlOperation -eq 'validateInstalled') {
+        if (-not $registered.InstallLocation -or
+            (Get-LocalInstallPath $registered.InstallLocation) -ine $installDirectory) {
+            throw 'An upgrade or repair must use the existing installation folder.'
+        }
+    }
+    elseif ($registered.InstallLocation -or ([IO.Directory]::Exists($installDirectory) -and
+            @(Get-ChildItem -LiteralPath $installDirectory -Force).Count -ne 0)) {
+        throw 'Select a new or empty folder for Password Manager Local.'
+    }
+
+    exit 0
+}
+
+$pmlRemoving = $pmlOperation -eq 'remove'
 $frontend = Join-Path $installDirectory 'PasswordManagerLocal.exe'
 $agent = Join-Path $installDirectory 'PasswordManagerLocal.Windows.Agent.exe'
 $managedRun = '"{0}" --background' -f $agent

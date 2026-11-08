@@ -1,5 +1,4 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="Password Manager Local"
            Manufacturer="Levente Baba"
@@ -17,32 +16,40 @@
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/LeventeBaba/PasswordManagerLocal" />
     <Property Id="ARPNOMODIFY" Value="1" />
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
-    <ui:WixUI Id="WixUI_FeatureTree" />
+    <UIRef Id="PasswordManagerLocalSetup" />
 
     <Property Id="MSIDISABLERMRESTART" Value="1" />
-    <util:RestartResource Path="[InstallFolder]PasswordManagerLocal.exe" />
-    <util:RestartResource Path="[InstallFolder]PasswordManagerLocal.Windows.Agent.exe" />
+    <util:RestartResource Path="[INSTALLFOLDER]PasswordManagerLocal.exe" />
+    <util:RestartResource Path="[INSTALLFOLDER]PasswordManagerLocal.Windows.Agent.exe" />
 
-    <!-- Run only after successful MSI changes. No installer property is used
-         as script input. Keep cleanup failures visible in the MSI log. -->
-    <SetProperty Id="CommitWindowsIntegration" Action="SetRemovalIntegrationCommand"
-                 Before="CommitWindowsIntegration" Sequence="execute"
-                 Condition="Installed AND REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE"
-                 Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -EncodedCommand $(var.RemovalScript)" />
-    <SetProperty Id="CommitWindowsIntegration" Action="SetUpgradeIntegrationCommand"
-                 Before="CommitWindowsIntegration" Sequence="execute"
-                 Condition="WIX_UPGRADE_DETECTED AND NOT Installed"
-                 Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -EncodedCommand $(var.UpgradeScript)" />
+    <Property Id="INSTALLFOLDER" Secure="yes" />
+    <Property Id="ADDLOCAL" Secure="yes" />
+    <Property Id="REMOVE" Secure="yes" />
+    <Property Id="PML_PREVIOUS_INSTALLFOLDER" Secure="yes">
+      <RegistrySearch Id="FindInstalledFolder" Root="HKLM" Key="Software\PasswordManagerLocal\Installer"
+                      Name="InstallLocation" Type="raw" Bitness="always64" />
+    </Property>
+    <SetProperty Id="INSTALLFOLDER" Action="UseInstalledFolder" Value="[PML_PREVIOUS_INSTALLFOLDER]"
+                 Before="CostFinalize" Sequence="both" Condition="PML_PREVIOUS_INSTALLFOLDER" />
+    <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" After="CostFinalize" Sequence="execute" />
+
+    <Binary Id="PrepareIntegrationScript" SourceFile="!(bindpath.Repository)\Windows\Installer\PrepareWindowsInstallation.js" />
+    <Property Id="WindowsInstallationScript" Value="$(var.WindowsInstallationScript)" />
+    <CustomAction Id="PrepareFolderValidation" BinaryRef="PrepareIntegrationScript" JScriptCall="prepareValidation" />
+    <CustomAction Id="ValidateInstallFolder" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixQuietExec" />
+    <CustomAction Id="PrepareWindowsIntegration" BinaryRef="PrepareIntegrationScript" JScriptCall="prepareCleanup" />
     <CustomAction Id="CommitWindowsIntegration" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixQuietExec"
                   Execute="commit" Impersonate="no" Return="ignore" />
     <InstallExecuteSequence>
-      <Custom Action="CommitWindowsIntegration" Before="InstallFinalize"
+      <Custom Action="PrepareFolderValidation" Before="ValidateInstallFolder" Condition="REMOVE &lt;&gt; &quot;ALL&quot;" />
+      <Custom Action="ValidateInstallFolder" Before="InstallInitialize" Condition="REMOVE &lt;&gt; &quot;ALL&quot;" />
+      <Custom Action="PrepareWindowsIntegration" Before="InstallInitialize"
               Condition="(Installed AND REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE) OR (WIX_UPGRADE_DETECTED AND NOT Installed)" />
+      <Custom Action="CommitWindowsIntegration" Before="InstallFinalize" Condition="CommitWindowsIntegration" />
     </InstallExecuteSequence>
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <!-- Private directory. Maintenance derives the same machine path. -->
-      <Directory Id="InstallFolder" Name="PasswordManagerLocal" />
+      <Directory Id="INSTALLFOLDER" Name="PasswordManagerLocal" />
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="AppProgramsFolder" Name="Password Manager Local" />
@@ -60,18 +67,18 @@
 
   <Fragment>
     <Component Id="DesktopApplicationShortcut" Directory="DesktopFolder" Guid="98D86129-6961-42BF-96A5-2BE347CC8D8A">
-      <Shortcut Id="OpenFromDesktop" Name="Password Manager Local" Target="[#ApplicationExe]"
-                WorkingDirectory="InstallFolder" />
-      <RegistryValue Root="HKMU" Key="Software\PasswordManagerLocal\Installer" Name="DesktopShortcut"
+      <Shortcut Id="OpenFromDesktop" Name="Password Manager Local" Target="[INSTALLFOLDER]PasswordManagerLocal.exe"
+                WorkingDirectory="INSTALLFOLDER" />
+      <RegistryValue Root="HKCU" Key="Software\PasswordManagerLocal\Installer" Name="DesktopShortcut"
                      Type="integer" Value="1" KeyPath="yes" />
     </Component>
-    <ComponentGroup Id="ApplicationFiles" Directory="InstallFolder">
+    <ComponentGroup Id="ApplicationFiles" Directory="INSTALLFOLDER">
       <Component Id="ApplicationExecutable" Guid="1BF91F68-8EE0-4FE9-80FD-23E4C5EEC8C2">
         <File Id="ApplicationExe" Source="!(bindpath.Product)\PasswordManagerLocal.exe" KeyPath="yes">
           <Shortcut Id="OpenApplication" Directory="AppProgramsFolder" Name="Password Manager Local"
-                    Advertise="yes" WorkingDirectory="InstallFolder" />
+                    Advertise="yes" WorkingDirectory="INSTALLFOLDER" />
           <Shortcut Id="UninstallApplication" Directory="AppProgramsFolder" Name="Uninstall Password Manager Local"
-                    Advertise="yes" WorkingDirectory="InstallFolder" Arguments="--uninstall" />
+                    Advertise="yes" WorkingDirectory="INSTALLFOLDER" Arguments="--uninstall" />
         </File>
         <RemoveFolder Id="RemoveAppProgramsFolder" Directory="AppProgramsFolder" On="uninstall" />
       </Component>
@@ -79,7 +86,7 @@
         <RegistryValue Root="HKLM" Key="Software\PasswordManagerLocal\Installer" Name="ProductCode"
                        Type="string" Value="[ProductCode]" KeyPath="yes" />
         <RegistryValue Root="HKLM" Key="Software\PasswordManagerLocal\Installer" Name="InstallLocation"
-                       Type="string" Value="[InstallFolder]" />
+                       Type="string" Value="[INSTALLFOLDER]" />
       </Component>
       <Component Id="ApplicationLicense">
         <File Source="!(bindpath.Repository)\LICENSE.txt" KeyPath="yes" />

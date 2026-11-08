@@ -91,6 +91,8 @@ message UserSnapshotRevisionInventory {
   int64 known_snapshot_revision = 10;
   bytes known_snapshot_hash = 11;
   int64 retained_membership_epoch = 12;
+  // Exact snapshot authored by the inventory recipient with equivalent content.
+  bytes equivalent_peer_snapshot_hash = 13;
 }
 
 message UserSnapshotUserInventory {

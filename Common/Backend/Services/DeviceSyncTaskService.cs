@@ -601,7 +601,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             }
         }
 
-        var missing = antiEntropy.FindMissingSnapshots(localInventory, exchange.Users);
+        var missing = antiEntropy.FindMissingSnapshots(localInventory, exchange.Users, targetDevice.Id);
         if (missing.Count == 0)
             return true;
 

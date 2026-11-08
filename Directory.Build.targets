@@ -1,7 +1,8 @@
 <Project>
-  <!-- Keep application trace calls out of Release without affecting Debug diagnostics. -->
+  <!-- Keep C# trace calls out of Release. WiX uses DefineConstants for its own
+       semicolon-delimited preprocessor inputs. -->
   <Target Name="DisableReleaseTraceLogging" BeforeTargets="CoreCompile"
-          Condition="'$(Configuration)' == 'Release'">
+          Condition="'$(MSBuildProjectExtension)' == '.csproj' and '$(Configuration)' == 'Release'">
     <PropertyGroup>
       <DefineConstants>$([System.Text.RegularExpressions.Regex]::Replace('$(DefineConstants)', '(^|[;,\s])TRACE(?=$|[;,\s])', '$1'))</DefineConstants>
     </PropertyGroup>

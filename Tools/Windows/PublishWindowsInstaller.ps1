@@ -35,15 +35,14 @@ $rtf = $rtf.Replace("`n", "\par`r`n")
 
 $maintenancePath = Join-Path $RepositoryRoot 'Windows\Installer\CompleteWindowsInstallation.ps1'
 $maintenance = [IO.File]::ReadAllText($maintenancePath)
-$removeScript = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes('$pmlRemoving = $true' + "`n" + $maintenance))
 $unifiedFlag = if (Test-Path -LiteralPath (Join-Path $ProductDirectory 'PasswordManagerLocal.Windows.Agent.exe') -PathType Leaf) {
     '$false'
 }
 else {
     '$true'
 }
-$upgradeScript = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes(
-    '$pmlRemoving = $false' + "`n" + '$pmlUnified = ' + $unifiedFlag + "`n" + $maintenance))
+$installationScript = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes(
+    '$pmlUnified = ' + $unifiedFlag + "`n" + $maintenance))
 
 $buildArguments = @(
     'build', $project,
@@ -54,8 +53,7 @@ $buildArguments = @(
     '--output', $stage,
     "-p:PmlProductDirectory=$ProductDirectory",
     "-p:PmlLicenseRtf=$licenseRtf",
-    "-p:PmlRemovalScript=$removeScript",
-    "-p:PmlUpgradeScript=$upgradeScript",
+    "-p:PmlWindowsInstallationScript=$installationScript",
     "-bl:$binaryLog"
 )
 Write-Host 'Building the Windows x64 MSI installer...'
