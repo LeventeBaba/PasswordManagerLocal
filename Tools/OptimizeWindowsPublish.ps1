@@ -34,14 +34,12 @@ function Remove-JsonPropertiesMatching {
 }
 
 function Remove-PublishedFiles {
-    param([Parameter(Mandatory = $true)][string]$PublishDirectory)
-
-    $exactFiles = @(
-        'createdump.exe',
-        'mscordaccore.dll',
-        'mscordbi.dll',
-        'Microsoft.DiaSymReader.Native.amd64.dll'
+    param(
+        [Parameter(Mandatory = $true)][string]$PublishDirectory,
+        [Parameter(Mandatory = $true)][string[]]$ExcludedRuntimeFiles
     )
+
+    $exactFiles = $ExcludedRuntimeFiles
     if ($RemoveAvaloniaDesignerAssets) {
         $exactFiles += @('Avalonia.DesignerSupport.dll', 'Avalonia.Remote.Protocol.dll')
     }
@@ -71,7 +69,8 @@ function Remove-PublishedFiles {
 function Update-DependencyManifest {
     param(
         [Parameter(Mandatory = $true)][string]$PublishDirectory,
-        [Parameter(Mandatory = $true)][string]$ManifestFileName
+        [Parameter(Mandatory = $true)][string]$ManifestFileName,
+        [Parameter(Mandatory = $true)][string[]]$ExcludedRuntimeFiles
     )
 
     $depsPath = Join-Path $PublishDirectory $ManifestFileName
@@ -152,7 +151,7 @@ function Update-DependencyManifest {
     }
     if ($null -eq $runtimePack) { throw "The self-contained win-x64 runtime pack entry could not be found in '$depsPath'." }
 
-    foreach ($fileName in @('Microsoft.DiaSymReader.Native.amd64.dll', 'createdump.exe', 'mscordaccore.dll', 'mscordbi.dll')) {
+    foreach ($fileName in $ExcludedRuntimeFiles) {
         Remove-JsonProperty -Object $runtimePack.native -Name $fileName
     }
     Remove-JsonPropertiesMatching -Object $runtimePack.native -Predicate {
@@ -176,14 +175,39 @@ if (-not (Test-Path -LiteralPath $resolvedOutputPath -PathType Container)) {
     throw "Publish directory does not exist: $resolvedOutputPath"
 }
 
-Remove-PublishedFiles -PublishDirectory $resolvedOutputPath
-Update-DependencyManifest -PublishDirectory $resolvedOutputPath -ManifestFileName $DependencyManifestFileName
+$excludedRuntimeFiles = @(
+    'createdump.exe',
+    'mscordaccore.dll',
+    'mscordbi.dll',
+    'Microsoft.DiaSymReader.Native.amd64.dll'
+)
+
+# The runtime pack ships MsQuic even when the managed QUIC client is trimmed.
+# Keep it available if a stage includes that client or enables HTTP/3.
+$runtimeConfigFileName = $DependencyManifestFileName -replace '\.deps\.json$', '.runtimeconfig.json'
+$runtimeConfigPath = Join-Path $resolvedOutputPath $runtimeConfigFileName
+$quicAssemblyPath = Join-Path $resolvedOutputPath 'System.Net.Quic.dll'
+if ($runtimeConfigFileName -ne $DependencyManifestFileName -and
+    (Test-Path -LiteralPath $runtimeConfigPath -PathType Leaf) -and
+    -not (Test-Path -LiteralPath $quicAssemblyPath -PathType Leaf)) {
+    $runtimeConfig = Get-Content -LiteralPath $runtimeConfigPath -Raw | ConvertFrom-Json
+    $http3Support = $runtimeConfig.runtimeOptions.configProperties.'System.Net.SocketsHttpHandler.Http3Support'
+    if ($http3Support -is [bool] -and -not $http3Support) {
+        $excludedRuntimeFiles += 'msquic.dll'
+    }
+}
+
+Remove-PublishedFiles -PublishDirectory $resolvedOutputPath -ExcludedRuntimeFiles $excludedRuntimeFiles
+Update-DependencyManifest -PublishDirectory $resolvedOutputPath -ManifestFileName $DependencyManifestFileName -ExcludedRuntimeFiles $excludedRuntimeFiles
 
 if ($RemoveAvaloniaDesignerAssets) {
     Write-Host 'Removed Avalonia designer/remote protocol assets from the frontend publish.'
 }
 if ($RemoveUnusedXmlSerializerAssembly) {
     Write-Host 'Removed unused System.Xml.XmlSerializer facade from the Agent publish and dependency manifest.'
+}
+if ($excludedRuntimeFiles -contains 'msquic.dll') {
+    Write-Host 'Excluded unused MsQuic from the publish and dependency manifest.'
 }
 Write-Host 'Removed unused CoreCLR crash-dump and managed-debugger assets from the publish.'
 Write-Host 'Removed native and managed symbol files from the publish and dependency manifest.'
