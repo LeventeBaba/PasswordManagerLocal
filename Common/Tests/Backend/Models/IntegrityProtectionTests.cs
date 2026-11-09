@@ -3,7 +3,6 @@ using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
-using PasswordManagerLocal.Common.Backend.Security;
 
 using MSTestAssert = Microsoft.VisualStudio.TestTools.UnitTesting.Assert;
 
@@ -88,34 +87,17 @@ public sealed class IntegrityProtectionTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Security")]
-    public void UserDeviceData_PreviousLoginDateIsIntegrityProtected()
+    [DataRow(false)]
+    [DataRow(true)]
+    public void UserDeviceData_PreviousLoginDateIsIntegrityProtected(bool hadPreviousLogin)
     {
         using var device = CreateUserDeviceData();
+        var previousLogin = device.PreviousLoginDate!.Value;
+        device.PreviousLoginDate = hadPreviousLogin ? previousLogin : null;
         device.GenerateIntegrityHash();
         MSTestAssert.IsTrue(device.IsIntegrityValid());
 
-        device.PreviousLoginDate = device.PreviousLoginDate!.Value.AddMinutes(-1);
-
-        MSTestAssert.IsFalse(device.IsIntegrityValid());
-        ExpectThrows<InvalidDataIntegrityException>(device.VerifyIntegrity);
-    }
-
-    [TestMethod]
-    [TestCategory("Backend")]
-    [TestCategory("Security")]
-    public void UserDeviceData_LegacyHashWithoutPreviousLoginDateIsRejected()
-    {
-        using var device = CreateUserDeviceData();
-        device.PreviousLoginDate = null;
-        device.IntegrityHash = Hashing.SHA256Hash(hash =>
-        {
-            hash.Write(device.Id);
-            hash.WriteString(device.Name);
-            hash.Write(device.LinkedAt);
-            hash.Write(device.LastLoginDate);
-            hash.Write(device.LastUpdatedAt);
-            device.Version.WriteTo(hash);
-        });
+        device.PreviousLoginDate = hadPreviousLogin ? previousLogin.AddMinutes(-1) : previousLogin;
 
         MSTestAssert.IsFalse(device.IsIntegrityValid());
         ExpectThrows<InvalidDataIntegrityException>(device.VerifyIntegrity);
@@ -132,32 +114,14 @@ public sealed class IntegrityProtectionTests
 
         timeZoneTampered.RegistrationTimeZoneId = "America/New_York";
         MSTestAssert.IsFalse(timeZoneTampered.IsIntegrityValid());
+        ExpectThrows<InvalidDataIntegrityException>(timeZoneTampered.VerifyIntegrity);
 
         using var deviceTypeTampered = CreateGeneralUserData();
         deviceTypeTampered.GenerateIntegrityHash();
+        MSTestAssert.IsTrue(deviceTypeTampered.IsIntegrityValid());
         deviceTypeTampered.RegistrationDeviceType = DeviceType.AndroidMobile;
         MSTestAssert.IsFalse(deviceTypeTampered.IsIntegrityValid());
-    }
-
-    [TestMethod]
-    [TestCategory("Backend")]
-    [TestCategory("Security")]
-    public void GeneralUserData_LegacyHashWithoutRegistrationMetadataIsRejected()
-    {
-        using var data = CreateGeneralUserData();
-        data.IntegrityHash = Hashing.SHA256Hash(hash =>
-        {
-            hash.WriteString(data.Username);
-            hash.WriteString(data.FirstName);
-            hash.WriteString(data.LastName);
-            hash.WriteString(data.Email);
-            hash.Write(data.RegistrationDate);
-            hash.Write(data.LastUpdatedAt);
-            data.Version.WriteTo(hash);
-        });
-
-        MSTestAssert.IsFalse(data.IsIntegrityValid());
-        ExpectThrows<InvalidDataIntegrityException>(data.VerifyIntegrity);
+        ExpectThrows<InvalidDataIntegrityException>(deviceTypeTampered.VerifyIntegrity);
     }
 
     [TestMethod]

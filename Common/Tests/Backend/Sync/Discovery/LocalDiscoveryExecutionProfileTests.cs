@@ -14,29 +14,17 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Sync.Discovery;
 public sealed class LocalDiscoveryExecutionProfileTests
 {
     [TestMethod]
-    public async Task BackgroundWait_InteractiveProfileChangeWakesImmediately()
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task ProfileChange_WakesDiscoveryBeforeThePreviousInterval(bool initiallyInteractive)
     {
-        var profiles = CreateProfiles(TimeSpan.FromSeconds(30), isInteractive: false);
+        var profiles = CreateProfiles(TimeSpan.FromSeconds(30), isInteractive: initiallyInteractive);
         var transport = new FakeLocalDiscoveryTransport();
         using var service = CreateService(transport, profiles);
         await service.StartAsync();
         await WaitForAsync(() => transport.MulticastPayloads.Count >= 1);
 
-        profiles.SetProfile(CreateProfile(TimeSpan.FromMilliseconds(20)), isInteractive: true);
-
-        await WaitForAsync(() => transport.MulticastPayloads.Count >= 2);
-    }
-
-    [TestMethod]
-    public async Task InteractiveWait_BackgroundProfileChangeWakesImmediately()
-    {
-        var profiles = CreateProfiles(TimeSpan.FromSeconds(30), isInteractive: true);
-        var transport = new FakeLocalDiscoveryTransport();
-        using var service = CreateService(transport, profiles);
-        await service.StartAsync();
-        await WaitForAsync(() => transport.MulticastPayloads.Count >= 1);
-
-        profiles.SetProfile(CreateProfile(TimeSpan.FromMilliseconds(20)), isInteractive: false);
+        profiles.SetProfile(CreateProfile(TimeSpan.FromMilliseconds(20)), isInteractive: !initiallyInteractive);
 
         await WaitForAsync(() => transport.MulticastPayloads.Count >= 2);
     }

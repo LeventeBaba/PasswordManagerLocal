@@ -126,31 +126,41 @@ public sealed class SyncCryptoUtilTests
     [TestCategory("Security")]
     public void ValidatePayloadShape_RejectsMissingMismatchedAndExtraPayloads()
     {
-        ExpectThrows<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(new SyncDeltaPayload
+        var userUpdate = new SyncDeltaPayload
         {
+            ModelId = Guid.NewGuid(),
             ModelType = SyncModelType.User,
             ChangeType = SyncChangeType.Updated
-        }));
+        };
 
-        ExpectThrows<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(new SyncDeltaPayload
-        {
-            ModelType = SyncModelType.User,
-            ChangeType = SyncChangeType.Updated,
-            Group = new GroupSyncPayload()
-        }));
+        ExpectThrows<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(userUpdate));
+        userUpdate.Group = new GroupSyncPayload();
+        ExpectThrows<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(userUpdate));
+        userUpdate.UserSnapshot = new UserSnapshotEnvelope { UserId = userUpdate.ModelId };
+        ExpectThrows<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(userUpdate));
+        userUpdate.Group = null;
+        SyncCryptoUtil.ValidatePayloadShape(userUpdate);
+    }
 
-        ExpectThrows<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(new SyncDeltaPayload
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Security")]
+    public void ValidatePayloadShape_RequiresAuthoritativeControlForUserDeletion()
+    {
+        var deletion = new SyncDeltaPayload
         {
-            ModelType = SyncModelType.User,
-            ChangeType = SyncChangeType.Deleted,
-            Group = new GroupSyncPayload()
-        }));
-
-        ExpectThrows<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(new SyncDeltaPayload
-        {
-            ModelType = SyncModelType.User,
+            ModelId = Guid.NewGuid(),
+            ModelType = SyncModelType.Group,
             ChangeType = SyncChangeType.Deleted
-        }));
+        };
+
+        SyncCryptoUtil.ValidatePayloadShape(deletion);
+        deletion.Group = new GroupSyncPayload { Id = deletion.ModelId };
+        ExpectThrows<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(deletion));
+
+        deletion.Group = null;
+        deletion.ModelType = SyncModelType.User;
+        ExpectThrows<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(deletion));
     }
 
     [TestMethod]

@@ -60,29 +60,6 @@ public sealed class HelpNavigationTests
     }
 
     [TestMethod]
-    public async Task SettingsHelpReturnsToTheSameUnfinishedRegistration()
-    {
-        await using var preferences = await TestUiPreferencesFactory.CreateAsync();
-        var endpoints = DispatchProxy.Create<IEndpoints, RejectAllEndpoints>();
-        await using var runtime = new UnavailableRuntime();
-        using var shell = new MainViewModel(endpoints, runtime, new FakeBackgroundSyncSettingsClient(), preferences);
-        ExecuteCommand(shell.ShowRegistrationCommand);
-        var caller = shell.RegistrationViewModel;
-        caller.Username = "unfinished-registration";
-        caller.Password = "unfinished-form-value";
-        ExecuteCommand(shell.ShowSettingsCommand);
-        shell.OpenHelpTopic(HelpTopicIds.CreateAccount);
-
-        Assert.IsTrue(await shell.TryNavigateBackAsync());
-        Assert.AreSame(shell.SettingsViewModel, shell.CurrentPageViewModel);
-        Assert.IsTrue(await shell.TryNavigateBackAsync());
-        Assert.AreSame(caller, shell.CurrentPageViewModel);
-        Assert.AreEqual("unfinished-registration", caller.Username);
-        Assert.AreEqual("unfinished-form-value", caller.Password);
-        Assert.AreEqual(0, ((RejectAllEndpoints)(object)endpoints).Calls);
-    }
-
-    [TestMethod]
     public async Task ReturnToAppSkipsDeepHelpHistoryAndPreservesTheOriginalForm()
     {
         await using var preferences = await TestUiPreferencesFactory.CreateAsync();
@@ -221,6 +198,10 @@ public sealed class HelpNavigationTests
         var endpoints = DispatchProxy.Create<IEndpoints, RejectAllEndpoints>();
         await using var runtime = new UnavailableRuntime();
         using var shell = new MainViewModel(endpoints, runtime, new FakeBackgroundSyncSettingsClient(), preferences);
+        ExecuteCommand(shell.ShowRegistrationCommand);
+        var caller = shell.RegistrationViewModel;
+        caller.Username = "unfinished-registration";
+        caller.Password = "unfinished-form-value";
         ExecuteCommand(shell.ShowSettingsCommand);
         ExecuteCommand(shell.SettingsViewModel.NavigateToHelpCommand);
         var hub = (HelpPageViewModel)shell.CurrentPageViewModel;
@@ -229,6 +210,7 @@ public sealed class HelpNavigationTests
         ExecuteCommand(category.Cards.Single(card => card.Id == HelpTopicIds.Disconnect).OpenCommand);
         var firstTopic = (HelpPageViewModel)shell.CurrentPageViewModel;
         firstTopic.ScrollOffset = 123;
+        shell.OpenHelpTopic(HelpTopicIds.Sync);
         shell.OpenHelpTopic(HelpTopicIds.Sync);
 
         Assert.IsTrue(await shell.TryNavigateBackAsync());
@@ -249,7 +231,9 @@ public sealed class HelpNavigationTests
         Assert.IsTrue(await shell.TryNavigateBackAsync());
         Assert.AreSame(shell.SettingsViewModel, shell.CurrentPageViewModel);
         Assert.IsTrue(await shell.TryNavigateBackAsync());
-        Assert.AreSame(shell.LoginViewModel, shell.CurrentPageViewModel);
+        Assert.AreSame(caller, shell.CurrentPageViewModel);
+        Assert.AreEqual("unfinished-registration", caller.Username);
+        Assert.AreEqual("unfinished-form-value", caller.Password);
         Assert.AreEqual(0, ((RejectAllEndpoints)(object)endpoints).Calls);
     }
 

@@ -11,10 +11,15 @@ public sealed class UserSnapshotReceiptProtocolTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Security")]
-    public void ReceiptStateValues_MatchProtobufContract()
+    public void EveryReceiptStateMatchesItsProtobufWireValue()
     {
-        MSTestAssert.AreEqual(
-            (int)Enum.Parse<UserSnapshotReceiptState>(nameof(UserSnapshotReceiptState.StoredMergedReceipt)),
-            (int)Enum.Parse<UserSnapshotReceiptStateProto>(nameof(UserSnapshotReceiptStateProto.UserSnapshotReceiptStoredMergedReceipt)));
+        var receiptStates = Enum.GetValues<UserSnapshotReceiptState>();
+        MSTestAssert.HasCount(receiptStates.Length, Enum.GetValues<UserSnapshotReceiptStateProto>());
+
+        foreach (var state in receiptStates)
+        {
+            var wireState = Enum.Parse<UserSnapshotReceiptStateProto>($"UserSnapshotReceipt{state}");
+            MSTestAssert.AreEqual((int)state, (int)wireState, state.ToString());
+        }
     }
 }

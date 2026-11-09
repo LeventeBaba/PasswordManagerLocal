@@ -178,18 +178,21 @@ public sealed class DeviceEnrollmentPartialCommitContractTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
-    public async Task TargetIdentityConflictAfterCommitRequiresRecoveryInsteadOfOrdinaryConflict()
+    [DataRow(DeviceEnrollmentErrorCode.DeviceIdentityConflict, false)]
+    [DataRow(DeviceEnrollmentErrorCode.UnsupportedDatabaseVersion, true)]
+    public async Task RejectedTransferAfterCommitPreservesRecoveryAndClassifiesRestart(
+        DeviceEnrollmentErrorCode errorCode, bool requiresRestart)
     {
         using var host = new BackendTestHost();
         var endpoints = host.Services.GetRequiredService<PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints>();
-        var token = await endpoints.RegisterAsync(host.CreateValidRegistrationRequest("enrollment-target-conflict"));
+        var token = await endpoints.RegisterAsync(host.CreateValidRegistrationRequest("enrollment-rejected-transfer"));
         await endpoints.SetLocalUserSyncOnAsync(token, true);
         var user = await host.Services.GetRequiredService<IUserLookupService>()
             .GetAndVerifyUserAsync(token);
         var transport = new FakeSyncTransportClientService
         {
             EnrollmentInfoReply = CreateMatchingEnrollmentInfoReply(),
-            EnrollmentCompletionReply = CreateRejectedCompletionReply(DeviceEnrollmentErrorCode.DeviceIdentityConflict)
+            EnrollmentCompletionReply = CreateRejectedCompletionReply(errorCode)
         };
         using var service = CreateService(host.Services, transport);
 
@@ -200,41 +203,14 @@ public sealed class DeviceEnrollmentPartialCommitContractTests
 
         Assert.HasCount(1, commits);
         Assert.AreEqual(DeviceEnrollmentCommitStatus.TransferFailed, commits[0].Status);
-        Assert.AreEqual(DeviceEnrollmentErrorCode.DeviceIdentityConflict, exception.ErrorCode);
+        Assert.AreEqual(errorCode, exception.ErrorCode);
         Assert.AreEqual(commits[0].CommitId, exception.EnrollmentCommitId);
+        Assert.AreEqual(RemoteDeviceId, exception.TargetDeviceId);
+        Assert.AreEqual(RemoteOriginInstanceId, exception.TargetOriginInstanceId);
         Assert.IsTrue(exception.RecoveryAvailable);
-        Assert.IsFalse(exception.RequiresProcessRestart);
-    }
-
-    [TestMethod]
-    [TestCategory("Backend")]
-    [TestCategory("Integration")]
-    public async Task UnsupportedDatabaseAfterCommitRequiresRecoveryAndProcessRestart()
-    {
-        using var host = new BackendTestHost();
-        var endpoints = host.Services.GetRequiredService<PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints>();
-        var token = await endpoints.RegisterAsync(host.CreateValidRegistrationRequest("enrollment-unsupported-db"));
-        await endpoints.SetLocalUserSyncOnAsync(token, true);
-        var user = await host.Services.GetRequiredService<IUserLookupService>()
-            .GetAndVerifyUserAsync(token);
-        var transport = new FakeSyncTransportClientService
-        {
-            EnrollmentInfoReply = CreateMatchingEnrollmentInfoReply(),
-            EnrollmentCompletionReply = CreateRejectedCompletionReply(DeviceEnrollmentErrorCode.UnsupportedDatabaseVersion)
-        };
-        using var service = CreateService(host.Services, transport);
-
-        var exception = await Assert.ThrowsExactlyAsync<DeviceEnrollmentPartiallyCommittedException>(() =>
-            service.AddDeviceByCodeAsync(token, CreateRemoteEnrollmentCode()));
-        var commits = await host.Services.GetRequiredService<IDeviceEnrollmentCommitRepository>()
-            .ListForUserAsync(user.UId);
-
-        Assert.HasCount(1, commits);
-        Assert.AreEqual(DeviceEnrollmentCommitStatus.TransferFailed, commits[0].Status);
-        Assert.AreEqual(DeviceEnrollmentErrorCode.UnsupportedDatabaseVersion, exception.ErrorCode);
-        Assert.AreEqual(commits[0].CommitId, exception.EnrollmentCommitId);
-        Assert.IsTrue(exception.RecoveryAvailable);
-        Assert.IsTrue(exception.RequiresProcessRestart);
+        Assert.IsTrue(exception.TransferPending);
+        Assert.IsTrue(exception.RequiresSignedRemovalToUndo);
+        Assert.AreEqual(requiresRestart, exception.RequiresProcessRestart);
     }
 
     [TestMethod]
@@ -250,35 +226,6 @@ public sealed class DeviceEnrollmentPartialCommitContractTests
 
         Assert.IsFalse(uncertain.IsKnownNotCommitted);
         Assert.IsTrue(rolledBack.IsKnownNotCommitted);
-    }
-
-    [TestMethod]
-    [TestCategory("Backend")]
-    [TestCategory("Unit")]
-    public void PartialCommitExceptionCarriesOnlyImmutableRecoveryFacts()
-    {
-        var commitId = Guid.Parse("11111111-1111-1111-1111-111111111111");
-        var targetDeviceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-        var targetOriginInstanceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
-        var exception = new DeviceEnrollmentPartiallyCommittedException(
-            DeviceEnrollmentErrorCode.UnsupportedDatabaseVersion,
-            "post-commit failure",
-            commitId,
-            targetDeviceId,
-            targetOriginInstanceId,
-            recoveryAvailable: true,
-            transferPending: true,
-            requiresSignedRemovalToUndo: true,
-            requiresProcessRestart: true);
-
-        Assert.AreEqual(DeviceEnrollmentErrorCode.UnsupportedDatabaseVersion, exception.ErrorCode);
-        Assert.AreEqual(commitId, exception.EnrollmentCommitId);
-        Assert.AreEqual(targetDeviceId, exception.TargetDeviceId);
-        Assert.AreEqual(targetOriginInstanceId, exception.TargetOriginInstanceId);
-        Assert.IsTrue(exception.RecoveryAvailable);
-        Assert.IsTrue(exception.TransferPending);
-        Assert.IsTrue(exception.RequiresSignedRemovalToUndo);
-        Assert.IsTrue(exception.RequiresProcessRestart);
     }
 
     private static string CreateRemoteEnrollmentCode(string? fingerprint = null) =>

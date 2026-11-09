@@ -550,7 +550,7 @@ public sealed class AuthoritativeAccountDeletionTests
     [TestCategory("Backend")]
     [TestCategory("Integration")]
     [TestCategory("Security")]
-    public async Task DeletionBarrier_BlocksRepositoryResurrection_AndGenericDeletionProtocol()
+    public async Task DeletionBarrier_BlocksRepositoryResurrection()
     {
         await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var userId = Guid.NewGuid();
@@ -576,14 +576,6 @@ public sealed class AuthoritativeAccountDeletionTests
         await database.Users.AddAsync(CreateUser(userId, savedKey: null));
         await MSTestAssert.ThrowsExactlyAsync<InvalidOperationException>(() => database.UnitOfWork.SaveChangesAsync());
         database.UnitOfWork.ClearTrackedChanges();
-
-        var legacyDeletion = new SyncDeltaPayload
-        {
-            ModelId = userId,
-            ModelType = SyncModelType.User,
-            ChangeType = SyncChangeType.Deleted
-        };
-        MSTestAssert.ThrowsExactly<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(legacyDeletion));
     }
 
     private static UserAccountDeletionCleanupService CreateCleanup(SqliteRepositoryTestDatabase database) =>

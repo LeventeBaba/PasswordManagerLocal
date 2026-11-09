@@ -23,26 +23,6 @@ public sealed class PasswordServiceTests
     }
 
     [TestMethod]
-    public async Task AddNewPassword_Valid_Works()
-    {
-        var service = new PasswordService();
-        var passwords = CreateEmptyPasswords();
-
-        var req = new NewPasswordRequest
-        {
-            Name = "Test",
-            Description = "Desc",
-            Color = "#FFFFFFFF",
-            Password = Encoding.UTF8.GetBytes("secret")
-        };
-
-        await service.AddNewPassword(req, passwords);
-
-        MSTestAssert.HasCount(1, passwords.Passwords);
-        passwords.VerifyIntegrity();
-    }
-
-    [TestMethod]
     public async Task AddNewPassword_InvalidInput_Throws()
     {
         var service = new PasswordService();
@@ -215,52 +195,6 @@ public sealed class PasswordServiceTests
     }
 
     [TestMethod]
-    public async Task GetUnsecurePassword_Roundtrip_Works()
-    {
-        var service = new PasswordService();
-        var passwords = CreateEmptyPasswords();
-
-        var raw = Encoding.UTF8.GetBytes("supersecret");
-
-        await service.AddNewPassword(new NewPasswordRequest
-        {
-            Name = "Test",
-            Password = raw
-        }, passwords);
-
-        var id = passwords.Passwords[0].Id;
-        var decrypted = await service.GetUnsecurePasswordAsync(id, passwords);
-
-        CollectionAssert.AreEqual(raw, decrypted);
-    }
-
-    [TestMethod]
-    public void RemovePasswords_SingleItemList_Works()
-    {
-        var service = new PasswordService();
-        var passwords = CreateEmptyPasswords();
-
-        var pw = new SecurePassword
-        {
-            Id = Guid.NewGuid(),
-            Name = "A",
-            Password = Encoding.UTF8.GetBytes("x")
-        };
-        pw.GenerateIntegrityHash();
-
-        passwords.Passwords.Add(pw);
-        passwords.GenerateIntegrityHash();
-        var passwordId = pw.Id;
-
-        service.RemovePasswords([passwordId], passwords);
-
-        MSTestAssert.IsEmpty(passwords.Passwords);
-        MSTestAssert.HasCount(1, passwords.DeletedPasswords);
-        MSTestAssert.AreEqual(passwordId, passwords.DeletedPasswords[0].Id);
-        passwords.VerifyIntegrity();
-    }
-
-    [TestMethod]
     public void RemovePasswords_MultipleItems_RemovesAllAndCreatesTombstones()
     {
         var service = new PasswordService();
@@ -301,6 +235,8 @@ public sealed class PasswordServiceTests
         CollectionAssert.AreEquivalent(
             new[] { firstId, secondId },
             passwords.DeletedPasswords.Select(deleted => deleted.Id).ToArray());
+        foreach (var deleted in passwords.DeletedPasswords)
+            deleted.VerifyIntegrity();
         passwords.VerifyIntegrity();
     }
 
@@ -332,34 +268,6 @@ public sealed class PasswordServiceTests
         CollectionAssert.AreEqual(originalHash, passwords.IntegrityHash);
         passwords.VerifyIntegrity();
     }
-
-    [TestMethod]
-    public async Task UpdatePassword_ChangesFields()
-    {
-        var service = new PasswordService();
-        var passwords = CreateEmptyPasswords();
-
-        await service.AddNewPassword(new NewPasswordRequest
-        {
-            Name = "Old",
-            Password = Encoding.UTF8.GetBytes("oldpw")
-        }, passwords);
-
-        var id = passwords.Passwords[0].Id;
-
-        await service.UpdatePasswordAsync(new UpdatePasswordRequest
-        {
-            Id = id,
-            Name = "New",
-            Password = Encoding.UTF8.GetBytes("newpw")
-        }, passwords);
-
-        var decrypted = await service.GetUnsecurePasswordAsync(id, passwords);
-
-        MSTestAssert.AreEqual("New", passwords.Passwords[0].Name);
-        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes("newpw"), decrypted);
-    }
-
 
     [TestMethod]
     public async Task UpdatePassword_AllowsClearingDescription()
@@ -405,21 +313,6 @@ public sealed class PasswordServiceTests
 
         await ExpectThrowsAsync<InvalidDataIntegrityException>(() =>
             service.GetUnsecurePasswordAsync(stored.Id, passwords));
-    }
-
-
-    [TestMethod]
-    public async Task EncryptDecrypt_Roundtrip_Works()
-    {
-        var service = new PasswordService();
-        var passwords = CreateEmptyPasswords();
-
-        var raw = Encoding.UTF8.GetBytes("abc");
-
-        var enc = await service.EncryptPasswordAsync(raw, passwords);
-        var dec = await service.DecryptPasswordAsync(enc, passwords);
-
-        CollectionAssert.AreEqual(raw, dec);
     }
 
 

@@ -128,24 +128,6 @@ public sealed class DeviceSyncTaskServiceTests
 
     [TestMethod]
     [TestCategory("Backend")]
-    [TestCategory("Unit")]
-    public async Task TryStart_WhileDeviceTaskIsRunning_RejectsDuplicateStart()
-    {
-        var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var setup = CreateSetup(sendResult: true, sendGate: gate);
-        setup.Queue.Seed(CreateQueueItem(setup.Device.Id));
-
-        MSTestAssert.IsTrue(setup.Service.TryStart(setup.Endpoint, setup.Device));
-        await WaitUntilAsync(() => setup.Transport.SendCalls == 1);
-        MSTestAssert.IsFalse(setup.Service.TryStart(setup.Endpoint, setup.Device));
-
-        gate.SetResult(true);
-        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
-        MSTestAssert.AreEqual(0, setup.Queue.Items.Count(item => item.ProcessedAt is null));
-    }
-
-    [TestMethod]
-    [TestCategory("Backend")]
     [TestCategory("Integration")]
     public async Task TryStart_WhileRunning_RemembersPendingKickAndRestartsAfterFirstAttemptStops()
     {

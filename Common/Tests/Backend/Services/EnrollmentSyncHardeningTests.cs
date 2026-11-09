@@ -75,13 +75,22 @@ public sealed class EnrollmentSyncHardeningTests
             Name = "Keep", Password = Encoding.UTF8.GetBytes("KeepThisSecret123!")
         });
         using var write = host.Services.CreateScope();
+        var users = write.ServiceProvider.GetRequiredService<IUserRepository>();
+        var current = await users.GetByIdAsNoTrackingAsync(stale.UserData.UId);
+        Assert.IsNotNull(current);
+        var generationBefore = UserDataGeneration.Capture(current!);
         var writer = write.ServiceProvider.GetRequiredService<IUserDataWriterService>();
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => writer.UpdateUserDataBundleAsync(stale, token, UserDataBlobKind.Devices));
-        // Even a legacy bundle without provenance must fail the actual retained-child check.
+        // The writer also verifies retained children when the working bundle has no generation.
         stale.CanonicalGeneration = null;
         await Assert.ThrowsExactlyAsync<InvalidDataIntegrityException>(() => writer.UpdateUserDataBundleAsync(stale, token, UserDataBlobKind.Devices));
         using var verify = host.Services.CreateScope();
-        using var disk = await verify.ServiceProvider.GetRequiredService<IUserDataReaderService>().GetLoadAndVerifyUserDataBundleAsync(token);
+        var persisted = await verify.ServiceProvider.GetRequiredService<IUserRepository>()
+            .GetByIdAsNoTrackingAsync(stale.UserData.UId);
+        Assert.IsNotNull(persisted);
+        CollectionAssert.AreEqual(generationBefore, UserDataGeneration.Capture(persisted!));
+        using var disk = await verify.ServiceProvider.GetRequiredService<IUserDataReaderService>()
+            .GetLoadAndVerifyUserDataBundleAsync(token);
         Assert.AreEqual("Keep", disk.UserPasswordsData.Passwords.Single().Name);
     }
 
@@ -114,7 +123,9 @@ public sealed class EnrollmentSyncHardeningTests
     }
 
     [TestMethod]
-    public void LoginTimestampDoesNotOverwriteConcurrentExplicitName_InEitherMergeOrder()
+    [DataRow(true)]
+    [DataRow(false)]
+    public void ConcurrentDeviceMergePreservesTheExplicitNameAndNewerLogin(bool loginIsLocal)
     {
         var id = Guid.NewGuid();
         var origin = Guid.NewGuid();
@@ -124,17 +135,29 @@ public sealed class EnrollmentSyncHardeningTests
         };
         UserDeviceData Device(string name, long version, long nameVersion) => new()
         {
-            Id = id, Name = name, LinkedAt = DateTimeOffset.FromUnixTimeMilliseconds(1),
-            LastUpdatedAt = DateTimeOffset.FromUnixTimeMilliseconds(version), Version = Stamp(version), NameVersion = Stamp(nameVersion)
+            Id = id,
+            Name = name,
+            LinkedAt = DateTimeOffset.FromUnixTimeMilliseconds(1),
+            LastLoginDate = DateTimeOffset.FromUnixTimeMilliseconds(version).UtcDateTime,
+            LastUpdatedAt = DateTimeOffset.FromUnixTimeMilliseconds(version),
+            Version = Stamp(version),
+            NameVersion = Stamp(nameVersion)
         };
         using var renamed = new UserDevicesData { Devices = [Device("Chosen name", 20, 20)] };
         using var loggedIn = new UserDevicesData { Devices = [Device("Old name", 30, 10)] };
         var merge = new UserDevicesDataMergeService();
-        Assert.IsTrue(merge.Merge(loggedIn, renamed));
-        Assert.AreEqual("Chosen name", loggedIn.Devices.Single().Name);
-        Assert.IsTrue(merge.Merge(renamed, loggedIn));
-        CollectionAssert.AreEqual(renamed.CalculateIntegrityHash(), loggedIn.CalculateIntegrityHash());
-        Assert.IsFalse(merge.Merge(renamed, loggedIn));
+        var local = loginIsLocal ? loggedIn : renamed;
+        var incoming = loginIsLocal ? renamed : loggedIn;
+
+        Assert.IsTrue(merge.Merge(local, incoming));
+
+        var device = local.Devices.Single();
+        Assert.AreEqual("Chosen name", device.Name);
+        Assert.AreEqual(DateTimeOffset.FromUnixTimeMilliseconds(30).UtcDateTime, device.LastLoginDate);
+        Assert.AreEqual(30L, device.Version.PhysicalTimeUnixMilliseconds);
+        Assert.AreEqual(20L, device.NameVersion!.PhysicalTimeUnixMilliseconds);
+        Assert.IsTrue(local.IsIntegrityValid());
+        Assert.IsFalse(merge.Merge(local, incoming), "Reapplying the original input must be idempotent.");
     }
 
     [TestMethod]

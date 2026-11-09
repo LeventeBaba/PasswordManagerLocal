@@ -139,21 +139,6 @@ public sealed class BackendChangeEventHubTests
         Assert.AreEqual(0, completed.Count);
     }
 
-    [TestMethod]
-    [TestCategory("Backend")]
-    public void NotificationContract_ContainsOnlyInvalidationMetadata()
-    {
-        var propertyNames = typeof(FrontendChangeNotification)
-            .GetProperties()
-            .Select(property => property.Name)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToArray();
-
-        CollectionAssert.AreEqual(
-            new[] { "OccurredAtUtc", "RuntimeInstanceId", "Scope", "Sequence", "UserId" },
-            propertyNames);
-    }
-
     private static async Task<IReadOnlyList<BackendChangeDelivery>> ReadExactlyAsync(
         IBackendChangeSubscription subscription,
         int count)

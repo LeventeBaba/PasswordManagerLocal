@@ -12,7 +12,7 @@
          replaces files whose version has not changed when switching publish modes. -->
     <MajorUpgrade AllowSameVersionUpgrades="yes" IgnoreLanguage="yes" Schedule="afterInstallInitialize"
                   DowngradeErrorMessage="!(loc.PmlNewerVersionInstalled)" />
-    <MediaTemplate EmbedCab="yes" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <Icon Id="PasswordManagerLocal.ico" SourceFile="!(bindpath.Branding)\PasswordManagerLocal.ico" />
     <Property Id="ARPPRODUCTICON" Value="PasswordManagerLocal.ico" />

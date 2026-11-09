@@ -3,6 +3,7 @@ using PasswordManagerLocal.Common.Contracts.Constants;
 using PasswordManagerLocal.Common.Contracts.Preferences;
 using PasswordManagerLocal.Common.Preferences;
 using PasswordManagerLocal.Common.Tests.Fakes;
+using System.Globalization;
 using System.Text.Json;
 
 namespace PasswordManagerLocal.Common.Tests.Preferences;
@@ -25,7 +26,7 @@ public sealed class FileApplicationPreferencesStoreTests
     }
 
     [TestMethod]
-    public async Task LanguageAndThemeRoundTripThroughAuthoritativeSchema()
+    public async Task WriteAndRead_RoundTripsTheCurrentSchemaWithoutLeavingTemporaryFiles()
     {
         var fileSystem = new FakeApplicationPreferencesFileSystem();
         var store = CreateStore(fileSystem);
@@ -33,140 +34,47 @@ public sealed class FileApplicationPreferencesStoreTests
         {
             SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
             Language = AppLanguage.Hungarian,
-            Theme = AppThemeId.Light
+            Theme = AppThemeId.Light,
+            InterfaceAnimationsEnabled = false
         };
 
         await store.WriteAsync(expected);
         var actual = await store.ReadAsync();
 
         Assert.AreEqual(expected, actual);
+        Assert.AreEqual(0, fileSystem.TemporaryFileCount);
+        AssertValidCurrentSchema(fileSystem.GetFile(PreferencesPath()));
         StringAssert.Contains(fileSystem.GetFile(PreferencesPath()), "\"language\": \"Hungarian\"");
         StringAssert.Contains(fileSystem.GetFile(PreferencesPath()), "\"theme\": \"Light\"");
     }
 
     [TestMethod]
     [DataRow("")]
-    [DataRow("   ")]
     [DataRow("{")]
-    [DataRow("{\"schemaVersion\":1")]
-    [DataRow("{}")]
-    [DataRow("{\"language\":\"English\",\"theme\":\"Dark\"}")]
-    [DataRow("{\"schemaVersion\":1,\"language\":\"English\"}")]
-    [DataRow("{\"schemaVersion\":1,\"language\":0,\"theme\":\"Dark\"}")]
-    [DataRow("{\"schemaVersion\":1,\"language\":\"English\",\"theme\":1}")]
-    public async Task EmptyMalformedOrTruncatedContentResetsToDefaults(string contents)
+    [DataRow("[]")]
+    [DataRow("""{"schemaVersion":VERSION,"language":"Hungarian","theme":"Light"}""")]
+    [DataRow("""{"schemaVersion":VERSION,"language":"Hungarian","theme":"Light","interfaceAnimationsEnabled":false,"unexpected":true}""")]
+    [DataRow("""{"schemaVersion":0,"language":"Hungarian","theme":"Light","interfaceAnimationsEnabled":false}""")]
+    [DataRow("""{"schemaVersion":VERSION,"language":"Klingon","theme":"Light","interfaceAnimationsEnabled":false}""")]
+    [DataRow("""{"schemaVersion":VERSION,"language":0,"theme":"Light","interfaceAnimationsEnabled":false}""")]
+    [DataRow("""{"schemaVersion":VERSION,"language":"Hungarian","theme":"Ocean","interfaceAnimationsEnabled":false}""")]
+    [DataRow("""{"schemaVersion":VERSION,"language":"Hungarian","theme":"1","interfaceAnimationsEnabled":false}""")]
+    [DataRow("""{"schemaVersion":VERSION,"language":"Hungarian","theme":1,"interfaceAnimationsEnabled":false}""")]
+    [DataRow("""{"schemaVersion":VERSION,"language":"Hungarian","theme":"Light","interfaceAnimationsEnabled":0}""")]
+    public async Task InvalidPreferencesAreReplacedWithCurrentDefaults(string contents)
     {
         var fileSystem = new FakeApplicationPreferencesFileSystem();
-        fileSystem.SetFile(PreferencesPath(), contents);
+        var schemaVersion = ApplicationPreferences.CurrentSchemaVersion.ToString(CultureInfo.InvariantCulture);
+        fileSystem.SetFile(PreferencesPath(), contents.Replace("VERSION", schemaVersion, StringComparison.Ordinal));
         var store = CreateStore(fileSystem);
+        var expected = ApplicationPreferencesDefaults.Create();
 
-        var preferences = await store.ReadAsync();
+        Assert.AreEqual(expected, await store.ReadAsync());
 
-        Assert.AreEqual(ApplicationPreferencesDefaults.Create(), preferences);
-        AssertValidCurrentSchema(fileSystem.GetFile(PreferencesPath()));
-    }
-
-    [TestMethod]
-    public async Task UnsupportedSchemaVersionResetsToDefaults()
-    {
-        var fileSystem = new FakeApplicationPreferencesFileSystem();
-        fileSystem.SetFile(
-            PreferencesPath(),
-            "{\"schemaVersion\":2,\"language\":\"Hungarian\",\"theme\":\"Light\"}");
-        var store = CreateStore(fileSystem);
-
-        var preferences = await store.ReadAsync();
-
-        Assert.AreEqual(ApplicationPreferencesDefaults.Create(), preferences);
-        AssertValidCurrentSchema(fileSystem.GetFile(PreferencesPath()));
-    }
-
-    [TestMethod]
-    public async Task CurrentSchemaRejectsUnknownThemeIdentifier()
-    {
-        var fileSystem = new FakeApplicationPreferencesFileSystem();
-        fileSystem.SetFile(
-            PreferencesPath(),
-            "{\"schemaVersion\":4,\"language\":\"English\",\"theme\":\"Ocean\",\"interfaceAnimationsEnabled\":true}");
-        var store = CreateStore(fileSystem);
-
-        var preferences = await store.ReadAsync();
-
-        Assert.AreEqual(ApplicationPreferencesDefaults.Create(), preferences);
-        AssertValidCurrentSchema(fileSystem.GetFile(PreferencesPath()));
-    }
-
-    [TestMethod]
-    [DataRow("Klingon", "Dark")]
-    [DataRow("99", "Dark")]
-    [DataRow("English", "Custom")]
-    [DataRow("English", "99")]
-    public async Task InvalidEnumValuesResetSafely(string language, string theme)
-    {
-        var fileSystem = new FakeApplicationPreferencesFileSystem();
-        fileSystem.SetFile(
-            PreferencesPath(),
-            $"{{\"schemaVersion\":4,\"language\":\"{language}\",\"theme\":\"{theme}\",\"interfaceAnimationsEnabled\":true}}");
-        var store = CreateStore(fileSystem);
-
-        var preferences = await store.ReadAsync();
-
-        Assert.AreEqual(ApplicationPreferencesDefaults.Create(), preferences);
-        AssertValidCurrentSchema(fileSystem.GetFile(PreferencesPath()));
-    }
-
-    [TestMethod]
-    public async Task OldMixedConfigurationShapeIsUnsupportedAndReset()
-    {
-        var fileSystem = new FakeApplicationPreferencesFileSystem();
-        fileSystem.SetFile(
-            PreferencesPath(),
-            "{\"language\":\"Hungarian\",\"theme\":\"Light\",\"windowsFirewallConfigured\":true}");
-        var store = CreateStore(fileSystem);
-
-        var preferences = await store.ReadAsync();
-
-        Assert.AreEqual(ApplicationPreferencesDefaults.Create(), preferences);
-        Assert.IsFalse(fileSystem.GetFile(PreferencesPath()).Contains(
-            "windowsFirewallConfigured",
-            StringComparison.Ordinal));
-    }
-
-
-    [TestMethod]
-    public async Task ObsoleteAdditionalFieldsMakeTheSchemaUnsupported()
-    {
-        var fileSystem = new FakeApplicationPreferencesFileSystem();
-        fileSystem.SetFile(
-            PreferencesPath(),
-            "{\"schemaVersion\":4,\"language\":\"English\",\"theme\":\"Dark\",\"interfaceAnimationsEnabled\":true,\"windowsFirewallConfigured\":true}");
-        var store = CreateStore(fileSystem);
-
-        var preferences = await store.ReadAsync();
-
-        Assert.AreEqual(ApplicationPreferencesDefaults.Create(), preferences);
-        Assert.IsFalse(fileSystem.GetFile(PreferencesPath()).Contains(
-            "windowsFirewallConfigured",
-            StringComparison.Ordinal));
-    }
-
-    [TestMethod]
-    public async Task AtomicSaveLeavesReadableFinalFileAndNoTemporaryFile()
-    {
-        var fileSystem = new FakeApplicationPreferencesFileSystem();
-        var store = CreateStore(fileSystem);
-        var expected = new ApplicationPreferences
-        {
-            SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
-            Language = AppLanguage.English,
-            Theme = AppThemeId.Dark
-        };
-
-        await store.WriteAsync(expected);
-
-        Assert.AreEqual(0, fileSystem.TemporaryFileCount);
+        Assert.AreEqual(1, fileSystem.ReplaceCount);
         AssertValidCurrentSchema(fileSystem.GetFile(PreferencesPath()));
         Assert.AreEqual(expected, await store.ReadAsync());
+        Assert.AreEqual(1, fileSystem.ReplaceCount, "The replacement must be readable without another reset.");
     }
 
     [TestMethod]
@@ -254,13 +162,15 @@ public sealed class FileApplicationPreferencesStoreTests
             {
                 SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
                 Language = AppLanguage.English,
-                Theme = AppThemeId.Dark
+                Theme = AppThemeId.Dark,
+                InterfaceAnimationsEnabled = false
             };
             var second = new ApplicationPreferences
             {
                 SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
                 Language = AppLanguage.Hungarian,
-                Theme = AppThemeId.Light
+                Theme = AppThemeId.Light,
+                InterfaceAnimationsEnabled = false
             };
 
             var writes = Enumerable.Range(0, 12)
@@ -269,11 +179,11 @@ public sealed class FileApplicationPreferencesStoreTests
                     : secondStore.WriteAsync(second));
             await Task.WhenAll(writes);
 
-            var actual = await new FileApplicationPreferencesStore(directory).ReadAsync();
-            Assert.IsTrue(actual == first || actual == second);
             AssertValidCurrentSchema(await File.ReadAllTextAsync(Path.Combine(
                 directory,
                 ApplicationFileNames.ApplicationPreferencesFileName)));
+            var actual = await new FileApplicationPreferencesStore(directory).ReadAsync();
+            Assert.IsTrue(actual == first || actual == second);
             Assert.AreEqual(
                 0,
                 Directory.EnumerateFiles(directory, "*.tmp", SearchOption.TopDirectoryOnly).Count());

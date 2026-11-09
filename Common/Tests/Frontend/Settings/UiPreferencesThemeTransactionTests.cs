@@ -85,6 +85,8 @@ public sealed class UiPreferencesThemeTransactionTests
         Assert.IsTrue(results.All(result => result.Status == UiPreferenceUpdateStatus.Applied));
         Assert.AreEqual(1, store.MaximumConcurrentWrites);
         Assert.AreEqual(3, store.SuccessfulWrites.Count);
+        Assert.IsTrue(store.SuccessfulWrites[0].InterfaceAnimationsEnabled);
+        Assert.IsTrue(store.SuccessfulWrites.All(preferences => preferences.Theme == AppThemeId.Light));
         Assert.AreEqual(AppLanguage.Hungarian, store.Current.Language);
         Assert.AreEqual(AppThemeId.Light, store.Current.Theme);
         Assert.IsFalse(store.Current.InterfaceAnimationsEnabled);

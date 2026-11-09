@@ -13,37 +13,14 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Hosting;
 public sealed class BackendExecutionProfileProviderTests
 {
     [TestMethod]
-    public async Task InteractiveLease_SelectsInteractiveProfile()
-    {
-        using var host = new BackendTestHost();
-        var runtime = new FakeBackendRuntime(host.Services.GetRequiredService<IEndpoints>());
-        var coordinator = new BackendRuntimeLifetimeCoordinator(runtime);
-
-        await using var lease = await coordinator.AcquireAsync(BackendLifetimeReason.InteractiveUi);
-
-        AssertInteractive(coordinator.ExecutionProfileProvider);
-    }
-
-    [TestMethod]
-    public async Task BackgroundLease_SelectsBackgroundProfile()
-    {
-        using var host = new BackendTestHost();
-        var runtime = new FakeBackendRuntime(host.Services.GetRequiredService<IEndpoints>());
-        var coordinator = new BackendRuntimeLifetimeCoordinator(runtime);
-
-        await using var lease = await coordinator.AcquireAsync(BackendLifetimeReason.BackgroundSync);
-
-        AssertBackground(coordinator.ExecutionProfileProvider);
-    }
-
-    [TestMethod]
-    public async Task InteractiveAndBackground_SelectInteractiveProfile()
+    public async Task InteractiveLease_TakesPrecedenceOverActiveBackgroundProfile()
     {
         using var host = new BackendTestHost();
         var runtime = new FakeBackendRuntime(host.Services.GetRequiredService<IEndpoints>());
         var coordinator = new BackendRuntimeLifetimeCoordinator(runtime);
 
         await using var background = await coordinator.AcquireAsync(BackendLifetimeReason.BackgroundSync);
+        AssertBackground(coordinator.ExecutionProfileProvider);
         await using var interactive = await coordinator.AcquireAsync(BackendLifetimeReason.InteractiveUi);
 
         AssertInteractive(coordinator.ExecutionProfileProvider);
@@ -139,6 +116,7 @@ public sealed class BackendExecutionProfileProviderTests
         var runtime = new FakeBackendRuntime(host.Services.GetRequiredService<IEndpoints>());
         var coordinator = new BackendRuntimeLifetimeCoordinator(runtime);
         await using var lease = await coordinator.AcquireAsync(BackendLifetimeReason.InteractiveUi);
+        AssertInteractive(coordinator.ExecutionProfileProvider);
         var lifecycle = (IBackendExecutionProfileProviderLifecycle)coordinator.ExecutionProfileProvider;
 
         Assert.IsFalse(coordinator.ExecutionProfileProvider.IsEnrollmentAllowed);

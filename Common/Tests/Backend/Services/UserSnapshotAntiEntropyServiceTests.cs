@@ -185,59 +185,36 @@ public sealed class UserSnapshotAntiEntropyServiceTests
 
     [TestMethod]
     [TestCategory("Backend")]
-    public void FindMissingSnapshots_MergedRevisionWithoutExactRetainedEnvelope_RequestsReceiptEvidence()
+    [DataRow(8L, 20L, 8L, 1)]
+    [DataRow(15L, 20L, 15L, 0)]
+    [DataRow(0L, 20L, 20L, 1)]
+    [DataRow(0L, 8L, 20L, 1)]
+    public void FindMissingSnapshots_RequiresRetainedEnvelopeToSuppressReceiptRequest(
+        long retainedRevision, long mergedRevision, long knownRevision, int expectedRequestCount)
     {
         var userId = Guid.NewGuid();
         var origin = Guid.NewGuid();
         var instance = Guid.NewGuid();
-        var local = Inventory(userId, 1, 1,
-            Revision(origin, instance, stored: 8, merged: 20, marker: 0x08));
-        var remote = Inventory(userId, 1, 1,
-            Revision(origin, instance, stored: 15, merged: 10, marker: 0x15));
-
-        var requests = CreateService().FindMissingSnapshots(local, remote.Users);
-
-        MSTestAssert.HasCount(1, requests);
-        MSTestAssert.AreEqual(15L, requests[0].OriginRevision);
-        CollectionAssert.AreEqual(Hash(0x15), requests[0].ExpectedSnapshotHash.ToByteArray());
-    }
-
-    [TestMethod]
-    [TestCategory("Backend")]
-    public void FindMissingSnapshots_MergedRevisionWithExactRetainedEnvelope_DoesNotRequestAgain()
-    {
-        var userId = Guid.NewGuid();
-        var origin = Guid.NewGuid();
-        var instance = Guid.NewGuid();
-        var local = Inventory(userId, 1, 1,
-            Revision(origin, instance, stored: 15, merged: 20, marker: 0x15));
-        var remote = Inventory(userId, 1, 1,
-            Revision(origin, instance, stored: 15, merged: 10, marker: 0x15));
-
-        var requests = CreateService().FindMissingSnapshots(local, remote.Users);
-
-        MSTestAssert.HasCount(0, requests);
-    }
-
-    [TestMethod]
-    [TestCategory("Backend")]
-    public void FindMissingSnapshots_NewerDurableKnowledgeWithoutRetainedEnvelope_StillRequestsAvailableReceipt()
-    {
-        var userId = Guid.NewGuid();
-        var origin = Guid.NewGuid();
-        var instance = Guid.NewGuid();
-        var localRevision = Revision(origin, instance, stored: 0, merged: 20, marker: 0x00);
-        localRevision.KnownSnapshotRevision = 20;
-        localRevision.KnownSnapshotHash = ByteString.CopyFrom(Hash(0x20));
+        const long advertisedRevision = 15;
+        const byte advertisedHashMarker = 0x15;
+        var localRevision = Revision(origin, instance, stored: retainedRevision, merged: mergedRevision,
+            marker: retainedRevision == advertisedRevision ? advertisedHashMarker : (byte)0x08);
+        localRevision.KnownSnapshotRevision = knownRevision;
+        localRevision.KnownSnapshotHash = retainedRevision > 0
+            ? localRevision.HighestStoredSnapshotHash
+            : ByteString.CopyFrom(Hash(0x20));
         var local = Inventory(userId, 1, 1, localRevision);
         var remote = Inventory(userId, 1, 1,
-            Revision(origin, instance, stored: 15, merged: 15, marker: 0x15));
+            Revision(origin, instance, stored: advertisedRevision, merged: 10, marker: advertisedHashMarker));
 
         var requests = CreateService().FindMissingSnapshots(local, remote.Users);
 
-        MSTestAssert.HasCount(1, requests);
-        MSTestAssert.AreEqual(15L, requests[0].OriginRevision);
-        CollectionAssert.AreEqual(Hash(0x15), requests[0].ExpectedSnapshotHash.ToByteArray());
+        MSTestAssert.HasCount(expectedRequestCount, requests);
+        if (expectedRequestCount == 1)
+        {
+            MSTestAssert.AreEqual(advertisedRevision, requests[0].OriginRevision);
+            CollectionAssert.AreEqual(Hash(advertisedHashMarker), requests[0].ExpectedSnapshotHash.ToByteArray());
+        }
     }
 
     [TestMethod]
@@ -303,27 +280,6 @@ public sealed class UserSnapshotAntiEntropyServiceTests
 
     [TestMethod]
     [TestCategory("Backend")]
-    public void FindMissingSnapshots_DurableKnownIdentityWithoutRetainedEnvelope_DoesNotSuppressMissingContent()
-    {
-        var userId = Guid.NewGuid();
-        var origin = Guid.NewGuid();
-        var instance = Guid.NewGuid();
-        var localRevision = Revision(origin, instance, stored: 0, merged: 8, marker: 0x00);
-        localRevision.KnownSnapshotRevision = 12;
-        localRevision.KnownSnapshotHash = ByteString.CopyFrom(Hash(0x12));
-        var local = Inventory(userId, 1, 1, localRevision);
-        var remote = Inventory(userId, 1, 1,
-            Revision(origin, instance, stored: 10, merged: 8, marker: 0x10));
-
-        var requests = CreateService().FindMissingSnapshots(local, remote.Users);
-
-        MSTestAssert.HasCount(1, requests);
-        MSTestAssert.AreEqual(10L, requests[0].OriginRevision);
-        CollectionAssert.AreEqual(Hash(0x10), requests[0].ExpectedSnapshotHash.ToByteArray());
-    }
-
-    [TestMethod]
-    [TestCategory("Backend")]
     public void FindMissingSnapshots_RequestsHistoricalReceiptUsingItsOriginalMembershipEpoch()
     {
         var userId = Guid.NewGuid();
@@ -361,25 +317,6 @@ public sealed class UserSnapshotAntiEntropyServiceTests
         {
         }
     }
-
-    [TestMethod]
-    [TestCategory("Backend")]
-    public void FindMissingSnapshots_DoesNotConfuseStoredAndMergedKnowledge()
-    {
-        var userId = Guid.NewGuid();
-        var origin = Guid.NewGuid();
-        var instance = Guid.NewGuid();
-        var local = Inventory(userId, 1, 1,
-            Revision(origin, instance, stored: 4, merged: 7, marker: 0x04));
-        var remote = Inventory(userId, 1, 1,
-            Revision(origin, instance, stored: 8, merged: 4, marker: 0x08));
-
-        var requests = CreateService().FindMissingSnapshots(local, remote.Users);
-
-        MSTestAssert.HasCount(1, requests);
-        MSTestAssert.AreEqual(8L, requests[0].OriginRevision);
-    }
-
 
     [TestMethod]
     [DataRow("matching", 0)]

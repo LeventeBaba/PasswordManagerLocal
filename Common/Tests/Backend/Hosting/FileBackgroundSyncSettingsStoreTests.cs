@@ -1,7 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Hosting;
-using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 using PasswordManagerLocal.Common.Tests.Fakes;
 
@@ -53,31 +52,33 @@ public sealed class FileBackgroundSyncSettingsStoreTests
     public async Task AtomicReplacementFailurePreservesOldAuthoritativeValue()
     {
         var fileSystem = new FakeBackgroundSyncSettingsFileSystem();
-        fileSystem.SetFile(SettingsPath(), "{\"isEnabled\":false}");
+        const string savedSetting = "{\"isEnabled\":true}";
+        fileSystem.SetFile(SettingsPath(), savedSetting);
         fileSystem.ReplaceFailure = new IOException("replacement failed");
         var store = CreateStore(fileSystem);
 
         await Assert.ThrowsExactlyAsync<IOException>(() =>
-            store.WriteAsync(new BackgroundSyncSettings(true)));
-        fileSystem.ReplaceFailure = null;
-        var settings = await store.ReadAsync();
-
-        Assert.IsFalse(settings.IsEnabled);
+            store.WriteAsync(new BackgroundSyncSettings(false)));
+        Assert.AreEqual(savedSetting, fileSystem.ReadAllText(SettingsPath()));
+        Assert.IsTrue((await store.ReadAsync()).IsEnabled);
         Assert.AreEqual(0, fileSystem.TemporaryFileCount);
     }
 
     [TestMethod]
-    public async Task RepeatedWriteOfSameValueIsIdempotent()
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task WritePersistsAChangedValueWithoutLeavingTemporaryFiles(bool isEnabled)
     {
         var fileSystem = new FakeBackgroundSyncSettingsFileSystem();
         var store = CreateStore(fileSystem);
+        fileSystem.SetFile(SettingsPath(), isEnabled
+            ? """{"isEnabled":false}"""
+            : """{"isEnabled":true}""");
 
-        await store.WriteAsync(new BackgroundSyncSettings(true));
-        await store.WriteAsync(new BackgroundSyncSettings(true));
-        var settings = await store.ReadAsync();
+        await store.WriteAsync(new BackgroundSyncSettings(isEnabled));
 
-        Assert.IsTrue(settings.IsEnabled);
-        Assert.AreEqual(2, fileSystem.ReplaceCount);
+        Assert.IsTrue(fileSystem.FileExists(SettingsPath()));
+        Assert.AreEqual(isEnabled, (await CreateStore(fileSystem).ReadAsync()).IsEnabled);
         Assert.AreEqual(0, fileSystem.TemporaryFileCount);
     }
 

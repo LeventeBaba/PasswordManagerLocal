@@ -302,29 +302,6 @@ public sealed class CustomUserColorServiceTests
 
 
     [TestMethod]
-    public void DeleteCustomUserColors_SingleItemList_RemovesAndCreatesTombstone()
-    {
-        var service = new CustomUserColorService();
-        var passwords = CreateEmptyPasswords();
-
-        service.AddCustomUserColor(new NewCustomUserColorRequest
-        {
-            ColorName = "Personal",
-            ColorCode = "#FF123456"
-        }, passwords);
-
-        var colorId = passwords.CustomColors[0].Id;
-        service.DeleteCustomUserColors([colorId], passwords);
-
-        MSTestAssert.IsEmpty(passwords.CustomColors);
-        MSTestAssert.HasCount(1, passwords.DeletedCustomColors);
-        MSTestAssert.AreEqual(colorId, passwords.DeletedCustomColors[0].Id);
-        passwords.DeletedCustomColors[0].VerifyIntegrity();
-        passwords.VerifyIntegrity();
-    }
-
-
-    [TestMethod]
     public void DeleteCustomUserColors_MultipleItems_RemovesAllAndCreatesTombstones()
     {
         var service = new CustomUserColorService();
@@ -348,6 +325,8 @@ public sealed class CustomUserColorServiceTests
         CollectionAssert.AreEquivalent(
             new[] { blueId, redId },
             passwords.DeletedCustomColors.Select(deleted => deleted.Id).ToArray());
+        foreach (var deleted in passwords.DeletedCustomColors)
+            deleted.VerifyIntegrity();
         passwords.VerifyIntegrity();
     }
 

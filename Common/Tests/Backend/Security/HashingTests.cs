@@ -111,11 +111,11 @@ public sealed class HashingTests
         foreach (var value in values)
         {
             var utf8 = Encoding.UTF8.GetBytes(value ?? string.Empty);
-            var legacyMaterial = new byte[sizeof(int) + utf8.Length];
-            BinaryPrimitives.WriteInt32LittleEndian(legacyMaterial.AsSpan(0, sizeof(int)), utf8.Length);
-            utf8.CopyTo(legacyMaterial, sizeof(int));
+            var lengthPrefixedUtf8 = new byte[sizeof(int) + utf8.Length];
+            BinaryPrimitives.WriteInt32LittleEndian(lengthPrefixedUtf8.AsSpan(0, sizeof(int)), utf8.Length);
+            utf8.CopyTo(lengthPrefixedUtf8, sizeof(int));
 
-            var expected = SHA256.HashData(legacyMaterial);
+            var expected = SHA256.HashData(lengthPrefixedUtf8);
             var actual = Hashing.SHA256Hash(hash => hash.WriteString(value));
 
             CollectionAssert.AreEqual(expected, actual, $"Hash format changed for value length {value?.Length ?? 0}.");

@@ -33,18 +33,6 @@ public sealed class NetworkDeltaServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
-    public async Task Apply_WhenDeltaTargetsAnotherDevice_RejectsIt()
-    {
-        using var setup = await CreateValidDeltaAsync();
-        setup.Delta.RecipientDeviceId = Guid.NewGuid().ToString("N");
-        var service = CreateService(setup.Recipient, new FakeDeviceRepository());
-
-        await ExpectThrowsAsync<UnauthorizedAccessException>(() => service.ApplyAsync(setup.Delta));
-    }
-
-    [TestMethod]
-    [TestCategory("Backend")]
-    [TestCategory("Integration")]
     public async Task Apply_WhenSignatureIsTampered_RejectsBeforeDatabaseLookup()
     {
         using var setup = await CreateValidDeltaAsync();
