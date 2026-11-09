@@ -642,6 +642,7 @@
   "Settings_Privacy_Description": "Profilok, jelszavak, eszközkapcsolatok és törlés: hogyan működnek?",
   "Privacy_ReadPolicy": "Adatvédelmi tájékoztató megnyitása",
   "Register_PrivacySummary": "A profiladataid és jelszavaid a saját eszközeiden maradnak, és a csatlakoztatott eszközeiddel szinkronizálódnak. A profil létrehozása előtt ismerd meg az adatkezelés, a háttérkapcsolatok és a törlés működését.",
+  "Privacy_OpenOnline": "Adatvédelmi tájékoztató megnyitása a böngészőben",
   "Privacy_Version_Format": "Változat: {0}",
   "Privacy_Reviewed_Format": "Utolsó felülvizsgálat: {0}",
   "Privacy_Effective_Format": "Hatályos ettől: {0}",

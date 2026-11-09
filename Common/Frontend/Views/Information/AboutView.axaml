@@ -94,6 +94,11 @@
             <TextBlock Text="{Binding SecurityTitle}" Classes="sectionTitle" TextWrapping="Wrap" />
             <TextBlock Text="{Binding SecurityDescription}" TextWrapping="Wrap" />
             <TextBlock Text="{Binding DatabaseProtectionDescription}" TextWrapping="Wrap" />
+            <controls:ExternalLinkButton Classes="secondary" MinHeight="44"
+                                         ExternalUri="{Binding OnlinePrivacyPolicyUri}"
+                                         AutomationProperties.Name="{Binding OnlinePrivacyPolicyLabel}">
+              <TextBlock Text="{Binding OnlinePrivacyPolicyLabel}" Classes="descriptionLink" TextWrapping="Wrap" />
+            </controls:ExternalLinkButton>
           </StackPanel>
         </Border>
 

@@ -33,6 +33,8 @@ public sealed class PrivacyPolicyViewModel : ViewModelBase
     public IReadOnlyList<PrivacyPolicySection> Sections => Document.Sections;
     public Uri ComplaintAuthorityUri { get; } = new("https://www.naih.hu/");
     public Uri PrivacyContactUri { get; } = new($"mailto:{ApplicationBranding.DeveloperEmail}");
+    public Uri OnlinePrivacyPolicyUri => PrivacyPolicyLinks.ForLanguage(CurrentLanguage);
+    public string OnlinePrivacyPolicyLabel => GetTranslation("Privacy_OpenOnline");
     public string PrivacyContactLabel => GetTranslation("Privacy_EmailContact");
     public string SectionPickerLabel => GetTranslation("Privacy_SectionPicker");
     public string GoToSectionLabel => GetTranslation("Privacy_GoToSection");
@@ -48,6 +50,7 @@ public sealed class PrivacyPolicyViewModel : ViewModelBase
         nameof(Title), nameof(Summary), nameof(StatusText), nameof(VersionText), nameof(DateText),
         nameof(Sections), nameof(BackLabel), nameof(ReturnToAppLabel),
         nameof(ComplaintAuthorityLabel), nameof(ExternalLinkHelpText), nameof(PrivacyContactLabel),
-        nameof(SectionPickerLabel), nameof(GoToSectionLabel)
+        nameof(SectionPickerLabel), nameof(GoToSectionLabel),
+        nameof(OnlinePrivacyPolicyUri), nameof(OnlinePrivacyPolicyLabel)
     ]);
 }

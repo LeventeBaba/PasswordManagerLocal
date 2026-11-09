@@ -38,6 +38,7 @@ public sealed class AboutViewModel : ViewModelBase
     public Uri SourceCodeUri { get; } = new("https://github.com/LeventeBaba/PasswordManagerLocal");
     public Uri ProjectLicenseUri { get; } = new("https://github.com/LeventeBaba/PasswordManagerLocal/blob/master/LICENSE.txt");
     public Uri CreatorProfileUri { get; } = new("https://github.com/LeventeBaba");
+    public Uri OnlinePrivacyPolicyUri => PrivacyPolicyLinks.ForLanguage(CurrentLanguage);
     public Uri FeedbackEmailUri { get; } = new($"mailto:{ApplicationBranding.DeveloperEmail}");
     public string FeedbackEmail => ApplicationBranding.DeveloperEmail;
 
@@ -61,6 +62,7 @@ public sealed class AboutViewModel : ViewModelBase
     public string DevelopmentNotice => GetTranslation("About_DevelopmentNotice");
     public string SecurityTitle => GetTranslation("About_Security_Title");
     public string SecurityDescription => GetTranslation("About_Security_Description");
+    public string OnlinePrivacyPolicyLabel => GetTranslation("Privacy_OpenOnline");
     public string DatabaseProtectionDescription => GetTranslation("About_Security_DatabaseProtection");
     public string ProjectTitle => GetTranslation("About_Project_Title");
     public string CreatorText => string.Format(
@@ -90,6 +92,8 @@ public sealed class AboutViewModel : ViewModelBase
             nameof(SecurityTitle),
             nameof(SecurityDescription),
             nameof(DatabaseProtectionDescription),
+            nameof(OnlinePrivacyPolicyUri),
+            nameof(OnlinePrivacyPolicyLabel),
             nameof(ProjectTitle),
             nameof(CreatorText),
             nameof(ProjectDescription),

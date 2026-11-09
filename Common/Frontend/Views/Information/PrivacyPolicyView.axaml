@@ -47,6 +47,12 @@
             <TextBlock Text="{Binding VersionText}" Classes="subtleText" TextWrapping="Wrap" />
             <TextBlock Text="{Binding DateText}" Classes="subtleText" TextWrapping="Wrap" />
             <SelectableTextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
+            <controls:ExternalLinkButton Classes="secondary" MinHeight="44"
+                                         ExternalUri="{Binding OnlinePrivacyPolicyUri}"
+                                         AutomationProperties.Name="{Binding OnlinePrivacyPolicyLabel}"
+                                         AutomationProperties.HelpText="{Binding ExternalLinkHelpText}">
+              <TextBlock Text="{Binding OnlinePrivacyPolicyLabel}" Classes="descriptionLink" TextWrapping="Wrap" />
+            </controls:ExternalLinkButton>
           </StackPanel>
         </Border>
         <Border Classes="card helpTip">

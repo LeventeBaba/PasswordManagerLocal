@@ -445,6 +445,11 @@ public sealed class HelpNavigationTests
         var englishDate = page.DateText;
         var englishSections = page.Sections;
         page.ScrollOffset = 260;
+        Assert.AreEqual("https://leventebaba.github.io/PasswordManagerLocal/privacy-policy.en.html",
+            page.OnlinePrivacyPolicyUri.AbsoluteUri);
+        Assert.AreEqual("Open the privacy policy in your browser", page.OnlinePrivacyPolicyLabel);
+        var changedProperties = new HashSet<string?>();
+        page.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
 
         var result = await preferences.SetLanguageAsync(AppLanguage.Hungarian);
 
@@ -456,6 +461,11 @@ public sealed class HelpNavigationTests
             page.Sections.Select(section => section.Id).ToArray());
         Assert.AreNotEqual(englishSections[0].Body, page.Sections[0].Body);
         Assert.AreEqual(260d, page.ScrollOffset);
+        Assert.AreEqual("https://leventebaba.github.io/PasswordManagerLocal/privacy-policy.hu.html",
+            page.OnlinePrivacyPolicyUri.AbsoluteUri);
+        Assert.AreEqual("Adatvédelmi tájékoztató megnyitása a böngészőben", page.OnlinePrivacyPolicyLabel);
+        Assert.IsTrue(changedProperties.Contains(nameof(page.OnlinePrivacyPolicyUri)));
+        Assert.IsTrue(changedProperties.Contains(nameof(page.OnlinePrivacyPolicyLabel)));
     }
 
     public class RejectAllEndpoints : DispatchProxy
