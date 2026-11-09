@@ -232,7 +232,12 @@ public sealed class WindowsAgentStatusProviderTests
     }
 
     [TestMethod]
-    public async Task DatabaseCompatibilityStatusCarriesAuthoritativeAgentVersions()
+    [DataRow(BackendRuntimeFailureKind.DatabaseCompatibility, BackendRuntimeFailureStatusKind.DatabaseCompatibility)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseConfigurationInvalid, BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseKeyUnavailable, BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseUnreadable, BackendRuntimeFailureStatusKind.DatabaseUnreadable)]
+    public async Task DatabaseRecoveryStatusPreservesCauseAndVersionMetadata(
+        BackendRuntimeFailureKind runtimeKind, BackendRuntimeFailureStatusKind wireKind)
     {
         var state = new WindowsAgentStateStore();
         state.MarkRunning(DateTimeOffset.UtcNow);
@@ -241,11 +246,14 @@ public sealed class WindowsAgentStatusProviderTests
             Snapshot = FakeWindowsAgentBackendRuntimeOwner.CreateSnapshot(
                 ownerState: PasswordManagerLocal.Windows.Agent.Backend.WindowsAgentBackendOwnerState.Failed,
                 runtimeState: BackendRuntimeState.Failed,
-                runtimeFailureKind: BackendRuntimeFailureKind.DatabaseCompatibility,
-                failure: new PasswordManagerLocal.Common.Contracts.Errors.DatabaseVersionNotSupportedException(
-                    detectedVersion: 99,
-                    oldestSupportedVersion: 12,
-                    currentVersion: 12))
+                runtimeFailureKind: runtimeKind,
+                failure: runtimeKind switch
+                {
+                    BackendRuntimeFailureKind.DatabaseCompatibility => new PasswordManagerLocal.Common.Contracts.Errors.DatabaseVersionNotSupportedException(99, 12, 12),
+                    BackendRuntimeFailureKind.DatabaseConfigurationInvalid => new PasswordManagerLocal.Common.Contracts.Errors.DatabaseConfigurationInvalidException(),
+                    BackendRuntimeFailureKind.DatabaseKeyUnavailable => new PasswordManagerLocal.Common.Contracts.Errors.DatabaseKeyUnavailableException(),
+                    _ => new PasswordManagerLocal.Common.Contracts.Errors.DatabaseUnreadableException()
+                })
         };
         var endpointHost = new FakeWindowsAgentEndpointHost();
         await using var adapter = new AgentInteractiveEndpointAdapter(owner);
@@ -262,11 +270,20 @@ public sealed class WindowsAgentStatusProviderTests
 
         var status = await provider.GetBackendRuntimeStatusAsync(CancellationToken.None);
 
-        Assert.AreEqual(BackendRuntimeFailureStatusKind.DatabaseCompatibility, status.FailureKind);
-        Assert.IsNotNull(status.DatabaseCompatibility);
-        Assert.AreEqual(99, status.DatabaseCompatibility.DetectedVersion);
-        Assert.AreEqual(12, status.DatabaseCompatibility.OldestSupportedVersion);
-        Assert.AreEqual(12, status.DatabaseCompatibility.CurrentVersion);
+        Assert.AreEqual(wireKind, status.FailureKind);
+        Assert.IsNotNull(status.Failure);
+        Assert.IsFalse(status.Failure.IsRetryable);
+        if (wireKind == BackendRuntimeFailureStatusKind.DatabaseCompatibility)
+        {
+            Assert.IsNotNull(status.DatabaseCompatibility);
+            Assert.AreEqual(99, status.DatabaseCompatibility.DetectedVersion);
+            Assert.AreEqual(12, status.DatabaseCompatibility.OldestSupportedVersion);
+            Assert.AreEqual(12, status.DatabaseCompatibility.CurrentVersion);
+        }
+        else
+        {
+            Assert.IsNull(status.DatabaseCompatibility);
+        }
         new WindowsIpcContractValidator().Validate(status);
     }
 

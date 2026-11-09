@@ -1,8 +1,10 @@
 using System.Diagnostics;
+using Android.Animation;
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
 using Android.Views.InputMethods;
+using Android.Util;
 using Avalonia.Android;
 using PasswordManagerLocal.Common.Frontend;
 using PasswordManagerLocal.Common.Frontend.Services;
@@ -12,7 +14,7 @@ using PasswordManagerLocal.Common.Frontend.Views;
 namespace PasswordManagerLocal.Android.Frontend;
 
 [Activity(
-Label = "PasswordManagerLocal.Android.Frontend",
+Label = ApplicationBranding.DisplayName,
 Theme = "@style/MyTheme.NoActionBar",
 Icon = "@drawable/icon",
 MainLauncher = true,
@@ -30,6 +32,7 @@ public class MainActivity : AvaloniaMainActivity
     private AlertDialog? _backConfirmationDialog;
     private FrontendUiSession? _uiSession;
     private bool _destroyed;
+    private bool _initializationFailureShown;
 
     protected override void OnCreate(global::Android.OS.Bundle? savedInstanceState)
     {
@@ -41,6 +44,7 @@ public class MainActivity : AvaloniaMainActivity
         var view = Content as MainView
             ?? throw new InvalidOperationException("The Android main-view factory did not create a MainView.");
         var platforms = new FrontendPlatformServices();
+        platforms.SetPlatformAnimationsEnabledProvider(ValueAnimator.AreAnimatorsEnabled);
         platforms.Clipboard.SetPlatformClipboardWriter(new AndroidClipboardWriter(this));
         platforms.Keyboard.SetPlatformHideAction(HideSoftwareKeyboard);
         platforms.CameraScanner.SetPlatformScanner(new AndroidQrCodeCameraScanner(this));
@@ -71,25 +75,57 @@ public class MainActivity : AvaloniaMainActivity
             _ = ResumeSessionAsync(session);
     }
 
-    private static async Task InitializeSessionAsync(FrontendUiSession session)
+    private async Task InitializeSessionAsync(FrontendUiSession session)
     {
         try { await session.InitializeAsync(); }
         catch (OperationCanceledException) when (session.IsDisposed) { }
         catch (Exception exception)
         {
-            Trace.TraceError($"Android frontend initialization failed: {exception.GetType().Name}");
+            ReportFrontendFailure("initialization", exception);
         }
     }
 
-    private static async Task ResumeSessionAsync(FrontendUiSession session)
+    private async Task ResumeSessionAsync(FrontendUiSession session)
     {
         try { await session.ResumeAsync(); }
         catch (OperationCanceledException) when (session.IsDisposed) { }
         catch (Exception exception)
         {
-            Trace.TraceError($"Android frontend resume failed: {exception.GetType().Name}");
+            ReportFrontendFailure("resume", exception);
         }
     }
+
+    private void ReportFrontendFailure(string phase, Exception exception)
+    {
+        // Keep exception messages out of diagnostics because they may include private data.
+        WriteDebugDiagnostic($"Android frontend {phase} failed: {exception.GetType().FullName}\n{exception.StackTrace}");
+
+        // Preferences can fail before the view has a DataContext. Show a generic error.
+        RunOnUiThread(() =>
+        {
+            if (_destroyed || _initializationFailureShown)
+                return;
+            _initializationFailureShown = true;
+            // Android's fluent Builder methods are nullable in the bindings;
+            // the Builder instance itself remains valid regardless of a returned null.
+            using var builder = new AlertDialog.Builder(this);
+            builder.SetTitle("Application startup problem");
+            builder.SetMessage($"{ApplicationBranding.DisplayName} could not initialize.");
+            builder.SetPositiveButton("OK", (_, _) => { });
+            if (builder.Create() is not { } dialog)
+            {
+                WriteDebugDiagnostic("The Android startup error dialog could not be created.");
+                return;
+            }
+
+            dialog.DismissEvent += (_, _) => dialog.Dispose();
+            dialog.Show();
+        });
+    }
+
+    [Conditional("DEBUG")]
+    private static void WriteDebugDiagnostic(string message) =>
+        Log.Error("PasswordManagerLocal", message);
 
     protected override void OnPause()
     {
@@ -198,21 +234,26 @@ public class MainActivity : AvaloniaMainActivity
         _backConfirmationDialog = null;
 
         var shouldLogout = viewModel.IsAuthenticated;
-        using var builder = new AlertDialog.Builder(this)
-            .SetTitle(shouldLogout ? viewModel.LogoutConfirmationTitle : viewModel.ExitConfirmationTitle)
-            .SetMessage(shouldLogout ? viewModel.LogoutConfirmationMessage : viewModel.ExitConfirmationMessage)
-            .SetNegativeButton(viewModel.NoLabel, (_, _) => { })
-            .SetPositiveButton(viewModel.YesLabel, async (_, _) =>
-            {
-                if (_destroyed || _uiSession?.ViewModel != viewModel)
-                    return;
-                if (shouldLogout)
-                    await viewModel.RequestLogoutAsync();
-                else
-                    FinishAffinity();
-            });
+        using var builder = new AlertDialog.Builder(this);
+        builder.SetTitle(shouldLogout ? viewModel.LogoutConfirmationTitle : viewModel.ExitConfirmationTitle);
+        builder.SetMessage(shouldLogout ? viewModel.LogoutConfirmationMessage : viewModel.ExitConfirmationMessage);
+        builder.SetNegativeButton(viewModel.NoLabel, (_, _) => { });
+        builder.SetPositiveButton(viewModel.YesLabel, async (_, _) =>
+        {
+            if (_destroyed || _uiSession?.ViewModel != viewModel)
+                return;
+            if (shouldLogout)
+                await viewModel.RequestLogoutAsync();
+            else
+                FinishAffinity();
+        });
 
-        var confirmation = builder.Create();
+        if (builder.Create() is not { } confirmation)
+        {
+            WriteDebugDiagnostic("The Android exit confirmation dialog could not be created.");
+            return;
+        }
+
         confirmation.DismissEvent += (_, _) =>
         {
             if (ReferenceEquals(_backConfirmationDialog, confirmation))

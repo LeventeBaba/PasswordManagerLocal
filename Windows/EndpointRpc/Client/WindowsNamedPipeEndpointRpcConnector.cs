@@ -46,11 +46,19 @@ public sealed class WindowsNamedPipeEndpointRpcConnector : IEndpointRpcClientCon
                     MaximumPendingEndpointRequests,
                     requiredServerCapabilities: IpcCapabilities.EndpointRpc));
             await client.HandshakeAsync(cancellationToken);
-            var readinessResponse = await client.SendAsync(
+            var readinessTransmission = await client.SendWithTransmissionStateAsync(
                 IpcOperationId.EndpointSessionReady,
                 cancellationToken: cancellationToken);
-            if (!readinessResponse.IsSuccess)
-                throw new IpcRemoteException(readinessResponse.Error!);
+            var readinessResponse = readinessTransmission.Response;
+            if (readinessResponse.PayloadKind == IpcResponsePayloadKind.Failure)
+                throw new IpcRemoteException(readinessResponse.Error!, readinessTransmission.CorrelationId);
+            if (readinessResponse.PayloadKind != IpcResponsePayloadKind.Success ||
+                readinessResponse.Result is null)
+            {
+                throw new IpcProtocolException(
+                    IpcProtocolErrorCode.InvalidEnvelope,
+                    "The endpoint readiness response is invalid.");
+            }
             var readiness = new WindowsIpcSerializer().Deserialize(
                 readinessResponse.Result!,
                 PasswordManagerLocal.Windows.Ipc.Serialization.WindowsIpcJsonContext.Default.RequestAcceptedDto);

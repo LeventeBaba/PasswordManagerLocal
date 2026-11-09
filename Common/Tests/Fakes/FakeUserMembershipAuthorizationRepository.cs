@@ -44,4 +44,9 @@ public sealed class FakeUserMembershipAuthorizationRepository : IUserMembershipA
     }
 
     public void Update(UserMembershipAuthorization authorization) { }
+    public void DeleteRange(IEnumerable<UserMembershipAuthorization> authorizations)
+    {
+        foreach (var authorization in authorizations.ToArray())
+            _rows.Remove(authorization);
+    }
 }

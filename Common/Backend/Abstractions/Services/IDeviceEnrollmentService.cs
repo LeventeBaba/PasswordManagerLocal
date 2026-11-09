@@ -12,7 +12,6 @@ public interface IDeviceEnrollmentService
     Task CancelEnrollmentAsync(CancellationToken ct = default);
     Task AddDeviceByCodeAsync(Guid token, string code, CancellationToken ct = default);
     Task<DeviceEnrollmentInfoResponse> GetIncomingEnrollmentInfoAsync(string sessionId, byte[] codeProof, CancellationToken ct = default);
-    Task<string> RegisterIncomingEnrollmentValidationFailureAsync(DeviceEnrollmentErrorCode errorCode, string message, CancellationToken ct = default);
     Task<(bool Ok, DeviceEnrollmentErrorCode ErrorCode, string? Error)> CompleteIncomingEnrollmentAsync(
         string sessionId,
         byte[] codeProof,

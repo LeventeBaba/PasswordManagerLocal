@@ -1,4 +1,5 @@
 using PasswordManagerLocal.Windows.EndpointRpc.Server;
+using PasswordManagerLocal.Windows.Ipc.Server;
 using PasswordManagerLocal.Windows.Ipc.Transport;
 
 namespace PasswordManagerLocal.Windows.Tests.IPC.Infrastructure;
@@ -10,7 +11,7 @@ internal sealed class FakeEndpointRpcServerSessionFactory : IEndpointRpcServerSe
     public int ActiveLargeResultTransferCount { get; set; }
     public Exception? DisposeFailure { get; set; }
 
-    public IEndpointRpcServerSession Create(IWindowsIpcConnection connection)
+    public IWindowsIpcServerSession Create(IWindowsIpcConnection connection)
     {
         ArgumentNullException.ThrowIfNull(connection);
         CreateCount++;
@@ -25,8 +26,4 @@ internal sealed class FakeEndpointRpcServerSessionFactory : IEndpointRpcServerSe
             ? ValueTask.CompletedTask
             : ValueTask.FromException(DisposeFailure);
     }
-
-    PasswordManagerLocal.Windows.Ipc.Server.IWindowsIpcServerSession
-        PasswordManagerLocal.Windows.Ipc.Server.IWindowsIpcServerSessionFactory.Create(
-            IWindowsIpcConnection connection) => Create(connection);
 }

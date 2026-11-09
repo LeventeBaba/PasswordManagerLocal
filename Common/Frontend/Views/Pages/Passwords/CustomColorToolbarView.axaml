@@ -7,12 +7,12 @@
     x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Passwords.CustomColorToolbarView"
     x:DataType="vm:PasswordsViewModel"
     Classes="searchToolbar"
-    Classes.compactSearchToolbar="{Binding IsAndroidPaneTransitionEnabled}">
+    Classes.compactSearchToolbar="{Binding IsAndroidUi}">
   <Border Classes="card searchToolbarCard"
-          Classes.compactSearchCard="{Binding IsAndroidPaneTransitionEnabled}">
+          Classes.compactSearchCard="{Binding IsAndroidUi}">
     <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" MaxWidth="560" HorizontalAlignment="Center">
       <Border Classes="toolbarGroup searchToolbarGroup"
-              Classes.compactSearchGroup="{Binding IsAndroidPaneTransitionEnabled}"
+              Classes.compactSearchGroup="{Binding IsAndroidUi}"
               Grid.Column="0"
               MinWidth="0">
         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" MinWidth="0">
@@ -29,9 +29,12 @@
                           Text="{Binding CustomColorsSearchModeNameLabel}"
                           VerticalAlignment="Center" />
                       <ToggleSwitch
+                          Classes="searchFieldToggle"
+                          Classes.searchFieldLocked="{Binding !CanToggleCustomColorSearchName}"
                           Grid.Column="1"
                           IsChecked="{Binding IsCustomColorSearchNameEnabled, Mode=TwoWay}"
                           IsEnabled="{Binding CanToggleCustomColorSearchName}"
+                          AutomationProperties.HelpText="{Binding SearchFieldLockedHint}"
                           MinWidth="0"
                           OnContent="{Binding SwitchOnLabel}"
                           OffContent="{Binding SwitchOffLabel}"
@@ -42,14 +45,21 @@
                           Text="{Binding CustomColorsSearchModeColorCodeLabel}"
                           VerticalAlignment="Center" />
                       <ToggleSwitch
+                          Classes="searchFieldToggle"
+                          Classes.searchFieldLocked="{Binding !CanToggleCustomColorSearchCode}"
                           Grid.Column="1"
                           IsChecked="{Binding IsCustomColorSearchCodeEnabled, Mode=TwoWay}"
                           IsEnabled="{Binding CanToggleCustomColorSearchCode}"
+                          AutomationProperties.HelpText="{Binding SearchFieldLockedHint}"
                           MinWidth="0"
                           OnContent="{Binding SwitchOnLabel}"
                           OffContent="{Binding SwitchOffLabel}"
                           AutomationProperties.Name="{Binding CustomColorsSearchModeColorCodeLabel}" />
                     </Grid>
+                    <TextBlock Text="{Binding SearchFieldLockedHint}"
+                               IsVisible="{Binding IsCustomColorSearchFieldLocked}"
+                               Foreground="{DynamicResource AppBrush.Text.Secondary}"
+                               TextWrapping="Wrap" MaxWidth="260" Margin="0,4,0,0" />
                   </StackPanel>
                 </Border>
               </Flyout>
@@ -71,7 +81,7 @@
       </Border>
       <Button
           Classes="ghost iconButton searchToolbarButton"
-          Classes.compactSearchButton="{Binding IsAndroidPaneTransitionEnabled}"
+          Classes.compactSearchButton="{Binding IsAndroidUi}"
           Grid.Column="1"
           ToolTip.Tip="{Binding CustomColorsSortLabel}">
         <PathIcon Classes="actionButtonIcon" Data="{StaticResource SortIconGeometry}" />
@@ -90,7 +100,7 @@
       </Button>
       <Button
           Classes="primary iconButton searchToolbarButton"
-          Classes.compactSearchButton="{Binding IsAndroidPaneTransitionEnabled}"
+          Classes.compactSearchButton="{Binding IsAndroidUi}"
           Grid.Column="2"
           Command="{Binding OpenCustomColorPickerCommand}"
           ToolTip.Tip="{Binding AddCustomColorLabel}">

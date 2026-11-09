@@ -11,4 +11,5 @@ public interface IGroupRepository : IGenericRepository<Group>
     Task<IReadOnlyList<GroupWithUserIdsData>> ListByUserWithUserIdsAsNoTrackingAsync(Guid userId, CancellationToken ct = default);
     Task<IReadOnlyList<Guid>> ListUserIdsAsync(Guid groupId, CancellationToken ct = default);
     Task<IReadOnlyList<Guid>> ListIdsByUserAsync(Guid userId, CancellationToken ct = default);
+    void SetMember(Group group, User user, bool isMember);
 }

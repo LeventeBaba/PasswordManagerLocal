@@ -38,8 +38,9 @@ internal sealed class EnrollmentContractSnapshotService : IDeviceEnrollmentSnaps
         Guid token,
         Guid deviceId,
         SyncVersionStamp version,
+        DateTimeOffset linkedAtUtc,
         CancellationToken ct = default) =>
-        _inner.EnsureEncryptedDeviceDataAsync(reader, writer, user, token, deviceId, version, ct);
+        _inner.EnsureEncryptedDeviceDataAsync(reader, writer, user, token, deviceId, version, linkedAtUtc, ct);
 
     public (byte[] Ciphertext, byte[] Nonce, byte[] Tag) Encrypt(
         string sessionId,

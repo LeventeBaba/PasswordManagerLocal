@@ -1,8 +1,7 @@
-using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Security;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
@@ -20,6 +19,7 @@ using PasswordManagerLocal.Common.Backend.Services.Hosted;
 using PasswordManagerLocal.Common.Backend.State;
 using PasswordManagerLocal.Common.Backend.Sync.Discovery;
 using PasswordManagerLocal.Common.Backend.Sync.Presence;
+using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Backend.Sync.Tcp;
 using PasswordManagerLocal.Common.Backend.Utils;
 
@@ -61,29 +61,18 @@ public static class BackendServiceCollectionExtensions
 
         services.AddSingleton(storagePaths);
         services.AddSingleton<IBackendExecutionProfileProvider>(executionProfileProvider);
+        services.AddSingleton<BackendChangeEventHub>();
+        services.AddSingleton<IBackendChangePublisher>(sp => sp.GetRequiredService<BackendChangeEventHub>());
+        services.AddSingleton<IBackendChangeSource>(sp => sp.GetRequiredService<BackendChangeEventHub>());
         services.AddSingleton<IDeviceEnrollmentAvailability>(executionProfileProvider);
         services.AddSingleton<IKeyProtector>(keyProtector);
         services.AddSingleton<ILocalDiscoveryNetworkLease>(discoveryNetworkLease);
+        services.AddSingleton<SqliteConnectionFactory>();
         services.AddSingleton<IBackendInitializationService, BackendInitializationService>();
-        services.AddSingleton<RelationshipIntegrityMaterializationInterceptor>();
-
-        services.AddDbContextPool<AppDbContext>((sp, opts) =>
-        {
-            var paths = sp.GetRequiredService<BackendStoragePaths>();
-            var protector = sp.GetRequiredService<IKeyProtector>();
-            var dbPassword = DbConfigManager.GetOrCreateSqlCipherPassword(paths, protector);
-
-            var connStr = new SqliteConnectionStringBuilder
-            {
-                DataSource = paths.DatabasePath,
-                Password = dbPassword
-            }.ToString();
-
-            opts.UseSqlite(connStr);
-            opts.AddInterceptors(sp.GetRequiredService<RelationshipIntegrityMaterializationInterceptor>());
-        });
-
-        services.AddScoped<IUnitOfWork, AppUnitOfWork>();
+        services.AddScoped<SqliteSession>();
+        services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<SqliteSession>());
+        services.AddScoped<IUserAccountDeletionStore, UserAccountDeletionStore>();
+        services.AddScoped<IUserRecoveryJournalStore, UserRecoveryJournalStore>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IDeviceRepository, DeviceRepository>();
         services.AddScoped<IUserDeviceRepository, UserDeviceRepository>();
@@ -114,9 +103,17 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
 
         services.AddSingleton<IUserLifecycleCoordinator, UserLifecycleCoordinator>();
-        services.AddSingleton<IInteractiveSessionStateService, InteractiveSessionStateService>();
+        services.AddSingleton<InteractiveSessionStateService>();
+        services.AddSingleton<IInteractiveSessionStateService>(sp => sp.GetRequiredService<InteractiveSessionStateService>());
+        services.AddSingleton<IInteractiveSessionLifetime>(sp => sp.GetRequiredService<InteractiveSessionStateService>());
         services.AddSingleton<IInteractiveUserDataStateAccessor, InteractiveUserDataStateAccessor>();
         services.AddSingleton(TimeProvider.System);
+
+        services.AddSingleton<UserPostLoginWorkScheduler>();
+        services.AddSingleton<IUserPostLoginWorkScheduler>(sp => sp.GetRequiredService<UserPostLoginWorkScheduler>());
+        services.AddSingleton<UserPostLoginWorkHostedService>();
+        services.AddSingleton<IBackendHostedService>(sp => sp.GetRequiredService<UserPostLoginWorkHostedService>());
+        services.AddScoped<IUserLoginPreparationService, UserLoginPreparationService>();
 
         services.AddSingleton<UserDataRecoveryScheduler>();
         services.AddSingleton<IUserDataRecoveryScheduler>(sp => sp.GetRequiredService<UserDataRecoveryScheduler>());
@@ -135,6 +132,7 @@ public static class BackendServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        services.AddSingleton<ISyncVersionClockStore, SyncVersionClockStore>();
         services.AddSingleton<ISyncVersionClockService, SyncVersionClockService>();
         services.AddSingleton<IDeviceIdentityService, DeviceIdentityService>();
         services.AddSingleton<ISyncDeviceIdentityService, SyncDeviceIdentityService>();
@@ -198,7 +196,6 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<ISyncQueueWriterService, SyncQueueWriterService>();
         services.AddScoped<ISyncChangeQueueService, SyncChangeQueueService>();
         services.AddScoped<IUserSyncCatchUpService, UserSyncCatchUpService>();
-        services.AddScoped<ISyncQueueService, SyncQueueService>();
         services.AddScoped<ISyncService, SyncService>();
 
         services.AddSingleton<SyncPeerProtocolHandler>();
@@ -248,6 +245,10 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<IUserDeviceQueryService, UserDeviceQueryService>();
         services.AddScoped<IUserDeviceSettingsService, UserDeviceSettingsService>();
         services.AddScoped<IUserDeviceDisconnectionService, UserDeviceDisconnectionService>();
+        services.AddScoped<IUserRecoveryJournalService, UserRecoveryJournalService>();
+        services.AddSingleton<UserRecoveryJournalHostedService>();
+        services.AddSingleton<IBackendHostedService>(sp => sp.GetRequiredService<UserRecoveryJournalHostedService>());
+        services.AddScoped<ISelfDiagnosticsService, SelfDiagnosticsService>();
         services.AddScoped<IDeviceService, DeviceService>();
 
         services.AddMemoryCache();

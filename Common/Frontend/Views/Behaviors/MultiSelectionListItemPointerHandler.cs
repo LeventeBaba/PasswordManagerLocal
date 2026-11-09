@@ -20,6 +20,7 @@ internal sealed class MultiSelectionListItemPointerHandler<TItem>
     private TopLevel? _inputTopLevel;
     private CancellationTokenSource? _longPressDelay;
     private Border? _pressedItem;
+    private TItem? _pressedViewModel;
     private IPointer? _trackedPointer;
     private IPointer? _suppressedReleasePointer;
     private Point _pressPosition;
@@ -65,6 +66,7 @@ internal sealed class MultiSelectionListItemPointerHandler<TItem>
         }
 
         _pressedItem = item;
+        _pressedViewModel = itemViewModel;
         _trackedPointer = e.Pointer;
 
         // The list content moves inside its ScrollViewer during touch panning. Measure
@@ -87,7 +89,10 @@ internal sealed class MultiSelectionListItemPointerHandler<TItem>
         }
 
         var movement = e.GetPosition(null) - _pressPosition;
-        if (Math.Abs(movement.X) <= CancelDistance && Math.Abs(movement.Y) <= CancelDistance)
+        var intent = TouchGestureIntentClassifier.Classify(movement);
+        if (intent == TouchGestureIntent.Undetermined &&
+            Math.Abs(movement.X) <= CancelDistance &&
+            Math.Abs(movement.Y) <= CancelDistance)
         {
             return;
         }
@@ -116,13 +121,14 @@ internal sealed class MultiSelectionListItemPointerHandler<TItem>
 
         var pressedItem = _pressedItem;
         var trackedPointer = _trackedPointer;
+        var pressedViewModel = _pressedViewModel;
         var pressPosition = _pressPosition;
         var longPressActivated = _longPressActivated;
 
         CancelPendingLongPress();
         ResetTrackedPress();
 
-        if (pressedItem is null || !Equals(trackedPointer, e.Pointer) || !ReferenceEquals(pressedItem, releasedItem))
+        if (pressedItem is null || pressedViewModel is null || !ReferenceEquals(releasedItem.DataContext, pressedViewModel) || !Equals(trackedPointer, e.Pointer) || !ReferenceEquals(pressedItem, releasedItem))
         {
             return true;
         }
@@ -249,7 +255,7 @@ internal sealed class MultiSelectionListItemPointerHandler<TItem>
         TItem itemViewModel,
         CancellationToken cancellationToken)
     {
-        if (cancellationToken.IsCancellationRequested || !ReferenceEquals(_pressedItem, item))
+        if (cancellationToken.IsCancellationRequested || !ReferenceEquals(_pressedItem, item) || !ReferenceEquals(item.DataContext, itemViewModel))
         {
             return;
         }
@@ -284,6 +290,7 @@ internal sealed class MultiSelectionListItemPointerHandler<TItem>
     private void ResetTrackedPress()
     {
         _pressedItem = null;
+        _pressedViewModel = null;
         _trackedPointer = null;
         _pressPosition = default;
         _longPressActivated = false;

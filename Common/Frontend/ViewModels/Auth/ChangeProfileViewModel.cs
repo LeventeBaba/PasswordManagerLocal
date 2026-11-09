@@ -13,6 +13,7 @@ public sealed class ChangeProfileViewModel : ViewModelBase
 {
     private readonly IEndpoints _endpoints;
     private readonly IAuthSessionRegistry _authSessionRegistry;
+    private readonly Action<Guid, DateTimeOffset?>? _sessionExpiryUpdated;
     private readonly Func<Task> _navigateBackAsync;
     private readonly Action _navigateToLoginAnotherProfile;
     private readonly Func<Guid, Task> _selectProfileAsync;
@@ -26,11 +27,13 @@ public sealed class ChangeProfileViewModel : ViewModelBase
         IAuthSessionRegistry authSessionRegistry,
         Func<Task> navigateBackAsync,
         Action navigateToLoginAnotherProfile,
-        Func<Guid, Task> selectProfileAsync)
+        Func<Guid, Task> selectProfileAsync,
+        Action<Guid, DateTimeOffset?>? sessionExpiryUpdated = null)
         : base(uiPreferences)
     {
         _endpoints = endpoints;
         _authSessionRegistry = authSessionRegistry;
+        _sessionExpiryUpdated = sessionExpiryUpdated;
         _navigateBackAsync = navigateBackAsync;
         _navigateToLoginAnotherProfile = navigateToLoginAnotherProfile;
         _selectProfileAsync = selectProfileAsync;
@@ -103,8 +106,11 @@ public sealed class ChangeProfileViewModel : ViewModelBase
 
     public string BusyText => GetTranslation("Common_Loading");
 
+    public string ProfilesHelpLabel => GetTranslation("ContextHelp_Profiles");
+
     protected override void OnLanguageChanged()
     {
+        this.RaisePropertyChanged(nameof(ProfilesHelpLabel));
         this.RaisePropertyChanged(nameof(Title));
         this.RaisePropertyChanged(nameof(Subtitle));
         this.RaisePropertyChanged(nameof(BackLabel));
@@ -140,12 +146,80 @@ public sealed class ChangeProfileViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {
             IsBusy = false;
             RaiseProfilesChanged();
+        }
+    }
+
+    public async Task<bool> RefreshAutomaticallyAsync(
+        Func<bool> isCurrent,
+        CancellationToken cancellationToken)
+    {
+        if (IsBusy)
+            return false;
+
+        var refreshedProfiles = new List<ProfileSessionItemViewModel>();
+        try
+        {
+            foreach (var originalToken in _authSessionRegistry.ListTokens().ToList())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!isCurrent() || IsBusy)
+                    return false;
+
+                var token = await ResolveAuthenticatedTokenAsync(originalToken, cancellationToken);
+                if (token is null)
+                    continue;
+
+                var profile = await _endpoints.GetUserProfileInfoAsync(token.Value, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!isCurrent() || IsBusy)
+                    return false;
+
+                var displayName = BuildDisplayName(profile);
+                var subtitle = string.IsNullOrWhiteSpace(profile.Username)
+                    ? profile.Email
+                    : $"@{profile.Username}";
+                UpdateRegisteredProfile(token.Value, profile, displayName, subtitle);
+                refreshedProfiles.Add(new ProfileSessionItemViewModel(
+                    UiPreferences,
+                    token.Value,
+                    displayName,
+                    subtitle,
+                    token.Value == _authSessionRegistry.CurrentUserToken,
+                    SelectProfileAsync));
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!isCurrent() || IsBusy)
+                return false;
+
+            foreach (var item in Profiles)
+                item.Dispose();
+            Profiles.Clear();
+            foreach (var item in refreshedProfiles)
+                Profiles.Add(item);
+            refreshedProfiles.Clear();
+            RaiseProfilesChanged();
+            RefreshCurrentSelection();
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            foreach (var item in refreshedProfiles)
+                item.Dispose();
         }
     }
 
@@ -183,14 +257,56 @@ public sealed class ChangeProfileViewModel : ViewModelBase
     {
         var status = await _endpoints.GetAuthSessionStatusAsync(originalToken);
         if (status.IsAuthenticated)
+        {
+            StoreSessionExpiry(originalToken, status.ExpiresAtUtc);
             return originalToken;
+        }
+
+        StoreSessionExpiry(originalToken, null);
 
         var restoredToken = await TryRestoreRememberedSessionAsync(originalToken);
         if (restoredToken is not null)
         {
             status = await _endpoints.GetAuthSessionStatusAsync(restoredToken.Value);
             if (status.IsAuthenticated)
+            {
+                StoreSessionExpiry(restoredToken.Value, status.ExpiresAtUtc);
                 return restoredToken;
+            }
+
+            StoreSessionExpiry(restoredToken.Value, null);
+            _authSessionRegistry.TryRemove(restoredToken.Value);
+        }
+
+        _authSessionRegistry.TryRemove(originalToken);
+        return null;
+    }
+
+    private async Task<Guid?> ResolveAuthenticatedTokenAsync(
+        Guid originalToken,
+        CancellationToken cancellationToken)
+    {
+        var status = await _endpoints.GetAuthSessionStatusAsync(originalToken, cancellationToken);
+        if (status.IsAuthenticated)
+        {
+            StoreSessionExpiry(originalToken, status.ExpiresAtUtc);
+            return originalToken;
+        }
+
+        StoreSessionExpiry(originalToken, null);
+
+        var restoredToken = await TryRestoreRememberedSessionAsync(originalToken, cancellationToken);
+        if (restoredToken is not null)
+        {
+            status = await _endpoints.GetAuthSessionStatusAsync(restoredToken.Value, cancellationToken);
+            if (status.IsAuthenticated)
+            {
+                StoreSessionExpiry(restoredToken.Value, status.ExpiresAtUtc);
+                return restoredToken;
+            }
+
+            StoreSessionExpiry(restoredToken.Value, null);
+            _authSessionRegistry.TryRemove(restoredToken.Value);
         }
 
         _authSessionRegistry.TryRemove(originalToken);
@@ -220,6 +336,35 @@ public sealed class ChangeProfileViewModel : ViewModelBase
         }
     }
 
+    private async Task<Guid?> TryRestoreRememberedSessionAsync(
+        Guid originalToken,
+        CancellationToken cancellationToken)
+    {
+        var session = _authSessionRegistry.GetSession(originalToken);
+        if (session?.IsRememberMeEnabled != true || session.UserId == Guid.Empty)
+            return null;
+
+        try
+        {
+            var newToken = await _endpoints.InitializeRememberMeSessionAsync(session.UserId, cancellationToken);
+            if (!_authSessionRegistry.TryReplaceToken(originalToken, newToken))
+            {
+                _authSessionRegistry.TryAdd(newToken, originalToken == _authSessionRegistry.CurrentUserToken);
+                _authSessionRegistry.TryRemove(originalToken);
+            }
+
+            return newToken;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private void UpdateRegisteredProfile(
         Guid token,
         UserProfileInfoResponse profile,
@@ -234,6 +379,14 @@ public sealed class ChangeProfileViewModel : ViewModelBase
             profile.Username,
             profile.Email,
             profile.IsRememberMeEnabled);
+        var session = _authSessionRegistry.GetSession(token);
+        _sessionExpiryUpdated?.Invoke(token, session?.ExpiresAtUtc);
+    }
+
+    private void StoreSessionExpiry(Guid token, DateTimeOffset? expiresAtUtc)
+    {
+        if (_authSessionRegistry.TrySetExpiresAtUtc(token, expiresAtUtc))
+            _sessionExpiryUpdated?.Invoke(token, expiresAtUtc);
     }
 
     public void RefreshCurrentSelection()
@@ -257,7 +410,7 @@ public sealed class ChangeProfileViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {

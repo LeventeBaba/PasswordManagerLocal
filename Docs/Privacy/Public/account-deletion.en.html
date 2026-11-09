@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account and data deletion — Password Manager Local</title><style>
+:root { color-scheme: light dark; font: 1.1rem/1.65 system-ui, sans-serif; }
+body { margin: 0; background: #f6f7f9; color: #182335; }
+main { max-width: 72ch; margin: auto; padding: 1.5rem; overflow-wrap: anywhere; }
+nav { display: flex; flex-wrap: wrap; gap: 1rem; margin: 0 0 1.5rem; }
+a { color: #174d9b; text-decoration: underline; text-underline-offset: .15em; }
+a:focus-visible { outline: 3px solid currentColor; outline-offset: 4px; }
+h1 { font-size: 1.9rem; line-height: 1.25; } h2 { font-size: 1.25rem; line-height: 1.4; }
+section { margin-top: 2rem; } .metadata { font-size: .95rem; }
+aside { border-inline-start: .3rem solid #386fae; padding: .8rem 1rem; background: #e8eff9; }
+@media (prefers-color-scheme: dark) {
+  body { background: #121923; color: #eef2f8; } a { color: #9bcaff; }
+  aside { background: #202e42; border-color: #9bcaff; }
+}
+@media print { body { background: white; color: black; } nav { display: none; } }
+</style></head>
+<body><main>
+<nav aria-label="Language / Nyelv">
+<a href="account-deletion.hu.html" lang="hu">Magyar</a>
+<a href="privacy-policy.en.html">Full Privacy Policy</a>
+<a href="account-deletion.en.html">Account and data deletion</a>
+</nav>
+<h1>Account and data deletion — Password Manager Local</h1>
+<p class="metadata">Version 1.1 · Effective from: 2026-11-07</p>
+
+<aside aria-label="Notice status"><p>Use the in-app steps below to delete your local profile. The developer can handle requests about data in the developer inbox. The developer has no remote access to your vault or devices.</p></aside>
+<section id="retention-deletion"><h2>10. Retention, deletion and other copies</h2>
+<p>Profile and vault data stay on your devices until you change or delete them or remove the relevant app storage. There is no account-inactivity expiry in the app. Sign out ends a session; it does not delete the profile. To delete an account, sign in to that profile, open Profile → Security → Delete account, read the warning, enter the master password and confirm. This removes the local account’s mutable profile/vault and pending state and creates a signed deletion instruction for its other devices.</p>
+<p>Deletion is not an instant remote wipe. Offline or unreachable devices apply the deletion only when they receive and accept it. Disconnecting a device is also not a guarantee of erasing its existing copy. Previously copied passwords, destination profiles, saved images, operating-system records and backups need separate attention.</p>
+<p>The app deliberately retains account/device identifiers, signed deletion/control records and historical membership evidence to verify deletion and prevent resurrection. Permanent account-deletion barriers have no automatic expiry in the current implementation. Other synchronization deletion markers may be removed when the protocol’s acknowledgement conditions are met, rather than after a fixed number of days. Database reset removes local database/key files; it does not promise deletion of operating-system records or external copies. Logical deletion does not guarantee forensic overwriting of every storage block.</p></section>
+<section id="backups"><h2>12. System backups and loss of access</h2>
+<p>The app does not provide a developer-hosted cloud backup or master-password recovery service. The Android build opts out of automatic app-data cloud backups and configures exclusions for automatic device-to-device transfers because its database key is protected by an installation-specific Android Keystore key. A normal full uninstall removes the private local database and the Keystore key; reinstalling starts a new installation. Operating-system or backup tools on other platforms may copy app files according to their own settings. Protected keys may not be usable in another installation or OS account.</p>
+<p>Uninstalling, clearing app data, resetting the database or losing keys may permanently remove access. On Windows, uninstall behavior depends on the installer and may leave user data behind. These backup exclusions do not erase previously created backups or independently copied files. Copies on other devices are not automatically erased by a local uninstall. Keep control of those copies and do not rely on another device or a backup as a guaranteed recovery method.</p></section>
+<section id="rights"><h2>15. Your controls, rights and complaints</h2>
+<p>You can read and change profile and password information through the app, choose Remember me on this device, manage background operation, enroll/disconnect devices and delete an account. Camera and notification permissions can be managed in Android settings. The current cross-profile Export feature is not a general GDPR data-portability export or a developer request portal. A developer cannot remotely read, recover or erase copies held only on your devices through a central service that does not exist.</p>
+<p>Where the GDPR applies to a controller’s processing of your data, rights may include access, rectification, erasure, restriction, portability and objection, subject to their legal conditions. Where processing relies on consent, you may withdraw it without affecting prior lawful processing. You may complain to a supervisory authority, particularly where you live or work or where an alleged infringement occurred; in Hungary this is the Nemzeti Adatvédelmi és Információszabadság Hatóság (NAIH), <a href="https://www.naih.hu/">https://www.naih.hu/</a>.</p>
+<p>For a question or to exercise rights over data handled by the developer, email <a href="mailto:levente.baba.dev@gmail.com">levente.baba.dev@gmail.com</a>. Describe what the request is about and what you would like the developer to do. You can manage data held only on your devices through the local controls described above.</p></section>
+</main></body></html>

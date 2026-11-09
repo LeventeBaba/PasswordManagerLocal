@@ -14,11 +14,11 @@
       <TextBlock x:Name="MessageText" TextWrapping="Wrap" />
       <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
         <Button x:Name="NoButton"
-                Classes="ghost"
+                Classes="secondary confirmationAction"
                 Click="NoButton_Click" />
         <Button x:Name="YesButton"
                 Grid.Column="1"
-                Classes="primary"
+                Classes="primary confirmationAction"
                 Click="YesButton_Click" />
       </Grid>
     </StackPanel>

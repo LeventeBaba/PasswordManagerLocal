@@ -14,7 +14,7 @@ public sealed class UserSnapshotReceiptProtocolTests
     public void ReceiptStateValues_MatchProtobufContract()
     {
         MSTestAssert.AreEqual(
-            (int)UserSnapshotReceiptState.StoredMergedReceipt,
-            (int)UserSnapshotReceiptStateProto.UserSnapshotReceiptStoredMergedReceipt);
+            (int)Enum.Parse<UserSnapshotReceiptState>(nameof(UserSnapshotReceiptState.StoredMergedReceipt)),
+            (int)Enum.Parse<UserSnapshotReceiptStateProto>(nameof(UserSnapshotReceiptStateProto.UserSnapshotReceiptStoredMergedReceipt)));
     }
 }

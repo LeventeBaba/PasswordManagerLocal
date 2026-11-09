@@ -9,7 +9,7 @@ namespace PasswordManagerLocal.Common.Backend.Utils;
 /// </summary>
 internal static class UserDevicePresentationUtil
 {
-    public static IReadOnlyDictionary<Guid, string> ResolveNames(IEnumerable<UserDeviceData> devices)
+    public static IReadOnlyDictionary<Guid, string> ResolveNames(IEnumerable<UserDeviceData> devices, IEnumerable<Guid>? missingDeviceIds = null)
     {
         ArgumentNullException.ThrowIfNull(devices);
         var result = new Dictionary<Guid, string>();
@@ -28,6 +28,12 @@ internal static class UserDevicePresentationUtil
             usedNames.Add(resolved);
         }
 
+        foreach (var id in (missingDeviceIds ?? []).Order())
+        {
+            var name = BuildUniqueName(DeviceNameUtil.BuildDefaultDeviceName(id), id, usedNames);
+            result.Add(id, name);
+            usedNames.Add(name);
+        }
         return result;
     }
 

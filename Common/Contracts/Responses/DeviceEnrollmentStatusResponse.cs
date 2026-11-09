@@ -10,5 +10,6 @@ public sealed class DeviceEnrollmentStatusResponse
     public DateTimeOffset? ExpiresAt { get; set; }
 
     public bool IsCompleted => State == DeviceEnrollmentState.Completed;
-    public bool IsFinished => State is DeviceEnrollmentState.Completed or DeviceEnrollmentState.Failed or DeviceEnrollmentState.Expired;
+    public bool IsFinished => State is DeviceEnrollmentState.None or DeviceEnrollmentState.Completed or
+        DeviceEnrollmentState.Failed or DeviceEnrollmentState.Expired or DeviceEnrollmentState.Cancelled;
 }

@@ -8,29 +8,16 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Agent;
 public sealed class WindowsAgentCommandLineParserTests
 {
     [TestMethod]
-    public void EmptyCommandLineUsesManualLaunchMode()
+    [DataRow(null, WindowsAgentLaunchMode.Manual)]
+    [DataRow(WindowsAgentLaunchArguments.Background, WindowsAgentLaunchMode.Background)]
+    [DataRow(WindowsAgentLaunchArguments.UiRequested, WindowsAgentLaunchMode.UiRequested)]
+    public void SupportedArgumentsSelectExpectedLaunchMode(string? argument, WindowsAgentLaunchMode expected)
     {
-        var options = new WindowsAgentCommandLineParser().Parse(Array.Empty<string>());
+        var arguments = argument is null ? Array.Empty<string>() : new[] { argument! };
 
-        Assert.AreEqual(WindowsAgentLaunchMode.Manual, options.LaunchMode);
-    }
+        var options = new WindowsAgentCommandLineParser().Parse(arguments);
 
-    [TestMethod]
-    public void BackgroundArgumentSelectsBackgroundLaunchWithoutChangingSettings()
-    {
-        var options = new WindowsAgentCommandLineParser().Parse(
-            new[] { WindowsAgentLaunchArguments.Background });
-
-        Assert.AreEqual(WindowsAgentLaunchMode.Background, options.LaunchMode);
-    }
-
-    [TestMethod]
-    public void UiRequestedArgumentSelectsInteractiveStartupGrace()
-    {
-        var options = new WindowsAgentCommandLineParser().Parse(
-            new[] { WindowsAgentLaunchArguments.UiRequested });
-
-        Assert.AreEqual(WindowsAgentLaunchMode.UiRequested, options.LaunchMode);
+        Assert.AreEqual(expected, options.LaunchMode);
     }
 
     [TestMethod]

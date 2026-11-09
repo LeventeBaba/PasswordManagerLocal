@@ -3,8 +3,6 @@ using Avalonia.Controls;
 using ReactiveUI.Avalonia;
 using PasswordManagerLocal.Common.Frontend;
 using PasswordManagerLocal.Common.Frontend.Services;
-using PasswordManagerLocal.Common.Contracts.Runtime;
-using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 using PasswordManagerLocal.Windows.Frontend.Activation;
 using PasswordManagerLocal.Windows.Frontend.AgentConnection;
 using PasswordManagerLocal.Windows.EndpointRpc.Client;
@@ -12,6 +10,7 @@ using PasswordManagerLocal.Windows.Ipc.Client;
 using PasswordManagerLocal.Windows.Ipc.Contracts;
 using PasswordManagerLocal.Windows.Ipc.Coordination;
 using PasswordManagerLocal.Windows.Ipc.Protocol;
+using PasswordManagerLocal.Windows.Frontend.Installation;
 using PasswordManagerLocal.Windows.Frontend.Lifecycle;
 using PasswordManagerLocal.Windows.Frontend.Notifications;
 using PasswordManagerLocal.Windows.Frontend.Settings;
@@ -22,9 +21,42 @@ namespace PasswordManagerLocal.Windows.Frontend;
 
 internal sealed class Program
 {
+#if PML_WINDOWS_UNIFIED_NATIVE_AOT
+    internal const bool UseUnifiedExecutable = true;
+#else
+    internal const bool UseUnifiedExecutable = false;
+#endif
+
     [STAThread]
     public static void Main(string[] args)
     {
+#if PML_WINDOWS_UNIFIED_NATIVE_AOT
+        if (args.Contains(WindowsAgentLaunchArguments.AgentRole, StringComparer.OrdinalIgnoreCase))
+        {
+            Environment.ExitCode = string.Equals(
+                args[0], WindowsAgentLaunchArguments.AgentRole, StringComparison.OrdinalIgnoreCase)
+                ? global::PasswordManagerLocal.Windows.Agent.Program.Run(args[1..], unifiedExecutable: true)
+                : 2;
+            return;
+        }
+#endif
+
+        // Handle the narrow elevated operation before touching user data, instance
+        // locks, Agent IPC, or Avalonia. The regular app remains unelevated.
+        if (args.Contains(Firewall.WindowsFirewallSetup.Argument, StringComparer.Ordinal))
+        {
+            Environment.ExitCode = args.Length == 1
+                ? Firewall.WindowsFirewallSetup.Run()
+                : Firewall.WindowsFirewallSetup.InvalidArgumentsExitCode;
+            return;
+        }
+
+        if (args.Contains(WindowsInteractiveUninstall.Argument, StringComparer.OrdinalIgnoreCase))
+        {
+            Environment.ExitCode = args.Length == 1 ? WindowsInteractiveUninstall.Run() : 2;
+            return;
+        }
+
         var applicationDataDirectory = new WindowsApplicationDataPathProvider()
             .GetApplicationDataDirectory();
         var names = new WindowsInstanceNameProvider(
@@ -52,15 +84,17 @@ internal sealed class Program
         var agentConnection = new WindowsAgentControlConnection(
             names.ControlPipeName,
             identity,
-            new WindowsAgentLauncher(AppContext.BaseDirectory));
+            new WindowsAgentLauncher(AppContext.BaseDirectory, unifiedExecutable: UseUnifiedExecutable));
         var backendClient = new WindowsNamedPipeFrontendBackendClient(
             agentConnection,
             new WindowsNamedPipeEndpointRpcConnector(
                 names.EndpointPipeName,
                 identity));
+        using var startupLifetime = new CancellationTokenSource();
+        using var activationBridge = new WindowsStartupActivationBridge(new AvaloniaWindowActivationBridge());
         var activationServer = new WindowsUiActivationServer(
             names.UiActivationPipeName,
-            new AvaloniaWindowActivationBridge(),
+            activationBridge,
             new AvaloniaUiShutdownBridge(),
             backendClient,
             () => agentConnection.AgentProcessId);
@@ -74,31 +108,16 @@ internal sealed class Program
 
         try
         {
-            if (!agentConnection.ConnectAsync().GetAwaiter().GetResult())
-            {
-                startupNotification.ShowBackendUnavailable();
-                controlledExit = true;
-                return;
-            }
-
-            activationServer.StartAsync().GetAwaiter().GetResult();
-            try
-            {
-                backendClient.ConnectAsync().GetAwaiter().GetResult();
-                backendClient.WaitUntilReadyAsync().GetAwaiter().GetResult();
-            }
-            catch
-            {
-                if (backendClient.Snapshot.FailureKind != BackendRuntimeFailureKind.DatabaseCompatibility)
-                {
-                    startupNotification.ShowBackendUnavailable();
-                    controlledExit = true;
-                    return;
-                }
-
-                // The frontend owns the existing compatibility-reset dialog and will issue the agent reset over control IPC.
-            }
-
+            // Serve second-launch activation before waiting for the Agent. Early
+            // requests are accepted and replayed only after the themed window exists.
+            activationServer.StartAsync(startupLifetime.Token).GetAwaiter().GetResult();
+            var startupToken = startupLifetime.Token;
+            var backendStartup = Task.Run(() => backendClient.ConnectAsync(startupToken), startupToken);
+            // Observe failure even if local appearance preparation fails before the UI
+            // can join the connection task. The shell owns user-visible retry/recovery.
+            _ = ObserveBackendStartupAsync(backendStartup, startupToken);
+            using var preferencesNotifier = new WindowsAgentApplicationPreferencesNotifier(
+                agentConnection, backendClient);
             var platformServices = new FrontendPlatformServices();
             platformServices.Clipboard.SetPlatformClipboardWriter(new WindowsClipboardWriter());
             FirewallPermissionService.SetPlatformFirewallPermissionManager(
@@ -108,8 +127,16 @@ internal sealed class Program
                 new WindowsAgentBackgroundSyncSettingsClient(agentConnection),
                 applicationDataDirectory,
                 () => exitController.RequestExit(),
-                applicationPreferencesChangeNotifier: new WindowsAgentApplicationPreferencesNotifier(agentConnection),
-                platformServices: platformServices);
+                applicationPreferencesChangeNotifier: preferencesNotifier,
+                platformServices: platformServices,
+                backendConnectionStartup: backendStartup,
+                desktopPresentationReady: activationBridge.MarkPresentationReady,
+                desktopStopping: () =>
+                {
+                    activationBridge.Stop();
+                    startupLifetime.Cancel();
+                },
+                desktopStartupFailed: startupNotification.ShowFrontendInitializationFailed);
             exitCode = BuildAvaloniaApp(frontendContext)
                 .StartWithClassicDesktopLifetime(
                     args,
@@ -118,6 +145,8 @@ internal sealed class Program
         }
         finally
         {
+            activationBridge.Stop();
+            startupLifetime.Cancel();
             if (controlledExit || exitController.IsExitRequested)
             {
                 exitController.RequestExit(exitCode);
@@ -132,6 +161,16 @@ internal sealed class Program
                     .GetAwaiter()
                     .GetResult();
             }
+        }
+    }
+
+    private static async Task ObserveBackendStartupAsync(Task startup, CancellationToken token)
+    {
+        try { await startup.ConfigureAwait(false); }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception exception)
+        {
+            Trace.TraceError($"Windows backend startup failed: {exception.GetType().Name}");
         }
     }
 

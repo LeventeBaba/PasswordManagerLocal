@@ -2,9 +2,11 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Exceptions;
+using PasswordManagerLocal.Common.Backend.Diagnostics;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Contracts.Requests;
+using PasswordManagerLocal.Common.Contracts.Errors;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Utils;
 using System.Security.Cryptography;
@@ -16,6 +18,7 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 public sealed class UserRegistrationService : IUserRegistrationService
 {
     private readonly IUserLookupService _userLookup;
+    private readonly IUserRepository _users;
     private readonly IUserDataWriterService _userDataWriter;
     private readonly IRememberMeService _rememberMe;
     private readonly IDeviceIdentityService _identity;
@@ -32,6 +35,7 @@ public sealed class UserRegistrationService : IUserRegistrationService
 
     public UserRegistrationService(
         IUserLookupService userLookup,
+        IUserRepository users,
         IUserDataWriterService userDataWriter,
         IRememberMeService rememberMe,
         IDeviceIdentityService identity,
@@ -47,6 +51,7 @@ public sealed class UserRegistrationService : IUserRegistrationService
         IAuthenticatedSessionIssuer sessionIssuer)
     {
         _userLookup = userLookup;
+        _users = users;
         _userDataWriter = userDataWriter;
         _rememberMe = rememberMe;
         _identity = identity;
@@ -64,6 +69,9 @@ public sealed class UserRegistrationService : IUserRegistrationService
 
     public async Task<Guid> RegisterAsync(RegistrationRequest request, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(request);
+        NormalizeRegistrationRequest(request);
+
         if (!request.Validate(out var errors))
             throw new InvalidInputException(errors);
 
@@ -72,17 +80,18 @@ public sealed class UserRegistrationService : IUserRegistrationService
 
         var now = DateTime.UtcNow;
         var linkedAt = DateTimeOffset.UtcNow;
-        var bundle = CreateInitialUserDataBundle(request, now, linkedAt);
+        using var bundle = CreateInitialUserDataBundle(request, now, linkedAt);
 
         var passwordSalt = Hashing.GenerateSalt();
         using var key = EncryptionKey.FromPassword(request.Password, passwordSalt);
         var user = await CreateEncryptedUserForRegistrationAsync(bundle, usernameBytes, passwordSalt, key, linkedAt, ct);
 
         await SaveRegisteredUserAsync(user, request.RememberMe, key, ct);
+
+        Guid token;
         try
         {
-            await _syncRuntime.RefreshSyncEnabledAsync(ct);
-            return _sessionIssuer.IssueAuthenticatedSession(user.UId, key, bundle);
+            token = _sessionIssuer.IssueAuthenticatedSession(user.UId, key, bundle);
         }
         catch (Exception ex)
         {
@@ -90,14 +99,119 @@ public sealed class UserRegistrationService : IUserRegistrationService
                 "The account registration was committed, but the local runtime session could not be completed.",
                 innerException: ex);
         }
+
+        try
+        {
+            await _syncRuntime.RefreshSyncEnabledAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            BackendDebugLog.Warning(
+                "Registration completed successfully, but the synchronization runtime could not be refreshed. " +
+                "The account remains registered and the runtime can retry synchronization later.",
+                ex,
+                "Registration");
+        }
+
+        return token;
+    }
+
+
+    private static void NormalizeRegistrationRequest(RegistrationRequest request)
+    {
+        request.Username = request.Username?.Trim() ?? string.Empty;
+        request.FirstName = request.FirstName?.Trim() ?? string.Empty;
+        request.LastName = request.LastName?.Trim() ?? string.Empty;
+        request.Email = request.Email?.Trim() ?? string.Empty;
     }
 
 
     private async Task ThrowIfUsernameExistsAsync(byte[] usernameBytes, CancellationToken ct)
     {
         var resolution = await _userLookup.ResolveUsernameAsync(usernameBytes, ct);
-        if (resolution.State != UserLoginIdentityMatchState.NotFound)
-            throw new InvalidInputException();
+
+        if (NeedsUsernameProjectionRepair(resolution.State))
+        {
+            await TryRepairUsernameProjectionsAsync(resolution, ct);
+            resolution = await _userLookup.ResolveUsernameAsync(usernameBytes, ct);
+        }
+
+        switch (resolution.State)
+        {
+            case UserLoginIdentityMatchState.NotFound:
+                return;
+
+            case UserLoginIdentityMatchState.Matched:
+            case UserLoginIdentityMatchState.Ambiguous:
+            case UserLoginIdentityMatchState.DeletedAccount:
+                throw new InvalidInputException([RegistrationValidationErrors.UsernameUnavailable]);
+
+            case UserLoginIdentityMatchState.InvalidProjection:
+            case UserLoginIdentityMatchState.ProjectionOutdated:
+            case UserLoginIdentityMatchState.ProjectionQuarantined:
+                BackendDebugLog.Warning(
+                    $"Registration could not prove username availability after projection repair. " +
+                    $"State={resolution.State}, HasProjectedUserId={resolution.UserId.HasValue}, " +
+                    $"Diagnostic={resolution.Diagnostic ?? "<none>"}.",
+                    category: "Registration");
+                throw new InvalidInputException([RegistrationValidationErrors.UsernameAvailabilityIndeterminate]);
+
+            default:
+                BackendDebugLog.Warning(
+                    $"Registration encountered an unknown username-resolution state: {resolution.State}.",
+                    category: "Registration");
+                throw new InvalidInputException([RegistrationValidationErrors.UsernameAvailabilityIndeterminate]);
+        }
+    }
+
+
+    private static bool NeedsUsernameProjectionRepair(UserLoginIdentityMatchState state) =>
+        state is UserLoginIdentityMatchState.Ambiguous or
+            UserLoginIdentityMatchState.InvalidProjection or
+            UserLoginIdentityMatchState.ProjectionOutdated or
+            UserLoginIdentityMatchState.ProjectionQuarantined;
+
+
+    private async Task TryRepairUsernameProjectionsAsync(
+        UserLoginIdentityMatchResult resolution,
+        CancellationToken ct)
+    {
+        IReadOnlyCollection<Guid> userIds;
+        if (resolution.UserId is Guid projectedUserId)
+        {
+            userIds = [projectedUserId];
+        }
+        else
+        {
+            var canonicalUserIds = await _users.ListUserIdsAsync(ct);
+            var projectionStates = await _users.ListLoginIdentityStatesAsync(ct);
+            userIds = canonicalUserIds
+                .Concat(projectionStates.Select(state => state.UserId))
+                .Distinct()
+                .ToArray();
+        }
+
+        foreach (var userId in userIds)
+        {
+            try
+            {
+                await _loginIdentities.RecalculateAsync(userId, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Availability remains fail-closed. A failed repair is not interpreted as a
+                // duplicate username; the post-repair lookup below will report an indeterminate
+                // availability state instead.
+                BackendDebugLog.Warning(
+                    $"Registration username projection repair failed for user {userId}.",
+                    ex,
+                    "Registration");
+            }
+        }
     }
 
 

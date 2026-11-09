@@ -64,7 +64,22 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         CreateAppliedDeviceAdditionCoreAsync(canonicalUser, target, ct);
 
     public Task<UserControlOperationEnvelope> CreateAppliedDeviceRemovalAsync(User canonicalUser, DeviceRemovalPayload payload, CancellationToken ct = default) =>
-        _lifecycle.ExecuteAsync(canonicalUser.UId, token => CreateAppliedDeviceRemovalCoreAsync(canonicalUser, payload, token), ct);
+        _lifecycle.ExecuteAsync(canonicalUser.UId, async token =>
+        {
+            await using var transaction = await _uow.BeginTransactionAsync(token);
+            try
+            {
+                var envelope = await CreateAppliedDeviceRemovalCoreAsync(canonicalUser, payload, token);
+                await transaction.CommitAsync(token);
+                return envelope;
+            }
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                _uow.ClearTrackedChanges();
+                throw;
+            }
+        }, ct);
 
     public Task<UserControlOperationEnvelope> CreateAppliedDeviceRemovalUnderLifecycleAsync(User canonicalUser, DeviceRemovalPayload payload, CancellationToken ct = default) =>
         CreateAppliedDeviceRemovalCoreAsync(canonicalUser, payload, ct);
@@ -93,6 +108,7 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
             UserControlOperationEnvelopeUtil.SerializeKeyEpochReplacementPayload(payload));
         await PersistAppliedEnvelopeAsync(envelope, state, ct);
         state.AppliedKeyEpoch = user.KeyEpoch;
+        _states.Update(state);
         await _uow.SaveChangesAsync(ct);
         return envelope;
     }
@@ -135,8 +151,8 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
             UserControlOperationEnvelopeUtil.SerializeDeviceAdditionPayload(payload));
 
         await PersistAppliedEnvelopeAsync(envelope, state, ct);
-        await _membershipAuthorization.AuthorizeAdditionAsync(payload, envelope.OperationId, envelope.OperationHash, ct);
-        await ApplyCurrentAdditionAsync(payload, ct);
+        await _membershipAuthorization.AuthorizeAdditionAsync(payload, envelope.OperationId, envelope.OperationHash, envelope.CreatedAtUtc, ct);
+        await ApplyCurrentAdditionAsync(payload, envelope.CreatedAtUtc, ct);
         user.MembershipEpoch = payload.ResultingMembershipEpoch;
         user.GenerateIntegrityHash();
         _users.Update(user);
@@ -146,6 +162,7 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
             await _canonicalHealth.UpdateCheckpointAsync(user, ct);
         if (_loginIdentities is not null)
             await _loginIdentities.SetCanonicalAsync(user, user.GetGeneralUserDataVersion(), ct);
+        _states.Update(state);
         await _uow.SaveChangesAsync(ct);
         return envelope;
     }
@@ -161,10 +178,7 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         await RequireLocalAuthorActiveAsync(user, user.KeyEpoch, user.MembershipEpoch, ct);
 
         var active = await _authorizationRows.ListActiveForDeviceAsync(user.UId, payload.RemovedDeviceId, ct);
-        if (active.Count == 0)
-            throw new InvalidOperationException("The device has no active installation authorization.");
-        if (active.Any(row => payload.Origins.All(origin => origin.AuthorizationId != row.AuthorizationId)))
-            throw new InvalidDataException("The removal payload does not cover every active installation origin.");
+        DeviceRemovalEvidenceUtil.ValidateActiveAuthorizations(payload, active);
 
         var state = await GetOrCreateStateAsync(user, user.KeyEpoch, user.MembershipEpoch, ct);
         var envelope = CreateEnvelope(
@@ -179,15 +193,15 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         await PersistAppliedEnvelopeAsync(envelope, state, ct);
 
         foreach (var authorization in active)
-            await _membershipAuthorization.EndAuthorizationAsync(authorization, payload, envelope.OperationId, envelope.OperationHash, ct);
+            await _membershipAuthorization.EndAuthorizationAsync(authorization, payload, envelope.OperationId, envelope.OperationHash, envelope.CreatedAtUtc, ct);
 
         var link = await _userDevices.GetAsync(user.UId, payload.RemovedDeviceId, ct);
         if (link is not null)
         {
             link.IsDeleted = true;
-            link.DeletedAt = DateTimeOffset.UtcNow;
+            link.DeletedAt = envelope.CreatedAtUtc;
             link.IsSyncOn = false;
-            link.LastModifiedAt = DateTimeOffset.UtcNow;
+            link.LastModifiedAt = envelope.CreatedAtUtc;
             _userDevices.Update(link);
         }
 
@@ -200,6 +214,7 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
             await _canonicalHealth.UpdateCheckpointAsync(user, ct);
         if (_loginIdentities is not null)
             await _loginIdentities.SetCanonicalAsync(user, user.GetGeneralUserDataVersion(), ct);
+        _states.Update(state);
         await _uow.SaveChangesAsync(ct);
         return envelope;
     }
@@ -233,12 +248,17 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
             user.MembershipEpoch,
             UserControlOperationEnvelopeUtil.SerializeAccountDeletionPayload(payload));
         await PersistAppliedEnvelopeAsync(envelope, state, ct);
+        _states.Update(state);
         await _uow.SaveChangesAsync(ct);
         return envelope;
     }
 
-    private async Task ApplyCurrentAdditionAsync(DeviceAdditionPayload payload, CancellationToken ct)
+    private async Task ApplyCurrentAdditionAsync(DeviceAdditionPayload payload, DateTimeOffset addedAtUtc, CancellationToken ct)
     {
+        if (addedAtUtc == default)
+            throw new InvalidDataException("The authoritative device-addition timestamp is missing.");
+        addedAtUtc = UtcDateTimeUtil.ToUtc(addedAtUtc);
+
         var device = await _devices.GetByIdAsync(payload.NewDeviceId, ct);
         var isNew = device is null;
         if (device is not null &&
@@ -260,7 +280,7 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         device.BlockedReason = null;
         device.BlockedAt = null;
         device.LastSeen = DateTime.UtcNow;
-        device.LastModifiedAt = DateTimeOffset.UtcNow;
+        device.LastModifiedAt = addedAtUtc;
         device.GenerateIntegrityHash();
         if (isNew)
             await _devices.AddAsync(device, ct);
@@ -276,7 +296,7 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
                 DeviceId = payload.NewDeviceId,
                 IsSyncOn = true,
                 IsDeleted = false,
-                LastModifiedAt = DateTimeOffset.UtcNow
+                LastModifiedAt = addedAtUtc
             };
             await _userDevices.AddAsync(link, ct);
         }
@@ -285,7 +305,7 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
             link.IsDeleted = false;
             link.DeletedAt = null;
             link.IsSyncOn = true;
-            link.LastModifiedAt = DateTimeOffset.UtcNow;
+            link.LastModifiedAt = addedAtUtc;
             _userDevices.Update(link);
         }
     }

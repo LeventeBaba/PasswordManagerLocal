@@ -110,7 +110,7 @@ public sealed class LocalDiscoveryHostedServiceSecurityTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Unit")]
-    public async Task SyncQuery_FromEligibleDeviceWithoutPendingWork_IsObservedWithoutStartingDelivery()
+    public async Task SyncQuery_FromEligibleDeviceWithoutPendingWork_ActivatesPeerAndStartsDelivery()
     {
         using var localKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         using var remoteKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
@@ -175,7 +175,9 @@ public sealed class LocalDiscoveryHostedServiceSecurityTests
         await transport.InjectAsync(payload, "192.168.1.77");
 
         MSTestAssert.AreEqual(1, transport.UnicastPayloads.Count);
-        MSTestAssert.AreEqual(0, syncTasks.Starts.Count);
+        MSTestAssert.AreEqual(1, syncTasks.Starts.Count);
+        MSTestAssert.AreEqual(remoteDevice.Id, syncTasks.Starts[0].Device.Id);
+        MSTestAssert.IsTrue(syncIdentities.ContainsId(remoteDevice.Id));
         MSTestAssert.IsTrue(endpointRegistry.IsRecentlyDiscovered(
             remoteDevice.TlsCertFingerprint,
             TimeSpan.FromSeconds(35)));

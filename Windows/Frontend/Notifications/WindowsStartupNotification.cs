@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using PasswordManagerLocal.Common.Contracts.Constants;
 
 namespace PasswordManagerLocal.Windows.Frontend.Notifications;
 
@@ -10,9 +11,16 @@ public sealed class WindowsStartupNotification
     {
         _ = MessageBox(
             IntPtr.Zero,
-            "PasswordManagerLocal could not connect to its Windows agent backend. The application will close without creating an in-process fallback runtime.",
-            "PasswordManagerLocal",
+            $"{ApplicationBranding.DisplayName} could not connect to its Windows agent backend. The application will close without creating an in-process fallback runtime.",
+            ApplicationBranding.DisplayName,
             ErrorIcon);
+    }
+
+    public void ShowFrontendInitializationFailed()
+    {
+        _ = MessageBox(IntPtr.Zero,
+            $"{ApplicationBranding.DisplayName} could not load its appearance and interface. The application will close. Please try opening it again.",
+            ApplicationBranding.DisplayName, ErrorIcon);
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]

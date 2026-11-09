@@ -18,9 +18,12 @@ public sealed class FakeSyncTransportClientService : ISyncTransportClientService
     public ConcurrentQueue<bool> SendResults { get; } = new();
 
     public DevicePresenceProbeResult ProbeResult { get; set; } = DevicePresenceProbeResult.Success;
-    public int ProbeCalls { get; private set; }
+    private int _probeCalls;
+    public int ProbeCalls => Volatile.Read(ref _probeCalls);
+    public TaskCompletionSource? ProbeEntered { get; set; }
+    public Task? ProbeGate { get; set; }
 
-    public Task<DevicePresenceProbeResult> ProbeAsync(
+    public async Task<DevicePresenceProbeResult> ProbeAsync(
         string host,
         int port,
         string serverFingerprintHex,
@@ -28,11 +31,14 @@ public sealed class FakeSyncTransportClientService : ISyncTransportClientService
         byte[] expectedSignPublicKey,
         CancellationToken ct = default)
     {
-        ProbeCalls++;
+        Interlocked.Increment(ref _probeCalls);
         LastHost = host;
         LastPort = port;
         LastFingerprint = serverFingerprintHex;
-        return Task.FromResult(ProbeResult);
+        ProbeEntered?.TrySetResult();
+        if (ProbeGate is not null)
+            await ProbeGate.WaitAsync(ct);
+        return ProbeResult;
     }
 
     public async Task<bool> SendDeltasAsync(string host, int port, string serverFingerprintHex, IEnumerable<NetworkDelta> deltas, CancellationToken ct = default)

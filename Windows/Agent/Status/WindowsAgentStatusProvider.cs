@@ -209,6 +209,9 @@ public sealed class WindowsAgentStatusProvider : IWindowsIpcStatusProvider
     {
         BackendRuntimeFailureKind.None => BackendRuntimeFailureStatusKind.None,
         BackendRuntimeFailureKind.DatabaseCompatibility => BackendRuntimeFailureStatusKind.DatabaseCompatibility,
+        BackendRuntimeFailureKind.DatabaseConfigurationInvalid => BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid,
+        BackendRuntimeFailureKind.DatabaseKeyUnavailable => BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable,
+        BackendRuntimeFailureKind.DatabaseUnreadable => BackendRuntimeFailureStatusKind.DatabaseUnreadable,
         BackendRuntimeFailureKind.PlatformKeyUnavailable => BackendRuntimeFailureStatusKind.PlatformKeyUnavailable,
         BackendRuntimeFailureKind.StorageUnavailable => BackendRuntimeFailureStatusKind.StorageUnavailable,
         BackendRuntimeFailureKind.StartupFailure => BackendRuntimeFailureStatusKind.StartupFailure,
@@ -272,6 +275,21 @@ public sealed class WindowsAgentStatusProvider : IWindowsIpcStatusProvider
         BackendRuntimeFailureStatusKind.InteractiveCleanupFailure => CreateFailure(
             IpcFailureKind.InteractiveCleanup,
             _localizer.GetString(AgentLocalizationKeys.RuntimeInteractiveCleanupFailed),
+            retryable: false,
+            requiresRestart),
+        BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid => CreateFailure(
+            IpcFailureKind.Runtime,
+            _localizer.GetString(AgentLocalizationKeys.RuntimeDatabaseConfigurationInvalid),
+            retryable: false,
+            requiresRestart),
+        BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable => CreateFailure(
+            IpcFailureKind.PlatformKey,
+            _localizer.GetString(AgentLocalizationKeys.RuntimeDatabaseKeyUnavailable),
+            retryable: false,
+            requiresRestart),
+        BackendRuntimeFailureStatusKind.DatabaseUnreadable => CreateFailure(
+            IpcFailureKind.Runtime,
+            _localizer.GetString(AgentLocalizationKeys.RuntimeDatabaseUnreadable),
             retryable: false,
             requiresRestart),
         _ => CreateFailure(

@@ -50,7 +50,7 @@ public sealed class WindowsIpcRequestSubmissionHardeningTests
         Assert.AreEqual(IpcRequestSubmissionState.Sending, pending.SubmissionState);
         Assert.IsFalse(pending.CommitSent());
         Assert.AreEqual(IpcRequestSubmissionState.Sent, pending.SubmissionState);
-        Assert.IsTrue(pending.TrySetResult(IpcResponseEnvelope.Success(pending.CorrelationId)));
+        Assert.IsTrue(pending.TrySetResult(IpcResponseEnvelope.Success()));
         Assert.AreEqual(IpcRequestSubmissionState.Completed, pending.SubmissionState);
         Assert.IsTrue((await pending.Task).IsSuccess);
         Assert.IsFalse(pending.TrySetException(new IOException("late failure")));
@@ -65,7 +65,7 @@ public sealed class WindowsIpcRequestSubmissionHardeningTests
             4,
             CancellationToken.None,
             _ => Interlocked.Increment(ref releaseCount));
-        var response = IpcResponseEnvelope.Success(pending.CorrelationId);
+        var response = IpcResponseEnvelope.Success();
 
         Assert.IsTrue(pending.TryQueue());
         Assert.AreEqual(IpcRequestSubmissionState.Queued, pending.SubmissionState);
@@ -872,8 +872,7 @@ public sealed class WindowsIpcRequestSubmissionHardeningTests
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 IpcMessageKind.Request,
-                IpcFrameFlags.None,
-                correlationId,
+                                correlationId,
                 PayloadLength: 0),
             Array.Empty<byte>());
 
@@ -882,15 +881,14 @@ public sealed class WindowsIpcRequestSubmissionHardeningTests
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 IpcMessageKind.RequestCancellation,
-                IpcFrameFlags.None,
-                correlationId,
+                                correlationId,
                 PayloadLength: 0),
             Array.Empty<byte>());
 
     private static WindowsIpcClient CreateClient(
         RecordingWindowsIpcConnection connection,
         WindowsIpcSerializer serializer,
-        int maximumPendingRequests = WindowsIpcClientOptions.DefaultMaximumPendingRequests) =>
+        int maximumPendingRequests = ClientConstants.WindowsIpcClientOptionsDefaultMaximumPendingRequests) =>
         new(
             connection,
             serializer,

@@ -1,4 +1,5 @@
 using PasswordManagerLocal.Common.Backend.Hosting;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Windows.Backend;
 using PasswordManagerLocal.Common.Contracts.Runtime;
@@ -32,6 +33,8 @@ public sealed class WindowsAgentBackendRuntimeOwner : IWindowsAgentBackendRuntim
                 return _snapshot;
         }
     }
+
+    public IBackendChangeSource? ChangeSource => _composition?.Runtime.ChangeSource;
 
     public event EventHandler? StateChanged;
 

@@ -1,5 +1,3 @@
-using Avalonia.Media;
-
 namespace PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
 
 internal static class PasswordColorUtility
@@ -32,18 +30,6 @@ internal static class PasswordColorUtility
 
     public static byte ToComponentByte(double value) =>
         (byte)Math.Clamp((int)Math.Round(value), 0, 255);
-
-    public static IBrush ParseBrush(string? color)
-    {
-        try
-        {
-            return Brush.Parse(string.IsNullOrWhiteSpace(color) ? DefaultColor : color);
-        }
-        catch
-        {
-            return Brush.Parse(DefaultColor);
-        }
-    }
 
     private static string ExpandHexColor(string hex) =>
         hex.Length switch

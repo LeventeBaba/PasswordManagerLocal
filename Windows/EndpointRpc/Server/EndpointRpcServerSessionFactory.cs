@@ -23,7 +23,7 @@ public sealed class EndpointRpcServerSessionFactory : IEndpointRpcServerSessionF
         EndpointRpcConnectionAuthorizer connectionAuthorizer,
         IEndpointRpcAdmissionPolicy admissionPolicy,
         IEndpointRpcSessionReadiness? sessionReadiness = null,
-        IEnumerable<PasswordManagerLocal.Windows.Ipc.Lifecycle.IWindowsIpcConnectionLifecycleObserver>? observers = null)
+        IEnumerable<PasswordManagerLocal.Windows.Ipc.Abstractions.Lifecycle.IWindowsIpcConnectionLifecycleObserver>? observers = null)
     {
         ArgumentNullException.ThrowIfNull(endpointAdapter);
         ArgumentNullException.ThrowIfNull(connectionAuthorizer);
@@ -67,17 +67,17 @@ public sealed class EndpointRpcServerSessionFactory : IEndpointRpcServerSessionF
             new WindowsIpcSerializer(),
             ipcDispatcher,
             options,
-            observers: [connectionAuthorizer, .. (observers ?? Array.Empty<PasswordManagerLocal.Windows.Ipc.Lifecycle.IWindowsIpcConnectionLifecycleObserver>()), _largeResultTransferStore],
+            observers: [connectionAuthorizer, .. (observers ?? Array.Empty<PasswordManagerLocal.Windows.Ipc.Abstractions.Lifecycle.IWindowsIpcConnectionLifecycleObserver>()), _largeResultTransferStore],
             uiCoordinator: null,
             contractValidator: new WindowsIpcContractValidator(),
             handshakeAuthorizer: connectionAuthorizer);
     }
 
-    public IEndpointRpcServerSession Create(IWindowsIpcConnection connection)
+    public IWindowsIpcServerSession Create(IWindowsIpcConnection connection)
     {
         if (Volatile.Read(ref _disposed) != 0)
             throw new ObjectDisposedException(nameof(EndpointRpcServerSessionFactory));
-        return new EndpointRpcServerSession(_innerFactory.Create(connection));
+        return _innerFactory.Create(connection);
     }
 
     public async ValueTask DisposeAsync()
@@ -87,7 +87,4 @@ public sealed class EndpointRpcServerSessionFactory : IEndpointRpcServerSessionF
         await _largeResultTransferStore.DisposeAsync();
         GC.SuppressFinalize(this);
     }
-
-    IWindowsIpcServerSession IWindowsIpcServerSessionFactory.Create(
-        IWindowsIpcConnection connection) => Create(connection);
 }

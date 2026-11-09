@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using PasswordManagerLocal.Common.Contracts.Constants;
 
 namespace PasswordManagerLocal.Windows.Agent.Native;
 
@@ -43,7 +44,7 @@ internal sealed class WindowsNativeMessageWindow : IWindowsNativeMessagePoster, 
             _window = WindowsNativeMethods.CreateWindowEx(
                 0,
                 _className,
-                "PasswordManagerLocal Agent",
+                ApplicationBranding.DisplayName + " Agent",
                 0,
                 0,
                 0,

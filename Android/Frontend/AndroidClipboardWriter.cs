@@ -34,7 +34,7 @@ internal sealed class AndroidClipboardWriter : IClipboardWriter
                     return;
                 }
 
-                var clipData = ClipData.NewPlainText("PasswordManagerLocal", text);
+                var clipData = ClipData.NewPlainText(ApplicationBranding.DisplayName, text);
                 clipboardManager.PrimaryClip = clipData;
                 completionSource.TrySetResult(true);
             }

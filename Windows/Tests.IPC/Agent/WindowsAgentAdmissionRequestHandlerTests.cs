@@ -68,8 +68,8 @@ public sealed class WindowsAgentAdmissionRequestHandlerTests
             PeerWindowsSessionId: 2,
             PeerSessionId: Guid.NewGuid(),
             PeerCapabilities: IpcCapabilities.Control),
+        17,
         new IpcRequestEnvelope(
-            CorrelationId: 17,
             OperationId: IpcOperationId.RequestUiOpen,
             Payload: null),
         new WindowsIpcSerializer());

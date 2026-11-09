@@ -83,7 +83,8 @@ public sealed class EndpointRpcLargeResultEndToEndTests
                 EndpointOperationId.GetSavedPasswords,
                 publicRequestPayload)),
             CancellationToken.None);
-        var descriptor = codec.DecodeResponse(publicResponse.Result!, 201).LargeResult!;
+        Assert.AreEqual(IpcResponsePayloadKind.LargeResult, publicResponse.PayloadKind);
+        var descriptor = codec.DecodeLargeResult(publicResponse.Result!, 201);
         Assert.AreEqual(1, dispatcher.LargeResultTransferStore.Count);
 
         var malformedChunkPayload = serializer.Serialize(
@@ -98,12 +99,12 @@ public sealed class EndpointRpcLargeResultEndToEndTests
             CreateContext(connection, 202, codec.EncodeLargeResultChunkRequest(malformedChunkPayload)),
             CancellationToken.None);
 
-        var failureResponse = codec.DecodeResponse(malformedResponse.Result!, 202);
-        Assert.AreEqual(EndpointRpcResponseKind.Failure, failureResponse.ResponseKind);
-        Assert.AreEqual(EndpointRpcErrorCode.ValidationFailed, failureResponse.Error!.ErrorCode);
+        Assert.AreEqual(IpcResponsePayloadKind.EndpointFailure, malformedResponse.PayloadKind);
+        var failure = codec.DecodeFailure(malformedResponse.Result!);
+        Assert.AreEqual(EndpointRpcErrorCode.ValidationFailed, failure.ErrorCode);
         var exception = Assert.ThrowsExactly<EndpointRpcRemoteException>(() =>
-            EndpointRpcClientResponseMapper.RequireSuccess(failureResponse));
-        Assert.AreSame(failureResponse.Error, exception.Error);
+            EndpointRpcClientResponseMapper.RequireSuccess(EndpointRpcTransportResponse.Failure(failure)));
+        Assert.AreSame(failure, exception.Error);
         Assert.AreEqual(0, dispatcher.LargeResultTransferStore.Count);
         Array.Clear(publicRequestPayload);
         Array.Clear(malformedChunkPayload);
@@ -158,8 +159,8 @@ public sealed class EndpointRpcLargeResultEndToEndTests
         byte[] payload) =>
         new(
             connection,
+            correlationId,
             new IpcRequestEnvelope(
-                correlationId,
                 IpcOperationId.EndpointRpcRequest,
                 payload),
             new WindowsIpcSerializer());

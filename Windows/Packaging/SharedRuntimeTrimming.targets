@@ -21,8 +21,8 @@
 
     Copy analyzes dependencies but copies the original assembly bytes unchanged.
     The copy actions are appended after copyused actions, so they intentionally
-    override copyused for only the residual assemblies. Neither tier mutates SDK
-    item collections or overwrites files after publication.
+    override copyused for only the residual assemblies. The SDK still selects
+    and publishes the files in each stage.
   -->
 
   <Target Name="ConfigureShareableWindowsRuntimeLinkerActions"
@@ -54,6 +54,12 @@
            Text="SharedCopyUsedAssemblyListFile was provided, but no assembly names were read." />
     <Error Condition="'$(SharedCopyAssemblyListFile)' != '' and '@(_SharedCopyAssembly)' == ''"
            Text="SharedCopyAssemblyListFile was provided, but no assembly names were read." />
+
+    <!-- Let the linker's copy actions determine the bytes of colliding shared
+         DLLs. Crossgen2 would otherwise compile them against different stages. -->
+    <ItemGroup Condition="'$(PublishReadyToRun)' == 'true'">
+      <PublishReadyToRunExclude Include="@(_SharedCopyUsedAssembly->'%(Identity).dll');@(_SharedCopyAssembly->'%(Identity).dll')" />
+    </ItemGroup>
 
     <PropertyGroup>
       <_ExtraTrimmerArgs>$(_ExtraTrimmerArgs) @(_SharedCopyUsedAssembly->'--action copyused %(Identity)', ' ') @(_SharedCopyAssembly->'--action copy %(Identity)', ' ')</_ExtraTrimmerArgs>

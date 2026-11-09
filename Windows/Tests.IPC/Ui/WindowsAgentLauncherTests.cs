@@ -9,16 +9,20 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Ui;
 public sealed class WindowsAgentLauncherTests
 {
     [TestMethod]
-    public async Task UiLaunchUsesSiblingAgentAndExplicitUiRequestedArgument()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task UiLaunchSelectsAgentExecutableAndArguments(bool unifiedExecutable)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"Password Manager ő {Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
-        var agentPath = Path.Combine(directory, WindowsExecutableNames.AgentExecutableFileName);
+        var agentPath = Path.Combine(directory, unifiedExecutable
+            ? WindowsExecutableNames.UiExecutableFileName
+            : WindowsExecutableNames.AgentExecutableFileName);
         await File.WriteAllBytesAsync(agentPath, Array.Empty<byte>());
         try
         {
             var processLauncher = new FakeWindowsAgentProcessLauncher();
-            var launcher = new WindowsAgentLauncher(directory, processLauncher);
+            var launcher = new WindowsAgentLauncher(directory, processLauncher, unifiedExecutable);
 
             Assert.IsTrue(await launcher.LaunchAsync());
             Assert.AreEqual(1, processLauncher.StartCount);
@@ -27,7 +31,9 @@ public sealed class WindowsAgentLauncherTests
             Assert.AreEqual(directory, processLauncher.LastStartInfo.WorkingDirectory);
             Assert.IsFalse(processLauncher.LastStartInfo.UseShellExecute);
             CollectionAssert.AreEqual(
-                new[] { WindowsAgentLaunchArguments.UiRequested },
+                unifiedExecutable
+                    ? new[] { WindowsAgentLaunchArguments.AgentRole, WindowsAgentLaunchArguments.UiRequested }
+                    : new[] { WindowsAgentLaunchArguments.UiRequested },
                 processLauncher.LastStartInfo.ArgumentList.ToArray());
         }
         finally
@@ -37,14 +43,10 @@ public sealed class WindowsAgentLauncherTests
     }
 
     [TestMethod]
-    public async Task LegacyNestedAgentExecutableIsNotUsed()
+    public async Task MissingSiblingAgentDoesNotStartAProcess()
     {
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-        var legacyDirectory = Path.Combine(directory, "AgentRuntime");
-        Directory.CreateDirectory(legacyDirectory);
-        await File.WriteAllBytesAsync(
-            Path.Combine(legacyDirectory, WindowsExecutableNames.AgentExecutableFileName),
-            Array.Empty<byte>());
+        Directory.CreateDirectory(directory);
         try
         {
             var processLauncher = new FakeWindowsAgentProcessLauncher();

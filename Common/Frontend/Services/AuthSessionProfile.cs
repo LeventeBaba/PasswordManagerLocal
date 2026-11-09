@@ -9,4 +9,5 @@ public sealed class AuthSessionProfile
     public string Username { get; init; } = string.Empty;
     public string Email { get; init; } = string.Empty;
     public bool IsRememberMeEnabled { get; init; }
+    public DateTimeOffset? ExpiresAtUtc { get; init; }
 }

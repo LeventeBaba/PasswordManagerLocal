@@ -12,25 +12,32 @@ namespace PasswordManagerLocal.Windows.Tests.EndpointRpc.Lifecycle;
 public sealed class WindowsNamedPipeFrontendBackendClientRecoveryTests
 {
     [TestMethod]
-    public async Task StartupCompatibilityFailurePreservesResettableFailureKind()
+    [DataRow(BackendRuntimeFailureStatusKind.DatabaseCompatibility, BackendRuntimeFailureKind.DatabaseCompatibility)]
+    [DataRow(BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid, BackendRuntimeFailureKind.DatabaseConfigurationInvalid)]
+    [DataRow(BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable, BackendRuntimeFailureKind.DatabaseKeyUnavailable)]
+    [DataRow(BackendRuntimeFailureStatusKind.DatabaseUnreadable, BackendRuntimeFailureKind.DatabaseUnreadable)]
+    public async Task StartupDatabaseRecoveryFailurePreservesResettableFailureKind(
+        BackendRuntimeFailureStatusKind wireKind, BackendRuntimeFailureKind runtimeKind)
     {
         var agent = new FakeEndpointRpcAgentConnection
         {
             BackendStatus = new BackendRuntimeStatusDto(
                 BackendRuntimeStatusState.Failed,
-                BackendRuntimeFailureStatusKind.DatabaseCompatibility,
+                wireKind,
                 new IpcFailureDto(
-                    IpcFailureKind.Runtime,
+                    wireKind == BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable
+                        ? IpcFailureKind.PlatformKey : IpcFailureKind.Runtime,
                     "The local database version is not supported.",
                     DateTimeOffset.UtcNow,
                     IsRetryable: false,
                     RequiresProcessRestart: false),
                 RequiresProcessRestart: false,
                 DateTimeOffset.UtcNow,
-                new DatabaseCompatibilityStatusDto(
+                wireKind == BackendRuntimeFailureStatusKind.DatabaseCompatibility
+                    ? new DatabaseCompatibilityStatusDto(
                     DetectedVersion: 99,
                     OldestSupportedVersion: 12,
-                    CurrentVersion: 12))
+                    CurrentVersion: 12) : null)
         };
         var client = new WindowsNamedPipeFrontendBackendClient(
             agent,
@@ -38,15 +45,25 @@ public sealed class WindowsNamedPipeFrontendBackendClientRecoveryTests
             maximumRecoveryAttempts: 1,
             recoveryDelay: TimeSpan.Zero);
 
-        await Assert.ThrowsExactlyAsync<DatabaseVersionNotSupportedException>(
+        await Assert.ThrowsAsync<DatabaseRecoveryRequiredException>(
             () => client.ConnectAsync());
 
-        Assert.AreEqual(BackendRuntimeFailureKind.DatabaseCompatibility, client.Snapshot.FailureKind);
+        Assert.AreEqual(runtimeKind, client.Snapshot.FailureKind);
         Assert.AreEqual(WindowsEndpointClientConnectionState.Unavailable, client.ConnectionState);
-        var failure = Assert.IsInstanceOfType<DatabaseVersionNotSupportedException>(client.Snapshot.Failure);
-        Assert.AreEqual(99, failure.DetectedVersion);
-        Assert.AreEqual(12, failure.OldestSupportedVersion);
-        Assert.AreEqual(12, failure.CurrentVersion);
+        var expectedType = wireKind switch
+        {
+            BackendRuntimeFailureStatusKind.DatabaseCompatibility => typeof(DatabaseVersionNotSupportedException),
+            BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid => typeof(DatabaseConfigurationInvalidException),
+            BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable => typeof(DatabaseKeyUnavailableException),
+            _ => typeof(DatabaseUnreadableException)
+        };
+        Assert.AreEqual(expectedType, client.Snapshot.Failure!.GetType());
+        if (client.Snapshot.Failure is DatabaseVersionNotSupportedException failure)
+        {
+            Assert.AreEqual(99, failure.DetectedVersion);
+            Assert.AreEqual(12, failure.OldestSupportedVersion);
+            Assert.AreEqual(12, failure.CurrentVersion);
+        }
         await client.DisposeAsync();
     }
 

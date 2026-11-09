@@ -19,7 +19,9 @@ public sealed class IpcPayloadLimitExceededException : IpcPayloadException
 
         if (string.IsNullOrWhiteSpace(safeMessage))
             throw new ArgumentException("The IPC safe message cannot be empty.", nameof(safeMessage));
-        if (correlationId <= 0)
+        // Zero means local contract validation rejected the request before
+        // it had an on-wire correlation ID.
+        if (correlationId < 0)
             throw new ArgumentOutOfRangeException(nameof(correlationId));
 
         ErrorCode = errorCode;

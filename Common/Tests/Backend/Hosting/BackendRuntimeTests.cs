@@ -5,12 +5,15 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Backend.Abstractions.Security;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Discovery;
 using PasswordManagerLocal.Common.Backend.Configuration;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Hosting;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Sync;
+using PasswordManagerLocal.Common.Contracts.Notifications;
 using PasswordManagerLocal.Common.Tests.Fakes;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 
@@ -53,6 +56,34 @@ public sealed class BackendRuntimeTests
 
         Assert.AreEqual(1, hostCreations());
         Assert.AreEqual(BackendRuntimeState.Ready, runtime.Snapshot.State);
+        await runtime.DisposeAsync();
+    }
+
+    [TestMethod]
+    public async Task RuntimeRestart_DisposesOldChangeSourceAndCreatesFreshIdentity()
+    {
+        using var directory = new TemporaryDirectory();
+        var runtime = CreateRuntime(directory.Path, _ => Task.CompletedTask, new FakeSyncRuntimeService(), out _);
+
+        await runtime.EnsureStartedAsync();
+        var firstSource = runtime.ChangeSource;
+        Assert.IsNotNull(firstSource);
+        var activeFirstSource = firstSource!;
+        var firstRuntimeId = activeFirstSource.CurrentPosition.RuntimeInstanceId;
+        await using var subscription = activeFirstSource.Subscribe(capacity: 4);
+
+        await runtime.StopAsync();
+
+        Assert.IsNull(runtime.ChangeSource);
+        var stoppedDeliveries = new List<BackendChangeDelivery>();
+        await foreach (var delivery in subscription.ReadAllAsync())
+            stoppedDeliveries.Add(delivery);
+        Assert.AreEqual(0, stoppedDeliveries.Count);
+
+        await runtime.EnsureStartedAsync();
+        var secondSource = runtime.ChangeSource;
+        Assert.IsNotNull(secondSource);
+        Assert.AreNotEqual(firstRuntimeId, secondSource!.CurrentPosition.RuntimeInstanceId);
         await runtime.DisposeAsync();
     }
 
@@ -125,6 +156,7 @@ public sealed class BackendRuntimeTests
 
         await Assert.ThrowsAsync<KeyProtectorUnavailableException>(async () => await runtime.EnsureStartedAsync());
         Assert.AreEqual(BackendRuntimeState.WaitingForDeviceUnlock, runtime.Snapshot.State);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.ResetDatabaseAndRestartAsync());
 
         keyAvailable = true;
         await runtime.EnsureStartedAsync();
@@ -636,19 +668,29 @@ public sealed class BackendRuntimeTests
     }
 
     [TestMethod]
-    public async Task ResetAfterCompatibilityFailure_DeletesStorageAndRestarts()
+    [DataRow(BackendRuntimeFailureKind.DatabaseCompatibility)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseConfigurationInvalid)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseKeyUnavailable)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseUnreadable)]
+    public async Task ResetAfterDatabaseRecoveryFailure_DeletesStorageOnlyAfterRequestAndRestarts(
+        BackendRuntimeFailureKind kind)
     {
         using var directory = new TemporaryDirectory();
         var attempts = 0;
+        DatabaseRecoveryRequiredException failure = kind switch
+        {
+            BackendRuntimeFailureKind.DatabaseCompatibility => new DatabaseVersionNotSupportedException(99, 1, 1),
+            BackendRuntimeFailureKind.DatabaseConfigurationInvalid => new DatabaseConfigurationInvalidException(),
+            BackendRuntimeFailureKind.DatabaseKeyUnavailable => new DatabaseKeyUnavailableException(),
+            _ => new DatabaseUnreadableException()
+        };
         var runtime = CreateRuntime(
             directory.Path,
             _ => ++attempts == 1
-                ? Task.FromException(new DatabaseVersionNotSupportedException(99, 1, 1))
+                ? Task.FromException(failure)
                 : Task.CompletedTask,
             new FakeSyncRuntimeService(),
             out _);
-
-        await Assert.ThrowsAsync<DatabaseVersionNotSupportedException>(async () => await runtime.EnsureStartedAsync());
 
         var paths = new BackendStoragePaths(directory.Path);
         foreach (var path in new[]
@@ -664,6 +706,11 @@ public sealed class BackendRuntimeTests
             await File.WriteAllTextAsync(path, "test");
         }
 
+        await Assert.ThrowsAsync<DatabaseRecoveryRequiredException>(async () => await runtime.EnsureStartedAsync());
+        Assert.AreEqual(kind, runtime.Snapshot.FailureKind);
+
+        Assert.AreEqual("test", await File.ReadAllTextAsync(paths.DatabasePath));
+        Assert.AreEqual("test", await File.ReadAllTextAsync(paths.DatabaseConfigPath));
         await runtime.ResetDatabaseAndRestartAsync();
 
         Assert.AreEqual(BackendRuntimeState.Ready, runtime.Snapshot.State);
@@ -937,6 +984,10 @@ public sealed class BackendRuntimeTests
         IBackendHostedService? backendHostedService = null)
     {
         var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(TimeProvider.System);
+        services.AddSingleton<BackendChangeEventHub>();
+        services.AddSingleton<IBackendChangePublisher>(provider => provider.GetRequiredService<BackendChangeEventHub>());
+        services.AddSingleton<IBackendChangeSource>(provider => provider.GetRequiredService<BackendChangeEventHub>());
         services.AddSingleton<IBackendInitializationService>(initialization);
         services.AddSingleton<ISyncRuntimeService>(syncRuntime);
         services.AddTransient<IEndpoints>(provider =>

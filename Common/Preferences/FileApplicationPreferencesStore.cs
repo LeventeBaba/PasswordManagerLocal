@@ -165,9 +165,7 @@ public sealed class FileApplicationPreferencesStore : IApplicationPreferencesSto
         }
     }
 
-    private static bool TryParse(
-        string json,
-        out ApplicationPreferences preferences)
+    private static bool TryParse(string json, out ApplicationPreferences preferences)
     {
         preferences = null!;
         if (string.IsNullOrWhiteSpace(json))
@@ -178,7 +176,7 @@ public sealed class FileApplicationPreferencesStore : IApplicationPreferencesSto
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object ||
-                root.EnumerateObject().Count() != 3 ||
+                root.EnumerateObject().Count() != 4 ||
                 !root.TryGetProperty("schemaVersion", out var schemaVersionElement) ||
                 schemaVersionElement.ValueKind != JsonValueKind.Number ||
                 !schemaVersionElement.TryGetInt32(out var schemaVersion) ||
@@ -188,7 +186,9 @@ public sealed class FileApplicationPreferencesStore : IApplicationPreferencesSto
                 !TryParseLanguage(languageElement.GetString(), out var language) ||
                 !root.TryGetProperty("theme", out var themeElement) ||
                 themeElement.ValueKind != JsonValueKind.String ||
-                !TryParseTheme(themeElement.GetString(), out var theme))
+                !TryParseTheme(themeElement.GetString(), out var theme) ||
+                !root.TryGetProperty("interfaceAnimationsEnabled", out var animationElement) ||
+                animationElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
             {
                 return false;
             }
@@ -197,7 +197,8 @@ public sealed class FileApplicationPreferencesStore : IApplicationPreferencesSto
             {
                 SchemaVersion = schemaVersion,
                 Language = language,
-                Theme = theme
+                Theme = theme,
+                InterfaceAnimationsEnabled = animationElement.GetBoolean()
             };
             return true;
         }
@@ -225,17 +226,17 @@ public sealed class FileApplicationPreferencesStore : IApplicationPreferencesSto
         return false;
     }
 
-    private static bool TryParseTheme(string? value, out AppThemeMode theme)
+    private static bool TryParseTheme(string? value, out AppThemeId theme)
     {
-        if (string.Equals(value, nameof(AppThemeMode.Light), StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(value, nameof(AppThemeId.Light), StringComparison.OrdinalIgnoreCase))
         {
-            theme = AppThemeMode.Light;
+            theme = AppThemeId.Light;
             return true;
         }
 
-        if (string.Equals(value, nameof(AppThemeMode.Dark), StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(value, nameof(AppThemeId.Dark), StringComparison.OrdinalIgnoreCase))
         {
-            theme = AppThemeMode.Dark;
+            theme = AppThemeId.Dark;
             return true;
         }
 
@@ -249,7 +250,7 @@ public sealed class FileApplicationPreferencesStore : IApplicationPreferencesSto
             throw new ArgumentOutOfRangeException(nameof(preferences), "The application-preference schema version is unsupported.");
         if (preferences.Language is not AppLanguage.English and not AppLanguage.Hungarian)
             throw new ArgumentOutOfRangeException(nameof(preferences), "The application language is invalid.");
-        if (preferences.Theme is not AppThemeMode.Light and not AppThemeMode.Dark)
+        if (preferences.Theme is not AppThemeId.Light and not AppThemeId.Dark)
             throw new ArgumentOutOfRangeException(nameof(preferences), "The application theme is invalid.");
     }
 

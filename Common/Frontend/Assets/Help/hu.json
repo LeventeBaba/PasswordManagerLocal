@@ -1,0 +1,1836 @@
+{
+  "schemaVersion": 1,
+  "categories": [
+    {
+      "id": "getting-started",
+      "title": "Első lépések",
+      "summary": "Profil létrehozása és az első jelszó mentése."
+    },
+    {
+      "id": "user-guide",
+      "title": "Használati útmutató",
+      "summary": "Jelszavak, profilok és csatlakoztatott eszközök."
+    },
+    {
+      "id": "security-tips",
+      "title": "Biztonsági tanácsok",
+      "summary": "Biztonságosabb belépés, eszközhasználat, vágólapkezelés és visszafordíthatatlan műveletek."
+    },
+    {
+      "id": "troubleshooting",
+      "title": "Hibaelhárítás és GYIK",
+      "summary": "Biztonságos következő lépések belépési, eszköz-, átviteli és adatproblémáknál."
+    }
+  ],
+  "topics": [
+    {
+      "id": "getting-started/first-run",
+      "categoryId": "getting-started",
+      "title": "A Password Manager Local használatának megkezdése",
+      "summary": "Válassz új profil létrehozása vagy egy meglévő profil átvétele között.",
+      "keywords": [
+        "első indítás",
+        "beállítás",
+        "új telefon",
+        "kezdés",
+        "offline"
+      ],
+      "sections": [
+        {
+          "id": "choose",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Válaszd ki a megfelelő kezdést",
+          "body": "A bejelentkezési képernyőn válaszd az Új fiók létrehozása lehetőséget, ha ez az első profilod. Ha a profilod már megvan egy másik eszközön, a meglévő profil másik eszközről történő átvételét válaszd."
+        },
+        {
+          "id": "password",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Mentsd el az első jelszót",
+          "body": "Bejelentkezés után nyisd meg a Jelszavak oldalt, és válaszd az új jelszó hozzáadását. Adj nevet a bejegyzésnek, írd be a tárolandó jelszót, majd mentsd el."
+        },
+        {
+          "id": "devices",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Szükség esetén csatlakoztass másik eszközt",
+          "body": "A helyi profil egyetlen eszközön is használható. Ha másik eszközön is szeretnéd használni ugyanazt a profilt, kövesd a két eszköz összekapcsolásáról szóló útmutatót. Mindkét eszköz ugyanarra a helyi hálózatra csatlakozzon."
+        },
+        {
+          "id": "help",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "A súgó mindig elérhető",
+          "body": "A Beállítások → Súgó és útmutató bejelentkezés előtt is elérhető. Az útmutató olvasása nem hoz létre profilt, és nem módosítja a jelszavaidat."
+        }
+      ],
+      "relatedTopicIds": [
+        "getting-started/create-account",
+        "passwords/manage",
+        "devices/enrollment-overview"
+      ]
+    },
+    {
+      "id": "getting-started/create-account",
+      "categoryId": "getting-started",
+      "title": "Helyi fiók létrehozása",
+      "summary": "Hozz létre új profilt ezen az eszközön. Meglévő profilhoz az eszközök összekapcsolását használd.",
+      "keywords": [
+        "regisztráció",
+        "fiók létrehozása",
+        "e-mail",
+        "profil"
+      ],
+      "sections": [
+        {
+          "id": "details",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Add meg a profil adatait",
+          "body": "A Bejelentkezés képernyőn válaszd az Új fiók létrehozása lehetőséget. Adj meg felhasználónevet, e-mail-címet, keresztnevet és vezetéknevet. Kezeld bizalmasan a felhasználónevedet. A profil létrehozása előtt tárold biztonságosan a felhasználónevedet és a mesterjelszavadat."
+        },
+        {
+          "id": "master",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Válassz mesterjelszót, majd erősítsd meg",
+          "body": "Add meg a profil feloldásához használni kívánt jelszót, majd ismételd meg. A jelszóerősség melletti információs gomb segít erősebb jelszót választani."
+        },
+        {
+          "id": "remember",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Ellenőrizd az Emlékezz rám beállítást, majd hozd létre a fiókot",
+          "body": "Az Emlékezz rám lehetőséget csak megbízható eszközön engedélyezd. Válaszd a Fiók létrehozása gombot, és várd meg az eredményt. Ha az alkalmazás szerint a fiók létrejött, de nem sikerült megnyitni, ezekkel az adatokkal jelentkezz be; ne regisztrálj újra."
+        },
+        {
+          "id": "existing",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Azonos felhasználónévvel nem kapcsolódnak össze az eszközök",
+          "body": "Új fiók létrehozásával nem állítható helyre a meglévő jelszótár. A meglévő profil másik eszközre történő átviteléhez használd az eszközcsatlakoztatást. A kézi bejelentkezéshez szükség van a felhasználónévre és a mesterjelszóra. Az elfelejtett mesterjelszó nem állítható vissza."
+        }
+      ],
+      "relatedTopicIds": [
+        "security/master-password",
+        "login/sign-in",
+        "devices/enrollment-overview",
+        "security/remember-me"
+      ]
+    },
+    {
+      "id": "login/sign-in",
+      "categoryId": "user-guide",
+      "title": "Bejelentkezés egy profilba",
+      "summary": "Az ezen az eszközön elérhető profil felhasználónevét és mesterjelszavát használd.",
+      "keywords": [
+        "bejelentkezés",
+        "belépés",
+        "emlékezz rám",
+        "jelszó",
+        "nem tudok belépni"
+      ],
+      "sections": [
+        {
+          "id": "credentials",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Add meg a bejelentkezési adatokat",
+          "body": "Írd be a profil felhasználónevét és mesterjelszavát, majd válaszd a Bejelentkezés gombot. A profil jelszavát add meg, ne a jelszótárban tárolt valamelyik bejegyzését."
+        },
+        {
+          "id": "remember",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Döntsd el, megjegyezze-e az alkalmazás a profilt",
+          "body": "Az Emlékezz rám beállítással az alkalmazás ezen az eszközön visszaállíthatja a profilt. Bejelentkezés után az aktív profil fiókvezérlőinél is módosíthatod. Csak megbízható, képernyőzárral védett eszközön használd."
+        },
+        {
+          "id": "failure",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Újrapróbálás előtt olvasd el az eredményt",
+          "body": "Ellenőrizd a felhasználónevet, a billentyűzetkiosztást és a jelszót. Ha másik eszközön módosítottad a mesterjelszót, az új adatokat használd. Ha a profil még sosem volt ezen az eszközön, előbb kapcsold össze az eszközöket."
+        },
+        {
+          "id": "recovery",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Sikertelen belépés miatt ne töröld vagy állítsd alaphelyzetbe az adatokat",
+          "body": "Az elfelejtett mesterjelszó nem állítható vissza. A fejlesztő nem tudja megkeresni a felhasználónevedet vagy feloldani a jelszótáradat. Ha valamelyik eszközödön még meg tudod nyitni a profilt, a fiók áttekintésében megnézheted a felhasználónevet. Őrizd meg a még működő hozzáférést. Az adatbázis alaphelyzetbe állítása törli a helyi profilokat és adatokat."
+        }
+      ],
+      "relatedTopicIds": [
+        "profiles/switch",
+        "profiles/login-another",
+        "devices/enrollment-overview",
+        "security/master-password",
+        "security/remember-me",
+        "troubleshooting/login"
+      ]
+    },
+    {
+      "id": "profiles/switch",
+      "categoryId": "user-guide",
+      "title": "Váltás a profilok között",
+      "summary": "Válassz másik bejelentkezett profilt. Ez nem másolja át az adatokat a fiókok között.",
+      "keywords": [
+        "profilváltás",
+        "fiókváltás",
+        "megjegyzett profilok"
+      ],
+      "sections": [
+        {
+          "id": "open",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Nyisd meg a profilválasztót",
+          "body": "A fiókvezérlőknél válaszd a profilváltást. A választóban az elérhető, bejelentkezett profilok jelennek meg. Induláskor a megjegyzett profilok közül is választanod kellhet."
+        },
+        {
+          "id": "select",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Válaszd ki a használni kívánt profilt",
+          "body": "Válaszd ki a megfelelő sort, majd a váltás után ellenőrizd a fióknevet. Ha a profil nincs a listában, jelentkezz be másik fiókba. Lejárt munkamenet esetén ismételt bejelentkezésre lehet szükség."
+        },
+        {
+          "id": "separate",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Minden profilnak külön jelszótára van",
+          "body": "A váltás az aktív profilt változtatja meg. Nem egyesíti a jelszótárakat, nem visz át jelszavakat, és nem ad hozzá eszközt. Kijelölt elemek másik profilba másolásához a profilok közötti exportálást használd."
+        }
+      ],
+      "relatedTopicIds": [
+        "profiles/login-another",
+        "passwords/transfer-between-profiles",
+        "devices/enrollment-overview",
+        "security/remember-me"
+      ]
+    },
+    {
+      "id": "profiles/login-another",
+      "categoryId": "user-guide",
+      "title": "Bejelentkezés másik fiókba",
+      "summary": "Tegyél elérhetővé egy másik helyi profilt ezen az eszközön a bejelentkezett profilok között.",
+      "keywords": [
+        "másik fiók",
+        "második fiók",
+        "több profil",
+        "profil hozzáadása"
+      ],
+      "sections": [
+        {
+          "id": "selector",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Indulj a profilváltásból",
+          "body": "Nyisd meg a profilválasztót, és válaszd a másik fiókba történő bejelentkezést. Add meg a másik profil felhasználónevét és mesterjelszavát."
+        },
+        {
+          "id": "available",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Ha szükséges, vedd át a profilt erre az eszközre",
+          "body": "Ha a másik profil csak egy másik eszközön van meg, a bejelentkezési képernyőn a meglévő profil másik eszközről történő átvételét válaszd. Új fiók létrehozásával külön jelszótár jönne létre."
+        },
+        {
+          "id": "return",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Mindig ellenőrizd az aktív fiókot",
+          "body": "Bejelentkezés után a profilváltással válaszd ki a használni kívánt jelszótárat. Hozzáadás, áthelyezés vagy törlés előtt ellenőrizd az aktív fiókot."
+        }
+      ],
+      "relatedTopicIds": [
+        "profiles/switch",
+        "login/sign-in",
+        "devices/enrollment-overview"
+      ]
+    },
+    {
+      "id": "passwords/manage",
+      "categoryId": "user-guide",
+      "title": "Jelszavak hozzáadása és kezelése",
+      "summary": "Bejegyzések létrehozása, keresése, szerkesztése, megjelenítése és törlése az aktív profilban.",
+      "keywords": [
+        "jelszavak",
+        "hozzáadás",
+        "szerkesztés",
+        "keresés",
+        "címkék",
+        "színek",
+        "másolás",
+        "törlés"
+      ],
+      "sections": [
+        {
+          "id": "create",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Adj hozzá bejegyzést",
+          "body": "Nyisd meg a Jelszavak oldalt, és válaszd az új jelszó hozzáadását. Adj meg nevet és jelszóértéket. Szükség esetén adj hozzá leírást, címkéket vagy színt, majd mentsd el. A szerkesztő jelszót is tud generálni."
+        },
+        {
+          "id": "find",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Keresd meg és szerkeszd a bejegyzést",
+          "body": "A keresőmező, a keresési mezők és a rendezés segítségével keresd meg a bejegyzést. Nyisd meg a részleteit vagy válaszd a szerkesztést, módosítsd az adatokat, majd ments. A címkéket és az egyéni színeket a szerkesztőből kezelheted."
+        },
+        {
+          "id": "reveal",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Csak szükség esetén jelenítsd meg vagy másold a jelszót",
+          "body": "A kijelölt bejegyzésnél használd a megjelenítést vagy a másolást. Másoláskor a jelszó az eszköz vágólapjára kerül, amelynek tartalmát más alkalmazások is elérhetik. Képernyőmegosztás közben ne jeleníts meg titkos adatokat."
+        },
+        {
+          "id": "delete",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Megerősítés előtt ellenőrizd a törlést",
+          "body": "A bejegyzések törlése az alkalmazásban nem vonható vissza, és a profil többi eszközére is szinkronizálódhat. Megerősítés előtt ellenőrizd a kijelölt elemeket és az aktív profilt."
+        }
+      ],
+      "relatedTopicIds": [
+        "passwords/transfer-between-profiles",
+        "devices/sync",
+        "profiles/switch",
+        "security/clipboard",
+        "security/everyday-passwords"
+      ]
+    },
+    {
+      "id": "devices/enrollment-overview",
+      "categoryId": "user-guide",
+      "title": "A profil átvétele új eszközre",
+      "summary": "Az új eszköz megjelenít egy kódot. A már bejelentkezett eszköz beolvassa azt, majd átküldi a profilt.",
+      "keywords": [
+        "összekapcsolás",
+        "párosítás",
+        "új telefon",
+        "QR",
+        "csatlakozási kód",
+        "profilátvitel"
+      ],
+      "sections": [
+        {
+          "id": "network",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Készítsd elő mindkét eszközt",
+          "body": "Telepítsd és nyisd meg az alkalmazást mindkét eszközön. Csatlakoztasd őket ugyanahhoz a helyi hálózathoz. A meglévő profilt tartalmazó eszközön maradj bejelentkezve."
+        },
+        {
+          "id": "new",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Az új eszközön: jeleníts meg csatlakozási kódot",
+          "body": "A Bejelentkezés oldalon válaszd a meglévő profil másik eszközről történő átvételét, olvasd el a tájékoztatót, majd jelenítsd meg a csatlakozási kódot. Hagyd nyitva a QR-kódot és a kódot mutató képernyőt."
+        },
+        {
+          "id": "existing",
+          "kind": "Step",
+          "platform": "All",
+          "title": "A meglévő eszközön: válaszd az eszköz hozzáadását",
+          "body": "Nyisd meg az Eszközök oldalt, majd válaszd az eszköz hozzáadását. Olvasd be az új eszköz QR-kódját, válassz QR-képet, vagy írd be a csatlakozási kódot. Itt hagyod jóvá a profil elküldését az új eszközre."
+        },
+        {
+          "id": "finish",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Várd meg a sikert, majd jelentkezz be az új eszközön",
+          "body": "A profil sikeres átmásolása után az új eszközön válaszd az OK gombot, majd jelentkezz be a meglévő felhasználónévvel és mesterjelszóval. A csatlakozási kód nem helyettesíti a mesterjelszót."
+        },
+        {
+          "id": "temporary",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Csak a hozzáadni kívánt eszköz kódját használd",
+          "body": "A kód ideiglenes. Ha lejár vagy az összekapcsolás sikertelen, új próbálkozás előtt olvasd el a megjelenített eredményt. A kódot és a QR-képet kezeld bizalmasan."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/add-device",
+        "devices/enrollment-code-safety",
+        "devices/sync-problems",
+        "troubleshooting/enrollment"
+      ]
+    },
+    {
+      "id": "devices/add-device",
+      "categoryId": "user-guide",
+      "title": "Eszköz hozzáadása a bejelentkezett profilból",
+      "summary": "A csatlakozási kódot az új eszköz jeleníti meg; azt olvasd be.",
+      "keywords": [
+        "eszköz hozzáadása",
+        "beolvasás",
+        "kamera",
+        "fénykép",
+        "QR-kép",
+        "kézi kód"
+      ],
+      "sections": [
+        {
+          "id": "prepare",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Jelenítsd meg a kódot az új eszközön",
+          "body": "Az új eszközön a bejelentkezési képernyőről indítsd el a meglévő profil átvételét, és jelenítsd meg a csatlakozási kódot. Mindkét eszköz maradjon ugyanazon a helyi hálózaton."
+        },
+        {
+          "id": "open",
+          "kind": "Step",
+          "platform": "All",
+          "title": "A meglévő eszközön nyisd meg az eszköz hozzáadását",
+          "body": "Jelentkezz be az átadni kívánt profilba. Az Eszközök oldalon válaszd az eszköz hozzáadását. Ha az alkalmazás szerint a profil szinkronizálása ezen az eszközön le van tiltva, előbb engedélyezd a jelenlegi eszköz részleteinél."
+        },
+        {
+          "id": "android",
+          "kind": "Explanation",
+          "platform": "Android",
+          "title": "Android: beolvasás kamerával",
+          "body": "Válaszd a QR-kód beolvasását, és kérés esetén engedélyezd a kamerát. Irányítsd a kamerát az új eszköz QR-kódjára. QR-képet is kiválaszthatsz, vagy kézzel is beírhatod a kódot."
+        },
+        {
+          "id": "windows",
+          "kind": "Explanation",
+          "platform": "Windows",
+          "title": "Windows: kép kiválasztása vagy a kód beírása",
+          "body": "Válassz jól olvasható QR-képet, vagy írd be a csatlakozási kódot, és válaszd az eszköz hozzáadását. A jelenlegi Windows-alkalmazás nem kínál kamerás beolvasást. Ha az alkalmazás kéri, hagyd jóvá a Windows-tűzfal beállítását."
+        },
+        {
+          "id": "confirm",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Ellenőrizd az eredményt mindkét eszközön",
+          "body": "Érvényes QR-kód beolvasása vagy QR-kép kiválasztása elindítja a hozzáadási kísérletet. Kézzel beírt kód esetén válaszd az eszköz hozzáadását. Várd meg a befejezést, és ellenőrizd, hogy a megfelelő profil elérhető-e az új eszközön."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/enrollment-overview",
+        "devices/enrollment-code-safety",
+        "devices/sync-problems",
+        "troubleshooting/qr",
+        "troubleshooting/enrollment"
+      ]
+    },
+    {
+      "id": "devices/sync",
+      "categoryId": "user-guide",
+      "title": "A szinkronizálás működése",
+      "summary": "Az összekapcsolt eszközök akkor cserélik ki ugyanazon profil módosításait, amikor elérik egymást.",
+      "keywords": [
+        "szinkron",
+        "szinkronizálás",
+        "offline",
+        "háttér",
+        "eszközbeállítások"
+      ],
+      "sections": [
+        {
+          "id": "profile",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Egy profil több összekapcsolt eszközön",
+          "body": "Az összekapcsolás egy meglévő profilhoz adja hozzá az eszközt. Ezután a módosítások eljuthatnak a profil többi csatlakoztatott eszközére. A külön létrehozott fiókok hasonló név esetén sem szinkronizálódnak egymással."
+        },
+        {
+          "id": "controls",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Ellenőrizd az eszközökhöz tartozó szinkronbeállításokat",
+          "body": "Az Eszközök oldalon nyisd meg a jelenlegi eszköz részleteit, és ellenőrizd a profil helyi szinkronizálását. A többi eszközhöz is külön szinkronbeállítások tartoznak. Módosítás előtt olvasd el a megerősítő üzenetet."
+        },
+        {
+          "id": "background",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Válaszd ki, futhat-e a szinkronizálás a háttérben",
+          "body": "A Beállítások → Háttérben történő működés alatt szabályozható a háttérszinkronizálás és az automatikus indítás. Ez különbözik a profil eszközönkénti szinkronkapcsolóitól. A kapcsolat első ellenőrzéséhez hagyd nyitva mindkét alkalmazásfelületet."
+        },
+        {
+          "id": "offline",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Az offline eszközökön régebbi adatok lehetnek",
+          "body": "Az offline eszköz nem kapja meg azonnal az új jelszavakat, törléseket és eszközmódosításokat. Csatlakozz újra, és ellenőrizd az utolsó sikeres szinkronizálás adatait, mielőtt feltételeznéd, hogy egy másik eszközön is a legfrissebb állapot látható."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/sync-problems",
+        "devices/blocked",
+        "devices/disconnect",
+        "troubleshooting/background-sync"
+      ]
+    },
+    {
+      "id": "devices/disconnect",
+      "categoryId": "user-guide",
+      "title": "Eszköz leválasztása",
+      "summary": "Másik eszköz eltávolítása az aktív profilból a még nem szinkronizált módosítások figyelembevételével.",
+      "keywords": [
+        "leválasztás",
+        "eszköz eltávolítása",
+        "elveszett eszköz"
+      ],
+      "sections": [
+        {
+          "id": "before",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Ellenőrizd a még szükséges módosításokat",
+          "body": "Az eltávolítandó eszközön lehetnek ide még el nem jutott módosítások. Ha biztonságosan megoldható, leválasztás előtt hagyd szinkronizálódni az eszközöket. A leválasztás nem tudja visszahozni egy offline eszköz még nem látott módosításait."
+        },
+        {
+          "id": "select",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Válaszd ki a megfelelő másik eszközt",
+          "body": "Az Eszközök oldalon válaszd ki a másik eszközt, majd indítsd a leválasztást. Ez a művelet másik eszközt távolít el; nem a jelenlegi eszközről való kijelentkezésre szolgál."
+        },
+        {
+          "id": "confirm",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Olvasd el a figyelmeztetést, majd add meg a jelszót",
+          "body": "Ellenőrizd az eszköz nevét, olvasd el a figyelmeztetést, és add meg az aktív profil mesterjelszavát. Csak akkor erősítsd meg, ha valóban el akarod távolítani az eszközt ebből a profilból."
+        },
+        {
+          "id": "after",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "A leválasztás hatása kommunikációval jut el más eszközökre",
+          "body": "Az alkalmazás rögzíti a leválasztást, és továbbítja a többi eszköznek. A leválasztott eszköz profilja akkor törlődik ott, amikor az eszköz megkapja és alkalmazza a leválasztást. Offline vagy elveszett eszköz adatait ez a művelet nem tudja azonnal törölni; azon az eszközön ne módosítsd tovább a profilt."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/sync",
+        "devices/blocked",
+        "account/delete",
+        "security/lost-device"
+      ]
+    },
+    {
+      "id": "account/delete",
+      "categoryId": "user-guide",
+      "title": "Fiók törlése",
+      "summary": "Az aktív profil törlése és a törlés továbbítása a csatlakoztatott eszközökre.",
+      "keywords": [
+        "fiók törlése",
+        "profil törlése",
+        "adatok törlése",
+        "visszavonhatatlan"
+      ],
+      "sections": [
+        {
+          "id": "scope",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "A fióktörlés visszavonhatatlan, és ezt a profilt érinti",
+          "body": "Ez nem kijelentkezés és nem egyetlen eszköz leválasztása. Törli a profil helyi tárolt adatait, és fióktörlési utasítást rögzít a profil többi eszköze számára. Más, önálló profilokat nem jelöl ki törlésre."
+        },
+        {
+          "id": "preserve",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Törlés előtt őrizd meg, amire még szükséged van",
+          "body": "Ellenőrizd az aktív profilt és a megőrizni kívánt adatokat. Ha indokolt, másold át a kijelölt elemeket másik bejelentkezett profilba, és előbb ellenőrizd a másolatokat. Ez nem a teljes fiók biztonsági mentése."
+        },
+        {
+          "id": "confirm",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Nyisd meg a fióktörlést, és ellenőrizd a megerősítést",
+          "body": "A Profil oldalon válaszd a fiók törlését. Olvasd el a figyelmeztetést, add meg a profil mesterjelszavát, és csak akkor erősítsd meg, ha valóban törölni szeretnéd a fiókot. A törlés után az alkalmazás megszünteti a helyi munkameneteit."
+        },
+        {
+          "id": "offline",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "A többi eszköznek meg kell kapnia a törlést",
+          "body": "Az offline eszköz megőrizheti a régi példányát, amíg újra nem csatlakozik és nem fogadja a törlést. A fióktörlés nem azonnali távoli adattörlés. Az alkalmazás megőrzi azokat az ellenőrzési nyilvántartásokat, amelyek megakadályozzák a törölt fiók régi szinkronadatokból történő visszaállítását."
+        }
+      ],
+      "relatedTopicIds": [
+        "passwords/transfer-between-profiles",
+        "devices/disconnect",
+        "profiles/switch",
+        "security/account-deletion"
+      ]
+    },
+    {
+      "id": "passwords/transfer-between-profiles",
+      "categoryId": "user-guide",
+      "title": "Elemek másolása vagy áthelyezése másik profilba",
+      "summary": "Az exportálás itt kijelölt elemek átvitelét jelenti az ezen az eszközön bejelentkezett profilok között.",
+      "keywords": [
+        "exportálás",
+        "átvitel",
+        "másolás",
+        "áthelyezés",
+        "eredetik törlése",
+        "címkék",
+        "színek",
+        "mentés"
+      ],
+      "sections": [
+        {
+          "id": "target",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Jelentkezz be mindkét profilba",
+          "body": "Szükség esetén a profilváltásból jelentkezz be másik fiókba. Térj vissza a forrásprofilhoz. A cél egy másik, ezen az eszközön éppen bejelentkezett profil legyen."
+        },
+        {
+          "id": "select",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Jelöld ki az elemeket, és indítsd az exportálást",
+          "body": "A megfelelő listában jelöld ki a jelszavakat, címkéket vagy egyéni színeket, indítsd az exportálást, majd válaszd ki a célfiókot. Ez a művelet nem hoz létre CSV-t vagy más külső jelszófájlt."
+        },
+        {
+          "id": "mode",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Tudatosan válassz másolás és áthelyezés között",
+          "body": "Ha az eredetik exportálás utáni törlése ki van kapcsolva, az alkalmazás másol. Ha be van kapcsolva, előbb a célba írja az elemeket, majd eltávolítja az eredetiket a forrásból. Ellenőrizd a célt, és erősítsd meg a másolást vagy az áthelyezést."
+        },
+        {
+          "id": "partial",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Hiba után újrapróbálás előtt ellenőrizd mindkét profilt",
+          "body": "Előfordulhat, hogy a célba írás sikerül, de a forrás tisztítása vagy a végső válasz meghiúsul. Az elemek mindkét profilban megmaradhatnak. Áthelyezés megismétlése vagy kézi törlés előtt ellenőrizd a célt és a forrást is."
+        }
+      ],
+      "relatedTopicIds": [
+        "profiles/login-another",
+        "profiles/switch",
+        "passwords/manage",
+        "security/move-vs-copy",
+        "troubleshooting/transfer"
+      ]
+    },
+    {
+      "id": "security/master-password",
+      "categoryId": "security-tips",
+      "title": "A mesterjelszó védelme",
+      "summary": "A mesterjelszó oldja fel a profilt. Különböztesd meg a jelszótárban tárolt jelszavaktól.",
+      "keywords": [
+        "mesterjelszó",
+        "elfelejtett jelszó",
+        "visszaállítás",
+        "helyreállítás",
+        "erős jelszó"
+      ],
+      "sections": [
+        {
+          "id": "choose",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Válassz hosszú, egyedi jelszót",
+          "body": "Válassz hosszú, egyedi mesterjelszót, például több véletlenszerűen kiválasztott, egymástól független szóból. Kerüld az idézeteket, személyes adatokat, kiszámítható karaktercseréket és más fiókok jelszavainak újrahasználatát. Az erősségjelző becslés, nem bizonyítja, hogy a jelszó biztonságos vagy még sosem szivárgott ki."
+        },
+        {
+          "id": "recovery",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Nincs elfelejtett jelszó visszaállítására szolgáló folyamat",
+          "body": "A kézi bejelentkezéshez a felhasználónevedre és a mesterjelszavadra is szükség van. Kezeld bizalmasan a felhasználónevedet, és tárold biztonságosan mindkét adatot a jelszótáron kívül. Az elfelejtett mesterjelszó nem állítható vissza. A fejlesztő nem tudja helyreállítani a belépési adataidat vagy a jelszótáradat. Az Emlékezz rám lehetőség megőrizheti a hozzáférést az adott eszközön, de a mesterjelszót nem jeleníti meg."
+        },
+        {
+          "id": "change",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "A jelszó módosítása a többi eszközt is érinti",
+          "body": "Ha ismered a jelenlegi jelszót, a Profil oldalon módosíthatod a mesterjelszót. A módosítás megérkezése után a többi eszköz kijelentkeztetheti a profilt; az új adatokkal jelentkezz be. Jelszómódosítás céljából ne töröld a profilt."
+        }
+      ],
+      "relatedTopicIds": [
+        "getting-started/create-account",
+        "login/sign-in",
+        "security/recovery-backup",
+        "security/remember-me",
+        "security/everyday-passwords"
+      ]
+    },
+    {
+      "id": "devices/enrollment-code-safety",
+      "categoryId": "security-tips",
+      "title": "A csatlakozási kódok biztonságos kezelése",
+      "summary": "Az ideiglenes kódot és a QR-képét bizalmas csatlakozási adatként kezeld.",
+      "keywords": [
+        "QR biztonság",
+        "lejárt kód",
+        "ideiglenes kód",
+        "párosítási kód",
+        "képernyőkép"
+      ],
+      "sections": [
+        {
+          "id": "direction",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Az új eszköz jeleníti meg a kódot",
+          "body": "Csak a hozzáadni kívánt eszközről olvasd le a kódot. A megbízható, bejelentkezett eszközön beolvasás vagy kódbevitel előtt ellenőrizd, hogy az átadni kívánt profil aktív-e."
+        },
+        {
+          "id": "private",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Ne tedd közzé a kódot vagy a QR-képet",
+          "body": "Ügyféltámogatási üzenetbe, nyilvános képernyőképbe vagy képernyőmegosztásba ne kerüljön csatlakozási kód, QR-kép vagy mesterjelszó. A QR-kép ugyanazt a csatlakozási információt tartalmazza, mint a kód."
+        },
+        {
+          "id": "expiry",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Az aktuális kódot használd",
+          "body": "Az összekapcsolás közben hagyd nyitva a kód képernyőjét. Ha az alkalmazás szerint a kód lejárt, indíts új próbálkozást az új eszközön, és az újonnan megjelenített kódot használd. Ne próbálkozz újra és újra egy régi képernyőképpel."
+        },
+        {
+          "id": "exposure",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Ha megosztottad a kódot, vagy rossz eszközről olvastad be",
+          "body": "Az új eszközön szakítsd meg a felfedett kísérletet, és csak amikor készen állsz, készíts új kódot. Ha profilátvitel már történhetett, megbízható eszközön ellenőrizd az Eszközök listáját, és válaszd le a nem kívánt eszközt. A kód lecserélése nem von vissza befejezett átvitelt."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/enrollment-overview",
+        "devices/add-device",
+        "troubleshooting/enrollment-code",
+        "security/screen-privacy"
+      ]
+    },
+    {
+      "id": "devices/blocked",
+      "categoryId": "troubleshooting",
+      "title": "Letiltott eszköz állapotának értelmezése",
+      "summary": "A tiltás feloldása előtt olvasd el az okát.",
+      "keywords": [
+        "letiltott eszköz",
+        "tiltás feloldása",
+        "érvénytelen kísérletek",
+        "diagnosztika",
+        "eszközállapot"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Amit látsz",
+          "body": "Az eszközrészletek tiltást, annak idejét vagy okát, illetve érvénytelen szinkronizálási kísérleteket mutatnak. Az offline állapot elérhetetlenség, a tiltás kommunikációs korlátozás. Egyik sem jelenti, hogy a távoli jelszótár törlődött."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Mi okozhatja",
+          "body": "Érvénytelen vagy nem ellenőrizhető szinkronizálási kísérletek védelmi intézkedést válthatnak ki. A kiírt okból indulj ki: a tiltás önmagában nem bizonyít támadást vagy egyszerű hálózati hibát. Az ismétlődő ellenőrzési hibákat ne hagyd figyelmen kívül."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Azonosítsd az eszközt, és nézd meg a diagnosztikát",
+          "body": "Ellenőrizd, hogy ismered-e az eszközt, majd olvasd el a tiltás okát, idejét, a kísérletszámot és az utolsó sikeres szinkronizálást. Működő profilon indíts öndiagnosztikát, ahol elérhető, és olvasd el az eredményt. Ismeretlen vagy elveszett eszköznél kövesd az arra vonatkozó tanácsokat."
+        },
+        {
+          "id": "unblock",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Csak az ok rendezése után oldd fel a tiltást",
+          "body": "Csak akkor oldd fel az eszköz tiltását, ha érted a problémát, és továbbra is megbízol benne. A feloldás korlátozást szüntet meg: nem javít sérült adatot, nem állít vissza törölt profilt és nem garantál szinkronizálást. Újabb tiltásnál ne próbálkozz ismételten, őrizd meg a diagnosztikai részleteket."
+        }
+      ],
+      "relatedTopicIds": [
+        "troubleshooting/diagnostics",
+        "security/lost-device",
+        "devices/sync-problems",
+        "security/safe-support"
+      ]
+    },
+    {
+      "id": "devices/sync-problems",
+      "categoryId": "troubleshooting",
+      "title": "Eszközkapcsolati és szinkronizálási problémák ellenőrzése",
+      "summary": "Indulj a megjelenített állapotból, a helyi hálózatból és a szinkronkapcsolókból.",
+      "keywords": [
+        "szinkronhiba",
+        "offline",
+        "kapcsolódási hiba",
+        "Wi-Fi",
+        "tűzfal",
+        "sikertelen összekapcsolás",
+        "nem csatlakozik"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Amit látsz",
+          "body": "Egy eszköz offline, ki van kapcsolva a szinkronizálás, vagy az új elemek nem jelennek meg máshol. Az utolsó sikeres szinkronizálás ideje múltbeli sikert jelez, nem bizonyítja minden későbbi módosítás megérkezését."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Mi okozhatja",
+          "body": "Az eszközök nem érik el egymást a helyi hálózaton, ki lehet kapcsolva a profil vagy a társ-eszköz szinkronizálása, korlátozott lehet a háttérműködés, vagy védelmi tiltás akadályozhatja az adatcserét. Az internetelérés önmagában nem bizonyít helyi kapcsolatot."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Hasonlítsd össze a profil- és eszközbeállításokat",
+          "body": "Mindkét eszközön ellenőrizd a megfelelő profilt. Tartsd nyitva az alkalmazásokat ugyanazon a megbízható hálózaton, nézd meg a szinkronizálási kapcsolókat és a tiltást, majd hasonlíts össze egy ismert friss bejegyzést és a szinkronizálás idejét. Tűzfal- vagy elszigetelési hibánál kövesd a hálózati csatlakoztatás útmutatóját."
+        },
+        {
+          "id": "preserve",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "A vizsgálat alatt mindkét példányt őrizd meg",
+          "body": "A szinkronizálás kierőszakolásához ne törölj profilt, ne állíts alaphelyzetbe adatbázist, és ne másolj kézzel adatbázist egy másik telepítésre. Lehetnek máshol még nem szereplő módosítások. Ellenőrzési hiba vagy tiltás esetén a bizalmi beállítások módosítása előtt olvasd el a megfelelő biztonsági témát."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/blocked",
+        "troubleshooting/enrollment",
+        "troubleshooting/background-sync",
+        "troubleshooting/diagnostics"
+      ]
+    },
+    {
+      "id": "security/remember-me",
+      "categoryId": "security-tips",
+      "title": "A bejelentkezve maradás biztonsága",
+      "summary": "Az Emlékezz rám kényelmes, de ilyenkor még fontosabb az eszköz védelme.",
+      "keywords": [
+        "bejelentkezve maradás",
+        "bejelentkezés megjegyzése",
+        "automatikus belépés",
+        "kijelentkezés",
+        "közös eszköz",
+        "munkamenet",
+        "emlékezz rám"
+      ],
+      "sections": [
+        {
+          "id": "access",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "A feloldott eszközről elérhető lehet a jelszótár",
+          "body": "A megjegyzett profil a mesterjelszó újbóli megadása nélkül megnyitható. Aki használhatja a feloldott eszközödet, a jelszótárhoz is hozzáférhet. Az ablak bezárása vagy az alkalmazás újraindítása nem kapcsolja ki ezt a lehetőséget."
+        },
+        {
+          "id": "choose",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Csak saját, megbízható eszközön használd",
+          "body": "Közös, kölcsönkapott, nyilvános vagy nem megbízható eszközön hagyd kikapcsolva. Saját eszközön használj erős képernyőzárat, rövid automatikus zárolási időt és külön operációsrendszer-fiókot. Távozáskor mindig zárold az eszközt."
+        },
+        {
+          "id": "disable",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Kijelentkezés előtt kapcsold ki",
+          "body": "A fiókmenüben kapcsold ki az Emlékezz rám lehetőséget az aktív profilnál, és ellenőrizd a sikeres visszajelzést. Ezután jelentkezz ki. A kijelentkezés önmagában csak a munkamenetet zárja le, a megjegyzést nem törli. Minden megjegyzett profilt külön ellenőrizz."
+        },
+        {
+          "id": "limits",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Nem jelszó-helyreállítás és nem azonnali zárolás",
+          "body": "A kikapcsolás nem zárja be a már megnyitott munkamenetet. A mesterjelszót a jelszótáron kívül is őrizd biztonságosan: eszközváltozás vagy adathiba után megszűnhet a megjegyzett hozzáférés. A profilváltás sem jelentkezteti ki a többi bejelentkezett profilt."
+        }
+      ],
+      "relatedTopicIds": [
+        "login/sign-in",
+        "security/master-password",
+        "security/device-protection",
+        "troubleshooting/login"
+      ]
+    },
+    {
+      "id": "security/recovery-backup",
+      "categoryId": "security-tips",
+      "title": "Készülj fel a hozzáférés elvesztésére",
+      "summary": "Még az eszköz meghibásodása vagy az egyetlen példány elvesztése előtt gondolkodj előre.",
+      "keywords": [
+        "biztonsági mentés",
+        "helyreállítás",
+        "elfelejtett jelszó",
+        "elveszett telefon",
+        "újratelepítés",
+        "visszaállítás",
+        "szinkronizálás"
+      ],
+      "sections": [
+        {
+          "id": "password",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Mindkét belépési adatot tárold biztonságosan",
+          "body": "Kezeld bizalmasan a felhasználónevedet, és tárold biztonságosan mindkét belépési adatot olyan helyen, amelyhez a jelszótár megnyitása nélkül is hozzáférsz. Ilyen lehet például egy elzárva tartott, offline feljegyzés. Kerüld a védelem nélküli jegyzeteket, fényképeket, e-maileket és üzeneteket."
+        },
+        {
+          "id": "second",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Eszközcsere előtt ellenőrizd a másik megbízható eszközt",
+          "body": "Ha lehet, csatlakoztass egy másik saját eszközt. A régi kivonása előtt ellenőrizd, hogy az újon be tudsz jelentkezni, és megvannak a szükséges bejegyzések. A működő eszközt az ellenőrzésig tartsd meg."
+        },
+        {
+          "id": "not-backup",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "A szinkronizálás nem független biztonsági mentés",
+          "body": "A módosítások és törlések más eszközökre is átszinkronizálódhatnak. Az adatbázisfájl másolásával az operációs rendszer által védett eredeti adatbáziskulcs nem kerül át. Windowson a kulcsot a létrehozásakor használt Windows-fiók védi. Androidon az eredeti telepítéshez tartozó Android Keystore védi. Amíg még hozzáférsz a profilhoz, az alkalmazáson belüli eszközcsatlakoztatással viheted át másik eszközre."
+        },
+        {
+          "id": "preserve",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Őrizd meg az utolsó működő példányt",
+          "body": "Ne próbálkozz helyreállításként eltávolítással, alkalmazásadat-törléssel, adatbázis-alaphelyzetbe állítással vagy profiltörléssel. Nincs központi jelszótárpéldány vagy e-mailes visszaállítás. Másik eszközről is csak rendelkezésre álló, ép adatokkal lehet helyreállítani, sikerre nincs garancia. Androidon a szokásos teljes eltávolítás törli a helyi széfet és annak Keystore-kulcsát. Az alkalmazásadatok automatikus felhőmentése és eszközköltöztetése le van tiltva; az újratelepítés tiszta állapotból indul. Ha meg szeretnéd őrizni a hozzáférést, eltávolítás előtt kapcsolj hozzá és ellenőrizz egy másik eszközt."
+        }
+      ],
+      "relatedTopicIds": [
+        "security/master-password",
+        "devices/enrollment-overview",
+        "troubleshooting/login",
+        "troubleshooting/database"
+      ]
+    },
+    {
+      "id": "security/lost-device",
+      "categoryId": "security-tips",
+      "title": "Elveszett vagy már nem megbízható eszköz",
+      "summary": "Szüntesd meg a kapcsolatát, és védd a rajta korábban elérhető jelszavakat.",
+      "keywords": [
+        "elveszett eszköz",
+        "ellopott",
+        "feltört",
+        "leválasztás",
+        "távoli törlés",
+        "hozzáférés visszavonása"
+      ],
+      "sections": [
+        {
+          "id": "remove",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Használj egy megmaradt, megbízható eszközt",
+          "body": "Nyisd meg az érintett profilt, az Eszközök között azonosítsd az elveszett eszközt, majd válaszd a leválasztást. Gondosan ellenőrizd a nevet, és erősítsd meg a mesterjelszóval. Nem megbízható eszközről ne próbálj előbb ismeretlen módosításokat begyűjteni."
+        },
+        {
+          "id": "offline",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "A leválasztás nem vonja vissza az offline példányt",
+          "body": "Az eszköz csak a hozzá eljutott eltávolítást tudja végrehajtani. A leválasztás nem azonnali távoli törlés. Sem a mesterjelszó megváltoztatása, sem a fióktörlés nem törli a mások által már elolvasott vagy kimásolt titkokat."
+        },
+        {
+          "id": "rotate",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Biztonságos eszközről cseréld az érintett szolgáltatások jelszavait",
+          "body": "Kezdd az e-maillel, pénzügyi és más fontos fiókokkal. A szolgáltatások saját biztonsági beállításaiban cseréld a jelszót, és vond vissza az ismeretlen munkameneteket. Ha a mesterjelszó is ismertté válhatott, azt is cseréld. Ahol elérhető, kapcsolj be többtényezős hitelesítést."
+        },
+        {
+          "id": "os",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Használd az eszköz platformjának védelmét is",
+          "body": "Ha korábban beállítottad, használd az operációs rendszer elveszett eszközhöz tartozó zárolási vagy törlési szolgáltatását. Megbízható fiókból és eszközről járj el. A megtalálást ígérő személynek se adj csatlakozási kódot vagy jelszót."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/disconnect",
+        "security/remember-me",
+        "security/everyday-passwords",
+        "security/account-deletion"
+      ]
+    },
+    {
+      "id": "security/account-deletion",
+      "categoryId": "security-tips",
+      "title": "Fióktörlés előtt állj meg egy pillanatra",
+      "summary": "Visszafordíthatatlan művelet előtt ellenőrizd a hatókört, és őrizd meg, amire szükséged van.",
+      "keywords": [
+        "fióktörlés",
+        "profiltörlés",
+        "visszafordíthatatlan",
+        "kijelentkezés",
+        "offline törlés",
+        "adatbázis törlése"
+      ],
+      "sections": [
+        {
+          "id": "scope",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "A szándékodnak megfelelő műveletet válaszd",
+          "body": "A kijelentkezés munkamenetet zár le. A leválasztás egy másik eszközt távolít el a profilból. A fióktörlés eltávolítja a helyi profilt, és fióktörlési utasítást küld a többi eszközének. Az adatbázis-alaphelyzetbe állítás minden helyi profilt töröl. Eltérő következményeik vannak."
+        },
+        {
+          "id": "verify",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Előbb ellenőrizd az aktív profilt és a másolatokat",
+          "body": "Ellenőrizd a fióknevet. A máshol szükséges elemeket másold a megfelelő profilba, majd ott ellenőrizd őket, mielőtt bármit törölsz. Az ellenőrizetlen átvitelt ne tekintsd biztonsági mentésnek."
+        },
+        {
+          "id": "limits",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Nincs visszavonás vagy azonnali távoli törlés",
+          "body": "Az offline eszköz a törlés fogadásáig és alkalmazásáig megtarthatja a példányát. Egy második szinkronizált eszköz nem a fióktörlés visszavonására szolgál. A jelszótár törlése nem törli a webhelyeken lévő fiókjaidat, amelyek jelszavát itt tároltad."
+        }
+      ],
+      "relatedTopicIds": [
+        "account/delete",
+        "devices/disconnect",
+        "security/recovery-backup",
+        "troubleshooting/database"
+      ]
+    },
+    {
+      "id": "security/move-vs-copy",
+      "categoryId": "security-tips",
+      "title": "Másolás vagy áthelyezés: mindkét profilt ellenőrizd",
+      "summary": "Az átvitel saját példányt ad a kijelölt adatokból a célprofilnak.",
+      "keywords": [
+        "másolás",
+        "áthelyezés",
+        "exportálás",
+        "eredetik törlése",
+        "rossz fiók",
+        "duplikáció",
+        "részleges"
+      ],
+      "sections": [
+        {
+          "id": "target",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Olvasd el a célfiók nevét",
+          "body": "Megerősítés előtt ellenőrizd a forrásprofilt, a célprofilt és a kijelölést. Titkot csak olyan profilba másolj, amelynek használóiban és csatlakoztatott eszközeiben megbízol. A másolat a célprofil eszközeire is szinkronizálódhat."
+        },
+        {
+          "id": "mode",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Az eredetik törlése áthelyezéssé teszi a másolást",
+          "body": "Kikapcsolt „Eredetik törlése exportálás után” mellett a forrás megmarad. Bekapcsolva az alkalmazás előbb a célba ír, majd törli a forráselemeket. A törlések szinkronizálódhatnak. Az áthelyezés nem biztonsági mentés, és a webhely jelszavát sem változtatja meg."
+        },
+        {
+          "id": "partial",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Bizonytalan eredménynél mindkét oldalt ellenőrizd",
+          "body": "Megerősítés utáni hiba esetén újrapróbálás vagy kézi törlés előtt nézd meg a cél- és a forrásprofilt. A sikeres célba írás mellett az eredetik megmaradhatnak. A külön profilok másolatai nem maradnak összekötve: az egyik szerkesztése nem frissíti a másikat."
+        }
+      ],
+      "relatedTopicIds": [
+        "passwords/transfer-between-profiles",
+        "troubleshooting/transfer",
+        "security/account-deletion"
+      ]
+    },
+    {
+      "id": "security/clipboard",
+      "categoryId": "security-tips",
+      "title": "Óvatosan másolj jelszót a vágólapra",
+      "summary": "A kényelmes másolás a jelszótáron kívül is hagyhat titkot.",
+      "keywords": [
+        "vágólap",
+        "jelszó másolása",
+        "beillesztés",
+        "előzmények",
+        "felhővágólap",
+        "billentyűzet"
+      ],
+      "sections": [
+        {
+          "id": "paste",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Beillesztés előtt ellenőrizd a célt",
+          "body": "Nyisd meg a megfelelő webhelyet vagy alkalmazást, és előbb jelöld ki a jelszómezőt. Illeszd be egyszer, majd ellenőrizd, hogy nem csevegésbe, keresőbe, felhasználónévmezőbe vagy közös dokumentumba került. Nem megbízható eszközön ne másolj titkot."
+        },
+        {
+          "id": "outside",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "A vágólap a jelszótáron kívül van",
+          "body": "Vágólapkezelők, billentyűzetek, előzmények vagy vágólap-szinkronizálás megőrizhetik vagy megoszthatják a szöveget. Az alkalmazás nem garantál időzített vágólaptörlést. Ártalmatlan szöveg későbbi másolása lecseréli az aktuális tartalmat, de nem törli az előzményeket vagy a máshová már elküldött példányokat."
+        },
+        {
+          "id": "windows",
+          "kind": "Tip",
+          "platform": "Windows",
+          "title": "Windows: ellenőrizd a vágólapelőzményeket és a szinkronizálást",
+          "body": "A Windows Gépház → Rendszer → Vágólap alatt ellenőrizd az előzményeket és az eszközök közötti szinkronizálást. Ha a jelszó megjelenik a Win+V előzményeiben, töröld az elemet. Az összes törlése nem távolítja el a rögzített elemeket: azokat külön is töröld. Jelszót ne rögzíts."
+        },
+        {
+          "id": "android",
+          "kind": "Tip",
+          "platform": "Android",
+          "title": "Android: nézd meg a billentyűzet vágólapját is",
+          "body": "Ha a billentyűzet vagy a vágólapkezelő mentett vagy rögzített elemeket tárol, onnan is töröld a jelszót. A nevek és a megőrzés eszközönként és billentyűzetenként eltérnek. Ne hagyatkozz arra, hogy az automatikus lejárat minden példányt eltüntet."
+        }
+      ],
+      "relatedTopicIds": [
+        "security/screen-privacy",
+        "security/everyday-passwords",
+        "security/device-protection"
+      ]
+    },
+    {
+      "id": "security/screen-privacy",
+      "categoryId": "security-tips",
+      "title": "Csak szükség esetén jeleníts meg titkot",
+      "summary": "A képernyőmegosztás, képernyőkép és a közelben lévő személyek is láthatják az adatokat.",
+      "keywords": [
+        "jelszó megjelenítése",
+        "képernyőmegosztás",
+        "képernyőkép",
+        "felvétel",
+        "elrejtés",
+        "QR"
+      ],
+      "sections": [
+        {
+          "id": "before",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Érzékeny képernyő előtt állítsd le a megosztást",
+          "body": "Jelszó vagy csatlakozási kód megjelenítése előtt ellenőrizd a felvételt, távoli segítségnyújtást, tükrözést és a környezetedet. Az elfedett jelszavú képernyő is felfedhet fiókneveket, leírásokat vagy más azonosító adatokat."
+        },
+        {
+          "id": "hide",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Takard el újra az értéket, és zárold az eszközt",
+          "body": "Ellenőrzés után rejtsd el a jelszót, és lépj el az érzékeny képernyőről. Átadás vagy távozás előtt zárold az eszközt. Az elrejtett értékhez is hozzáférhet, aki használhatja a bejelentkezett profilodat."
+        },
+        {
+          "id": "captured",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Az elrejtés nem törli a korábbi felvételt",
+          "body": "Más alkalmazások menthetik vagy szinkronizálhatják a képernyőképeket és felvételeket. Példaként se küldj valódi jelszót vagy élő QR-kódot. Kiszivárgott jelszót az érintett szolgáltatásnál cserélj: a képernyőkép törlése nem vonja vissza a másolatokat."
+        }
+      ],
+      "relatedTopicIds": [
+        "security/clipboard",
+        "devices/enrollment-code-safety",
+        "security/safe-support"
+      ]
+    },
+    {
+      "id": "security/device-protection",
+      "categoryId": "security-tips",
+      "title": "Az eszközt is védd, ne csak a jelszótárat",
+      "summary": "A titkosított tárolás nem teszi biztonságossá a feloldott vagy feltört eszközt.",
+      "keywords": [
+        "titkosítás",
+        "képernyőzár",
+        "kártevő",
+        "frissítés",
+        "közös számítógép",
+        "háttér",
+        "offline"
+      ],
+      "sections": [
+        {
+          "id": "lock",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Használj erős eszköz-zárolást",
+          "body": "Állíts be erős eszköz-PIN-t vagy jelszót és automatikus képernyőzárat. Közös számítógépen használjatok külön operációsrendszer-fiókot. A Windows+L gyorsan zárolja a Windowst. Nem megbízható személy által kezelt eszközön ne használd a jelszótárat."
+        },
+        {
+          "id": "update",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Telepíts megbízható frissítéseket",
+          "body": "Megbízható forrásból frissítsd az operációs rendszert, az alkalmazást, a böngészőt és a billentyűzetet. Óvatosan kezeld a távoli vezérlést, ismeretlen bővítményeket és a széles akadálymentesítési vagy képernyőrögzítési hozzáférést kérő alkalmazásokat: láthatják a beírt vagy megjelenített adatokat."
+        },
+        {
+          "id": "limits",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Használat közben a titkosításnak is vannak korlátai",
+          "body": "Az alkalmazás titkosított helyi tárolást használ, de a megnyitott profil megjeleníthet és másolhat titkokat. A titkosítás nem védi a képernyőképre, vágólapra, rosszindulatú alkalmazásba vagy más személyhez került jelszót. Az offline használat sem szünteti meg ezeket a kockázatokat."
+        },
+        {
+          "id": "background",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "A felület bezárása nem biztonsági zárolás",
+          "body": "Engedélyezett háttér-szinkronizálás mellett az adatcsere folytatódhat, a megjegyzett profil pedig újra megnyitható. Használd a képernyőzárat, és ellenőrizd a megjegyzett profilokat. Az ablak bezárását, profilváltást vagy szinkronizálás-kikapcsolást ne tekintsd kijelentkezésnek."
+        }
+      ],
+      "relatedTopicIds": [
+        "security/remember-me",
+        "security/clipboard",
+        "troubleshooting/background-sync",
+        "security/lost-device"
+      ]
+    },
+    {
+      "id": "security/everyday-passwords",
+      "categoryId": "security-tips",
+      "title": "Hasznos jelszókezelési szokások",
+      "summary": "Használj egyedi jelszavakat, és ellenőrizd, hová írod be őket.",
+      "keywords": [
+        "generálás",
+        "egyedi jelszó",
+        "MFA",
+        "többtényezős hitelesítés",
+        "adathalászat",
+        "webhely",
+        "jelszócsere",
+        "adatszivárgás"
+      ],
+      "sections": [
+        {
+          "id": "unique",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Minden szolgáltatáshoz külön, hosszú jelszót generálj",
+          "body": "Használd a szerkesztő jelszógenerátorát a szolgáltatás hossz- és karakterkorlátain belül. Kerüld ugyanannak a jelszónak a kiszámítható változatait. A mesterjelszó is legyen egyedi: webhelyen soha ne használd jelszóként."
+        },
+        {
+          "id": "change",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "A bejegyzés szerkesztése nem cseréli le a webhely jelszavát",
+          "body": "A valódi szolgáltatás fiókbeállításaiban cserélj jelszót, frissítsd a jelszótárbejegyzést, és a régi eldobása előtt ellenőrizd az újat. Újrahasznált vagy kiszivárgott jelszót minden érintett szolgáltatásnál cserélj, megbízható eszközről."
+        },
+        {
+          "id": "site",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Te nyisd meg az ismert szolgáltatást",
+          "body": "Beillesztés előtt használj megbízható könyvjelzőt, vagy írd be az ismert címet. A címet ellenőrizd, ne csak az emblémát. Sürgető üzenetek hivatkozásain ne adj meg jelszót vagy csatlakozási kódot, és váratlan belépési kérést ne hagyj jóvá."
+        },
+        {
+          "id": "mfa",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "A szolgáltatásoknál is kapcsolj be további védelmet",
+          "body": "Ahol elérhető, magánál a szolgáltatásnál engedélyezd a többtényezős hitelesítést (MFA), különösen e-mailnél és fontos fiókoknál. A helyreállítási kódokat egyetlen eszköztől független, biztonságos helyen őrizd. A jelszó itt tárolása nem kapcsol be MFA-t a szolgáltatásnál."
+        }
+      ],
+      "relatedTopicIds": [
+        "security/master-password",
+        "security/clipboard",
+        "security/lost-device"
+      ]
+    },
+    {
+      "id": "security/safe-support",
+      "categoryId": "security-tips",
+      "title": "Hibajelzés titkok megosztása nélkül",
+      "summary": "A tünetet és az alkalmazás verzióját írd le, majd nézz át minden csatolmányt.",
+      "keywords": [
+        "segítség",
+        "hibajelentés",
+        "napló",
+        "diagnosztika",
+        "képernyőkép",
+        "technikai részletek"
+      ],
+      "sections": [
+        {
+          "id": "describe",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Kezdd nem érzékeny tényekkel",
+          "body": "Írd fel a Beállítások → Névjegy alatt látható verziót, a platformot, a műveletet és a hibaüzenetet vagy állapotot. Jelezd, hogy egy vagy mindkét eszköz érintett-e. Személy- és fiókadatok helyett használj semleges megnevezéseket."
+        },
+        {
+          "id": "review",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "A naplók és képernyőképek nem automatikusan biztonságosak",
+          "body": "Nézd át a részleteket és csatolmányokat: nincs-e bennük jelszó, jegyzet, QR-kép, csatlakozási kód, fiókazonosító, elérési út vagy hálózati cím. Rutinszerű hibajelzéshez ne küldj adatbázisfájlt vagy védett kulcsot. A teljes naplót ne tekintsd névtelennek."
+        },
+        {
+          "id": "example",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Ha lehet, használj ártalmatlan példát",
+          "body": "Ha biztonságosan megismételhető, kitalált bejegyzéssel vagy külön tesztprofillal írd le a lépéseket. Egy hibaüzenet értelmezéséhez nincs szükség mesterjelszóra vagy élő csatlakozási kódra. Ha ilyet kérnek, állj meg."
+        }
+      ],
+      "relatedTopicIds": [
+        "troubleshooting/diagnostics",
+        "security/screen-privacy",
+        "devices/enrollment-code-safety"
+      ]
+    },
+    {
+      "id": "troubleshooting/login",
+      "categoryId": "troubleshooting",
+      "title": "Nem sikerül belépni vagy megnyitni a megjegyzett profilt",
+      "summary": "Ellenőrizd a belépési adatokat, és őrizd meg a még működő hozzáférést.",
+      "keywords": [
+        "sikertelen belépés",
+        "hibás jelszó",
+        "lejárt munkamenet",
+        "megjegyzett profil",
+        "ellenőrzés sikertelen"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Amit látsz",
+          "body": "Az alkalmazás hibás belépési adatokat, lejárt vagy érvénytelen munkamenetet, illetve sikertelen megjegyzett belépést jelez. A helyi adatok sikertelen ellenőrzése más jellegű hiba: változatlan jelszó mellett is előfordulhat."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Mi okozhatja",
+          "body": "Eltérhet a felhasználónév, a billentyűzetkiosztás vagy a beírt jelszó. A profil még nem került erre az eszközre, megváltozhatott a mesterjelszó, vagy az eszköz már nem tudja visszaállítani a megjegyzett hozzáférést."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Próbálj tudatosan, kézzel bejelentkezni",
+          "body": "Ellenőrizd a felhasználónevet és a kiosztást. Az aktuális mesterjelszót használd, ne egy tárolt bejegyzés jelszavát. Lejárt munkamenetnél vagy sikertelen megjegyzett belépésnél lépj be kézzel. Adatellenőrzési hibánál ez hitelesített helyreállítást is megkísérelhet, garantált siker nélkül."
+        },
+        {
+          "id": "missing",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Ha a profil még sosem volt ezen az eszközön",
+          "body": "Használd a meglévő profil másik eszközről áthozásának lehetőségét egy megbízható, azt tároló eszközzel. Azonos néven regisztrálni nem kapcsol össze a régi jelszótárral. Ha másik munkamenet már elérhető, előbb nézd meg a profilváltót."
+        },
+        {
+          "id": "preserve",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Nincs e-mailes visszaállítás vagy garantált helyreállítás",
+          "body": "Elfelejtett mesterjelszónál őrizd meg a működő munkamenetet, és olvasd el a helyreállítási tanácsokat. Javítási kísérletként ne törölj, ne állíts alaphelyzetbe és ne telepíts újra. Tartós hibánál az adatok ismételt módosítása vagy törlése helyett jegyezd fel a biztonságosan megosztható részleteket."
+        }
+      ],
+      "relatedTopicIds": [
+        "login/sign-in",
+        "security/remember-me",
+        "security/recovery-backup",
+        "troubleshooting/diagnostics"
+      ]
+    },
+    {
+      "id": "troubleshooting/enrollment",
+      "categoryId": "troubleshooting",
+      "title": "Az új eszköz nem található vagy nem kapcsolódik",
+      "summary": "Különítsd el a helyi hálózati hibát a kód- és profiladat-hibáktól.",
+      "keywords": [
+        "új eszköz nem található",
+        "kapcsolódási hiba",
+        "helyi hálózat nem érhető el",
+        "hálózati figyelő",
+        "Wi-Fi",
+        "tűzfal",
+        "Ethernet"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Amit látsz",
+          "body": "Az üzenet szerint az új eszköz nem található, nem csatlakoztatható, nincs használható helyi hálózat, vagy nem indul a helyi csatlakoztatási szolgáltatás. Az eszköz adatainak megtalálása még nem jelenti, hogy az átvitel kapcsolata is eléri."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Mi okozhatja",
+          "body": "Vendéghálózat, ügyfélelszigetelés, külön Wi-Fi- és vezetékes szegmens, tűzfalszabály vagy bezárt kódképernyő akadályozhatja a kapcsolatot. Az internetelérés nem jelenti, hogy az eszközök helyben is elérik egymást."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Mindkét alkalmazás maradjon nyitva megbízható helyi hálózaton",
+          "body": "Kapcsold mindkét eszközt ugyanarra a megbízható helyi hálózatra, és tartsd nyitva az új eszköz aktuális kódképernyőjét. Ellenőrizd a Wi-Fi-t vagy Ethernetet. Ha nem indult a helyi szolgáltatás, kapcsolódj újra, majd indíts új kísérletet."
+        },
+        {
+          "id": "firewall",
+          "kind": "Tip",
+          "platform": "Windows",
+          "title": "Windows: ellenőrizd az alkalmazás helyi hálózati engedélyét",
+          "body": "Megbízható hálózaton ellenőrizd az alkalmazás tűzfalbeállítási kérését. Szükség esetén kérdezd a hálózat kezelőjét a helyi hozzáférésről és vendég- vagy ügyfélelszigetelésről. Ne kapcsold ki a tűzfalat, ne nyiss internetes routerportot, és ne kerüld meg a hálózati szabályokat."
+        },
+        {
+          "id": "different",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Más hibánál kövesd az adott üzenetet",
+          "body": "Kikapcsolt szinkronizálásnál az aktuális eszköz megfelelő profiljánál engedélyezd azt. Érvénytelen vagy lejárt kódnál olvasd el a kódsegítséget. Elutasításnál, nem kompatibilis adatoknál vagy részleges eredménynél ellenőrizd mindkét eszközt, és nyisd meg a profilátviteli hibák témáját."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/enrollment-overview",
+        "troubleshooting/enrollment-code",
+        "troubleshooting/enrollment-data",
+        "devices/sync-problems"
+      ]
+    },
+    {
+      "id": "troubleshooting/enrollment-code",
+      "categoryId": "troubleshooting",
+      "title": "Érvénytelen vagy lejárt csatlakozási kód",
+      "summary": "Az új eszköz aktuális kódját használd régi kép helyett.",
+      "keywords": [
+        "érvénytelen kód",
+        "hiányos kód",
+        "lejárt kód",
+        "ellenőrzés sikertelen",
+        "azonos eszköz",
+        "QR"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Amit látsz",
+          "body": "Az alkalmazás érvénytelen, hiányos, lejárt vagy nem ellenőrizhető kódot jelez. Azt a kódot is elutasíthatja, amely ugyanahhoz az eszközhöz tartozik, amelyen hozzáadni próbálod."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Mi okozhatja",
+          "body": "Hiányozhat karakter, régi lehet a QR-kép, vagy véget érhetett az ideiglenes kísérlet. Az új eszköz mutatja a kódot, a már bejelentkezett eszköz olvassa azt. A szerepek felcserélése nem kapcsolja össze a profilt."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Indíts új kísérletet a csatlakoztatni kívánt új eszközön",
+          "body": "Jeleníts meg ott friss csatlakozási kódot, és tartsd nyitva a képernyőt. A megbízható, bejelentkezett eszköz Hozzáadás képernyőjén olvasd be. Kézi megadásnál a teljes kódot írd be: az áthúzás a nullát különbözteti meg az O betűtől. Ellenőrzésre se tedd közzé a kódot."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/enrollment-code-safety",
+        "troubleshooting/qr",
+        "troubleshooting/enrollment"
+      ]
+    },
+    {
+      "id": "troubleshooting/enrollment-data",
+      "categoryId": "troubleshooting",
+      "title": "Elutasított vagy részlegesen befejezett profilátvitel",
+      "summary": "Az eredmény és a konkrét hiba ellenőrzéséig tartsd meg mindkét példányt.",
+      "keywords": [
+        "érvénytelen profiladat",
+        "túl nagy",
+        "eszközazonosító ütközés",
+        "nem támogatott adatbázis",
+        "elutasított",
+        "részleges csatlakoztatás",
+        "újraindítás"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Amit látsz",
+          "body": "Az új eszköz elutasítja az átvitelt, a profil nem importálható, az adatok túl nagyok, az eszközazonosító ütközik, vagy a művelet részlegesen fejeződött be. Az átvitel indítása utáni hiba nem bizonyítja, hogy semmi sem változott."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Mi okozhatja",
+          "body": "Az alkalmazás védheti a fiók következetességét, észlelhet nem kompatibilis adatot, méretkorlátot vagy már létező eszközazonosítót. Ezek nem mind oldhatók meg újabb és újabb kódokkal."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Újabb kísérlet előtt ellenőrizd mindkét eszközt",
+          "body": "Nézd meg, megjelent-e a megfelelő profil az új eszközön, és ellenőrizd az Eszközök listáját a régin. Előbb kövesd az esetleges újraindítási utasítást. Részleges eredményre utaló figyelmeztetés nélküli egyszerű elutasításnál friss kóddal egyszer próbálkozz újra; ismétlődésnél állj meg."
+        },
+        {
+          "id": "specific",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "A hibához igazítsd a lépést",
+          "body": "Verzióeltérésnél ellenőrizd a megbízható frissítéseket mindkét eszközön. Érvénytelen profiladatnál nézd meg a működő profil öndiagnosztikáját. Méretkorlátnál vagy azonosítóütközésnél őrizd meg az adatokat, és jelezd a biztonságosan megosztható részleteket: ne törölj bejegyzéseket vagy szerkessz azonosítófájlokat a csatlakoztatás kierőszakolásához."
+        },
+        {
+          "id": "preserve",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Ne állítsd alaphelyzetbe az egyetlen működő példányt",
+          "body": "Tartsd meg a forrásprofilt és az ép, csatlakoztatott eszközöket. Ne törölj eszközrekordot vagy alkalmazásadatot, és ne állíts adatbázist alaphelyzetbe csak a részleges eredmény üzenetének eltüntetéséért. Bizonytalan eredménynél további módosítás előtt kérj segítséget az értelmezéshez."
+        }
+      ],
+      "relatedTopicIds": [
+        "troubleshooting/enrollment",
+        "troubleshooting/diagnostics",
+        "troubleshooting/database",
+        "security/safe-support"
+      ]
+    },
+    {
+      "id": "troubleshooting/qr",
+      "categoryId": "troubleshooting",
+      "title": "Nem olvasható be a QR-kód vagy a képe",
+      "summary": "Próbálj tisztább, aktuális kódot vagy kézi megadást az eszközvédelem gyengítése nélkül.",
+      "keywords": [
+        "QR beolvasás",
+        "kamera tiltva",
+        "engedély",
+        "kép felismerése",
+        "QR feltöltés",
+        "kézi kód"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Amit látsz",
+          "body": "Nem indul a kamera, nem olvasható a QR-kép, vagy nem érkezik használható kód. Az olvasható kép is tartalmazhat lejárt kódot: ilyenkor új kísérlet kell, nem jobb fénykép."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Mi okozhatja",
+          "body": "Hiányozhat az engedély, lemaradhat a kód egy része, vagy tükröződés és elmosódás zavarhatja az olvasást. Egy más célú QR-kód nem csatlakozási kód. A jelenlegi Windows-alkalmazás nem kínál kamerás beolvasást."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "A teljes, aktuális kódot használd",
+          "body": "Tartsd nyitva az új eszköz kódképernyőjét. A teljes QR-kódot mutasd a szegélyével együtt, kerüld a tükröződést, és használj éles képet. Vagy írd be kézzel a teljes kódot a meglévő eszközön. Online QR-felismerő szolgáltatásba ne töltsd fel."
+        },
+        {
+          "id": "android",
+          "kind": "Tip",
+          "platform": "Android",
+          "title": "Android: ellenőrizd a kameraengedélyt",
+          "body": "Kamerás olvasáshoz ellenőrizd az alkalmazás kameraengedélyét az Android beállításaiban. Ha nem szeretnéd megadni, válassz képet vagy írd be a kódot. A kamerára csak a beolvasási módnak van szüksége."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/add-device",
+        "troubleshooting/enrollment-code",
+        "devices/enrollment-code-safety"
+      ]
+    },
+    {
+      "id": "troubleshooting/diagnostics",
+      "categoryId": "troubleshooting",
+      "title": "Adatellenőrzési hiba vagy figyelmet igénylő öndiagnosztika",
+      "summary": "Az automatikus javítások, a pontos akadályok és az ellenőrzött helyi adatokból jóváhagyott helyreállítás megismerése.",
+      "keywords": [
+        "adatintegritás",
+        "ellenőrzés sikertelen",
+        "öndiagnosztika",
+        "biztonságos javítás",
+        "eszköztagság",
+        "figyelmet igényel",
+        "helyreállítás"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Amit látsz",
+          "body": "Az alkalmazás sikertelen adatellenőrzést jelez, vagy az öndiagnosztika ép adatokról, biztonságos helyi javításról, illetve automatikusan nem javítható problémáról számol be. Egyes hibák eszközkapcsolatot vagy fiókelőzményt érintenek, nem elfelejtett jelszót."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Miért számít",
+          "body": "Az alkalmazás nem tekinti megbízhatónak az ellentmondásos vagy nem ellenőrizhető adatot. Biztonságos automatikus javítás csak támogatott esetekben lehetséges. Az ép eredmény nem teljes biztonsági audit, és nem bizonyítja, hogy másik eszközön minden friss módosítás megvan."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Olvasd el a pontos diagnosztikai eredményt",
+          "body": "Ahol az eszközrészleteknél elérhető, indítsd az öndiagnosztikát és automatikus biztonságos javítást, majd olvasd el az eredményt. Belépési adatellenőrzési figyelmeztetésnél kövesd a belépési tanácsokat. Tartós probléma esetén őrizd meg az ép eszközt, és jegyezd fel a nem érzékeny hibajelzést és verziót."
+        },
+        {
+          "id": "stop",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "A helyreállítási bizonyítékok megőrzése",
+          "body": "Ne szerkessze az adatbázist, és ne törölje kézzel az előzményeket a hiba elrejtéséhez. Őrizze meg a titkosított adatbázist; a helyreállítási bizonyítékok is benne maradnak. Az alkalmazás nem állítja vissza az előzményeket, ha a profiladatok nem fejthetők vissza és nem ellenőrizhetők, vagy ha fióktörlési bizonyíték akadályozza a helyreállítást. Végleges akadály esetén őrizze meg a jelenlegi feloldott munkamenetet, és adattörlés helyett használja a támogatott másolási vagy mentési lehetőségeket."
+        },
+        {
+          "id": "review-recovery",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Helyreállítás áttekintése erről az eszközről",
+          "body": "Tekintse át a kockázatokat, adja meg a jelenlegi mesterjelszót, és hagyja jóvá az eszköz ellenőrzött helyi másolatának használatát. A helyreállítási adatok kizárólag a titkosított, eszközvédett adatbázisba kerülnek. Külön helyreállítási fájl nem készül. Sikertelen visszaállításkor a napló és az előzménymódosítások együtt visszagördülnek."
+        },
+        {
+          "id": "after-recovery",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "A jóváhagyott helyreállítás után",
+          "body": "Sikeres ellenőrzés után az ideiglenes helyi profilmásolat törlődik. Kizárólag a feloldatlan fogadott bizonyítékok maradnak a védett adatbázisban, igazolt rendezésükig vagy a profil törléséig. A megszakadt ellenőrzés a profilkulcs elérhetővé válásakor automatikusan újrapróbálódik. Jóváhagyott helyreállítás után a szinkronizáció szünetel; külön engedélyezze, és párosítsa újra a többi eszközt. Más profilok nem változnak."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/blocked",
+        "troubleshooting/login",
+        "security/recovery-backup",
+        "security/safe-support"
+      ]
+    },
+    {
+      "id": "troubleshooting/background-sync",
+      "categoryId": "troubleshooting",
+      "title": "Bezárt alkalmazásnál nem érkeznek frissítések",
+      "summary": "A háttérműködés és a profil eszközönkénti szinkronizálása külön beállítás.",
+      "keywords": [
+        "háttér-szinkronizálás",
+        "indítási hiba",
+        "korlátozott",
+        "nem elérhető",
+        "akkumulátor",
+        "bezárt alkalmazás",
+        "automatikus indítás"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Amit látsz",
+          "body": "Csak mindkét felület megnyitásakor érkeznek frissítések, vagy a Beállítások nem elérhető, korlátozott háttérműködést, indítási beállítási hibát, illetve sikertelen mentést jelez."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Mi okozhatja",
+          "body": "Lehet kikapcsolt a háttérműködés, korlátozhatja az operációs rendszer, vagy eltérhet a mentett beállítás a tényleges működéstől. Az eszköz lehet offline, tiltott, vagy az adott profil szinkronizálása is ki lehet kapcsolva."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Előbb ellenőrizd a nyitott alkalmazások közötti szinkronizálást",
+          "body": "Tartsd mindkét alkalmazást nyitva ugyanazon a megbízható helyi hálózaton, és nézd meg az eszközállapotot. Ezután a Beállítások → Háttérben történő működés alatt olvasd el a tényleges állapotot és hibát, majd az ok rendezése után próbálkozz újra. A bekapcsolt beállítás nem bizonyít sikeres szinkronizálást."
+        },
+        {
+          "id": "android",
+          "kind": "Tip",
+          "platform": "Android",
+          "title": "Android: az alkalmazás saját korlátozásait ellenőrizd",
+          "body": "Ha nem látható alkalmazásnál leáll a szinkronizálás, nézd meg annak akkumulátor- és háttérkorlátozásait. A beállítások eszközönként eltérnek. Újraindítás után oldd fel az eszközt, mielőtt a védett helyi adatok elérésére számítasz. Csak a szükséges engedélyeket módosítsd, ne a teljes rendszervédelmet kapcsold ki."
+        },
+        {
+          "id": "windows",
+          "kind": "Tip",
+          "platform": "Windows",
+          "title": "Windows: az indítási vagy mentési hiba szerint járj el",
+          "body": "Az automatikus indítás az aktuális Windows-felhasználóhoz tartozik. Beállítási vagy mentési hibánál olvasd el az üzenetet, és ellenőrizd a felhasználó szokásos hozzáférését. Nem olvasható állapotnál a kész alkalmazásban próbálkozz újra. Kerülőmegoldásként ne futtasd állandóan rendszergazdaként."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/sync-problems",
+        "devices/sync",
+        "security/remember-me"
+      ]
+    },
+    {
+      "id": "troubleshooting/transfer",
+      "categoryId": "troubleshooting",
+      "title": "Sikertelen profilok közötti exportálás vagy hiányzó cél",
+      "summary": "Ellenőrizd a bejelentkezett profilokat, megerősítés után pedig mindkét oldalt.",
+      "keywords": [
+        "exportálás sikertelen",
+        "nincs másik fiók",
+        "részleges áthelyezés",
+        "azonos név",
+        "elért korlát",
+        "másolás",
+        "célprofil"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Amit látsz",
+          "body": "Nem látható célfiók, nem érhető el az exportálás, vagy a művelet hibát jelez. Azonos név, profilkorlát vagy lejárt munkamenet is akadályozhatja a végrehajtást."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Mi okozhatja",
+          "body": "A célnak ezen az eszközön éppen bejelentkezett másik profilnak kell lennie. Egy csak másik eszközön lévő fiók nem célprofil. Megerősítés utáni hiba akkor is történhet, ha az elemek már a célba kerültek."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Ellenőrizd a célprofilt, majd a forrást",
+          "body": "Hiányzó célnál jelentkezz be másik fiókba, majd térj vissza a forrásprofilhoz. Megerősítés utáni hibánál újrapróbálás előtt nézd meg mindkét profil tényleges bejegyzéseit. Kövesd a névre vagy korlátra vonatkozó üzenetet, de helycsinálásért ne törölj más, nem érintett adatot."
+        },
+        {
+          "id": "partial",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Sikertelen áthelyezésnél se feltételezz érintetlen forrást",
+          "body": "A célba írás sikerülhet a forrástisztítás vagy a végső válasz hibája előtt. Ellenőrzésig tartsd meg a megmaradt példányokat. Újabb kísérlet ütközést vagy további másolatokat okozhat. Ez az exportálás profilok között visz át elemeket, nem külső mentési fájlt készít."
+        }
+      ],
+      "relatedTopicIds": [
+        "passwords/transfer-between-profiles",
+        "security/move-vs-copy",
+        "profiles/login-another"
+      ]
+    },
+    {
+      "id": "troubleshooting/database",
+      "categoryId": "troubleshooting",
+      "title": "Nem nyitható meg az adatbázis, vagy alaphelyzetbe állítást ajánl",
+      "summary": "Helyi adatok törlése előtt állj meg, különösen az egyetlen példány esetén.",
+      "keywords": [
+        "adatbázis-verzió",
+        "nem támogatott",
+        "sérült fejléc",
+        "DbConfig",
+        "adatbázis alaphelyzetbe állítása",
+        "háttérszolgáltatás nem elérhető",
+        "indítási hiba"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Amit látsz",
+          "body": "Az alkalmazás külön jelzi a nem támogatott adatbázis-verziót, a hiányzó vagy sérült adatbázis-konfigurációt, a nem elérhető védett adatbáziskulcsot és a beállított kulccsal nem olvasható adatbázist. A helyreállítási képernyők alaphelyzetbe állítást és külön végleges törlési megerősítést kínálnak. Az átmenetileg zárolt eszköz vagy nem elérhető biztonságos kulcstároló újrapróbálást igényel, nem alaphelyzetbe állítást."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Mi okozhatja",
+          "body": "Nem kompatibilis verzió, sérült konfiguráció, elveszett rendszerkulcs, az adatbázishoz nem illő kulcs vagy sérült titkosított adat akadályozhatja az indítást. Az androidos újratelepítés vagy a fájlok más rendszerfiókba másolása használhatatlanná teheti a védett kulcsokat. Ez nem azonos a profil hibás mesterjelszavával. Új helyi adatbázis létrehozása nem állítja helyre a régi tartalmát."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Őrizd meg az adatokat, és ellenőrizd a verziót",
+          "body": "Ha szükséged van a helyi adatokra, utasítsd el az alaphelyzetbe állítást, és zárd be az alkalmazást. Ellenőrizd, hogy nem régebbi verziót indítottál-e, illetve van-e megbízható, kompatibilis frissítés. Őrizd meg a másik működő eszközt. Tartós hibánál a verziót és biztonságosan megosztható részleteket jelezd."
+        },
+        {
+          "id": "erase",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Az alaphelyzetbe állítás minden helyi profilt töröl",
+          "body": "Az alaphelyzetbe állítás végleg eltávolítja a helyi adatbázist, védett kulcsát, a profilokat, jelszavakat és helyi szinkronizálási adatokat. Újratelepítés vagy alkalmazásadat-törlés is megszüntetheti a hozzáférést. Ezeket ne használd szokásos hibajavításként: a másik eszközről újjáépítés nem garantált."
+        }
+      ],
+      "relatedTopicIds": [
+        "security/recovery-backup",
+        "troubleshooting/diagnostics",
+        "security/safe-support"
+      ]
+    },
+    {
+      "id": "troubleshooting/faq",
+      "categoryId": "troubleshooting",
+      "title": "Gyakori kérdések",
+      "summary": "Rövid válaszok az offline hozzáférésről, helyreállításról, profilokról és törlésről.",
+      "keywords": [
+        "GYIK",
+        "gyakori kérdések",
+        "offline",
+        "internet",
+        "központi szerver",
+        "jelszó visszaállítása",
+        "biztonsági mentés",
+        "kijelentkezés",
+        "exportfájl"
+      ],
+      "sections": [
+        {
+          "id": "offline",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Használhatom internet nélkül?",
+          "body": "Az eszközön már elérhető profillal internet nélkül is dolgozhatsz. A csatlakoztatáshoz és szinkronizáláshoz megfelelő helyi hálózati kapcsolat kell az eszközök között. Az offline eszközök nem kapják meg azonnal a más eszközökön végzett módosításokat és törléseket."
+        },
+        {
+          "id": "reset",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Visszakaphatom a jelszót e-mailből vagy központi szerverről?",
+          "body": "Nincs e-mailes visszaállítás vagy központi jelszótár-helyreállítási szolgáltatás. Azonos adatokkal újonnan regisztrált fiók nem hozza vissza a korábbi jelszótárat. A megjegyzett hozzáférés kényelmes, de nem helyettesíti a mesterjelszó ismeretét."
+        },
+        {
+          "id": "logout",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "A kijelentkezés kikapcsolja a bejelentkezés megjegyzését?",
+          "body": "Nem. Ha meg akarod szüntetni az automatikus megnyitást, a fiókmenüben kapcsold ki a megjegyzést az adott profilnál, és ellenőrizd a sikert, mielőtt kijelentkezel. A többi bejelentkezett profilt is nézd át: a profilváltás nem jelentkezteti ki őket."
+        },
+        {
+          "id": "export",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Az exportálás biztonsági mentési fájlt készít?",
+          "body": "A jelenlegi exportálás kijelölt elemeket másol vagy helyez át az eszköz másik bejelentkezett profiljába. Nem készít CSV-t vagy teljes mentési fájlt. A szinkronizálás nem független biztonsági mentés, mert a törlések is szinkronizálódhatnak."
+        },
+        {
+          "id": "website",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "A bejegyzés módosítása vagy törlése megváltoztatja a webes fiókot?",
+          "body": "Nem. A jelszótárbejegyzés információt tárol. A valódi jelszót a szolgáltatás saját beállításaiban változtasd meg, és a valódi fiókot is ott zárd be. Kiszivárgott jelszót a jelszótárbejegyzés törlése nem von vissza."
+        },
+        {
+          "id": "wipe",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "A leválasztás vagy törlés azonnal kiüríti az offline eszközt?",
+          "body": "Nem. A másik eszköznek fogadnia és alkalmaznia kell a változást. Ez nem azonnali távoli törlés, és a tiltott állapot sem bizonyítja a meglévő példány eltávolítását. Ha illetéktelen hozzáférés történhetett, kövesd az elveszett eszközről szóló tanácsokat."
+        }
+      ],
+      "relatedTopicIds": [
+        "security/remember-me",
+        "security/recovery-backup",
+        "security/lost-device",
+        "security/everyday-passwords"
+      ]
+    }
+  ]
+}

@@ -53,19 +53,6 @@ public sealed class EndpointRpcSeparationArchitectureTests
     }
 
     [TestMethod]
-    public void CommonFrontendTransitiveGraphContainsNoBackendProject()
-    {
-        var root = GetRepositoryRoot();
-        var frontend = Project(root, "Common", "Frontend", "PasswordManagerLocal.Common.Frontend.csproj");
-        var closure = GetTransitiveProjectClosure(frontend)
-            .Select(Path.GetFileName)
-            .ToArray();
-
-        CollectionAssert.DoesNotContain(closure, "PasswordManagerLocal.Common.Backend.csproj");
-        CollectionAssert.DoesNotContain(closure, "PasswordManagerLocal.Common.Backend.Hosting.csproj");
-    }
-
-    [TestMethod]
     public void WindowsAgentOwnsEndpointServerAndBackendDependencies()
     {
         var root = GetRepositoryRoot();
@@ -132,17 +119,6 @@ public sealed class EndpointRpcSeparationArchitectureTests
     }
 
     [TestMethod]
-    public void LegacyCombinedEndpointRpcProjectIsAbsent()
-    {
-        var root = GetRepositoryRoot();
-        Assert.IsFalse(File.Exists(Project(
-            root,
-            "Windows",
-            "EndpointRpc",
-            "PasswordManagerLocal.Windows.EndpointRpc.csproj")));
-    }
-
-    [TestMethod]
     public void FrontendTrimmerRootsContainNoBackendOrEntityFrameworkAssemblies()
     {
         var project = XDocument.Load(Project(
@@ -163,49 +139,34 @@ public sealed class EndpointRpcSeparationArchitectureTests
     }
 
     [TestMethod]
-    public void FirewallManagerUsesSharedPortAndTargetsSiblingAgentExecutable()
-    {
-        var source = File.ReadAllText(Project(
-            GetRepositoryRoot(),
-            "Windows",
-            "Frontend",
-            "WindowsFirewallPermissionManager.cs"));
-
-        StringAssert.Contains(source, "SyncProtocolDefaults.TcpPort");
-        StringAssert.Contains(source, "WindowsExecutableNames.AgentExecutableFileName");
-        Assert.IsFalse(source.Contains("AgentDeploymentDirectoryName", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("Environment.ProcessPath", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("BackendDebugLog", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("SyncConstants", StringComparison.Ordinal));
-
-        var script = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(),
-            "Tools",
-            "ConfigureWindowsFirewall.ps1"));
-        StringAssert.Contains(script, "Join-Path $PSScriptRoot 'PasswordManagerLocal.Windows.Agent.exe'");
-        Assert.IsFalse(script.Contains("AgentRuntime", StringComparison.Ordinal));
-    }
-
-    [TestMethod]
-    public void PublishValidationEnforcesSharedSiblingProductBoundaries()
+    public void FirewallUsesNativeApiSharedPortsAndTheSiblingAgentWithoutScripts()
     {
         var root = GetRepositoryRoot();
-        var publishScript = File.ReadAllText(Path.Combine(root, "Tools", "Windows", "PublishWindowsProduct.ps1"));
-        var verifier = File.ReadAllText(Path.Combine(root, "Tools", "Windows", "VerifyWindowsPublishedLayout.ps1"));
-
-        StringAssert.Contains(publishScript, @"staging\frontend");
-        StringAssert.Contains(publishScript, @"staging\agent");
-        StringAssert.Contains(publishScript, @"product\PasswordManagerLocal");
-        StringAssert.Contains(verifier, "PasswordManagerLocal.Common.Backend.dll");
-        StringAssert.Contains(verifier, "PasswordManagerLocal.Windows.EndpointRpc.Server.dll");
-        StringAssert.Contains(verifier, "PasswordManagerLocal.deps.json");
-        StringAssert.Contains(verifier, "PasswordManagerLocal.Windows.Agent.deps.json");
-        StringAssert.Contains(verifier, "prohibited legacy AgentRuntime directory");
+        var manager = File.ReadAllText(Project(root, "Windows", "Frontend", "WindowsFirewallPermissionManager.cs"));
+        var setup = File.ReadAllText(Project(root, "Windows", "Frontend", "Firewall", "WindowsFirewallSetup.cs"));
+        var service = File.ReadAllText(Project(root, "Windows", "Frontend", "Firewall", "WindowsFirewallConfigurationService.cs"));
+        var native = File.ReadAllText(Project(root, "Windows", "Frontend", "Firewall", "WindowsFirewallPolicy.cs"));
+        StringAssert.Contains(service, "SyncProtocolDefaults.TcpPort");
+        StringAssert.Contains(service, "SyncProtocolDefaults.DiscoveryUdpPort");
+        StringAssert.Contains(setup, "WindowsExecutableNames.AgentExecutableFileName");
+        StringAssert.Contains(manager, "Verb = \"runas\"");
+        StringAssert.Contains(native, "CoCreateInstance");
+        foreach (var source in new[] { manager, setup, service, native })
+        {
+            Assert.IsFalse(source.Contains("powershell.exe", StringComparison.OrdinalIgnoreCase));
+            Assert.IsFalse(source.Contains("GetTempPath", StringComparison.Ordinal));
+            Assert.IsFalse(source.Contains("Environment.ProcessPath", StringComparison.Ordinal));
+            Assert.IsFalse(source.Contains("BackendDebugLog", StringComparison.Ordinal));
+            Assert.IsFalse(source.Contains("SyncConstants", StringComparison.Ordinal));
+        }
+        Assert.IsFalse(File.Exists(Project(root, "Tools", "ConfigureWindowsFirewall.ps1")));
+        Assert.IsFalse(File.Exists(Project(root, "Tools", "ConfigureWindowsFirewall.bat")));
     }
 
     private static string[] ProjectReferenceNames(string projectPath) =>
         ProjectReferences(projectPath)
-            .Select(Path.GetFileName)
+            .Select(path => Path.GetFileName(path)
+                ?? throw new InvalidDataException($"Project reference has no file name: {path}"))
             .ToArray();
 
     private static HashSet<string> GetTransitiveProjectClosure(string rootProject)

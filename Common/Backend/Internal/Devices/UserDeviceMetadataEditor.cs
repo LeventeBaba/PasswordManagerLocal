@@ -1,3 +1,4 @@
+using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
@@ -16,6 +17,8 @@ public sealed class UserDeviceMetadataEditor
     private readonly ISyncVersionClockService _versionClock;
     private readonly LocalUserDeviceLinkManager _localLinkManager;
     private readonly UserDeviceAccessor _accessor;
+    private readonly IUserMembershipAuthorizationRepository _membershipAuthorizations;
+    private readonly IUserDeviceRepository _userDevices;
 
     public UserDeviceMetadataEditor(
         IUserLookupService userLookup,
@@ -24,7 +27,9 @@ public sealed class UserDeviceMetadataEditor
         IDeviceIdentityService identity,
         ISyncVersionClockService versionClock,
         LocalUserDeviceLinkManager localLinkManager,
-        UserDeviceAccessor accessor)
+        UserDeviceAccessor accessor,
+        IUserMembershipAuthorizationRepository membershipAuthorizations,
+        IUserDeviceRepository userDevices)
     {
         _userLookup = userLookup;
         _userDataReader = userDataReader;
@@ -33,48 +38,78 @@ public sealed class UserDeviceMetadataEditor
         _versionClock = versionClock;
         _localLinkManager = localLinkManager;
         _accessor = accessor;
+        _membershipAuthorizations = membershipAuthorizations;
+        _userDevices = userDevices;
     }
 
-    public async Task SetNameAsync(Guid token, Guid deviceId, string name, CancellationToken ct)
+    public Task SetNameAsync(Guid token, Guid deviceId, string name, CancellationToken ct)
     {
-        var normalizedName = NormalizeUserDeviceName(name);
-        var user = await _userLookup.GetAndVerifyUserAsync(token, ct);
-        var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(token, ct, user);
-        var userDevicesData = bundle.UserDevicesData;
-        await _localLinkManager.GetOrCreateAsync(user.UId, ct);
-        UserDevice? remoteLink = null;
-        if (deviceId != _identity.LocalDeviceId)
-            remoteLink = await _accessor.GetActiveRemoteAsync(user.UId, deviceId, ct);
-
-        if (userDevicesData.Devices.Any(d => d.Id != deviceId && string.Equals(d.Name, normalizedName, StringComparison.OrdinalIgnoreCase)))
-            throw new InvalidInputException();
-
-        var encryptedDevice = userDevicesData.Devices.FirstOrDefault(d => d.Id == deviceId);
-        if (encryptedDevice is null)
+        return _userDataWriter.ExecuteMutationAsync(token, async ct =>
         {
-            var version = _versionClock.Next();
-            encryptedDevice = new UserDeviceData
+            var normalizedName = NormalizeUserDeviceName(name);
+            var user = await _userLookup.GetAndVerifyUserAsync(token, ct);
+            using var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(token, ct, user);
+            var userDevicesData = bundle.UserDevicesData;
+            await _localLinkManager.GetOrCreateAsync(user.UId, ct);
+            UserDevice? remoteLink = null;
+            if (deviceId != _identity.LocalDeviceId)
+                remoteLink = await _accessor.GetActiveRemoteAsync(user.UId, deviceId, ct);
+
+            var activeDeviceIds = await GetActiveDeviceIdsAsync(user.UId, ct);
+            if (userDevicesData.Devices.Any(d =>
+                    d.Id != deviceId &&
+                    activeDeviceIds.Contains(d.Id) &&
+                    string.Equals(d.Name, normalizedName, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidInputException();
+
+            var encryptedDevice = userDevicesData.Devices.FirstOrDefault(d => d.Id == deviceId);
+            if (encryptedDevice is null)
             {
-                Id = deviceId,
-                Name = normalizedName,
-                LinkedAt = remoteLink?.LastModifiedAt ?? DateTimeOffset.UtcNow,
-                LastUpdatedAt = DateTimeOffset.UtcNow,
-                Version = version
-            };
-            userDevicesData.DeletedDevices.RemoveAll(deleted => deleted.Id == encryptedDevice.Id);
-            userDevicesData.Devices.Add(encryptedDevice);
-        }
-        else if (string.Equals(encryptedDevice.Name, normalizedName, StringComparison.Ordinal))
-            return;
-        else
-        {
-            encryptedDevice.Name = normalizedName;
-            encryptedDevice.LastUpdatedAt = DateTimeOffset.UtcNow;
-            encryptedDevice.Version = _versionClock.Next();
-        }
+                var version = _versionClock.Next();
+                var membership = await _membershipAuthorizations.ListActiveForDeviceAsync(user.UId, deviceId, ct);
+                var linkedAt = membership.Count == 0
+                    ? remoteLink?.LastModifiedAt ?? DateTimeOffset.UtcNow
+                    : membership.Min(row => row.CreatedAtUtc);
+                encryptedDevice = new UserDeviceData
+                {
+                    Id = deviceId,
+                    Name = normalizedName,
+                    LinkedAt = linkedAt,
+                    LastUpdatedAt = DateTimeOffset.UtcNow,
+                    Version = version
+                };
+                userDevicesData.DeletedDevices.RemoveAll(deleted => deleted.Id == encryptedDevice.Id);
+                userDevicesData.Devices.Add(encryptedDevice);
+            }
+            else if (string.Equals(encryptedDevice.Name, normalizedName, StringComparison.Ordinal))
+                return;
+            else
+            {
+                encryptedDevice.Name = normalizedName;
+                encryptedDevice.LastUpdatedAt = DateTimeOffset.UtcNow;
+                encryptedDevice.Version = _versionClock.Next();
+            }
 
-        encryptedDevice.GenerateIntegrityHash();
-        await PersistAsync(bundle, token, ct);
+            encryptedDevice.NameVersion = encryptedDevice.Version;
+            encryptedDevice.GenerateIntegrityHash();
+            await PersistAsync(bundle, token, ct);
+
+        }, ct);
+    }
+
+    private async Task<HashSet<Guid>> GetActiveDeviceIdsAsync(Guid userId, CancellationToken ct)
+    {
+        var activeDeviceIds = (await _membershipAuthorizations.ListForUserAsync(userId, ct))
+            .Where(row => row.IsActive)
+            .Select(row => row.DeviceId)
+            .ToHashSet();
+        activeDeviceIds.Add(_identity.LocalDeviceId);
+        foreach (var link in await _userDevices.ListByUserAsync(userId, ct))
+        {
+            if (!link.IsDeleted)
+                activeDeviceIds.Add(link.DeviceId);
+        }
+        return activeDeviceIds;
     }
 
     public bool EnsureDeviceData(UserDevicesData userDevicesData, Guid deviceId, DateTimeOffset linkedAt)

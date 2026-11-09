@@ -52,16 +52,13 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
     {
         var response = await InvokeAsync(
             EndpointOperationId.Register,
-            () => new RegisterEndpointRequest { Request = EndpointSensitiveData.Clone(request) },
+            () => new RegisterEndpointRequest
+            {
+                Request = request is null ? null! : EndpointSensitiveData.Clone(request)
+            },
             EndpointRpcJsonContext.Default.RegisterEndpointRequest,
             EndpointRpcJsonContext.Default.RegisterEndpointResponse,
-            ct,
-            () => EnsureRawInput(request is not null &&
-                ValidRawString(request.Username, DataLengthConstants.UsernameMinLength, DataLengthConstants.UsernameMaxLength) &&
-                ValidRawBytes(request.Password) &&
-                ValidRawString(request.FirstName, DataLengthConstants.FirstNameMinLength, DataLengthConstants.FirstNameMaxLength) &&
-                ValidRawString(request.LastName, DataLengthConstants.LastNameMinLength, DataLengthConstants.LastNameMaxLength) &&
-                ValidRawString(request.Email, DataLengthConstants.EmailMinLength, DataLengthConstants.EmailMaxLength)));
+            ct);
         return response.Token;
     }
 
@@ -69,13 +66,13 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
     {
         var response = await InvokeAsync(
             EndpointOperationId.Login,
-            () => new LoginEndpointRequest { Request = EndpointSensitiveData.Clone(request) },
+            () => new LoginEndpointRequest
+            {
+                Request = request is null ? null! : EndpointSensitiveData.Clone(request)
+            },
             EndpointRpcJsonContext.Default.LoginEndpointRequest,
             EndpointRpcJsonContext.Default.LoginEndpointResponse,
-            ct,
-            () => EnsureRawInput(request is not null &&
-                ValidRawString(request.Username, DataLengthConstants.UsernameMinLength, DataLengthConstants.UsernameMaxLength) &&
-                ValidRawBytes(request.Password)));
+            ct);
         return response.Token;
     }
 
@@ -96,7 +93,7 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.Logout,
             () => new LogoutEndpointRequest { Token = token },
             EndpointRpcJsonContext.Default.LogoutEndpointRequest,
-            EndpointRpcJsonContext.Default.LogoutEndpointResponse,
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
             ct);
     }
 
@@ -115,13 +112,13 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
     {
         await InvokeAsync(
             EndpointOperationId.ChangeMasterPassword,
-            () => new ChangeMasterPasswordEndpointRequest { Request = EndpointSensitiveData.Clone(request) },
+            () => new ChangeMasterPasswordEndpointRequest
+            {
+                Request = request is null ? null! : EndpointSensitiveData.Clone(request)
+            },
             EndpointRpcJsonContext.Default.ChangeMasterPasswordEndpointRequest,
-            EndpointRpcJsonContext.Default.ChangeMasterPasswordEndpointResponse,
-            ct,
-            () => EnsureRawInput(request is not null &&
-                ValidRawBytes(request.Password) &&
-                ValidRawBytes(request.NewPassword)));
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
+            ct);
     }
 
     public async Task<UserProfileInfoResponse> GetUserProfileInfoAsync(Guid token, CancellationToken ct = default)
@@ -141,7 +138,7 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.DeleteUserAccount,
             () => new DeleteUserAccountEndpointRequest { Token = token, Password = password.ToArray() },
             EndpointRpcJsonContext.Default.DeleteUserAccountEndpointRequest,
-            EndpointRpcJsonContext.Default.DeleteUserAccountEndpointResponse,
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
             ct,
             () => EnsureRawInput(ValidRawBytes(password)));
     }
@@ -152,7 +149,7 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.ChangeUsername,
             () => new ChangeUsernameEndpointRequest { Token = token, NewUsername = newUsername },
             EndpointRpcJsonContext.Default.ChangeUsernameEndpointRequest,
-            EndpointRpcJsonContext.Default.ChangeUsernameEndpointResponse,
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
             ct,
             () => EnsureRawInput(
                 ValidRawString(newUsername, DataLengthConstants.UsernameMinLength, DataLengthConstants.UsernameMaxLength)));
@@ -164,20 +161,16 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.UpdateUserProfileInfo,
             () => new UpdateUserProfileInfoEndpointRequest { Request = request },
             EndpointRpcJsonContext.Default.UpdateUserProfileInfoEndpointRequest,
-            EndpointRpcJsonContext.Default.UpdateUserProfileInfoEndpointResponse,
-            ct,
-            () => EnsureRawInput(request is not null &&
-                ValidOptionalRawString(request.NewEamil, DataLengthConstants.EmailMinLength, DataLengthConstants.EmailMaxLength) &&
-                ValidOptionalRawString(request.newFirstName, DataLengthConstants.FirstNameMinLength, DataLengthConstants.FirstNameMaxLength) &&
-                ValidOptionalRawString(request.NewLastName, DataLengthConstants.LastNameMinLength, DataLengthConstants.LastNameMaxLength)));
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
+            ct);
     }
 
     public async Task<LocalDeviceInfoResponse> GetLocalDeviceInfoAsync(CancellationToken ct = default)
     {
         var response = await InvokeAsync(
             EndpointOperationId.GetLocalDeviceInfo,
-            () => new GetLocalDeviceInfoEndpointRequest(),
-            EndpointRpcJsonContext.Default.GetLocalDeviceInfoEndpointRequest,
+            () => new EmptyEndpointRequest(),
+            EndpointRpcJsonContext.Default.EmptyEndpointRequest,
             EndpointRpcJsonContext.Default.GetLocalDeviceInfoEndpointResponse,
             ct);
         return response.Device;
@@ -200,7 +193,7 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.SetLocalUserSyncOn,
             () => new SetLocalUserSyncOnEndpointRequest { Token = token, IsSyncOn = isSyncOn },
             EndpointRpcJsonContext.Default.SetLocalUserSyncOnEndpointRequest,
-            EndpointRpcJsonContext.Default.SetLocalUserSyncOnEndpointResponse,
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
             ct);
     }
 
@@ -210,7 +203,7 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.SetLocalDeviceName,
             () => new SetLocalDeviceNameEndpointRequest { Token = token, Name = name },
             EndpointRpcJsonContext.Default.SetLocalDeviceNameEndpointRequest,
-            EndpointRpcJsonContext.Default.SetLocalDeviceNameEndpointResponse,
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
             ct,
             () => EnsureRawInput(
                 ValidRawString(name, DataLengthConstants.UserDeviceNameMinLength, DataLengthConstants.UserDeviceNameMaxLength)));
@@ -227,13 +220,36 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
         return response.Devices;
     }
 
+    public async Task<SelfDiagnosticsResultResponse> RunSelfDiagnosticsAndRepairAsync(Guid token, CancellationToken ct = default)
+    {
+        var response = await InvokeAsync(
+            EndpointOperationId.RunSelfDiagnosticsAndRepair,
+            () => new RunSelfDiagnosticsAndRepairEndpointRequest { Token = token },
+            EndpointRpcJsonContext.Default.RunSelfDiagnosticsAndRepairEndpointRequest,
+            EndpointRpcJsonContext.Default.RunSelfDiagnosticsAndRepairEndpointResponse,
+            ct);
+        return response.Result;
+    }
+
+    public async Task<SelfDiagnosticsResultResponse> ConfirmSelfDiagnosticsRepairAsync(Guid token, string planId, byte[] masterPassword, CancellationToken ct = default)
+    {
+        var response = await InvokeAsync(
+            EndpointOperationId.ConfirmSelfDiagnosticsRepair,
+            () => new ConfirmSelfDiagnosticsRepairEndpointRequest { Token = token, PlanId = planId, MasterPassword = masterPassword.ToArray() },
+            EndpointRpcJsonContext.Default.ConfirmSelfDiagnosticsRepairEndpointRequest,
+            EndpointRpcJsonContext.Default.ConfirmSelfDiagnosticsRepairEndpointResponse,
+            ct,
+            () => EnsureRawInput(ValidRawBytes(masterPassword) && ValidRawString(planId, 64, 64)));
+        return response.Result;
+    }
+
     public async Task SetUserDeviceNameAsync(Guid token, Guid deviceId, string name, CancellationToken ct = default)
     {
         await InvokeAsync(
             EndpointOperationId.SetUserDeviceName,
             () => new SetUserDeviceNameEndpointRequest { Token = token, DeviceId = deviceId, Name = name },
             EndpointRpcJsonContext.Default.SetUserDeviceNameEndpointRequest,
-            EndpointRpcJsonContext.Default.SetUserDeviceNameEndpointResponse,
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
             ct,
             () => EnsureRawInput(
                 ValidRawString(name, DataLengthConstants.UserDeviceNameMinLength, DataLengthConstants.UserDeviceNameMaxLength)));
@@ -245,7 +261,7 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.SetUserDeviceSyncOn,
             () => new SetUserDeviceSyncOnEndpointRequest { Token = token, DeviceId = deviceId, IsSyncOn = isSyncOn },
             EndpointRpcJsonContext.Default.SetUserDeviceSyncOnEndpointRequest,
-            EndpointRpcJsonContext.Default.SetUserDeviceSyncOnEndpointResponse,
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
             ct);
     }
 
@@ -255,7 +271,7 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.UnblockUserDevice,
             () => new UnblockUserDeviceEndpointRequest { Token = token, DeviceId = deviceId },
             EndpointRpcJsonContext.Default.UnblockUserDeviceEndpointRequest,
-            EndpointRpcJsonContext.Default.UnblockUserDeviceEndpointResponse,
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
             ct);
     }
 
@@ -275,8 +291,8 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
     {
         var response = await InvokeAsync(
             EndpointOperationId.StartDeviceEnrollment,
-            () => new StartDeviceEnrollmentEndpointRequest(),
-            EndpointRpcJsonContext.Default.StartDeviceEnrollmentEndpointRequest,
+            () => new EmptyEndpointRequest(),
+            EndpointRpcJsonContext.Default.EmptyEndpointRequest,
             EndpointRpcJsonContext.Default.StartDeviceEnrollmentEndpointResponse,
             ct);
         return response.Enrollment;
@@ -286,8 +302,8 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
     {
         var response = await InvokeAsync(
             EndpointOperationId.GetDeviceEnrollmentStatus,
-            () => new GetDeviceEnrollmentStatusEndpointRequest(),
-            EndpointRpcJsonContext.Default.GetDeviceEnrollmentStatusEndpointRequest,
+            () => new EmptyEndpointRequest(),
+            EndpointRpcJsonContext.Default.EmptyEndpointRequest,
             EndpointRpcJsonContext.Default.GetDeviceEnrollmentStatusEndpointResponse,
             ct);
         return response.Status;
@@ -297,9 +313,9 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
     {
         await InvokeAsync(
             EndpointOperationId.CancelDeviceEnrollment,
-            () => new CancelDeviceEnrollmentEndpointRequest(),
-            EndpointRpcJsonContext.Default.CancelDeviceEnrollmentEndpointRequest,
-            EndpointRpcJsonContext.Default.CancelDeviceEnrollmentEndpointResponse,
+            () => new EmptyEndpointRequest(),
+            EndpointRpcJsonContext.Default.EmptyEndpointRequest,
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
             ct);
     }
 
@@ -309,7 +325,7 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.AddDeviceByCode,
             () => new AddDeviceByCodeEndpointRequest { Token = token, Code = code },
             EndpointRpcJsonContext.Default.AddDeviceByCodeEndpointRequest,
-            EndpointRpcJsonContext.Default.AddDeviceByCodeEndpointResponse,
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
             ct,
             () => EnsureRawInput(
                 ValidRawString(code, 1, EndpointRpcLimits.MaximumEnrollmentCodeLength)));
@@ -319,8 +335,8 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
     {
         var response = await InvokeAsync(
             EndpointOperationId.RestoreRememberedSessions,
-            () => new RestoreRememberedSessionsEndpointRequest(),
-            EndpointRpcJsonContext.Default.RestoreRememberedSessionsEndpointRequest,
+            () => new EmptyEndpointRequest(),
+            EndpointRpcJsonContext.Default.EmptyEndpointRequest,
             EndpointRpcJsonContext.Default.RestoreRememberedSessionsEndpointResponse,
             ct);
         return response.Tokens;
@@ -343,7 +359,7 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.SetRememberMe,
             () => new SetRememberMeEndpointRequest { Token = token, RememberMe = rememberMe },
             EndpointRpcJsonContext.Default.SetRememberMeEndpointRequest,
-            EndpointRpcJsonContext.Default.SetRememberMeEndpointResponse,
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
             ct);
     }
 
@@ -362,16 +378,14 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
     {
         await InvokeAsync(
             EndpointOperationId.AddNewPassword,
-            () => new AddNewPasswordEndpointRequest { Token = token, Request = EndpointSensitiveData.Clone(request) },
+            () => new AddNewPasswordEndpointRequest
+            {
+                Token = token,
+                Request = request is null ? null! : EndpointSensitiveData.Clone(request)
+            },
             EndpointRpcJsonContext.Default.AddNewPasswordEndpointRequest,
-            EndpointRpcJsonContext.Default.AddNewPasswordEndpointResponse,
-            ct,
-            () => EnsureRawInput(request is not null &&
-                ValidRawString(request.Name, DataLengthConstants.PasswordNameMinLength, DataLengthConstants.PasswordNameMaxLength) &&
-                ValidRawString(request.Description, DataLengthConstants.DescriptionMinLength, DataLengthConstants.DescriptionMaxLength) &&
-                ValidExactRawString(request.Color, DataLengthConstants.ARGBColorLength) &&
-                ValidRawBytes(request.Password) &&
-                ValidRawCollectionCount(request.TagIds, requireNonEmpty: false)));
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
+            ct);
     }
 
     public async Task RemovePasswordsAsync(Guid token, IReadOnlyList<Guid> passwordIds, CancellationToken ct = default)
@@ -380,7 +394,7 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.RemovePasswords,
             () => new RemovePasswordsEndpointRequest { Token = token, PasswordIds = passwordIds.ToArray() },
             EndpointRpcJsonContext.Default.RemovePasswordsEndpointRequest,
-            EndpointRpcJsonContext.Default.RemovePasswordsEndpointResponse,
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
             ct,
             () => EnsureRawInput(ValidRawCollectionCount(passwordIds, requireNonEmpty: true)));
     }
@@ -400,16 +414,14 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
     {
         await InvokeAsync(
             EndpointOperationId.UpdatePassword,
-            () => new UpdatePasswordEndpointRequest { Token = token, Request = EndpointSensitiveData.Clone(request) },
+            () => new UpdatePasswordEndpointRequest
+            {
+                Token = token,
+                Request = request is null ? null! : EndpointSensitiveData.Clone(request)
+            },
             EndpointRpcJsonContext.Default.UpdatePasswordEndpointRequest,
-            EndpointRpcJsonContext.Default.UpdatePasswordEndpointResponse,
-            ct,
-            () => EnsureRawInput(request is not null &&
-                ValidOptionalRawString(request.Name, DataLengthConstants.PasswordNameMinLength, DataLengthConstants.PasswordNameMaxLength) &&
-                ValidOptionalRawString(request.Description, DataLengthConstants.DescriptionMinLength, DataLengthConstants.DescriptionMaxLength) &&
-                ValidOptionalExactRawString(request.Color, DataLengthConstants.ARGBColorLength) &&
-                ValidOptionalRawBytes(request.Password) &&
-                ValidOptionalRawCollectionCount(request.TagIds)));
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
+            ct);
     }
 
     public async Task ExportPasswordsToUserAsync(Guid sourceToken, ExportPasswordsToUserRequest request, CancellationToken ct = default)
@@ -418,10 +430,8 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.ExportPasswordsToUser,
             () => new ExportPasswordsToUserEndpointRequest { SourceToken = sourceToken, Request = request },
             EndpointRpcJsonContext.Default.ExportPasswordsToUserEndpointRequest,
-            EndpointRpcJsonContext.Default.ExportPasswordsToUserEndpointResponse,
-            ct,
-            () => EnsureRawInput(request is not null &&
-                ValidRawCollectionCount(request.PasswordIds, requireNonEmpty: true)));
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
+            ct);
     }
 
     public async Task AddCustomUserColorsAsync(Guid token, IReadOnlyList<NewCustomUserColorRequest> requests, CancellationToken ct = default)
@@ -430,14 +440,11 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.AddCustomUserColors,
             () => new AddCustomUserColorsEndpointRequest { Token = token, Requests = requests.ToArray() },
             EndpointRpcJsonContext.Default.AddCustomUserColorsEndpointRequest,
-            EndpointRpcJsonContext.Default.AddCustomUserColorsEndpointResponse,
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
             ct,
             () => EnsureRawInput(requests is not null &&
                 requests.Count > 0 &&
-                requests.Count <= EndpointRpcLimits.MaximumCollectionItems &&
-                requests.All(value => value is not null &&
-                    ValidOptionalRawString(value.ColorName, 1, DataLengthConstants.CustomUserColorNameMaxLength) &&
-                    ValidExactRawString(value.ColorCode, DataLengthConstants.ARGBColorLength))));
+                requests.Count <= EndpointRpcLimits.MaximumCollectionItems));
     }
 
     public async Task DeleteCustomUserColorsAsync(Guid token, IReadOnlyList<Guid> customUserColorIds, CancellationToken ct = default)
@@ -446,7 +453,7 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.DeleteCustomUserColors,
             () => new DeleteCustomUserColorsEndpointRequest { Token = token, CustomUserColorIds = customUserColorIds.ToArray() },
             EndpointRpcJsonContext.Default.DeleteCustomUserColorsEndpointRequest,
-            EndpointRpcJsonContext.Default.DeleteCustomUserColorsEndpointResponse,
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
             ct,
             () => EnsureRawInput(ValidRawCollectionCount(customUserColorIds, requireNonEmpty: true)));
     }
@@ -457,10 +464,8 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.ExportCustomUserColorsToUser,
             () => new ExportCustomUserColorsToUserEndpointRequest { SourceToken = sourceToken, Request = request },
             EndpointRpcJsonContext.Default.ExportCustomUserColorsToUserEndpointRequest,
-            EndpointRpcJsonContext.Default.ExportCustomUserColorsToUserEndpointResponse,
-            ct,
-            () => EnsureRawInput(request is not null &&
-                ValidRawCollectionCount(request.CustomUserColorIds, requireNonEmpty: true)));
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
+            ct);
     }
 
     public async Task UpdateCustomUserColorAsync(Guid token, UpdateCustomUserColorRequest request, CancellationToken ct = default)
@@ -469,11 +474,8 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.UpdateCustomUserColor,
             () => new UpdateCustomUserColorEndpointRequest { Token = token, Request = request },
             EndpointRpcJsonContext.Default.UpdateCustomUserColorEndpointRequest,
-            EndpointRpcJsonContext.Default.UpdateCustomUserColorEndpointResponse,
-            ct,
-            () => EnsureRawInput(request is not null &&
-                ValidOptionalRawString(request.ColorName, 1, DataLengthConstants.CustomUserColorNameMaxLength) &&
-                ValidOptionalExactRawString(request.ColorCode, DataLengthConstants.ARGBColorLength)));
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
+            ct);
     }
 
     public async Task AddPasswordTagAsync(Guid token, NewPasswordTagRequest request, CancellationToken ct = default)
@@ -482,11 +484,8 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.AddPasswordTag,
             () => new AddPasswordTagEndpointRequest { Token = token, Request = request },
             EndpointRpcJsonContext.Default.AddPasswordTagEndpointRequest,
-            EndpointRpcJsonContext.Default.AddPasswordTagEndpointResponse,
-            ct,
-            () => EnsureRawInput(request is not null &&
-                ValidRawString(request.Name, 1, DataLengthConstants.PasswordTagNameMaxLength) &&
-                ValidExactRawString(request.Color, DataLengthConstants.ARGBColorLength)));
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
+            ct);
     }
 
     public async Task DeletePasswordTagAsync(Guid token, Guid passwordTagId, CancellationToken ct = default)
@@ -495,7 +494,7 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.DeletePasswordTag,
             () => new DeletePasswordTagEndpointRequest { Token = token, PasswordTagId = passwordTagId },
             EndpointRpcJsonContext.Default.DeletePasswordTagEndpointRequest,
-            EndpointRpcJsonContext.Default.DeletePasswordTagEndpointResponse,
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
             ct);
     }
 
@@ -505,10 +504,8 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.ExportPasswordTagsToUser,
             () => new ExportPasswordTagsToUserEndpointRequest { SourceToken = sourceToken, Request = request },
             EndpointRpcJsonContext.Default.ExportPasswordTagsToUserEndpointRequest,
-            EndpointRpcJsonContext.Default.ExportPasswordTagsToUserEndpointResponse,
-            ct,
-            () => EnsureRawInput(request is not null &&
-                ValidRawCollectionCount(request.PasswordTagIds, requireNonEmpty: true)));
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
+            ct);
     }
 
     public async Task UpdatePasswordTagAsync(Guid token, UpdatePasswordTagRequest request, CancellationToken ct = default)
@@ -517,11 +514,8 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointOperationId.UpdatePasswordTag,
             () => new UpdatePasswordTagEndpointRequest { Token = token, Request = request },
             EndpointRpcJsonContext.Default.UpdatePasswordTagEndpointRequest,
-            EndpointRpcJsonContext.Default.UpdatePasswordTagEndpointResponse,
-            ct,
-            () => EnsureRawInput(request is not null &&
-                ValidOptionalRawString(request.Name, 1, DataLengthConstants.PasswordTagNameMaxLength) &&
-                ValidOptionalExactRawString(request.Color, DataLengthConstants.ARGBColorLength)));
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse,
+            ct);
     }
 
     private async Task<TResponse> InvokeAsync<TRequest, TResponse>(
@@ -551,7 +545,9 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             admission = await AcquireAdmissionAsync(cancellationToken);
             request = requestFactory();
             _validator.ValidateRequest(operationId, request);
-            requestPayload = _serializer.Serialize(request, requestTypeInfo);
+            requestPayload = typeof(TRequest) == typeof(EmptyEndpointRequest)
+                ? Array.Empty<byte>()
+                : _serializer.Serialize(request, requestTypeInfo);
             cancellationToken.ThrowIfCancellationRequested();
             if (requestPayload.Length > descriptor.MaximumRequestPayloadSize)
                 throw new EndpointRpcPayloadException("The endpoint RPC request payload exceeds the permitted size.");
@@ -559,7 +555,7 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             var transportResponse = await _transport.SendAsync(
                 operationId,
                 requestPayload,
-                descriptor.CancellationClassification,
+                descriptor.MutatesState,
                 cancellationToken);
             conclusiveSuccessResponseReceived = true;
             responsePayload = transportResponse.ResponseKind switch
@@ -574,7 +570,11 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             if (responsePayload.Length > descriptor.MaximumLogicalResponsePayloadSize)
                 throw new EndpointRpcPayloadException("The endpoint RPC response payload exceeds the permitted size.");
 
-            response = _serializer.Deserialize(responsePayload, responseTypeInfo);
+            response = typeof(TResponse) == typeof(EmptyEndpointResponse)
+                ? responsePayload.Length == 0
+                    ? (TResponse)(object)new EmptyEndpointResponse()
+                    : throw new EndpointRpcPayloadException("The endpoint RPC void response must not contain a payload.")
+                : _serializer.Deserialize(responsePayload, responseTypeInfo);
             _validator.ValidateResponse(operationId, response);
             responseTransferred = true;
             return response;
@@ -799,28 +799,10 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
     private static bool ValidRawString(string? value, int minimumLength, int maximumLength) =>
         value is not null && value.Length >= minimumLength && value.Length <= maximumLength;
 
-    private static bool ValidOptionalRawString(
-        string? value,
-        int minimumLength,
-        int maximumLength) =>
-        value is null || ValidRawString(value, minimumLength, maximumLength);
-
-    private static bool ValidExactRawString(string? value, int exactLength) =>
-        value is not null && value.Length == exactLength;
-
-    private static bool ValidOptionalExactRawString(string? value, int exactLength) =>
-        value is null || value.Length == exactLength;
-
     private static bool ValidRawBytes(byte[]? value) =>
         value is not null &&
         value.Length >= DataLengthConstants.PasswordMinLength &&
         value.Length <= DataLengthConstants.PasswordMaxLength;
-
-    private static bool ValidOptionalRawBytes(byte[]? value) =>
-        value is null || ValidRawBytes(value);
-
-    private static bool ValidOptionalRawCollectionCount<T>(IReadOnlyCollection<T>? values) =>
-        values is null || values.Count <= EndpointRpcLimits.MaximumCollectionItems;
 
     private static bool ValidRawCollectionCount<T>(
         IReadOnlyCollection<T>? values,
@@ -840,7 +822,6 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
             EndpointRpcErrorCode.OperationPartiallyCommitted =>
                 new EndpointOperationPartiallyCommittedException(
                     operationId,
-                    exception.Error.Recovery!,
                     exception.Error.RequiresProcessRestart,
                     exception),
             EndpointRpcErrorCode.OperationOutcomeUnknown =>
@@ -852,7 +833,10 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
                 new OperationCanceledException(exception.Error.SafeMessage, exception),
             EndpointRpcErrorCode.Disconnected =>
                 new EndpointRpcDisconnectedException(exception),
-            _ => exception
+            _ => new EndpointFailureException(
+                exception.Error.FailureKind,
+                exception.Error.EnrollmentErrorCode,
+                exception)
         };
     }
 

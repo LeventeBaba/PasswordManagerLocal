@@ -47,6 +47,24 @@ public sealed class DeviceEnrollmentServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Unit")]
+    public async Task StartReturnsAuthoritativeInitialState_AndCancellationIsTerminal()
+    {
+        using var setup = CreateService();
+
+        var started = await setup.Service.StartEnrollmentAsync();
+        MSTestAssert.AreEqual(DeviceEnrollmentState.Waiting, started.InitialStatus.State);
+        MSTestAssert.AreEqual(started.ExpiresAt, started.InitialStatus.ExpiresAt);
+
+        await setup.Service.CancelEnrollmentAsync();
+        var status = await setup.Service.GetEnrollmentStatusAsync();
+
+        MSTestAssert.AreEqual(DeviceEnrollmentState.Cancelled, status.State);
+        MSTestAssert.IsTrue(status.IsFinished);
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Unit")]
     public async Task StartEnrollment_BackgroundOnly_RejectsBeforeRuntimeActivation()
     {
         using var setup = CreateService(interactive: false);

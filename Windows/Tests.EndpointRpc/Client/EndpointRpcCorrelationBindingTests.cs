@@ -12,37 +12,19 @@ namespace PasswordManagerLocal.Windows.Tests.EndpointRpc.Client;
 public sealed class EndpointRpcCorrelationBindingTests
 {
     [TestMethod]
-    public void InlineEndpointErrorWithMatchingOuterCorrelationIsAccepted()
+    public void InlineFailureCodecAndResponseMapperPreserveRemoteError()
     {
         var codec = CreateCodec();
-        var encoded = codec.EncodeFailure(CreateError(41));
+        var encoded = codec.EncodeFailure(CreateError());
 
-        var response = codec.DecodeResponse(encoded, 41);
+        var response = EndpointRpcTransportResponse.Failure(codec.DecodeFailure(encoded));
 
         Assert.AreEqual(EndpointRpcResponseKind.Failure, response.ResponseKind);
-        Assert.AreEqual(41, response.Error!.CorrelationId);
-        Assert.AreEqual(EndpointRpcErrorCode.Conflict, response.Error.ErrorCode);
+        Assert.AreEqual(EndpointRpcErrorCode.Conflict, response.Error!.ErrorCode);
+        Assert.AreEqual(EndpointFailureKind.Generic, response.Error.FailureKind);
         var exception = Assert.ThrowsExactly<EndpointRpcRemoteException>(() =>
             EndpointRpcClientResponseMapper.RequireSuccess(response));
         Assert.AreSame(response.Error, exception.Error);
-        Array.Clear(encoded);
-    }
-
-    [TestMethod]
-    public void InlineEndpointErrorWithDifferentOuterCorrelationIsRejected()
-    {
-        var codec = CreateCodec();
-        var encoded = codec.EncodeFailure(CreateError(42));
-
-        var exception = Assert.ThrowsExactly<EndpointRpcCorrelationMismatchException>(() =>
-            codec.DecodeResponse(encoded, 41));
-
-        Assert.AreEqual(EndpointRpcErrorCode.EndpointCorrelationMismatch, exception.ErrorCode);
-        Assert.AreEqual(EndpointRpcErrorCategory.Internal, exception.ErrorCategory);
-        Assert.IsFalse(exception.IsRetryable);
-        Assert.IsFalse(exception.RequiresProcessRestart);
-        Assert.IsFalse(exception.Message.Contains("41", StringComparison.Ordinal));
-        Assert.IsFalse(exception.Message.Contains("42", StringComparison.Ordinal));
         Array.Clear(encoded);
     }
 
@@ -53,7 +35,7 @@ public sealed class EndpointRpcCorrelationBindingTests
         var descriptor = CreateDescriptor(41);
         var encoded = codec.EncodeLargeResult(descriptor);
 
-        var response = codec.DecodeResponse(encoded, 41);
+        var response = EndpointRpcTransportResponse.Large(codec.DecodeLargeResult(encoded, 41));
 
         Assert.AreEqual(EndpointRpcResponseKind.LargeResult, response.ResponseKind);
         Assert.AreEqual(41, response.LargeResult!.OriginalCorrelationId);
@@ -66,138 +48,99 @@ public sealed class EndpointRpcCorrelationBindingTests
         var codec = CreateCodec();
         var encoded = codec.EncodeLargeResult(CreateDescriptor(42));
 
-        Assert.ThrowsExactly<EndpointRpcCorrelationMismatchException>(() =>
-            codec.DecodeResponse(encoded, 41));
+        var exception = Assert.ThrowsExactly<EndpointRpcCorrelationMismatchException>(() =>
+            codec.DecodeLargeResult(encoded, 41));
 
+        Assert.AreEqual(EndpointRpcErrorCode.EndpointCorrelationMismatch, exception.ErrorCode);
+        Assert.IsFalse(exception.RequiresProcessRestart);
+        Assert.IsFalse(exception.Message.Contains("41", StringComparison.Ordinal));
+        Assert.IsFalse(exception.Message.Contains("42", StringComparison.Ordinal));
         Array.Clear(encoded);
     }
 
     [TestMethod]
-    public async Task ReadOnlyMismatchedNestedErrorIsProtocolFailureNotOutcomeUnknown()
+    [Timeout(10_000)]
+    public async Task ReadOnlyTransportRejectsDescriptorForAnotherRequestBeforeTransfer()
     {
-        await using var transport = new ScriptedEndpointRpcResponseTransport(
-            correlationId => EncodeFailure(correlationId + 1));
-        await using var proxy = CreateProxy(transport);
-
-        await Assert.ThrowsExactlyAsync<EndpointRpcCorrelationMismatchException>(() =>
-            proxy.GetLocalDeviceInfoAsync());
-
-        Assert.AreEqual(1, transport.PublicRequestCount);
-    }
-
-    [TestMethod]
-    public async Task ReadOnlyMismatchedDescriptorIsRejectedBeforeChunksOrRelease()
-    {
-        await using var transport = new ScriptedEndpointRpcResponseTransport(
-            correlationId => EncodeDescriptor(correlationId + 1));
+        await using var peer = new ScriptedLargeResultIpcConnection(mismatchCorrelation: true);
+        await using var transport = await CreateProductionTransportAsync(peer);
         await using var proxy = CreateProxy(transport);
 
         await Assert.ThrowsExactlyAsync<EndpointRpcCorrelationMismatchException>(() =>
             proxy.GetSavedPasswordsAsync(EndpointRpcTestData.Token));
 
-        Assert.AreEqual(1, transport.PublicRequestCount);
-        Assert.AreEqual(0, transport.ChunkRequestCount);
-        Assert.AreEqual(0, transport.ReleaseRequestCount);
+        Assert.AreEqual(1, peer.PublicRequestCount);
+        Assert.AreEqual(0, peer.ChunkRequestCount);
+        Assert.AreEqual(0, peer.ReleaseRequestCount);
     }
 
     [TestMethod]
-    public async Task ReadOnlyMatchingDescriptorStartsChunkTransfer()
+    [Timeout(10_000)]
+    public async Task MatchingDescriptorCompletesLargeResultThroughProductionTransport()
     {
-        await using var transport = new ScriptedEndpointRpcResponseTransport(
-            EncodeDescriptor);
+        await using var peer = new ScriptedLargeResultIpcConnection(mismatchCorrelation: false);
+        await using var transport = await CreateProductionTransportAsync(peer);
         await using var proxy = CreateProxy(transport);
 
-        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
-            proxy.GetSavedPasswordsAsync(EndpointRpcTestData.Token));
+        var result = await proxy.GetSavedPasswordsAsync(EndpointRpcTestData.Token);
 
-        Assert.AreEqual(1, transport.ChunkRequestCount);
-        Assert.AreEqual(1, transport.ReleaseRequestCount);
+        Assert.IsEmpty(result.Passwords);
+        Assert.AreEqual(1, peer.PublicRequestCount);
+        Assert.AreEqual(1, peer.ChunkRequestCount);
+        Assert.AreEqual(1, peer.ReleaseRequestCount);
     }
 
     [TestMethod]
-    public async Task SentMutationWithMismatchedNestedErrorReportsOutcomeUnknown()
+    [Timeout(10_000)]
+    public async Task SentMutationCorrelationFailureReportsUnknownWithoutStartingTransfer()
     {
-        await using var transport = new ScriptedEndpointRpcResponseTransport(
-            correlationId => EncodeFailure(correlationId + 1));
-        await using var proxy = CreateProxy(transport);
-
-        var exception = await Assert.ThrowsExactlyAsync<EndpointOperationOutcomeUnknownException>(() =>
-            proxy.LogoutAsync(EndpointRpcTestData.Token));
-
-        Assert.IsFalse(exception.RequiresProcessRestart);
-        Assert.IsInstanceOfType<EndpointRpcTransportException>(exception.InnerException);
-        Assert.AreEqual(1, transport.PublicRequestCount);
-    }
-
-    [TestMethod]
-    public async Task SentMutationWithMismatchedDescriptorReportsOutcomeUnknownWithoutChunks()
-    {
-        await using var transport = new ScriptedEndpointRpcResponseTransport(
-            correlationId => EncodeDescriptor(correlationId + 1));
+        await using var peer = new ScriptedLargeResultIpcConnection(mismatchCorrelation: true);
+        await using var transport = await CreateProductionTransportAsync(peer);
         await using var proxy = CreateProxy(transport);
 
         var exception = await Assert.ThrowsExactlyAsync<EndpointOperationOutcomeUnknownException>(() =>
             proxy.LogoutAsync(EndpointRpcTestData.Token));
 
+        var transportFailure = Assert.IsInstanceOfType<EndpointRpcTransportException>(exception.InnerException);
+        Assert.IsInstanceOfType<EndpointRpcCorrelationMismatchException>(transportFailure.InnerException);
         Assert.IsFalse(exception.RequiresProcessRestart);
-        Assert.AreEqual(0, transport.ChunkRequestCount);
-        Assert.AreEqual(0, transport.ReleaseRequestCount);
+        Assert.AreEqual(1, peer.PublicRequestCount);
+        Assert.AreEqual(0, peer.ChunkRequestCount);
+        Assert.AreEqual(0, peer.ReleaseRequestCount);
     }
 
-    [TestMethod]
-    public async Task TransmissionUnknownMutationWithMismatchedNestedResponseReportsOutcomeUnknown()
+    private static async Task<WindowsEndpointRpcTransport> CreateProductionTransportAsync(ScriptedLargeResultIpcConnection peer)
     {
-        await using var transport = new ScriptedEndpointRpcResponseTransport(
-            correlationId => EncodeFailure(correlationId + 1),
-            EndpointRpcTransmissionState.TransmissionUnknown);
-        await using var proxy = CreateProxy(transport);
-
-        await Assert.ThrowsExactlyAsync<EndpointOperationOutcomeUnknownException>(() =>
-            proxy.LogoutAsync(EndpointRpcTestData.Token));
-
-        Assert.AreEqual(1, transport.PublicRequestCount);
-    }
-
-    [TestMethod]
-    public async Task DefinitelyNotSentMutationCannotAcceptNestedResponse()
-    {
-        await using var transport = new ScriptedEndpointRpcResponseTransport(
-            correlationId => EncodeFailure(correlationId + 1),
-            EndpointRpcTransmissionState.DefinitelyNotSent);
-        await using var proxy = CreateProxy(transport);
-
-        await Assert.ThrowsExactlyAsync<EndpointRpcCorrelationMismatchException>(() =>
-            proxy.LogoutAsync(EndpointRpcTestData.Token));
-
-        Assert.AreEqual(1, transport.PublicRequestCount);
+        var client = new PasswordManagerLocal.Windows.Ipc.Client.WindowsIpcClient(
+            peer, new WindowsIpcSerializer(),
+            new PasswordManagerLocal.Windows.Ipc.Client.WindowsIpcClientOptions(
+                IpcPeerRole.Ui, IpcPeerRole.Agent, IpcCapabilities.EndpointRpc,
+                Environment.ProcessId, 0, Guid.NewGuid(), requiredServerCapabilities: IpcCapabilities.EndpointRpc));
+        try
+        {
+            await client.HandshakeAsync();
+            return new WindowsEndpointRpcTransport(client, CreateCodec());
+        }
+        catch
+        {
+            await client.DisposeAsync();
+            throw;
+        }
     }
 
     private static NamedPipeEndpointsProxy CreateProxy(IEndpointRpcTransport transport) =>
-        new(
-            transport,
-            new EndpointRpcSerializer(),
-            new EndpointRpcContractValidator());
+        new(transport, new EndpointRpcSerializer(), new EndpointRpcContractValidator());
 
     private static EndpointRpcMessageCodec CreateCodec() =>
         new(new EndpointRpcSerializer());
 
-    private static byte[] EncodeFailure(long correlationId) =>
-        CreateCodec().EncodeFailure(CreateError(correlationId));
-
-    private static byte[] EncodeDescriptor(long correlationId) =>
-        CreateCodec().EncodeLargeResult(CreateDescriptor(correlationId));
-
-    private static EndpointRpcError CreateError(long correlationId) =>
+    private static EndpointRpcError CreateError() =>
         new(
             EndpointRpcErrorCode.Conflict,
-            EndpointRpcErrorCategory.Conflict,
+            EndpointFailureKind.Generic,
             "The endpoint operation conflicts with current state.",
-            correlationId,
-            DateTimeOffset.UtcNow,
-            IsRetryable: false,
             RequiresProcessRestart: false,
-            EndpointMutationOutcome.NotApplicable,
-            Recovery: null);
+            EndpointMutationOutcome.NotApplicable);
 
     private static EndpointLargeResultDescriptor CreateDescriptor(long correlationId) =>
         new()

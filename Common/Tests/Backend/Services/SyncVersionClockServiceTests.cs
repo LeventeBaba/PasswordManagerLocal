@@ -1,17 +1,15 @@
 using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
-using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Persistence;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Tests.Fakes;
+using SQLitePCL;
 
 using MSTestAssert = Microsoft.VisualStudio.TestTools.UnitTesting.Assert;
 
-using PasswordManagerLocal.Common.Tests.TestInfrastructure.Services.TestDoubles;
-using PasswordManagerLocal.Common.Tests.TestInfrastructure.Services.Fixtures;
 namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 
 [TestClass]
@@ -23,7 +21,7 @@ public sealed class SyncVersionClockServiceTests
         await using var fixture = await ClockFixture.CreateAsync(DateTimeOffset.FromUnixTimeMilliseconds(10_000));
         var first = fixture.Clock.Next();
         var generated = await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => Task.Run(fixture.Clock.Next)));
-        var restarted = new SyncVersionClockService(fixture.ScopeFactory, fixture.Identity, fixture.Time);
+        var restarted = new SyncVersionClockService(fixture.Store, fixture.Identity, fixture.Time);
         var afterRestart = restarted.Next();
 
         MSTestAssert.AreEqual(33, new[] { first }.Concat(generated).Select(Format).Distinct().Count());
@@ -64,45 +62,84 @@ public sealed class SyncVersionClockServiceTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     [Timeout(10_000)]
-    public async Task Observe_InsideActiveUnitOfWorkTransaction_DefersWithoutBlockingAndNextPersistsFloor()
+    public async Task Next_CompetingWrite_ReloadsSingletonBeforeIssuing(bool existingRow)
     {
+        await using var fixture = await ClockFixture.CreateAsync(DateTimeOffset.FromUnixTimeMilliseconds(10_000));
+        if (existingRow)
+            _ = fixture.Clock.Next();
+
+        var expectedVersion = fixture.Store.Read()?.Version;
+        var competingState = new SyncVersionClockState
+        {
+            LastPhysicalTimeUnixMilliseconds = 50_000,
+            LastLogicalCounter = 7,
+            LastUpdatedAtUtc = fixture.Time.UtcNow,
+            Version = (expectedVersion ?? 0) + 1
+        };
+        var clockWrite = new ClockWriteGate(fixture.Store);
+        var clock = new SyncVersionClockService(clockWrite, fixture.Identity, fixture.Time);
+        clockWrite.Arm();
+        var advancing = Task.Run(clock.Next);
+        try
+        {
+            await clockWrite.Entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            // This connection commits between the clock's read and conditional write.
+            MSTestAssert.IsTrue(fixture.Store.TryWrite(competingState, expectedVersion));
+        }
+        finally
+        {
+            clockWrite.Release.TrySetResult();
+            await advancing.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+
+        var issued = await advancing;
+        MSTestAssert.AreEqual(competingState.LastPhysicalTimeUnixMilliseconds, issued.PhysicalTimeUnixMilliseconds);
+        MSTestAssert.AreEqual(competingState.LastLogicalCounter + 1, issued.LogicalCounter);
+        MSTestAssert.AreEqual(competingState.Version + 1, fixture.Store.Read()!.Version);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    [Timeout(10_000)]
+    public async Task Observe_InsideActiveTransaction_DefersEvenWhileNextHoldsTheClockGate(bool useFileUri)
+    {
+        Batteries_V2.Init();
         var root = Path.Combine(
             Path.GetTempPath(),
             "PasswordManagerLocal.ClockTests",
             Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        var databasePath = Path.Combine(root, "clock.db");
+        var databasePath = Path.Combine(root, "clock state.db");
         var connectionString = new SqliteConnectionStringBuilder
         {
-            DataSource = databasePath
+            DataSource = useFileUri ? $"{new Uri(databasePath).AbsoluteUri}?cache=private" : databasePath,
+            Pooling = false
         }.ToString();
 
-        var services = new ServiceCollection();
-        services.AddDbContext<AppDbContext>(options => options.UseSqlite(connectionString));
-        services.AddScoped<IUnitOfWork, AppUnitOfWork>();
-        var provider = services.BuildServiceProvider();
+        // The writer can use a file URI while the clock uses the same vault by path.
+        var clockConnections = new SqliteConnectionFactory(
+            new SqliteConnectionStringBuilder { DataSource = databasePath, Pooling = false }.ToString());
+        var clockWrite = new ClockWriteGate(new SyncVersionClockStore(clockConnections));
+        var writerConnections = new SqliteConnectionFactory(connectionString);
 
         try
         {
-            await using (var initializationScope = provider.CreateAsyncScope())
-            {
-                await initializationScope.ServiceProvider
-                    .GetRequiredService<AppDbContext>()
-                    .Database
-                    .EnsureCreatedAsync();
-            }
+            await using (var initialization = clockConnections.CreateConnection())
+                await AppDatabaseInitializer.InitializeAsync(initialization);
 
             var identity = new FakeDeviceIdentityService();
             var time = new ManualTimeProvider
             {
                 UtcNow = DateTimeOffset.FromUnixTimeMilliseconds(10_000)
             };
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
-            var clock = new SyncVersionClockService(scopeFactory, identity, time);
+            var clock = new SyncVersionClockService(clockWrite, identity, time);
             _ = clock.Next();
 
-            var observed = new PasswordManagerLocal.Common.Backend.Models.Encrypted.SyncVersionStamp
+            var observed = new SyncVersionStamp
             {
                 PhysicalTimeUnixMilliseconds = 50_000,
                 LogicalCounter = 7,
@@ -110,19 +147,49 @@ public sealed class SyncVersionClockServiceTests
                 OriginInstanceId = Guid.NewGuid()
             };
 
-            await using (var lockScope = provider.CreateAsyncScope())
+            using (var session = new SqliteSession(writerConnections))
             {
-                var db = lockScope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var unitOfWork = lockScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-                var databaseKey = AppDatabaseTransactionRegistry.GetDatabaseKey(db);
-                await using var transaction = await unitOfWork.BeginTransactionAsync();
-                _ = await db.SyncVersionClockStates.AsNoTracking().SingleAsync();
+                using var unopened = writerConnections.CreateConnection();
+                var databaseKey = AppDatabaseTransactionRegistry.GetDatabaseKey(unopened);
+                MSTestAssert.AreEqual(databaseKey, clockWrite.DatabaseKey);
+                await using var transaction = await session.BeginTransactionAsync();
+                using (var command = await session.CreateCommandAsync("""
+                    SELECT "LastUpdatedAtUtc" FROM "SyncVersionClockState" WHERE "Id" = 1;
+                    """))
+                {
+                    MSTestAssert.AreEqual(databaseKey, AppDatabaseTransactionRegistry.GetDatabaseKey(command.Connection!));
+                    using var reader = await command.ExecuteReaderAsync(CancellationToken.None);
+                    MSTestAssert.IsTrue(await reader.ReadAsync());
+                    MSTestAssert.AreEqual(time.UtcNow, reader.UtcOffset(0));
+                    MSTestAssert.IsFalse(await reader.ReadAsync());
+                }
                 MSTestAssert.IsTrue(AppDatabaseTransactionRegistry.HasActiveTransaction(databaseKey));
 
-                await Task.Run(() => clock.Observe([observed]))
-                    .WaitAsync(TimeSpan.FromSeconds(2));
+                clockWrite.Arm();
+                var advancing = Task.Run(clock.Next);
+                Task? observing = null;
+                try
+                {
+                    await clockWrite.Entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+                    observing = Task.Run(() => clock.Observe([observed]));
+                    await observing.WaitAsync(TimeSpan.FromSeconds(2));
+                }
+                finally
+                {
+                    // Unblock both tasks even if the clock regresses to the previous lock order.
+                    try
+                    {
+                        await transaction.RollbackAsync();
+                    }
+                    finally
+                    {
+                        clockWrite.Release.TrySetResult();
+                    }
+                    await advancing.WaitAsync(TimeSpan.FromSeconds(2));
+                    if (observing is not null)
+                        await observing.WaitAsync(TimeSpan.FromSeconds(2));
+                }
 
-                await transaction.RollbackAsync();
                 MSTestAssert.IsFalse(AppDatabaseTransactionRegistry.HasActiveTransaction(databaseKey));
             }
 
@@ -130,7 +197,7 @@ public sealed class SyncVersionClockServiceTests
             MSTestAssert.AreEqual(observed.PhysicalTimeUnixMilliseconds, next.PhysicalTimeUnixMilliseconds);
             MSTestAssert.AreEqual(observed.LogicalCounter + 1, next.LogicalCounter);
 
-            var restarted = new SyncVersionClockService(scopeFactory, identity, time);
+            var restarted = new SyncVersionClockService(clockWrite, identity, time);
             var afterRestart = restarted.Next();
             MSTestAssert.IsTrue(
                 afterRestart.PhysicalTimeUnixMilliseconds > next.PhysicalTimeUnixMilliseconds ||
@@ -139,7 +206,6 @@ public sealed class SyncVersionClockServiceTests
         }
         finally
         {
-            await provider.DisposeAsync();
             try
             {
                 Directory.Delete(root, recursive: true);
@@ -150,8 +216,29 @@ public sealed class SyncVersionClockServiceTests
         }
     }
 
-    private static string Format(PasswordManagerLocal.Common.Backend.Models.Encrypted.SyncVersionStamp stamp) =>
+    private static string Format(SyncVersionStamp stamp) =>
         $"{stamp.PhysicalTimeUnixMilliseconds}:{stamp.LogicalCounter}:{stamp.OriginDeviceId:N}:{stamp.OriginInstanceId:N}";
 
+    private sealed class ClockWriteGate(ISyncVersionClockStore store) : ISyncVersionClockStore
+    {
+        private int _armed;
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        public string DatabaseKey => store.DatabaseKey;
+
+        public void Arm() => Volatile.Write(ref _armed, 1);
+
+        public SyncVersionClockState? Read(int? timeoutSeconds = null) => store.Read(timeoutSeconds);
+
+        public bool TryWrite(SyncVersionClockState state, long? expectedVersion, int? timeoutSeconds = null)
+        {
+            if (Interlocked.Exchange(ref _armed, 0) == 1)
+            {
+                Entered.TrySetResult();
+                Release.Task.GetAwaiter().GetResult();
+            }
+            return store.TryWrite(state, expectedVersion, timeoutSeconds);
+        }
+    }
 }

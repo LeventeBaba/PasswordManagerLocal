@@ -35,7 +35,8 @@ internal static class TombstoneGarbageCollectionRules
         var genesisCount = 0;
         foreach (var row in authorizations)
         {
-            if (row.UserId != userId || row.AuthorizationId == Guid.Empty || row.DeviceId == Guid.Empty ||
+            var authorizationId = row.AuthorizationId;
+            if (row.UserId != userId || authorizationId == Guid.Empty || row.DeviceId == Guid.Empty ||
                 row.OriginInstanceId == Guid.Empty || row.SignPublicKey.Length != SyncConstants.SyncDeltaEd25519PublicKeyBytes ||
                 row.SignPublicKeyHash.Length != SyncConstants.SyncDeltaPayloadHashBytes ||
                 row.AgreementPublicKeyHash.Length != SyncConstants.SyncDeltaPayloadHashBytes ||
@@ -43,7 +44,7 @@ internal static class TombstoneGarbageCollectionRules
                 string.IsNullOrWhiteSpace(row.TlsCertFingerprint) || !DeviceTypeDetector.IsValid(row.DeviceType) ||
                 row.StartedMembershipEpoch <= 0 || row.StartedMembershipEpoch > currentMembershipEpoch ||
                 row.MinimumKeyEpoch <= 0 || row.MinimumKeyEpoch > currentKeyEpoch ||
-                !authorizationById.TryAdd(row.AuthorizationId, row) ||
+                !authorizationById.TryAdd(authorizationId, row) ||
                 !exactInstallations.Add((row.DeviceId, row.OriginInstanceId)))
             {
                 throw new InvalidDataException("Membership history contains invalid or conflicting causal evidence.");
@@ -69,6 +70,7 @@ internal static class TombstoneGarbageCollectionRules
             else
             {
                 if (row.StartedMembershipEpoch <= 1 || !hasAdditionId ||
+                    row.AdditionOperationId != row.AuthorizationId ||
                     !membershipTransitionEpochs.Add(row.StartedMembershipEpoch))
                 {
                     throw new InvalidDataException("Membership addition history is incomplete or conflicting.");

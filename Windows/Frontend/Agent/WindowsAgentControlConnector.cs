@@ -43,11 +43,15 @@ public sealed class WindowsAgentControlConnector : IWindowsAgentControlConnector
                 new WindowsIpcClientOptions(
                     IpcPeerRole.Ui,
                     IpcPeerRole.Agent,
-                    IpcCapabilities.Control | IpcCapabilities.Status | IpcCapabilities.UiActivation,
+                    IpcCapabilities.Control |
+                    IpcCapabilities.Status |
+                    IpcCapabilities.UiActivation |
+                    IpcCapabilities.ChangeNotifications,
                     identity.ProcessId,
                     identity.WindowsSessionId,
                     identity.InstanceId,
-                    maximumPendingRequests: 16),
+                    maximumPendingRequests: 16,
+                    requiredServerCapabilities: IpcCapabilities.ChangeNotifications),
                 validator);
             connection = null;
             await client.HandshakeAsync(linkedSource.Token);

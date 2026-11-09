@@ -19,7 +19,7 @@ public sealed class BlockingEndpointRpcTransport : IEndpointRpcTransport
     public async Task<EndpointRpcTransportResponse> SendAsync(
         EndpointOperationId operationId,
         byte[] requestPayload,
-        EndpointOperationCancellationClassification cancellationClassification,
+        bool isMutatingOperation,
         CancellationToken cancellationToken = default)
     {
         if (!IsConnected)
@@ -45,7 +45,7 @@ public sealed class BlockingEndpointRpcTransport : IEndpointRpcTransport
                 exception);
         }
 
-        return EndpointRpcTransportResponse.Inline("{}"u8.ToArray());
+        return EndpointRpcTransportResponse.Inline(Array.Empty<byte>());
     }
 
     public Task<byte[]> GetLargeResultChunkAsync(

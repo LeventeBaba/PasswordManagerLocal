@@ -14,6 +14,8 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Discovery;
 using PasswordManagerLocal.Common.Backend.Internal.Sync;
 
 using PasswordManagerLocal.Common.Backend.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 namespace PasswordManagerLocal.Common.Backend.Services;
 
 public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
@@ -90,7 +92,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
 
             token = _runtimeCancellation.Token;
             targetDevice = CloneDevice(device);
-            var task = Task.Run(() => RunAsync(CloneEndpoint(endpoint), targetDevice, token), CancellationToken.None);
+            var task = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => RunAsync(CloneEndpoint(endpoint), targetDevice, token), CancellationToken.None);
             _runningTasks[device.Id] = task;
         }
 
@@ -238,14 +240,34 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             try
             {
                 var hasPending = await HasPendingAsync(targetDevice.Id, CancellationToken.None);
-                if (hasPending && pendingStart is not null && _identity.IsSyncOn)
+                // A remembered start is also used for anti-entropy-only work, such as
+                // acquiring authenticated endpoint hints after a relayed membership
+                // addition. That work may have no durable queue item, so always honor the
+                // requested rerun instead of dropping it when the ordinary queue is empty.
+                var rerunRequested = false;
+                if (pendingStart is not null && _identity.IsSyncOn)
+                {
+                    rerunRequested = true;
                     TryStart(pendingStart.Endpoint, pendingStart.Device);
+                }
                 else if (!hasPending)
-                    _syncDeviceIdentities.TryRemove(targetDevice);
+                {
+                    // A new worker can start after this worker releases its running-device
+                    // slot but while the asynchronous pending-work check is in progress.
+                    // Do not remove the identity underneath that replacement worker.
+                    lock (_runtimeLock)
+                    {
+                        if (!_runningDeviceIds.ContainsKey(targetDevice.Id) &&
+                            !_pendingStarts.ContainsKey(targetDevice.Id))
+                        {
+                            _syncDeviceIdentities.TryRemove(targetDevice);
+                        }
+                    }
+                }
 
                 BackendDebugLog.Info(
                     $"Outgoing synchronization worker session finished. TargetDeviceId={targetDevice.Id:N}, " +
-                    $"PendingWork={hasPending}, RestartScheduled={hasPending && pendingStart is not null && _identity.IsSyncOn}.",
+                    $"PendingWork={hasPending}, RerunRequested={rerunRequested}.",
                     "Synchronization");
             }
             catch (Exception ex)
@@ -294,7 +316,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         {
             if (queueItem.SyncItem is null || !await authorization.CanSendAsync(queueItem.SyncItem, targetDevice.Id, ct))
             {
-                queue.Delete(queueItem);
+                await queue.TryAcknowledgeAsync(queueItem.Id, queueItem.EnqueuedAt, ct);
                 continue;
             }
 
@@ -310,7 +332,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         if (!await RefreshAndValidateTargetDeviceAsync(scope.ServiceProvider, targetDevice, endpoint, ct))
             return false;
 
-        var sendItems = new List<(SyncQueueItem QueueItem, SyncItem SyncItem, NetworkDelta Delta)>();
+        var sendItems = new List<(SyncQueueItem QueueItem, SyncItem SyncItem, DateTimeOffset EnqueuedAt, NetworkDelta Delta)>();
         long totalPayloadBytes = 0;
         foreach (var item in validItems)
         {
@@ -321,21 +343,21 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
                     break;
 
                 totalPayloadBytes += delta.Payload.Length;
-                sendItems.Add((item.QueueItem, item.SyncItem, delta));
+                sendItems.Add((item.QueueItem, item.SyncItem, item.QueueItem.EnqueuedAt, delta));
             }
             catch (InvalidOperationException ex)
             {
                 BackendDebugLog.Error(
                     $"Discarding invalid outgoing sync item {item.SyncItem.Id:N} ({item.SyncItem.ModelType}/{item.SyncItem.ChangeType}) for device {targetDevice.Id:N}: {ex.Message}",
                     ex);
-                queue.Delete(item.QueueItem);
+                await queue.TryAcknowledgeAsync(item.QueueItem.Id, item.QueueItem.EnqueuedAt, ct);
             }
             catch (InvalidDataException ex)
             {
                 BackendDebugLog.Error(
                     $"Discarding malformed outgoing sync item {item.SyncItem.Id:N} ({item.SyncItem.ModelType}/{item.SyncItem.ChangeType}) for device {targetDevice.Id:N}: {ex.Message}",
                     ex);
-                queue.Delete(item.QueueItem);
+                await queue.TryAcknowledgeAsync(item.QueueItem.Id, item.QueueItem.EnqueuedAt, ct);
             }
         }
 
@@ -354,7 +376,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             if (await authorization.CanSendAsync(item.SyncItem, targetDevice.Id, ct))
                 continue;
 
-            queue.Delete(item.QueueItem);
+            await queue.TryAcknowledgeAsync(item.QueueItem.Id, item.EnqueuedAt, ct);
             sendItems.RemoveAt(i);
         }
 
@@ -373,12 +395,19 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
 
         if (!sent)
         {
-            _endpointRegistry.TryRemove(endpoint.TlsCertFingerprint);
+            // A false result also covers a non-durable receipt or temporary remote
+            // state failure. It does not prove the learned address is invalid.
+            // Keep its existing freshness/expiry so later activation can retry;
+            // do not erase a route refreshed by discovery while this send ran.
             return false;
         }
 
+        var acknowledgedCount = 0;
         foreach (var item in sendItems)
-            queue.Delete(item.QueueItem);
+        {
+            if (await queue.TryAcknowledgeAsync(item.QueueItem.Id, item.EnqueuedAt, ct))
+                acknowledgedCount++;
+        }
 
         await uow.SaveChangesAsync(ct);
 
@@ -387,7 +416,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
 
         BackendDebugLog.Info(
             $"Outgoing synchronization delta batch completed successfully. TargetDeviceId={targetDevice.Id:N}, " +
-            $"DeltaCount={sendItems.Count}, PayloadBytes={totalPayloadBytes}.",
+            $"DeltaCount={sendItems.Count}, AcknowledgedCount={acknowledgedCount}, PayloadBytes={totalPayloadBytes}.",
             "Synchronization");
 
         return true;
@@ -431,12 +460,32 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
                     requestedDeltas,
                     ct))
             {
-                _endpointRegistry.TryRemove(endpoint.TlsCertFingerprint);
                 return false;
             }
         }
 
         var missing = antiEntropy.FindMissingOperations(localInventory, exchange.Users);
+        // A removed installation may advertise operations it created after the signed
+        // cutoff. Never request user control traffic from it (or, on the removed
+        // installation, from another peer) after delivering the revocation.
+        var operations = scope.ServiceProvider.GetRequiredService<IUserControlOperationRepository>();
+        var revokedHere = new HashSet<Guid>();
+        foreach (var operation in await operations.ListAllRelayableAsync(ct))
+        {
+            if (operation.OperationType != UserControlOperationType.DeviceRemoval ||
+                operation.Status != UserControlOperationStatus.Applied)
+                continue;
+            var envelope = UserControlOperationEnvelopeUtil.Deserialize(operation.EnvelopePayload);
+            var removal = UserControlOperationEnvelopeUtil.DeserializeDeviceRemovalPayload(envelope.OperationPayload);
+            if (removal.RemovedDeviceId == targetDevice.Id || removal.RemovedDeviceId == _identity.LocalDeviceId)
+                revokedHere.Add(operation.UserId);
+        }
+        var routes = scope.ServiceProvider.GetRequiredService<ISyncRouteRepository>();
+        var activeUsers = (await routes.ListAllEligibleUserIdsAsync(targetDevice.Id, ct)).ToHashSet();
+        missing = missing.Where(request =>
+            !revokedHere.Contains(Guid.Parse(request.UserId)) &&
+            (activeUsers.Contains(Guid.Parse(request.UserId)) ||
+             request.OperationType == (int)UserControlOperationType.AccountDeletion)).ToList();
         if (missing.Count == 0)
             return true;
 
@@ -489,7 +538,22 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             UserControlOperationReceiptState.Obsolete;
 
 
-    private async Task<bool> TryRunAntiEntropyAsync(
+    private async Task<bool> TryRunAntiEntropyAsync(DiscoveredDeviceEndpoint endpoint, Device targetDevice, CancellationToken ct)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try { return await RunAntiEntropyAttemptAsync(endpoint, targetDevice, ct); }
+            catch (Exception ex) when (ex is PasswordManagerLocal.Common.Backend.Exceptions.SyncStateUnavailableException ||
+                ex is PasswordManagerLocal.Common.Backend.Sync.Tcp.SyncProtocolException { StatusCode: PasswordManagerLocal.Common.Backend.Sync.Tcp.SyncProtocolStatusCode.Unavailable })
+            {
+                BackendDebugLog.Warning("Snapshot inventory changed; retrying without a peer penalty.", category: "Synchronization");
+                if (attempt < 2) await Task.Delay(TimeSpan.FromMilliseconds(100 * (attempt + 1)), ct);
+            }
+        }
+        return false; // Durable work remains pending for discovery/activation retry.
+    }
+
+    private async Task<bool> RunAntiEntropyAttemptAsync(
         DiscoveredDeviceEndpoint endpoint,
         Device targetDevice,
         CancellationToken ct)
@@ -497,6 +561,12 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         using var scope = _scopeFactory.CreateScope();
         var antiEntropy = scope.ServiceProvider.GetService<IUserSnapshotAntiEntropyService>();
         if (antiEntropy is null)
+            return true;
+
+        // The historical route is only for signed control operations. Snapshot
+        // inventories require an active user route on both ends.
+        var routes = scope.ServiceProvider.GetRequiredService<ISyncRouteRepository>();
+        if (!await routes.HasEligibleUserForDeviceAsync(targetDevice.Id, ct))
             return true;
 
         if (!await RefreshAndValidateTargetDeviceAsync(scope.ServiceProvider, targetDevice, endpoint, ct))
@@ -509,6 +579,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             targetDevice.TlsCertFingerprint,
             localInventory,
             ct);
+        await AcceptAuthorizedEndpointHintsAsync(targetDevice.Id, exchange.EndpointHints, ct);
 
         if (exchange.RequestedSnapshots.Count > 0)
         {
@@ -526,12 +597,11 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
                     requestedDeltas,
                     ct))
             {
-                _endpointRegistry.TryRemove(endpoint.TlsCertFingerprint);
                 return false;
             }
         }
 
-        var missing = antiEntropy.FindMissingSnapshots(localInventory, exchange.Users);
+        var missing = antiEntropy.FindMissingSnapshots(localInventory, exchange.Users, targetDevice.Id);
         if (missing.Count == 0)
             return true;
 
@@ -570,7 +640,80 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
                 throw new InvalidDataException("The relay returned the same requested user snapshot more than once.");
         }
 
-        return fulfilled.Count == expected.Count;
+        if (fulfilled.Count != expected.Count)
+            return false;
+
+        // This reply may have introduced the device/link that made one of its
+        // hints eligible. Re-check against freshly committed state after applying
+        // snapshots, rather than discarding that hint until another discovery pass.
+        await AcceptAuthorizedEndpointHintsAsync(targetDevice.Id, exchange.EndpointHints, ct);
+        return true;
+    }
+
+    private async Task AcceptAuthorizedEndpointHintsAsync(
+        Guid sourceDeviceId,
+        IEnumerable<PeerEndpointHint> hints, CancellationToken ct)
+    {
+        var received = hints.Take(SyncConstants.MaxPeerEndpointHints + 1).ToArray();
+        if (received.Length > SyncConstants.MaxPeerEndpointHints)
+            throw new InvalidDataException("The peer supplied too many endpoint hints.");
+        using var scope = _scopeFactory.CreateScope();
+        var services = scope.ServiceProvider;
+        var links = services.GetRequiredService<IUserDeviceRepository>();
+        var localLinks = services.GetRequiredService<ILocalUserDeviceRepository>();
+        var devices = services.GetRequiredService<IDeviceRepository>();
+        var sourceLinks = await links.ListByDeviceAsync(sourceDeviceId, ct);
+        var eligibleUsers = new HashSet<Guid>();
+        foreach (var link in sourceLinks)
+        {
+            if (link.IsDeleted || !link.IsSyncOn || !await localLinks.IsSyncOnAsync(link.UserId, ct)) continue;
+            try { link.VerifyIntegrity(); eligibleUsers.Add(link.UserId); }
+            catch (Exception ex) when (ex is InvalidDataException or PasswordManagerLocal.Common.Contracts.Errors.InvalidDataIntegrityException) { }
+        }
+        var activated = new List<Device>();
+        var seen = new HashSet<Guid>();
+        foreach (var hint in received)
+        {
+            if (!Guid.TryParse(hint.DeviceId, out var id) || id == Guid.Empty ||
+                id == sourceDeviceId || id == _identity.LocalDeviceId || !seen.Add(id) ||
+                hint.Port is < 1 or > 65535 ||
+                !IPAddress.TryParse(hint.Host, out var address) ||
+                address.AddressFamily != AddressFamily.InterNetwork) continue;
+            var bytes = address.GetAddressBytes();
+            if (!(bytes[0] == 10 || bytes[0] == 127 ||
+                bytes[0] == 172 && bytes[1] is >= 16 and <= 31 ||
+                bytes[0] == 192 && bytes[1] == 168)) continue;
+            var device = await devices.GetByIdAsNoTrackingAsync(id, ct);
+            if (device is null || !device.IsTrusted || device.IsBlocked ||
+                !string.Equals(FingerprintUtil.NormalizeOrEmpty(device.TlsCertFingerprint),
+                    FingerprintUtil.NormalizeOrEmpty(hint.TlsCertFingerprint), StringComparison.OrdinalIgnoreCase)) continue;
+            try { device.VerifyIntegrity(); }
+            catch (Exception ex) when (ex is InvalidDataException or PasswordManagerLocal.Common.Contracts.Errors.InvalidDataIntegrityException) { continue; }
+            var authorized = false;
+            foreach (var userId in eligibleUsers)
+            {
+                var candidateLink = await links.GetAsync(userId, id, ct);
+                if (candidateLink is null || candidateLink.IsDeleted || !candidateLink.IsSyncOn) continue;
+                try { candidateLink.VerifyIntegrity(); authorized = true; break; }
+                catch (Exception ex) when (ex is InvalidDataException or PasswordManagerLocal.Common.Contracts.Errors.InvalidDataIntegrityException) { }
+            }
+            if (!authorized) continue;
+            var endpointChanged = !_endpointRegistry.TryGetByFingerprint(device.TlsCertFingerprint, out var previous) ||
+                                  previous is null || previous.Port != hint.Port ||
+                                  !string.Equals(previous.Host, hint.Host, StringComparison.OrdinalIgnoreCase);
+            _endpointRegistry.AddOrUpdate(new DiscoveredDeviceEndpoint
+            {
+                Host = hint.Host, Port = hint.Port, TlsCertFingerprint = device.TlsCertFingerprint,
+                ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(2)
+            });
+            // Repeated hints refresh freshness without making A -> B -> C gossip
+            // continually restart idle workers. Pending delivery still needs a kick
+            // if an earlier attempt through the same endpoint failed.
+            if (endpointChanged || await HasPendingAsync(device.Id, ct))
+                activated.Add(device);
+        }
+        if (activated.Count != 0)
+            services.GetRequiredService<IPendingSyncActivationService>().ActivateDevices(activated);
     }
 
 
@@ -686,12 +829,12 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         var membership = scope.ServiceProvider.GetService<IUserMembershipAuthorizationRepository>();
         if (operations is null || membership is null)
             return false;
-        var deletedUserIds = await operations.ListAppliedAccountDeletionUserIdsAsync(ct);
-        if (deletedUserIds.Count == 0)
+        var revokedUserIds = await operations.ListAppliedRevocationUserIdsAsync(ct);
+        if (revokedUserIds.Count == 0)
             return false;
 
         var historicallyAuthorizedUsers = await membership.ListUserIdsForDeviceAsync(deviceId, ct);
-        return historicallyAuthorizedUsers.Any(userId => deletedUserIds.Contains(userId));
+        return historicallyAuthorizedUsers.Any(userId => revokedUserIds.Contains(userId));
     }
 
 

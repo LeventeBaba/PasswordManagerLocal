@@ -7,13 +7,19 @@ public sealed class SettingsThemeOptionViewModel : ReactiveObject
 {
     private string _displayName;
 
-    public SettingsThemeOptionViewModel(AppThemeMode theme, string displayName)
+    public SettingsThemeOptionViewModel(
+        AppThemeId theme,
+        string displayNameResourceKey,
+        string displayName)
     {
         Theme = theme;
+        DisplayNameResourceKey = displayNameResourceKey;
         _displayName = displayName;
     }
 
-    public AppThemeMode Theme { get; }
+    public AppThemeId Theme { get; }
+
+    public string DisplayNameResourceKey { get; }
 
     public string DisplayName
     {

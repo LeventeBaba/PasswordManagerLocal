@@ -8,19 +8,24 @@
     xmlns:profile="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Pages.Profile"
     x:DataType="vm:ProfileViewModel">
 
+  <UserControl.DataTemplates>
+    <DataTemplate x:DataType="vm:ProfileAccountPageViewModel">
+      <profile:ProfileAccountView DataContext="{Binding Owner}" />
+    </DataTemplate>
+    <DataTemplate x:DataType="vm:ProfileDevicesPageViewModel">
+      <profile:DevicesView DataContext="{Binding Owner}" />
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
   <Grid>
     <Grid RowDefinitions="Auto,*" Margin="16,4,16,16">
       <controls:OperationMessageView Grid.Row="0" Margin="0,0,0,12" />
 
-      <ScrollViewer x:Name="ProfileMainScrollViewer"
-                    Grid.Row="1"
-                    IsVisible="{Binding IsProfileMainPage}">
-        <profile:ProfileAccountView />
-      </ScrollViewer>
-
-      <profile:DevicesView Grid.Row="1" />
+      <ContentControl Grid.Row="1" Content="{Binding CurrentMainPageViewModel}"
+                      HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
     </Grid>
 
     <profile:LocalSyncDialogView />
+    <profile:DeviceHistoryRecoveryDialogView />
   </Grid>
 </UserControl>

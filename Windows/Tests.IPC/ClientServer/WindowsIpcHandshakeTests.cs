@@ -23,29 +23,24 @@ public sealed class WindowsIpcHandshakeTests
     }
 
     [TestMethod]
-    public async Task UnsupportedClientVersionIsRejectedAndConnectionCloses()
+    public void HandshakeJsonCarriesIdentityCapabilitiesAndAcceptanceWithoutFrameVersion()
     {
-        var pair = new InMemoryIpcConnectionPair();
         var serializer = new WindowsIpcSerializer();
-        var serverTask = CreateServer(pair, serializer).RunAsync();
+        var request = CreateHandshakeRequest(IpcPeerRole.TestClient);
+        var response = new IpcHandshakeResponse(true, IpcPeerRole.Agent, Guid.NewGuid(), IpcCapabilities.Control, null);
+        using var requestJson = System.Text.Json.JsonDocument.Parse(
+            serializer.Serialize(request, WindowsIpcJsonContext.Default.IpcHandshakeRequest));
+        using var responseJson = System.Text.Json.JsonDocument.Parse(
+            serializer.Serialize(response, WindowsIpcJsonContext.Default.IpcHandshakeResponse));
 
-        await SendHandshakeAsync(
-            pair,
-            serializer,
-            new IpcHandshakeRequest(
-                WindowsIpcProtocol.CurrentVersion + 1,
-                IpcPeerRole.TestClient,
-                Environment.ProcessId,
-                0,
-                Guid.NewGuid(),
-                IpcCapabilities.Control),
-            1);
-        var response = await ReadHandshakeResponseAsync(pair, serializer);
-
-        Assert.IsFalse(response.Accepted);
-        Assert.AreEqual(IpcErrorCode.UnsupportedProtocolVersion, response.Error?.ErrorCode);
-        Assert.IsNull(await pair.Client.ReadFrameAsync());
-        await serverTask;
+        CollectionAssert.AreEquivalent(new[] { "clientRole", "processId", "windowsSessionId", "sessionId", "capabilities" },
+            requestJson.RootElement.EnumerateObject().Select(property => property.Name).ToArray());
+        CollectionAssert.AreEquivalent(new[] { "accepted", "serverRole", "connectionId", "capabilities" },
+            responseJson.RootElement.EnumerateObject().Select(property => property.Name).ToArray());
+        Assert.AreEqual(request.ProcessId, requestJson.RootElement.GetProperty("processId").GetInt32());
+        Assert.AreEqual(request.SessionId, requestJson.RootElement.GetProperty("sessionId").GetGuid());
+        Assert.IsTrue(responseJson.RootElement.GetProperty("accepted").GetBoolean());
+        Assert.AreEqual(response.ConnectionId, responseJson.RootElement.GetProperty("connectionId").GetGuid());
     }
 
     [TestMethod]
@@ -71,8 +66,6 @@ public sealed class WindowsIpcHandshakeTests
         await serverTask;
     }
 
-
-
     [TestMethod]
     public async Task CapabilityNotSupportedByServerIsRejectedWithStructuredError()
     {
@@ -84,7 +77,6 @@ public sealed class WindowsIpcHandshakeTests
             pair,
             serializer,
             new IpcHandshakeRequest(
-                WindowsIpcProtocol.CurrentVersion,
                 IpcPeerRole.TestClient,
                 Environment.ProcessId,
                 0,
@@ -128,17 +120,16 @@ public sealed class WindowsIpcHandshakeTests
         var pair = new InMemoryIpcConnectionPair();
         var serializer = new WindowsIpcSerializer();
         var serverTask = CreateServer(pair, serializer).RunAsync();
-        var request = new IpcRequestEnvelope(4, IpcOperationId.Ping, null);
-        var payload = serializer.Serialize(
-            request,
-            WindowsIpcJsonContext.Default.IpcRequestEnvelope);
+        var payload = new IpcFramePayloadCodec(serializer).EncodeRequest(
+            new IpcRequestEnvelope(IpcOperationId.Ping, null),
+            4);
 
         await pair.Client.WriteFrameAsync(CreateFrame(IpcMessageKind.Request, 4, payload));
         var responseFrame = await pair.Client.ReadFrameAsync();
         Assert.IsNotNull(responseFrame);
-        var response = serializer.Deserialize(
-            responseFrame.Payload,
-            WindowsIpcJsonContext.Default.IpcResponseEnvelope);
+        var response = new IpcFramePayloadCodec(serializer).DecodeResponse(
+            responseFrame.Header.CorrelationId,
+            responseFrame.Payload);
 
         Assert.IsFalse(response.IsSuccess);
         Assert.AreEqual(IpcErrorCode.HandshakeRequired, response.Error?.ErrorCode);
@@ -191,7 +182,6 @@ public sealed class WindowsIpcHandshakeTests
 
     private static IpcHandshakeRequest CreateHandshakeRequest(IpcPeerRole role) =>
         new(
-            WindowsIpcProtocol.CurrentVersion,
             role,
             Environment.ProcessId,
             0,
@@ -231,7 +221,6 @@ public sealed class WindowsIpcHandshakeTests
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 kind,
-                IpcFrameFlags.None,
                 correlationId,
                 payload.Length),
             payload);

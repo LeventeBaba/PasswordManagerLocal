@@ -7,7 +7,11 @@ param(
 
     [Nullable[long]]$BaselineTotalBytes,
 
-    [switch]$RunSmokeTests
+    [switch]$RunSmokeTests,
+
+    [switch]$Sign,
+
+    [switch]$NativeAOT
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,6 +20,8 @@ $arguments = @{
     Configuration = $Configuration
     RuntimeIdentifier = 'win-x64'
     RunSmokeTests = $RunSmokeTests
+    Sign = $Sign
+    NativeAOT = $NativeAOT
 }
 if (-not [string]::IsNullOrWhiteSpace($OutputPath)) { $arguments.OutputRoot = $OutputPath }
 if ($null -ne $BaselineTotalBytes) { $arguments.BaselineTotalBytes = $BaselineTotalBytes }

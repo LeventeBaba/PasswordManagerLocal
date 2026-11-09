@@ -10,7 +10,7 @@ public interface IEndpointRpcTransport : IAsyncDisposable
     Task<EndpointRpcTransportResponse> SendAsync(
         EndpointOperationId operationId,
         byte[] requestPayload,
-        EndpointOperationCancellationClassification cancellationClassification,
+        bool isMutatingOperation,
         CancellationToken cancellationToken = default);
 
     Task<byte[]> GetLargeResultChunkAsync(

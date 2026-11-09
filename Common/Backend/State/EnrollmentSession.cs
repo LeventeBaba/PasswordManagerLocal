@@ -16,6 +16,7 @@ internal sealed class EnrollmentSession
     public string? ErrorMessage { get; set; }
     public DeviceEnrollmentErrorCode ErrorCode { get; set; } = DeviceEnrollmentErrorCode.Unknown;
     public int FailedValidationAttempts { get; set; }
+    public bool CompletionInProgress { get; set; }
 
     public void ClearSensitiveData()
     {

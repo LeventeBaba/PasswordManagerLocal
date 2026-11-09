@@ -2,14 +2,17 @@ using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Contracts.Errors;
 using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
+using PasswordManagerLocal.Common.Contracts.Notifications;
 using PasswordManagerLocal.Windows.EndpointRpc.Serialization;
 using PasswordManagerLocal.Windows.EndpointRpc.Validation;
 using PasswordManagerLocal.Windows.Ipc.Contracts;
+using System.Runtime.CompilerServices;
 
 namespace PasswordManagerLocal.Windows.EndpointRpc.Client;
 
 public sealed class WindowsNamedPipeFrontendBackendClient :
     IFrontendBackendClient<IEndpoints>,
+    IFrontendChangeStreamClient,
     IIntentionalAgentShutdownCoordinator
 {
     private readonly IEndpointRpcClientConnector _connector;
@@ -102,6 +105,36 @@ public sealed class WindowsNamedPipeFrontendBackendClient :
     }
 
     public event EventHandler<BackendRuntimeStateChangedEventArgs>? StateChanged;
+
+    public async IAsyncEnumerable<FrontendChangeStreamEvent> ReadChangeStreamAsync(
+        Guid? userId = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ThrowIfNewWorkRejected();
+        if (userId == Guid.Empty)
+            throw new ArgumentException("An empty user identity is invalid.", nameof(userId));
+
+        if (_agentConnection is not IFrontendChangeStreamClient streamClient)
+        {
+            yield return new FrontendChangeStreamEvent(
+                FrontendChangeStreamEventKind.Disconnected,
+                RuntimeInstanceId: null,
+                Sequence: 0,
+                Scope: FrontendChangeScope.Everything,
+                RequiresAuthoritativeRefresh: true);
+            yield break;
+        }
+
+        using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            _lifetimeSource.Token);
+        await foreach (var item in streamClient.ReadChangeStreamAsync(userId, linkedSource.Token))
+        {
+            if (Volatile.Read(ref _disposeStarted) != 0 || linkedSource.IsCancellationRequested)
+                yield break;
+            yield return item;
+        }
+    }
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -812,6 +845,15 @@ public sealed class WindowsNamedPipeFrontendBackendClient :
                 BackendRuntimeFailureStatusKind.DatabaseCompatibility =>
                     (CreateDatabaseCompatibilityException(status, original),
                      BackendRuntimeFailureKind.DatabaseCompatibility),
+                BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid =>
+                    (new DatabaseConfigurationInvalidException(innerException: original),
+                     BackendRuntimeFailureKind.DatabaseConfigurationInvalid),
+                BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable =>
+                    (new DatabaseKeyUnavailableException(original),
+                     BackendRuntimeFailureKind.DatabaseKeyUnavailable),
+                BackendRuntimeFailureStatusKind.DatabaseUnreadable =>
+                    (new DatabaseUnreadableException(original),
+                     BackendRuntimeFailureKind.DatabaseUnreadable),
                 BackendRuntimeFailureStatusKind.PlatformKeyUnavailable =>
                     (new KeyProtectorUnavailableException(
                         PasswordManagerLocal.Common.Contracts.Security.KeyProtectorUnavailableReason.PlatformKeyStoreUnavailable,

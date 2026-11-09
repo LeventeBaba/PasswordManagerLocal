@@ -34,7 +34,7 @@ public sealed class TrayCallbackTests
     }
 
     [TestMethod]
-    public void Version4MouseAndKeyboardSelectionOpenOnce()
+    public void Version4MouseAndKeyboardSelectionsDecodeAsOpen()
     {
         Assert.AreEqual(TrayCallbackKind.Open, TrayCallback.Decode(true, 1, 0, PackEvent(1, WindowsNativeMethods.NinSelect)).Kind);
         Assert.AreEqual(TrayCallbackKind.Open, TrayCallback.Decode(true, 1, 0, PackEvent(1, WindowsNativeMethods.NinKeySelect)).Kind);

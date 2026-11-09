@@ -8,14 +8,8 @@ $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $documentationRoot = Join-Path $repositoryRoot 'Docs'
 
 $requiredDocuments = @(
-    'README.md',
-    'PHASE11_ANDROID_INTEGRATION_PLATFORM_HARDENING_STATIC_VERIFICATION.md',
-    'PHASE11_IMPLEMENTATION_CHECKS.md',
-    'PHASE11_MODIFIED_FILES.md',
-    'PHASE11_ANDROID_AUTOMATED_TEST_MATRIX.md',
-    'PHASE11_ANDROID_EMULATOR_DEVICE_TEST_MATRIX.md',
-    'PHASE11_ANDROID_SECURITY_REVIEW.md',
-    'PHASE11_FINAL_ARCHITECTURE_AND_ACCEPTANCE.md'
+    'INDEX.md',
+    'Architecture/APPLICATION.md'
 )
 
 if (-not (Test-Path -LiteralPath $documentationRoot -PathType Container)) {

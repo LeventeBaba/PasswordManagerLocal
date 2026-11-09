@@ -13,6 +13,8 @@ public sealed class UserDeviceData : IntegrityCheckableBase, IDisposable
     public DateTime LastLoginDate { get; set; } = UtcDateTimeUtil.MinDateTime;
     public DateTime? PreviousLoginDate { get; set; }
     public DateTimeOffset LastUpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    // Null preserves the authenticated hash of pre-v13 records until their next mutation.
+    public SyncVersionStamp? NameVersion { get; set; }
     public SyncVersionStamp Version { get; set; } = new();
 
     public void Dispose()
@@ -27,6 +29,7 @@ public sealed class UserDeviceData : IntegrityCheckableBase, IDisposable
         PreviousLoginDate = null;
         LastUpdatedAt = default;
         Version = new();
+        NameVersion = null;
         System.Security.Cryptography.CryptographicOperations.ZeroMemory(IntegrityHash);
         _disposed = true;
         GC.SuppressFinalize(this);
@@ -44,5 +47,10 @@ public sealed class UserDeviceData : IntegrityCheckableBase, IDisposable
                 hash.Write(PreviousLoginDate.Value);
             hash.Write(LastUpdatedAt);
             Version.WriteTo(hash);
+            if (NameVersion is not null)
+            {
+                hash.WriteString("device-name-v1");
+                NameVersion.WriteTo(hash);
+            }
         });
 }

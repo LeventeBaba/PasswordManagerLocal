@@ -91,7 +91,10 @@ public sealed class DataValidationTests
     {
         MSTestAssert.AreEqual(PasswordConstants.DefaultPasswordColor, new NewPasswordRequest().Color);
         MSTestAssert.AreEqual(PasswordConstants.DefaultPasswordColor, new SecurePassword().Color);
-        MSTestAssert.AreEqual("#FF14B8A6", PasswordConstants.DefaultPasswordColor);
+        MSTestAssert.AreEqual(
+            "#FF14B8A6",
+            (string)(typeof(PasswordConstants).GetField(nameof(PasswordConstants.DefaultPasswordColor))?.GetRawConstantValue()
+                ?? throw new InvalidOperationException("The default password color constant is missing.")));
     }
 
     [TestMethod]
@@ -109,6 +112,72 @@ public sealed class DataValidationTests
 
         MSTestAssert.IsTrue(valid);
         MSTestAssert.IsEmpty(errors);
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Unit")]
+    public void UpdatePasswordRequest_DistinguishesAbsentTagsFromRemovingAllTags()
+    {
+        var request = new UpdatePasswordRequest { Id = Guid.NewGuid() };
+        MSTestAssert.IsFalse(request.Validate(out var noDataErrors));
+        CollectionAssert.AreEquivalent(new[] { "NoDataUpdate" }, noDataErrors);
+
+        request.TagIds = [];
+        MSTestAssert.IsTrue(request.Validate(out var clearTagErrors));
+        MSTestAssert.IsEmpty(clearTagErrors);
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Unit")]
+    public void UpdatePasswordRequest_RejectsDuplicateAndEmptyTagIds()
+    {
+        var id = Guid.NewGuid();
+        var request = new UpdatePasswordRequest { Id = Guid.NewGuid(), TagIds = [id, id] };
+        MSTestAssert.IsFalse(request.Validate(out var duplicateErrors));
+        CollectionAssert.AreEquivalent(new[] { "TagIds" }, duplicateErrors);
+
+        request.TagIds = [Guid.Empty];
+        MSTestAssert.IsFalse(request.Validate(out var emptyIdErrors));
+        CollectionAssert.AreEquivalent(new[] { "TagIds" }, emptyIdErrors);
+
+        request.TagIds = [id];
+        MSTestAssert.IsTrue(request.Validate(out var validErrors));
+        MSTestAssert.IsEmpty(validErrors);
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Unit")]
+    public void SharedRequestValidationOwnsIdentifiersAndNullSafeSensitiveFields()
+    {
+        var masterPassword = new MasterPasswordChangeRequest
+        {
+            Token = Guid.Empty,
+            Password = null!,
+            NewPassword = null!
+        };
+        var profile = new UpdateUserProfileRequest
+        {
+            Token = Guid.Empty,
+            newFirstName = "Valid"
+        };
+        var password = new UpdatePasswordRequest
+        {
+            Id = Guid.Empty,
+            Description = string.Empty
+        };
+
+        MSTestAssert.IsFalse(masterPassword.Validate(out var masterErrors));
+        CollectionAssert.AreEquivalent(
+            new[] { "Token", "CurrentPassword", "NewPassword" },
+            masterErrors);
+        MSTestAssert.IsFalse(profile.Validate(out var profileErrors));
+        CollectionAssert.AreEquivalent(new[] { "Token" }, profileErrors);
+        MSTestAssert.IsFalse(password.Validate(out var passwordErrors));
+        CollectionAssert.AreEquivalent(new[] { "Id" }, passwordErrors);
+        MSTestAssert.IsFalse(DataValidation.IsValidPassword(null));
     }
 
     [TestMethod]

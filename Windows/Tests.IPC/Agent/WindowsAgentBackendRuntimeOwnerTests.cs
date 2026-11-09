@@ -31,36 +31,21 @@ public sealed class WindowsAgentBackendRuntimeOwnerTests
     }
 
     [TestMethod]
-    public async Task StopAndDisposeUseTheSameRuntimeExactlyOnce()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task DisposalReleasesRuntimeOnceWithOrWithoutPriorStop(bool stopBeforeDisposal)
     {
         var runtime = new FakeAgentOwnedBackendRuntime();
         var owner = new WindowsAgentBackendRuntimeOwner(() => new BackendRuntimeComposition(
-            runtime,
-            new FakeAgentBackendLifetimeCoordinator(),
-            @"C:\agent-data"));
+            runtime, new FakeAgentBackendLifetimeCoordinator(), @"C:\agent-data"));
         await owner.StartAsync();
-
-        await owner.StopAsync();
-        await owner.DisposeAsync();
-
-        Assert.AreEqual(1, runtime.StopCount);
-        Assert.AreEqual(1, runtime.DisposeCount);
-        Assert.AreEqual(WindowsAgentBackendOwnerState.Stopped, owner.Snapshot.State);
-    }
-
-    [TestMethod]
-    public async Task RepeatedDisposeKeepsRuntimeDisposalExactlyOnce()
-    {
-        var runtime = new FakeAgentOwnedBackendRuntime();
-        var owner = new WindowsAgentBackendRuntimeOwner(() => new BackendRuntimeComposition(
-            runtime,
-            new FakeAgentBackendLifetimeCoordinator(),
-            @"C:\agent-data"));
-        await owner.StartAsync();
+        if (stopBeforeDisposal)
+            await owner.StopAsync();
 
         await owner.DisposeAsync();
         await owner.DisposeAsync();
 
+        Assert.AreEqual(stopBeforeDisposal ? 1 : 0, runtime.StopCount);
         Assert.AreEqual(1, runtime.DisposeCount);
         Assert.AreEqual(WindowsAgentBackendOwnerState.Stopped, owner.Snapshot.State);
     }
@@ -104,7 +89,6 @@ public sealed class WindowsAgentBackendRuntimeOwnerTests
         Assert.IsTrue(owner.Snapshot.RequiresProcessRestart);
         await owner.DisposeAsync();
     }
-
 
     [TestMethod]
     public async Task ReasonAcquisitionAndReleaseRefreshOwnerSnapshotWithoutRuntimeRestart()

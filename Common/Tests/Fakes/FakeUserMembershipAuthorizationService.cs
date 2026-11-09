@@ -9,13 +9,21 @@ public sealed class FakeUserMembershipAuthorizationService : IUserMembershipAuth
     public Task<UserMembershipAuthorization> CreateGenesisAsync(User user, CancellationToken ct = default) =>
         Task.FromResult(Create(user.UId, Guid.NewGuid(), Guid.NewGuid(), user.KeyEpoch, user.MembershipEpoch, []));
 
-    public Task<UserMembershipAuthorization> AuthorizeAdditionAsync(DeviceAdditionPayload payload, Guid operationId, byte[] operationHash, CancellationToken ct = default) =>
-        Task.FromResult(Create(payload.UserId, payload.NewDeviceId, payload.NewOriginInstanceId, payload.KeyEpoch, payload.ResultingMembershipEpoch, payload.SignPublicKey));
+    public Task<UserMembershipAuthorization> AuthorizeAdditionAsync(DeviceAdditionPayload payload, Guid operationId, byte[] operationHash, DateTimeOffset createdAtUtc, CancellationToken ct = default)
+    {
+        var authorization = Create(payload.UserId, payload.NewDeviceId, payload.NewOriginInstanceId, payload.KeyEpoch, payload.ResultingMembershipEpoch, payload.SignPublicKey);
+        authorization.AuthorizationId = operationId;
+        authorization.AdditionOperationId = operationId;
+        authorization.AdditionOperationHash = operationHash.ToArray();
+        authorization.CreatedAtUtc = createdAtUtc;
+        return Task.FromResult(authorization);
+    }
 
-    public Task EndAuthorizationAsync(UserMembershipAuthorization authorization, DeviceRemovalPayload payload, Guid operationId, byte[] operationHash, CancellationToken ct = default)
+    public Task EndAuthorizationAsync(UserMembershipAuthorization authorization, DeviceRemovalPayload payload, Guid operationId, byte[] operationHash, DateTimeOffset createdAtUtc, CancellationToken ct = default)
     {
         authorization.IsActive = false;
         authorization.EndedMembershipEpoch = payload.ResultingMembershipEpoch;
+        authorization.EndedAtUtc = createdAtUtc;
         return Task.CompletedTask;
     }
 
@@ -33,6 +41,7 @@ public sealed class FakeUserMembershipAuthorizationService : IUserMembershipAuth
 
     private static UserMembershipAuthorization Create(Guid userId, Guid deviceId, Guid originId, long keyEpoch, long membershipEpoch, byte[] signKey) => new()
     {
+        AuthorizationId = Guid.NewGuid(),
         UserId = userId,
         DeviceId = deviceId,
         OriginInstanceId = originId,

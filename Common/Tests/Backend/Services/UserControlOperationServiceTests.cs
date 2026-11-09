@@ -1,7 +1,7 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSec.Cryptography;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Tests.Fakes;
@@ -20,7 +20,7 @@ public sealed class UserControlOperationServiceTests
     [TestCategory("Security")]
     public async Task KeyEpochOperation_LockedReceiverAppliesAndDuplicateIsIdempotent()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var author = CreateIdentity(signingKey);
         var canonical = CreateUser(keyEpoch: 1, marker: 0x10, savedKey: [0xAA, 0xBB]);
@@ -73,9 +73,10 @@ public sealed class UserControlOperationServiceTests
         var first = await service.StoreAndApplyAsync(envelope, authorDevice.Id);
         var duplicate = await service.StoreAndApplyAsync(envelope, authorDevice.Id);
 
-        database.Db.ChangeTracker.Clear();
-        var reloaded = await database.Db.Users.SingleAsync(user => user.UId == canonical.UId);
-        var stored = await database.Db.UserControlOperations.SingleAsync(operation => operation.OperationId == envelope.OperationId);
+        var reloaded = await database.Users.GetByIdAsync(canonical.UId)
+            ?? throw new AssertFailedException("The canonical user is missing.");
+        var stored = await database.UserControlOperations.GetByIdAsync(envelope.OperationId)
+            ?? throw new AssertFailedException("The stored control operation is missing.");
         var loginIdentity = await database.Users.GetLoginIdentityStateAsync(canonical.UId);
 
         MSTestAssert.AreEqual(UserControlOperationReceiptState.Applied, first.State);
@@ -101,7 +102,7 @@ public sealed class UserControlOperationServiceTests
     [TestCategory("Security")]
     public async Task SameOperationIdWithDifferentHash_DurablyQuarantinesControlPlane()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var author = CreateIdentity(signingKey);
         var canonical = CreateUser(keyEpoch: 1, marker: 0x10);
@@ -141,9 +142,10 @@ public sealed class UserControlOperationServiceTests
 
         var receipt = await service.StoreAndApplyAsync(conflicting, authorDevice.Id);
 
-        database.Db.ChangeTracker.Clear();
-        var row = await database.Db.UserControlOperations.SingleAsync(operation => operation.OperationId == first.OperationId);
-        var state = await database.Db.UserControlStates.SingleAsync(item => item.UserId == canonical.UId);
+        var row = await database.UserControlOperations.GetByIdAsync(first.OperationId)
+            ?? throw new AssertFailedException("The stored control operation is missing.");
+        var state = await database.UserControlStates.GetAsync(canonical.UId)
+            ?? throw new AssertFailedException("The control state is missing.");
         MSTestAssert.AreEqual(UserControlOperationReceiptState.Quarantined, receipt.State);
         MSTestAssert.AreEqual(UserControlOperationStatus.Quarantined, row.Status);
         MSTestAssert.IsTrue(state.HasConflict);
@@ -157,7 +159,7 @@ public sealed class UserControlOperationServiceTests
     [TestCategory("Security")]
     public async Task DifferentAuthorsClaimingSameBaseTransition_QuarantinesBothExactOperations()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var firstSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         using var secondSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var firstAuthor = CreateIdentity(firstSigningKey);
@@ -201,12 +203,9 @@ public sealed class UserControlOperationServiceTests
             (await service.StoreAndApplyAsync(first, firstDevice.Id)).State);
         var conflictingReceipt = await service.StoreAndApplyAsync(second, secondDevice.Id);
 
-        database.Db.ChangeTracker.Clear();
-        var rows = await database.Db.UserControlOperations
-            .Where(operation => operation.UserId == canonical.UId)
-            .OrderBy(operation => operation.OperationId)
-            .ToListAsync();
-        var state = await database.Db.UserControlStates.SingleAsync(item => item.UserId == canonical.UId);
+        var rows = await database.UserControlOperations.ListForUserAsync(canonical.UId);
+        var state = await database.UserControlStates.GetAsync(canonical.UId)
+            ?? throw new AssertFailedException("The control state is missing.");
 
         MSTestAssert.AreEqual(UserControlOperationReceiptState.Quarantined, conflictingReceipt.State);
         MSTestAssert.HasCount(2, rows);
@@ -222,7 +221,7 @@ public sealed class UserControlOperationServiceTests
     [TestCategory("Integration")]
     public async Task StoredPendingOperation_CanBeAppliedAfterRestartWhenPrecedingEpochArrives()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var author = CreateIdentity(signingKey);
         var canonical = CreateUser(keyEpoch: 1, marker: 0x10);
@@ -261,27 +260,27 @@ public sealed class UserControlOperationServiceTests
             canonical);
         database.Users.Update(canonical);
         await database.UnitOfWork.SaveChangesAsync();
-        database.Db.ChangeTracker.Clear();
 
+        using var restartedSession = database.OpenSession();
         var restartedService = new UserControlOperationInboxService(
-            database.UserControlOperations,
-            database.UserControlStates,
-            database.Users,
-            database.Devices,
-            database.UserDevices,
-            database.UserSyncSnapshots,
+            new UserControlOperationRepository(restartedSession),
+            new UserControlStateRepository(restartedSession),
+            new UserRepository(restartedSession),
+            new DeviceRepository(restartedSession),
+            new UserDeviceRepository(restartedSession),
+            new UserSyncSnapshotRepository(restartedSession),
             new UserLifecycleCoordinator(),
             new FakeInteractiveSessionStateService(new FakeAuthService()),
-            database.UnitOfWork,
+            restartedSession,
             new FakeUserMembershipAuthorizationService(),
-            database.UserMembershipAuthorizations,
-            database.LocalUserDevices,
+            new UserMembershipAuthorizationRepository(restartedSession),
+            new LocalUserDeviceRepository(restartedSession),
             new FakeDeviceIdentityService(),
             new FakeSyncRuntimeService());
         var applied = await restartedService.TryApplyStoredAsync(envelope.OperationId);
 
-        database.Db.ChangeTracker.Clear();
-        var reloaded = await database.Db.Users.SingleAsync(user => user.UId == canonical.UId);
+        var reloaded = await database.Users.GetByIdAsync(canonical.UId)
+            ?? throw new AssertFailedException("The canonical user is missing.");
         MSTestAssert.AreEqual(UserControlOperationReceiptState.Applied, applied.State);
         MSTestAssert.AreEqual(3L, reloaded.KeyEpoch);
         CollectionAssert.AreEqual(epochThree.EncryptedPayload, reloaded.EncryptedPayload);
@@ -293,7 +292,7 @@ public sealed class UserControlOperationServiceTests
     [TestCategory("Security")]
     public async Task ResultingEpochAlreadyPresentWithDifferentCanonicalState_QuarantinesInsteadOfClaimingIdempotence()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var author = CreateIdentity(signingKey);
         var canonical = CreateUser(keyEpoch: 2, marker: 0x22);
@@ -328,10 +327,12 @@ public sealed class UserControlOperationServiceTests
 
         var receipt = await service.StoreAndApplyAsync(envelope, authorDevice.Id);
 
-        database.Db.ChangeTracker.Clear();
-        var reloaded = await database.Db.Users.SingleAsync(user => user.UId == canonical.UId);
-        var row = await database.Db.UserControlOperations.SingleAsync(operation => operation.OperationId == envelope.OperationId);
-        var state = await database.Db.UserControlStates.SingleAsync(item => item.UserId == canonical.UId);
+        var reloaded = await database.Users.GetByIdAsync(canonical.UId)
+            ?? throw new AssertFailedException("The canonical user is missing.");
+        var row = await database.UserControlOperations.GetByIdAsync(envelope.OperationId)
+            ?? throw new AssertFailedException("The stored control operation is missing.");
+        var state = await database.UserControlStates.GetAsync(canonical.UId)
+            ?? throw new AssertFailedException("The control state is missing.");
         MSTestAssert.AreEqual(UserControlOperationReceiptState.Quarantined, receipt.State);
         MSTestAssert.AreEqual(UserControlOperationStatus.Quarantined, row.Status);
         MSTestAssert.IsTrue(state.HasConflict);
@@ -342,9 +343,89 @@ public sealed class UserControlOperationServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
+    public async Task RelayedDeviceAddition_ReactivatesRelayPeerForEndpointHintCatchUp()
+    {
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var authorSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        var author = CreateIdentity(authorSigningKey);
+        var canonical = CreateUser(keyEpoch: 1, marker: 0x31);
+        var relayDeviceId = Guid.NewGuid();
+        var relayDevice = CreateTrustedDevice(relayDeviceId, Enumerable.Repeat((byte)0x52, 32).ToArray());
+        var relayLink = new UserDevice
+        {
+            UserId = canonical.UId,
+            DeviceId = relayDeviceId,
+            IsSyncOn = true,
+            IsDeleted = false
+        };
+        relayLink.GenerateIntegrityHash();
+
+        await database.Users.AddAsync(canonical);
+        await database.Devices.AddAsync(relayDevice);
+        await database.UserDevices.AddAsync(relayLink);
+        await database.UnitOfWork.SaveChangesAsync();
+
+        var newDeviceId = Guid.NewGuid();
+        var payload = UserControlOperationEnvelopeUtil.CreateDeviceAdditionPayload(
+            canonical.UId,
+            canonical.KeyEpoch,
+            canonical.MembershipEpoch,
+            newDeviceId,
+            Guid.NewGuid(),
+            Enumerable.Repeat((byte)0x63, 32).ToArray(),
+            Enumerable.Repeat((byte)0x74, 32).ToArray(),
+            Convert.ToHexString(newDeviceId.ToByteArray().Concat(newDeviceId.ToByteArray()).ToArray()),
+            DeviceType.WindowsPc);
+        var envelope = new UserControlOperationEnvelope
+        {
+            OperationId = Guid.NewGuid(),
+            UserId = canonical.UId,
+            OperationType = UserControlOperationType.DeviceAddition,
+            OriginDeviceId = author.LocalDeviceId,
+            OriginInstanceId = author.OriginInstanceId,
+            OriginSequence = 1,
+            PreviousKeyEpoch = canonical.KeyEpoch,
+            ResultingKeyEpoch = canonical.KeyEpoch,
+            PreviousMembershipEpoch = canonical.MembershipEpoch,
+            ResultingMembershipEpoch = canonical.MembershipEpoch + 1,
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            OperationPayload = UserControlOperationEnvelopeUtil.SerializeDeviceAdditionPayload(payload)
+        };
+        UserControlOperationEnvelopeUtil.FillOriginAuthentication(envelope, author);
+
+        var activation = new FakeSyncQueueService();
+        var localIdentity = new FakeDeviceIdentityService { LocalDeviceId = Guid.NewGuid() };
+        var service = new UserControlOperationInboxService(
+            database.UserControlOperations,
+            database.UserControlStates,
+            database.Users,
+            database.Devices,
+            database.UserDevices,
+            database.UserSyncSnapshots,
+            new UserLifecycleCoordinator(),
+            new FakeInteractiveSessionStateService(new FakeAuthService()),
+            database.UnitOfWork,
+            new FakeUserMembershipAuthorizationService(),
+            database.UserMembershipAuthorizations,
+            database.LocalUserDevices,
+            localIdentity,
+            new FakeSyncRuntimeService(),
+            pendingSyncActivation: activation);
+
+        var receipt = await service.StoreAndApplyAsync(envelope, relayDeviceId);
+
+        MSTestAssert.AreEqual(UserControlOperationReceiptState.Applied, receipt.State);
+        CollectionAssert.AreEquivalent(
+            new[] { newDeviceId, relayDeviceId },
+            activation.ActivatedDevices.Select(device => device.Id).Distinct().ToArray());
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
     public async Task AppliedOperation_PersistsAfterCanonicalUserDeletion()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var identity = CreateIdentity(signingKey);
         var user = CreateUser(keyEpoch: 2, marker: 0x50);
@@ -368,10 +449,10 @@ public sealed class UserControlOperationServiceTests
 
         database.Users.Delete(user);
         await database.UnitOfWork.SaveChangesAsync();
-        database.Db.ChangeTracker.Clear();
 
-        MSTestAssert.IsFalse(await database.Db.Users.AnyAsync(candidate => candidate.UId == user.UId));
-        var retained = await database.Db.UserControlOperations.SingleAsync(operation => operation.OperationId == envelope.OperationId);
+        MSTestAssert.IsFalse(await database.Users.ExistsAsync(user.UId));
+        var retained = await database.UserControlOperations.GetByIdAsync(envelope.OperationId)
+            ?? throw new AssertFailedException("The stored control operation is missing.");
         MSTestAssert.AreEqual(UserControlOperationStatus.Applied, retained.Status);
         CollectionAssert.AreEqual(envelope.OperationHash, retained.OperationHash);
     }

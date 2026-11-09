@@ -1,0 +1,38 @@
+<WixLocalization Culture="hu-HU" Codepage="1250" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <String Id="PmlProductLanguage" Value="1038" />
+  <String Id="PmlSetupTitle" Value="[ProductName] telepítője" />
+  <String Id="PmlWelcomeHeading" Value="A Password Manager Local telepítése" />
+  <String Id="PmlWelcomeIntroduction" Value="A Password Manager Local telepítéséhez tekintse át a licencet és a telepítési beállításokat. A folytatáshoz válassza a Tovább gombot." />
+  <String Id="PmlFolderLabel" Value="Telepítési &amp;mappa" />
+  <String Id="PmlBrowse" Value="Ta&amp;llózás..." />
+  <String Id="PmlCreateDesktopShortcut" Value="Parancsikon létrehozása az &amp;asztalon" />
+  <String Id="PmlOptionsHeading" Value="Telepítési beállítások" />
+  <String Id="PmlFolderHelp" Value="Válasszon új vagy üres mappát egy rögzített NTFS-meghajtón, olyan helyen, amelyet csak rendszergazdák módosíthatnak." />
+  <String Id="PmlUpgradeHelp" Value="A telepítő a meglévő telepítési mappát használja." />
+  <String Id="PmlLaunchAfterSetup" Value="A Password Manager Local &amp;megnyitása" />
+  <String Id="PmlSetupFinishedHeading" Value="A telepítés befejeződött" />
+  <String Id="PmlSetupFinishedDescription" Value="A Password Manager Local telepítése befejeződött. Az ablak bezárásához válassza a Befejezés gombot." />
+  <String Id="PmlAdminSetupFinishedHeading" Value="A rendszergazdai telepítés befejeződött" />
+  <String Id="PmlAdminSetupFinishedDescription" Value="Elkészült a rendszergazdai telepítési csomag. Az ablak bezárásához válassza a Befejezés gombot." />
+  <String Id="PmlNewerVersionInstalled" Value="Már telepítve van a Password Manager Local újabb verziója." />
+  <String Id="PmlDesktopShortcutFeature" Value="Asztali parancsikon" />
+  <String Id="PmlUninstallShortcut" Value="Password Manager Local eltávolítása" />
+
+  <!-- Shrink stock background bitmaps to a pixel so Windows draws the dialog
+       surface, including the area behind text, in the user's system colors. -->
+  <UI Dialog="BrowseDlg" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="DiskCostDlg" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="FatalError" Control="Bitmap" Width="1" Height="1" />
+  <UI Dialog="FilesInUse" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="LicenseAgreementDlg" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="MaintenanceTypeDlg" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="MaintenanceWelcomeDlg" Control="Bitmap" Width="1" Height="1" />
+  <UI Dialog="MsiRMFilesInUse" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="OutOfDiskDlg" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="OutOfRbDiskDlg" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="PrepareDlg" Control="Bitmap" Width="1" Height="1" />
+  <UI Dialog="ProgressDlg" Control="BannerBitmap" Width="1" Height="1" />
+  <UI Dialog="ResumeDlg" Control="Bitmap" Width="1" Height="1" />
+  <UI Dialog="UserExit" Control="Bitmap" Width="1" Height="1" />
+  <UI Dialog="VerifyReadyDlg" Control="BannerBitmap" Width="1" Height="1" />
+</WixLocalization>

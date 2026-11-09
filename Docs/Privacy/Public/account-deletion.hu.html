@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="hu">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fiók és adatok törlése — Password Manager Local</title><style>
+:root { color-scheme: light dark; font: 1.1rem/1.65 system-ui, sans-serif; }
+body { margin: 0; background: #f6f7f9; color: #182335; }
+main { max-width: 72ch; margin: auto; padding: 1.5rem; overflow-wrap: anywhere; }
+nav { display: flex; flex-wrap: wrap; gap: 1rem; margin: 0 0 1.5rem; }
+a { color: #174d9b; text-decoration: underline; text-underline-offset: .15em; }
+a:focus-visible { outline: 3px solid currentColor; outline-offset: 4px; }
+h1 { font-size: 1.9rem; line-height: 1.25; } h2 { font-size: 1.25rem; line-height: 1.4; }
+section { margin-top: 2rem; } .metadata { font-size: .95rem; }
+aside { border-inline-start: .3rem solid #386fae; padding: .8rem 1rem; background: #e8eff9; }
+@media (prefers-color-scheme: dark) {
+  body { background: #121923; color: #eef2f8; } a { color: #9bcaff; }
+  aside { background: #202e42; border-color: #9bcaff; }
+}
+@media print { body { background: white; color: black; } nav { display: none; } }
+</style></head>
+<body><main>
+<nav aria-label="Language / Nyelv">
+<a href="account-deletion.en.html" lang="en">English</a>
+<a href="privacy-policy.hu.html">Teljes adatvédelmi tájékoztató</a>
+<a href="account-deletion.hu.html">Fiók és adatok törlése</a>
+</nav>
+<h1>Fiók és adatok törlése — Password Manager Local</h1>
+<p class="metadata">Változat 1.1 · Hatályos ettől: 2026-11-07</p>
+
+<aside aria-label="A tájékoztató állapota"><p>A helyi profilodat az alábbi, alkalmazáson belüli lépésekkel törölheted. A fejlesztő a fejlesztői postafiókban kezelt adatokra vonatkozó kérelmeket tudja kezelni. Távolról nem fér hozzá a jelszótáradhoz vagy az eszközeidhez.</p></aside>
+<section id="retention-deletion"><h2>10. Megőrzés, törlés és másolatok</h2>
+<p>A profil- és jelszótáradatok addig maradnak az eszközeiden, amíg módosítod vagy törlöd őket, illetve eltávolítod a megfelelő alkalmazástárhelyet. Az alkalmazásban nincs inaktivitás miatti fióklejárat. A kijelentkezés a munkamenetet zárja le, nem törli a profilt. Fióktörléshez jelentkezz be az adott profilba, nyisd meg a Profil → Biztonság → Fiók törlése lehetőséget, olvasd el a figyelmeztetést, add meg a mesterjelszót, majd erősítsd meg a törlést. Ez eltávolítja a helyi fiók módosítható profil-, jelszótár- és függő adatait, és aláírt törlési utasítást hoz létre a többi eszköz számára.</p>
+<p>A törlés nem azonnali távoli adattörlés. Az offline vagy elérhetetlen eszköz csak akkor alkalmazza, amikor megkapja és elfogadja a törlést. Egy eszköz leválasztása sem garantálja a meglévő másolatának törlését. A korábban másolt jelszavak, célprofilok, mentett képek, az operációs rendszer feljegyzései és a biztonsági másolatok külön figyelmet igényelnek.</p>
+<p>Az alkalmazás szándékosan megőrzi a fiók-/eszközazonosítókat, az aláírt törlési és vezérlési adatokat, valamint a korábbi tagság igazolásait a törlés ellenőrzéséhez és az adatok visszaállásának megelőzéséhez. A végleges fióktörlési védelmi rekordok a jelenlegi megvalósításban nem járnak le automatikusan. Más szinkronizálási törlésjelölők a protokoll visszaigazolási feltételeinek teljesülésekor törölhetők, nem meghatározott számú nap elteltével. Az adatbázis alaphelyzetbe állítása a helyi adatbázis- és kulcsfájlokat távolítja el; nem ígéri a rendszerfeljegyzések vagy külső másolatok törlését. A logikai törlés nem garantálja minden tárolóblokk forenzikus felülírását.</p></section>
+<section id="backups"><h2>12. Rendszermentések és a hozzáférés elvesztése</h2>
+<p>Az alkalmazás nem nyújt a fejlesztőnél tárolt felhőmentést vagy mesterjelszó-helyreállítási szolgáltatást. Az androidos változat letiltja az alkalmazásadatok automatikus felhőmentését, és kizárásokat állít be az automatikus eszközköltöztetéshez, mert adatbáziskulcsát az adott telepítéshez tartozó Android Keystore-kulcs védi. A szokásos teljes eltávolítás törli a privát helyi adatbázist és a Keystore-kulcsot; az újratelepítés új telepítést indít. Más platformokon az operációs rendszer vagy a mentőeszközök saját beállításaik szerint másolhatják az alkalmazás fájljait. A védett kulcsok másik telepítésben vagy rendszerfiókban használhatatlanok lehetnek.</p>
+<p>Az eltávolítás, az alkalmazásadatok törlése, az adatbázis alaphelyzetbe állítása vagy a kulcsok elvesztése végleg megszüntetheti a hozzáférést. Windowson az eltávolítás viselkedése a telepítőtől függ, és felhasználói adatok maradhatnak utána. Ezek a mentési kizárások nem törlik a korábban létrehozott mentéseket és a külön másolt fájlokat. A más eszközökön lévő másolatokat egy helyi eltávolítás nem törli automatikusan. Ezeket a másolatokat is tartsd ellenőrzés alatt, és ne tekints másik eszközt vagy mentést garantált helyreállítási lehetőségnek.</p></section>
+<section id="rights"><h2>15. Beállításaid, jogaid és a panasztétel</h2>
+<p>Az alkalmazásban megtekintheted és módosíthatod a profil- és jelszóadatokat, bekapcsolhatod az Emlékezz rám ezen az eszközön lehetőséget, kezelheted a háttérműködést, csatlakoztathatsz vagy leválaszthatsz eszközöket, és törölheted a fiókot. A kamera- és értesítési engedélyek az Android beállításaiban kezelhetők. A jelenlegi profilok közötti Exportálás nem általános GDPR-adathordozhatósági export és nem fejlesztői igénybejelentő felület. A fejlesztő nem tudja központilag olvasni, helyreállítani vagy távolról törölni a kizárólag eszközeiden lévő másolatokat egy nem létező központi szolgáltatáson keresztül.</p>
+<p>Ha egy adatkezelő adatkezelésére a GDPR alkalmazandó, a jogszabályi feltételek szerint jogosult lehetsz hozzáférésre, helyesbítésre, törlésre, az adatkezelés korlátozására, adathordozhatóságra és tiltakozásra. Hozzájárulás esetén azt a korábbi jogszerű adatkezelés érintése nélkül visszavonhatod. Panaszt tehetsz felügyeleti hatóságnál, különösen a lakóhelyed, munkahelyed vagy a feltételezett jogsértés szerinti országban; Magyarországon ez a Nemzeti Adatvédelmi és Információszabadság Hatóság (NAIH), <a href="https://www.naih.hu/">https://www.naih.hu/</a>.</p>
+<p>Ha kérdésed van, vagy a fejlesztő által kezelt adatokkal kapcsolatban szeretnél élni a jogaiddal, írj a <a href="mailto:levente.baba.dev@gmail.com">levente.baba.dev@gmail.com</a> címre. Írd le, mire vonatkozik a megkeresés, és milyen intézkedést kérsz. A kizárólag az eszközeiden tárolt adatokat a fent ismertetett helyi lehetőségekkel kezelheted.</p></section>
+</main></body></html>

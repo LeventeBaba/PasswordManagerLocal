@@ -1,5 +1,4 @@
 using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 
@@ -7,27 +6,38 @@ namespace PasswordManagerLocal.Common.Backend.Persistence;
 
 /// <summary>
 /// Tracks database transactions owned by this backend process. The durable synchronization clock
-/// uses a separate DbContext, so without this registry a clock observation made from inside an
+/// uses a separate SQLite connection, so without this registry a clock observation made from inside an
 /// existing SQLite transaction can wait on the transaction that is itself waiting for Observe.
 /// </summary>
 internal static class AppDatabaseTransactionRegistry
 {
     private static readonly ConcurrentDictionary<string, int> ActiveTransactions = new(StringComparer.Ordinal);
 
-    public static string GetDatabaseKey(AppDbContext db)
+    public static string GetDatabaseKey(SqliteConnection connection)
     {
-        ArgumentNullException.ThrowIfNull(db);
-        var connection = db.Database.GetDbConnection();
-        if (connection is SqliteConnection sqlite)
+        ArgumentNullException.ThrowIfNull(connection);
+        // DataSource changes after opening a file URI. Use the configured value so
+        // the clock and the unit of work agree before and after opening.
+        var options = new SqliteConnectionStringBuilder(connection.ConnectionString);
+        var dataSource = options.DataSource;
+        if (string.IsNullOrWhiteSpace(dataSource) ||
+            string.Equals(dataSource, ":memory:", StringComparison.OrdinalIgnoreCase))
         {
-            var dataSource = sqlite.DataSource;
-            if (string.IsNullOrWhiteSpace(dataSource) || string.Equals(dataSource, ":memory:", StringComparison.OrdinalIgnoreCase))
-                return $"memory:{RuntimeHelpers.GetHashCode(connection)}";
-
-            return Path.GetFullPath(dataSource);
+            return $"memory:{RuntimeHelpers.GetHashCode(connection)}";
         }
 
-        return connection.ConnectionString;
+        if (options.Mode == SqliteOpenMode.Memory)
+            return options.Cache == SqliteCacheMode.Shared
+                ? $"shared-memory:{dataSource}"
+                : $"memory:{RuntimeHelpers.GetHashCode(connection)}";
+
+        if (dataSource.StartsWith("file:", StringComparison.OrdinalIgnoreCase) &&
+            Uri.TryCreate(dataSource, UriKind.Absolute, out var uri) && uri.IsFile)
+        {
+            dataSource = uri.LocalPath;
+        }
+
+        return Path.GetFullPath(dataSource);
     }
 
     public static IDisposable Enter(string databaseKey)

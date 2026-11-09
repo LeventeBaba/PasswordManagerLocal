@@ -7,12 +7,7 @@ public sealed record EndpointOperationDescriptor(
     string MethodName,
     Type RequestType,
     Type ResponseType,
-    EndpointOperationCancellationClassification CancellationClassification,
     EndpointMutationCommitModel CommitModel,
-    EndpointMutationReplaySafety ReplaySafety,
-    EndpointOperationId? AuthoritativeReadBackOperationId,
-    EndpointMutationRecoveryAction RecoveryAction,
-    bool HandlesSensitiveData,
     int MaximumRequestPayloadSize,
     int MaximumResponsePayloadSize,
     int MaximumLargeResponsePayloadSize = 0)

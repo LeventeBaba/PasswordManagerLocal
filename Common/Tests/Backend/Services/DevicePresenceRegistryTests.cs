@@ -1,6 +1,8 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Sync.Discovery;
 using PasswordManagerLocal.Common.Backend.Sync.Presence;
+using PasswordManagerLocal.Common.Backend.Sync;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 
@@ -112,14 +114,38 @@ public sealed class DevicePresenceRegistryTests
     }
 
     [TestMethod]
-    public void EndpointChange_InvalidatesPresenceUntilReauthenticated()
+    public void EndpointCandidateChange_KeepsAuthenticatedPresenceStableUntilReauthenticatedOrExpired()
     {
-        var registry = CreateRegistry(out _);
-        registry.RefreshAuthenticated(Fingerprint, Endpoint("10.0.0.2"), DevicePresenceObservationSource.DirectProbe);
+        var registry = CreateRegistry(out var clock);
+        var originalEndpoint = Endpoint("10.0.0.2");
+        registry.RefreshAuthenticated(Fingerprint, originalEndpoint, DevicePresenceObservationSource.DirectProbe);
 
         registry.HandleEndpointChanged(Fingerprint, Endpoint("10.0.1.2"));
 
+        Assert.IsTrue(registry.IsOnline(Fingerprint, TimeSpan.FromSeconds(35)));
+        Assert.IsTrue(registry.TryGetSnapshot(Fingerprint, out var snapshot));
+        Assert.AreEqual("10.0.0.2:26688", snapshot!.EndpointKey);
+
+        clock.Now = clock.Now.AddSeconds(36);
         Assert.IsFalse(registry.IsOnline(Fingerprint, TimeSpan.FromSeconds(35)));
+    }
+
+    [TestMethod]
+    public void UnauthenticatedReplacementEndpointFailures_DoNotFlickerStillFreshAuthenticatedPresence()
+    {
+        var registry = CreateRegistry(out _);
+        var authenticatedEndpoint = Endpoint("10.0.0.2");
+        var candidateEndpoint = Endpoint("10.0.1.2");
+        registry.RefreshAuthenticated(Fingerprint, authenticatedEndpoint, DevicePresenceObservationSource.DirectProbe);
+        registry.HandleEndpointChanged(Fingerprint, candidateEndpoint);
+
+        for (var index = 0; index < DevicePresenceRegistry.FailureThreshold; index++)
+            registry.RecordFailure(Fingerprint, candidateEndpoint, DevicePresenceFailureKind.Unreachable);
+
+        Assert.IsTrue(registry.IsOnline(Fingerprint, TimeSpan.FromSeconds(35)));
+        Assert.IsTrue(registry.TryGetSnapshot(Fingerprint, out var snapshot));
+        Assert.AreEqual(0, snapshot!.ConsecutiveFailures);
+        Assert.AreEqual("10.0.0.2:26688", snapshot.EndpointKey);
     }
 
     [TestMethod]
@@ -133,14 +159,44 @@ public sealed class DevicePresenceRegistryTests
         Assert.IsFalse(registry.IsOnline(Fingerprint, TimeSpan.FromSeconds(35)));
     }
 
-    private static DevicePresenceRegistry CreateRegistry(out MutableClock clock)
+    [TestMethod]
+    [TestCategory("Backend")]
+    public void ChangeNotifications_AreEmittedOnlyForEffectivePresenceTransitions()
+    {
+        using var hub = new BackendChangeEventHub(TimeProvider.System);
+        var registry = CreateRegistry(out var clock, hub);
+        var endpoint = Endpoint("10.0.0.2");
+
+        registry.RefreshAuthenticated(Fingerprint, endpoint, DevicePresenceObservationSource.DirectProbe);
+        registry.RefreshAuthenticated(Fingerprint, endpoint, DevicePresenceObservationSource.IncomingSync);
+        Assert.AreEqual(1L, hub.CurrentPosition.Sequence);
+
+        registry.RecordFailure(Fingerprint, endpoint, DevicePresenceFailureKind.Unreachable);
+        registry.RecordFailure(Fingerprint, endpoint, DevicePresenceFailureKind.Unreachable);
+        Assert.AreEqual(1L, hub.CurrentPosition.Sequence);
+        registry.RecordFailure(Fingerprint, endpoint, DevicePresenceFailureKind.Unreachable);
+        Assert.AreEqual(2L, hub.CurrentPosition.Sequence);
+
+        registry.RecordFailure(Fingerprint, endpoint, DevicePresenceFailureKind.Unreachable);
+        Assert.AreEqual(2L, hub.CurrentPosition.Sequence);
+
+        registry.RefreshAuthenticated(Fingerprint, endpoint, DevicePresenceObservationSource.DirectProbe);
+        Assert.AreEqual(3L, hub.CurrentPosition.Sequence);
+        clock.Now = clock.Now.AddSeconds(36);
+        Assert.IsFalse(registry.IsOnline(Fingerprint, TimeSpan.FromSeconds(35)));
+        Assert.AreEqual(4L, hub.CurrentPosition.Sequence);
+    }
+
+    private static DevicePresenceRegistry CreateRegistry(
+        out MutableClock clock,
+        IBackendChangePublisher? publisher = null)
     {
         var mutableClock = new MutableClock
         {
             Now = DateTimeOffset.Parse("2026-07-24T08:00:00+00:00")
         };
         clock = mutableClock;
-        return new DevicePresenceRegistry(() => mutableClock.Now);
+        return new DevicePresenceRegistry(() => mutableClock.Now, publisher);
     }
 
     private static DiscoveredDeviceEndpoint Endpoint(string host) => new()

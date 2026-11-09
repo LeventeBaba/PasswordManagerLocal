@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.MobileProfileMainPageView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
+    xmlns:controls="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Controls"
+    xmlns:profile="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Pages.Profile"
+    x:DataType="vm:ProfileViewModel">
+
+  <Grid RowDefinitions="Auto,*" Margin="16,4,16,16">
+    <controls:OperationMessageView Grid.Row="0" Margin="0,0,0,12" />
+
+    <profile:ProfileAccountView Grid.Row="1" />
+  </Grid>
+</UserControl>

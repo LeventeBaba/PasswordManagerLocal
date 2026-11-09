@@ -14,7 +14,7 @@ public sealed class SyncRouteRepositoryTests
     [TestCategory("Integration")]
     public async Task EligibleRouteQueries_FilterLocalAndRemoteSyncStateInDatabase()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var localIdentity = CreateLocalIdentity();
         var targetDevice = CreateDevice("target");
         var unrelatedDevice = CreateDevice("unrelated");
@@ -24,32 +24,24 @@ public sealed class SyncRouteRepositoryTests
         var deletedLinkUser = CreateUser();
         var unrelatedRouteUser = CreateUser();
 
-        database.Db.AddRange(
-            localIdentity,
-            targetDevice,
-            unrelatedDevice,
-            eligibleUser,
-            localSyncOffUser,
-            remoteSyncOffUser,
-            deletedLinkUser,
-            unrelatedRouteUser);
+        await database.DeviceIdentity.Create(localIdentity);
+        await database.Devices.AddAsync(targetDevice);
+        await database.Devices.AddAsync(unrelatedDevice);
+        foreach (var user in new[] { eligibleUser, localSyncOffUser, remoteSyncOffUser, deletedLinkUser, unrelatedRouteUser })
+            await database.Users.AddAsync(user);
 
-        database.Db.LocalUserDevices.AddRange(
-            CreateLocalLink(eligibleUser.UId, localIdentity.Id, isSyncOn: true),
-            CreateLocalLink(localSyncOffUser.UId, localIdentity.Id, isSyncOn: false),
-            CreateLocalLink(remoteSyncOffUser.UId, localIdentity.Id, isSyncOn: true),
-            CreateLocalLink(deletedLinkUser.UId, localIdentity.Id, isSyncOn: true),
-            CreateLocalLink(unrelatedRouteUser.UId, localIdentity.Id, isSyncOn: true));
+        await database.LocalUserDevices.AddAsync(CreateLocalLink(eligibleUser.UId, localIdentity.Id, isSyncOn: true));
+        await database.LocalUserDevices.AddAsync(CreateLocalLink(localSyncOffUser.UId, localIdentity.Id, isSyncOn: false));
+        await database.LocalUserDevices.AddAsync(CreateLocalLink(remoteSyncOffUser.UId, localIdentity.Id, isSyncOn: true));
+        await database.LocalUserDevices.AddAsync(CreateLocalLink(deletedLinkUser.UId, localIdentity.Id, isSyncOn: true));
+        await database.LocalUserDevices.AddAsync(CreateLocalLink(unrelatedRouteUser.UId, localIdentity.Id, isSyncOn: true));
 
-        database.Db.UserDevices.AddRange(
-            CreateRemoteLink(eligibleUser.UId, targetDevice.Id, isSyncOn: true, isDeleted: false),
-            CreateRemoteLink(localSyncOffUser.UId, targetDevice.Id, isSyncOn: true, isDeleted: false),
-            CreateRemoteLink(remoteSyncOffUser.UId, targetDevice.Id, isSyncOn: false, isDeleted: false),
-            CreateRemoteLink(deletedLinkUser.UId, targetDevice.Id, isSyncOn: true, isDeleted: true),
-            CreateRemoteLink(unrelatedRouteUser.UId, unrelatedDevice.Id, isSyncOn: true, isDeleted: false));
-
-        await database.Db.SaveChangesAsync();
-        database.Db.ChangeTracker.Clear();
+        await database.UserDevices.AddAsync(CreateRemoteLink(eligibleUser.UId, targetDevice.Id, isSyncOn: true, isDeleted: false));
+        await database.UserDevices.AddAsync(CreateRemoteLink(localSyncOffUser.UId, targetDevice.Id, isSyncOn: true, isDeleted: false));
+        await database.UserDevices.AddAsync(CreateRemoteLink(remoteSyncOffUser.UId, targetDevice.Id, isSyncOn: false, isDeleted: false));
+        await database.UserDevices.AddAsync(CreateRemoteLink(deletedLinkUser.UId, targetDevice.Id, isSyncOn: true, isDeleted: true));
+        await database.UserDevices.AddAsync(CreateRemoteLink(unrelatedRouteUser.UId, unrelatedDevice.Id, isSyncOn: true, isDeleted: false));
+        await database.UnitOfWork.SaveChangesAsync();
 
         var allUserIds = new[]
         {
@@ -78,25 +70,26 @@ public sealed class SyncRouteRepositoryTests
     [TestCategory("Integration")]
     public async Task RelationshipQueries_LoadOnlyTheExplicitlyRequestedNavigationShape()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var user = CreateUser();
         user.EncryptedPayload = new byte[128 * 1024];
         user.EncryptedGeneralUserDataPayload = new byte[128 * 1024];
         user.EncryptedUserPasswordsDataPayload = new byte[128 * 1024];
         user.EncryptedUserDevicesDataPayload = new byte[128 * 1024];
+        user.GenerateIntegrityHash();
         var device = CreateDevice("shape-test");
         var link = CreateRemoteLink(user.UId, device.Id, isSyncOn: true, isDeleted: false);
 
-        database.Db.AddRange(user, device, link);
-        await database.Db.SaveChangesAsync();
-        database.Db.ChangeTracker.Clear();
+        await database.Users.AddAsync(user);
+        await database.Devices.AddAsync(device);
+        await database.UserDevices.AddAsync(link);
+        await database.UnitOfWork.SaveChangesAsync();
 
         var relationshipOnly = await database.UserDevices.GetAsync(user.UId, device.Id);
         MSTestAssert.IsNotNull(relationshipOnly);
         MSTestAssert.IsNull(relationshipOnly.User);
         MSTestAssert.IsNull(relationshipOnly.Device);
 
-        database.Db.ChangeTracker.Clear();
         var withDevice = await database.UserDevices.GetWithDeviceAsync(user.UId, device.Id);
         MSTestAssert.IsNotNull(withDevice);
         MSTestAssert.IsNull(withDevice.User);
@@ -108,29 +101,31 @@ public sealed class SyncRouteRepositoryTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
-    public async Task GroupMembershipProjection_ReturnsIdsWithoutTrackingEncryptedUsers()
+    public async Task GroupMembershipProjection_ReturnsExactIdsAndGroupPayload()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var user = CreateUser();
         user.EncryptedPayload = new byte[128 * 1024];
         user.EncryptedGeneralUserDataPayload = new byte[128 * 1024];
         user.EncryptedUserPasswordsDataPayload = new byte[128 * 1024];
         user.EncryptedUserDevicesDataPayload = new byte[128 * 1024];
+        user.GenerateIntegrityHash();
         var group = new Group
         {
-            EncryptedPayload = [9, 8, 7],
-            Users = [user]
+            EncryptedPayload = [9, 8, 7]
         };
 
-        database.Db.Add(group);
-        await database.Db.SaveChangesAsync();
-        database.Db.ChangeTracker.Clear();
+        await database.Users.AddAsync(user);
+        group.GenerateIntegrityHash();
+        await database.Groups.AddAsync(group);
+        database.Groups.SetMember(group, user, isMember: true);
+        await database.UnitOfWork.SaveChangesAsync();
 
         var projected = await database.Groups.GetWithUserIdsAsNoTrackingAsync(group.Id);
 
         MSTestAssert.IsNotNull(projected);
         CollectionAssert.AreEqual(new[] { user.UId }, projected.UserIds);
-        MSTestAssert.AreEqual(0, database.Db.ChangeTracker.Entries<User>().Count());
+        CollectionAssert.AreEqual(group.EncryptedPayload, projected.EncryptedPayload);
     }
 
     private static User CreateUser() => new()

@@ -1,4 +1,4 @@
-using Avalonia.Media;
+using PasswordManagerLocal.Common.Frontend.Services;
 using PasswordManagerLocal.Common.Contracts.Constants;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Contracts.Responses;
@@ -26,13 +26,14 @@ public sealed partial class PasswordsViewModel
     private string _passwordTagEditorColor = PasswordColorUtility.DefaultColor;
     private PasswordColorOptionViewModel? _selectedPasswordTagColorOption;
     private string _passwordTagSearchQuery = string.Empty;
+    private readonly DebouncedUiAction _passwordTagSearchDebounce = new(TimeSpan.FromMilliseconds(125));
     private bool _isPasswordTagSearchNameEnabled = true;
     private bool _isPasswordTagSearchColorEnabled = true;
     private string _passwordTagSortKey = "name-asc";
     private bool _isPasswordTagMultiSelectionActive;
     private string _customColorListReturnPane = EditorPane;
 
-    public ObservableCollection<PasswordTagManagementItemViewModel> PasswordTags { get; } = [];
+    public ObservableCollection<PasswordTagManagementItemViewModel> PasswordTags { get; private set; } = [];
 
     public ObservableCollection<PasswordColorOptionViewModel> PasswordTagColorOptions { get; } = [];
 
@@ -74,11 +75,8 @@ public sealed partial class PasswordsViewModel
         private set
         {
             this.RaiseAndSetIfChanged(ref _passwordTagEditorColor, value);
-            this.RaisePropertyChanged(nameof(PasswordTagEditorColorBrush));
         }
     }
-
-    public IBrush PasswordTagEditorColorBrush => PasswordColorUtility.ParseBrush(PasswordTagEditorColor);
 
     public PasswordColorOptionViewModel? SelectedPasswordTagColorOption
     {
@@ -116,7 +114,7 @@ public sealed partial class PasswordsViewModel
             }
 
             this.RaiseAndSetIfChanged(ref _passwordTagSearchQuery, value);
-            ApplyPasswordTagFiltersAndSorting();
+            _passwordTagSearchDebounce.Schedule(ApplyPasswordTagFiltersAndSorting);
         }
     }
 
@@ -144,6 +142,8 @@ public sealed partial class PasswordsViewModel
     public bool CanTogglePasswordTagSearchColor =>
         CanTogglePasswordTagSearchMode(IsPasswordTagSearchColorEnabled);
 
+    public bool IsPasswordTagSearchFieldLocked => EnabledPasswordTagSearchModeCount == 1;
+
     public bool HasPasswordTags => PasswordTags.Count > 0;
 
     public bool HasStoredPasswordTags => _allManagedPasswordTags.Count > 0;
@@ -151,6 +151,8 @@ public sealed partial class PasswordsViewModel
     public bool IsPasswordTagListEmpty => !HasStoredPasswordTags;
 
     public bool IsPasswordTagSearchResultEmpty => HasStoredPasswordTags && !HasPasswordTags;
+
+    public bool IsPasswordTagSelectionModeInactive => !IsPasswordTagMultiSelectionActive;
 
     public bool IsPasswordTagMultiSelectionActive
     {
@@ -163,6 +165,7 @@ public sealed partial class PasswordsViewModel
             }
 
             this.RaiseAndSetIfChanged(ref _isPasswordTagMultiSelectionActive, value);
+            this.RaisePropertyChanged(nameof(IsPasswordTagSelectionModeInactive));
             RaiseMultiSelectionStateChanged();
         }
     }
@@ -185,7 +188,8 @@ public sealed partial class PasswordsViewModel
 
     public string PasswordTagsTitle => GetTranslation("Passwords_Tags_Title");
 
-    public string PasswordTagsBackToEditorLabel => GetTranslation("Passwords_Tags_BackToEditor");
+    public string PasswordTagsBackToEditorLabel => GetTranslation(_isPasswordTagPickerOpen
+        ? "Passwords_TagPicker_Back" : "Passwords_Tags_BackToEditor");
 
     public string PasswordTagsEmptyTitle => GetTranslation("Passwords_Tags_Empty_Title");
 
@@ -227,7 +231,8 @@ public sealed partial class PasswordsViewModel
     public string PasswordTagEditorSaveLabel => GetTranslation(
         IsEditingPasswordTag ? "Common_Save" : "Common_Add");
 
-    public string PasswordTagEditorBackLabel => GetTranslation("Passwords_Tags_Editor_Back");
+    public string PasswordTagEditorBackLabel => GetTranslation(_isCreatingTagFromPicker
+        ? "Passwords_TagPicker_Back" : "Passwords_Tags_Editor_Back");
 
     public string PasswordTagDeleteConfirmationTitle => GetTranslation(
         _passwordTagsPendingDeletion.Count > 1
@@ -264,6 +269,7 @@ public sealed partial class PasswordsViewModel
     {
         ClearStatusMessage();
         ResetPasswordTagDeleteState();
+        this.RaisePropertyChanged(nameof(PasswordTagsBackToEditorLabel));
         CurrentPane = PasswordTagListPane;
     }
 
@@ -276,8 +282,10 @@ public sealed partial class PasswordsViewModel
         }
 
         ClearStatusMessage();
+        TagPicker.RefreshTags(_allPasswordTags);
+        RestoreEditorTagsFocus = !_isPasswordTagPickerOpen;
         SetCurrentPane(EditorPane, true);
-        RefreshEditorTagSuggestions();
+        RaiseEditorTagStateChanged();
     }
 
     private void OpenPasswordTagEditor()
@@ -302,7 +310,9 @@ public sealed partial class PasswordsViewModel
     {
         ClearStatusMessage();
         ResetPasswordTagEditorDraft();
-        SetCurrentPane(PasswordTagListPane, true);
+        var returnToPicker = _isCreatingTagFromPicker;
+        _isCreatingTagFromPicker = false;
+        SetCurrentPane(returnToPicker ? EditorPane : PasswordTagListPane, true);
     }
 
     private async Task SavePasswordTagAsync()
@@ -316,13 +326,13 @@ public sealed partial class PasswordsViewModel
         var name = PasswordTagEditorName.Trim();
         if (string.IsNullOrWhiteSpace(name))
         {
-            ShowErrorMessage(GetTranslation("Error_InvalidInput"));
+            ShowLocalizedErrorMessage("Error_InvalidInput");
             return;
         }
 
         if (!PasswordColorUtility.TryNormalizeHexColor(PasswordTagEditorColor, out var color))
         {
-            ShowErrorMessage(GetTranslation("Passwords_ColorPicker_InvalidCode"));
+            ShowLocalizedErrorMessage("Passwords_ColorPicker_InvalidCode");
             return;
         }
 
@@ -358,12 +368,14 @@ public sealed partial class PasswordsViewModel
                 ? "Passwords_Tags_Update_Success"
                 : "Passwords_Tags_Add_Success";
             ResetPasswordTagEditorDraft();
-            SetCurrentPane(PasswordTagListPane, true);
-            ShowSuccessMessage(GetTranslation(successKey));
+            var returnToPicker = _isCreatingTagFromPicker;
+            _isCreatingTagFromPicker = false;
+            SetCurrentPane(returnToPicker ? EditorPane : PasswordTagListPane, true);
+            ShowLocalizedSuccessMessage(successKey);
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {
@@ -377,6 +389,7 @@ public sealed partial class PasswordsViewModel
         this.RaisePropertyChanged(nameof(IsEditingPasswordTag));
         this.RaisePropertyChanged(nameof(PasswordTagEditorTitle));
         this.RaisePropertyChanged(nameof(PasswordTagEditorSaveLabel));
+        this.RaisePropertyChanged(nameof(PasswordTagEditorBackLabel));
     }
 
     private void ResetPasswordTagEditorDraft()
@@ -395,8 +408,7 @@ public sealed partial class PasswordsViewModel
             var item = PasswordTagManagementItemViewModel.Create(
                 tag,
                 DeletePasswordLabel,
-                OpenPasswordTagEditorForEditing,
-                BeginDeletePasswordTagAsync);
+                this);
             item.PropertyChanged += HandleManagedPasswordTagItemPropertyChanged;
             _allManagedPasswordTags.Add(item);
         }
@@ -409,16 +421,17 @@ public sealed partial class PasswordsViewModel
         foreach (var tag in _allManagedPasswordTags)
         {
             tag.PropertyChanged -= HandleManagedPasswordTagItemPropertyChanged;
-            tag.Dispose();
         }
 
         _allManagedPasswordTags.Clear();
-        PasswordTags.Clear();
+        PasswordTags = [];
+        this.RaisePropertyChanged(nameof(PasswordTags));
         RaisePasswordTagCollectionStateChanged();
     }
 
     private void ApplyPasswordTagFiltersAndSorting()
     {
+        _passwordTagSearchDebounce.Cancel();
         IEnumerable<PasswordTagManagementItemViewModel> query = _allManagedPasswordTags;
 
         if (!string.IsNullOrWhiteSpace(PasswordTagSearchQuery))
@@ -437,11 +450,8 @@ public sealed partial class PasswordsViewModel
             : query.OrderBy(tag => tag.Name, StringComparer.CurrentCultureIgnoreCase)
                 .ThenBy(tag => tag.Id);
 
-        PasswordTags.Clear();
-        foreach (var tag in query)
-        {
-            PasswordTags.Add(tag);
-        }
+        PasswordTags = new ObservableCollection<PasswordTagManagementItemViewModel>(query);
+        this.RaisePropertyChanged(nameof(PasswordTags));
 
         RaisePasswordTagCollectionStateChanged();
     }
@@ -485,6 +495,7 @@ public sealed partial class PasswordsViewModel
     {
         this.RaisePropertyChanged(nameof(CanTogglePasswordTagSearchName));
         this.RaisePropertyChanged(nameof(CanTogglePasswordTagSearchColor));
+        this.RaisePropertyChanged(nameof(IsPasswordTagSearchFieldLocked));
     }
 
     private void SelectPasswordTagSortOption(string key)
@@ -569,14 +580,14 @@ public sealed partial class PasswordsViewModel
                 return;
             }
 
-            ShowSuccessMessage(GetTranslation(
+            ShowLocalizedSuccessMessage(
                 tags.Length > 1
                     ? "Passwords_Tags_Delete_MultipleSuccess"
-                    : "Passwords_Tags_Delete_Success"));
+                    : "Passwords_Tags_Delete_Success");
         }
         catch (Exception ex)
         {
-            ShowErrorMessage(GetSafeErrorMessage(ex));
+            ShowSafeErrorMessage(ex);
         }
         finally
         {
@@ -594,7 +605,7 @@ public sealed partial class PasswordsViewModel
         if (!IsPasswordTagMultiSelectionActive)
         {
             IsPasswordTagMultiSelectionActive = true;
-            SetSelectionMode(_allManagedPasswordTags, true);
+
         }
 
         tag.IsSelected = true;
@@ -603,7 +614,7 @@ public sealed partial class PasswordsViewModel
     private void ExitPasswordTagMultiSelection()
     {
         IsPasswordTagMultiSelectionActive = false;
-        SetSelectionMode(_allManagedPasswordTags, false);
+        SetSelected(_allManagedPasswordTags, false);
     }
 
     private void HandleManagedPasswordTagItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -719,14 +730,4 @@ public sealed partial class PasswordsViewModel
         ApplyPasswordTagFiltersAndSorting();
     }
 
-    private void ResetPasswordTagManagementState()
-    {
-        ExitPasswordTagMultiSelection();
-        ResetPasswordTagDeleteState();
-        ClearManagedPasswordTagItems();
-        PasswordTagSearchQuery = string.Empty;
-        _passwordTagSortKey = "name-asc";
-        RaisePasswordTagSortMenuLabelProperties();
-        ResetPasswordTagEditorDraft();
-    }
 }

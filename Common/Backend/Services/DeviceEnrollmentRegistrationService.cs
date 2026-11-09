@@ -189,7 +189,7 @@ public sealed class DeviceEnrollmentRegistrationService : IDeviceEnrollmentRegis
         var groupIds = await groups.ListIdsByUserAsync(userId, ct);
 
         // These rows are written inside the enrollment transaction. Starting workers here would let
-        // their separate DbContexts run before commit and incorrectly observe an empty queue.
+        // their SQLite sessions run before commit and incorrectly observe an empty queue.
         await syncQueue.EnqueueDeferredAsync(new SyncItem { ModelId = userId, ModelType = SyncModelType.User, ChangeType = SyncChangeType.Updated }, ct);
 
         foreach (var groupId in groupIds)

@@ -44,7 +44,7 @@ public sealed class DeviceEnrollmentSnapshotTransferService : IDeviceEnrollmentS
         byte[] snapshotBytes;
         try
         {
-            UtcDateTimeUtil.NormalizeObjectGraph(snapshot);
+            UtcDateTimeUtil.NormalizeObjectGraph(snapshot, BackendJsonSerializerContext.Default.DeviceEnrollmentSnapshot);
             snapshotBytes = JsonSerializer.SerializeToUtf8Bytes(
                 snapshot,
                 BackendJsonSerializerContext.Default.DeviceEnrollmentSnapshot);

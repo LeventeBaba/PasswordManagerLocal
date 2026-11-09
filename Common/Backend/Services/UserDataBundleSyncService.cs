@@ -126,6 +126,7 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
         var results = new List<UserSnapshotMergeEntryResult>(ordered.Length);
         var changedBlobs = UserDataBlobKind.None;
         var anyVerified = false;
+        var verifiedBundles = new Dictionary<(Guid, Guid, long), (UserSnapshotEnvelope Envelope, UserDataBundle Bundle)>();
 
         try
         {
@@ -169,6 +170,8 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
                 var incomingBundle = incomingVerification.VerifiedBundle!;
                 _versionClock.Observe(SyncVersionStampTraversal.Enumerate(incomingBundle));
                 anyVerified = true;
+                verifiedBundles[(snapshot.OriginDeviceId, snapshot.OriginInstanceId, snapshot.OriginRevision)] =
+                    (snapshot, incomingBundle);
                 var snapshotChangedBlobs = UserDataBlobKind.None;
 
                 try
@@ -240,6 +243,40 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
             _users.Update(existing);
             if (_canonicalHealth is not null)
                 await _canonicalHealth.UpdateCheckpointAsync(existing, ct);
+            // Compare verified plaintext content after the entire batch, including all field
+            // versions and tombstones. Ciphertext equality is invalid because merges reencrypt.
+            // An origin may be skipped only if it already authored the complete resulting state;
+            // concurrent local/other-origin changes must still travel back to it.
+            var canonicalGroups = existing.Groups.Select(group => group.Id).ToHashSet();
+            var canonicalDevices = existing.UserDevices.Where(link => !link.IsDeleted)
+                .Select(link => link.DeviceId).Where(id => id != Guid.Empty).ToHashSet();
+            if (_identity is not null)
+                canonicalDevices.Add(_identity.LocalDeviceId);
+            var generalHash = canonicalBundle.GeneralUserData.CalculateIntegrityHash();
+            var passwordsHash = canonicalBundle.UserPasswordsData.CalculateIntegrityHash();
+            var devicesHash = canonicalBundle.UserDevicesData.CalculateIntegrityHash();
+            for (var index = 0; index < results.Count; index++)
+            {
+                var result = results[index];
+                if (!result.Verified || !verifiedBundles.TryGetValue(
+                    (result.OriginDeviceId, result.OriginInstanceId, result.OriginRevision), out var candidate))
+                    continue;
+                var envelope = candidate.Envelope;
+                var incoming = candidate.Bundle;
+                var matches = envelope.UserKeyEpoch == existing.KeyEpoch &&
+                    envelope.MembershipEpoch == existing.MembershipEpoch &&
+                    envelope.User.UsernameHash.AsSpan().SequenceEqual(existing.UsernameHash) &&
+                    envelope.User.UsernameSalt.AsSpan().SequenceEqual(existing.UsernameSalt) &&
+                    canonicalGroups.SetEquals(envelope.User.GroupIds) &&
+                    canonicalDevices.SetEquals(envelope.User.DeviceIds) &&
+                    generalHash.AsSpan()
+                        .SequenceEqual(incoming.GeneralUserData.CalculateIntegrityHash()) &&
+                    passwordsHash.AsSpan()
+                        .SequenceEqual(incoming.UserPasswordsData.CalculateIntegrityHash()) &&
+                    devicesHash.AsSpan()
+                        .SequenceEqual(incoming.UserDevicesData.CalculateIntegrityHash());
+                results[index] = result with { MatchesCanonicalContent = matches };
+            }
             return new UserSnapshotMergeBatchResult(changedBlobs != UserDataBlobKind.None, results);
         }
         finally
@@ -821,66 +858,6 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
             JsonException;
 
 
-    private async Task<UserDataBundle> ReadAndVerifyUserDataBundleForSyncAsync(User user, EncryptionKey userKey, CancellationToken ct)
-    {
-        var userData = await DecryptDecompressDeserializeAsync(user.EncryptedPayload, userKey, BackendJsonSerializerContext.Default.UserData, ct: ct);
-        if (userData is null)
-            throw new UnauthorizedAccessException();
-
-        try
-        {
-            _integrity.VerifyUserData(userData);
-        }
-        catch
-        {
-            userData.Dispose();
-            throw;
-        }
-
-        var generalTask = DecryptAndVerifyEncryptedUserBlobAsync(
-            user.EncryptedGeneralUserDataPayload,
-            userData.GeneralUserDataKey,
-            BackendJsonSerializerContext.Default.GeneralUserData,
-            _integrity.VerifyGeneralUserData,
-            ct);
-        var passwordsTask = DecryptAndVerifyEncryptedUserBlobAsync(
-            user.EncryptedUserPasswordsDataPayload,
-            userData.UserPasswordsDataKey,
-            BackendJsonSerializerContext.Default.UserPasswordsData,
-            _integrity.VerifyUserPasswordsData,
-            ct);
-        var devicesTask = DecryptAndVerifyEncryptedUserBlobAsync(
-            user.EncryptedUserDevicesDataPayload,
-            userData.UserDevicesDataKey,
-            BackendJsonSerializerContext.Default.UserDevicesData,
-            _integrity.VerifyUserDevicesData,
-            ct);
-
-        try
-        {
-            await Task.WhenAll(generalTask, passwordsTask, devicesTask);
-
-            var bundle = new UserDataBundle
-            {
-                UserData = userData,
-                GeneralUserData = await generalTask,
-                UserPasswordsData = await passwordsTask,
-                UserDevicesData = await devicesTask
-            };
-
-            _integrity.VerifyBundleLinks(bundle);
-            return bundle;
-        }
-        catch
-        {
-            DisposeCompletedTaskResult(generalTask);
-            DisposeCompletedTaskResult(passwordsTask);
-            DisposeCompletedTaskResult(devicesTask);
-            userData.Dispose();
-            throw;
-        }
-    }
-
 
     private async Task<T> DecryptEncryptedUserBlobAsync<T>(byte[] encryptedBlob, byte[] rawKey, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo, CancellationToken ct) where T : class
     {
@@ -957,13 +934,13 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
         }
 
         if (generalTask is not null)
-            ReplaceEncryptedPayload(user.EncryptedGeneralUserDataPayload, await generalTask, value => user.EncryptedGeneralUserDataPayload = value);
+            user.EncryptedGeneralUserDataPayload = await generalTask;
         if (passwordsTask is not null)
-            ReplaceEncryptedPayload(user.EncryptedUserPasswordsDataPayload, await passwordsTask, value => user.EncryptedUserPasswordsDataPayload = value);
+            user.EncryptedUserPasswordsDataPayload = await passwordsTask;
         if (devicesTask is not null)
-            ReplaceEncryptedPayload(user.EncryptedUserDevicesDataPayload, await devicesTask, value => user.EncryptedUserDevicesDataPayload = value);
+            user.EncryptedUserDevicesDataPayload = await devicesTask;
 
-        ReplaceEncryptedPayload(user.EncryptedPayload, await userDataTask, value => user.EncryptedPayload = value);
+        user.EncryptedPayload = await userDataTask;
     }
 
 
@@ -978,30 +955,10 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
     }
 
 
-    private void DisposeCompletedTaskResult<T>(Task<T> task) where T : IDisposable
-    {
-        if (task.Status == TaskStatus.RanToCompletion)
-            task.Result.Dispose();
-    }
-
-
     private void ZeroCompletedEncryptionTask(Task<byte[]> task)
     {
         if (task.Status == TaskStatus.RanToCompletion)
             CryptographicOperations.ZeroMemory(task.Result);
-    }
-
-
-    private void ReplaceEncryptedPayload(byte[] currentPayload, byte[] replacementPayload, Action<byte[]> assignReplacement)
-    {
-        // These encrypted payload properties are EF Core concurrency tokens. Their tracked
-        // OriginalValue can reference the same byte[] instance as the entity property. Zeroing
-        // that array before SaveChanges would therefore corrupt the optimistic-concurrency
-        // predicate and produce a false DbUpdateConcurrencyException. Ciphertext is replaced
-        // without in-place mutation; decrypted keys and logical bundles retain their existing
-        // explicit disposal/zeroization behavior.
-        _ = currentPayload;
-        assignReplacement(replacementPayload);
     }
 
 
@@ -1017,33 +974,4 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
         return max;
     }
 
-
-    private User CreateUser(UserSyncPayload payload) =>
-        new()
-        {
-            UId = payload.UId
-        };
-
-
-    private void CopyUserData(UserSyncPayload source, User target)
-    {
-        target.UId = source.UId;
-        target.UsernameHash = source.UsernameHash;
-        target.UsernameSalt = source.UsernameSalt;
-        target.SetGeneralUserDataVersion(source.GeneralUserDataVersion);
-        target.PasswordSalt = source.PasswordSalt;
-        target.EncryptedPayload = source.EncryptedPayload;
-        target.EncryptedGeneralUserDataPayload = source.EncryptedGeneralUserDataPayload;
-        target.EncryptedUserPasswordsDataPayload = source.EncryptedUserPasswordsDataPayload;
-        target.EncryptedUserDevicesDataPayload = source.EncryptedUserDevicesDataPayload;
-        target.UserDataLastModifiedAt = source.UserDataLastModifiedAt;
-        target.GeneralUserDataLastModifiedAt = source.GeneralUserDataLastModifiedAt;
-        target.UserPasswordsDataLastModifiedAt = source.UserPasswordsDataLastModifiedAt;
-        target.UserDevicesDataLastModifiedAt = source.UserDevicesDataLastModifiedAt;
-        target.IntegrityHash = source.IntegrityHash;
-    }
-
-
-    private DateTimeOffset FromTimestamp(long ts) =>
-        DateTimeOffset.FromUnixTimeMilliseconds(ts);
 }

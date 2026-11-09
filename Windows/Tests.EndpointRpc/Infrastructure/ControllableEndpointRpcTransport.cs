@@ -15,7 +15,7 @@ public sealed class ControllableEndpointRpcTransport : IEndpointRpcTransport
     public Task<EndpointRpcTransportResponse> SendAsync(
         EndpointOperationId operationId,
         byte[] requestPayload,
-        EndpointOperationCancellationClassification cancellationClassification,
+        bool isMutatingOperation,
         CancellationToken cancellationToken = default) =>
         IsConnected
             ? Task.FromResult(EndpointRpcTransportResponse.Inline(Array.Empty<byte>()))

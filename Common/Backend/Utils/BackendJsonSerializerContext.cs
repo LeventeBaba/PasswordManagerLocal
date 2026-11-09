@@ -7,7 +7,9 @@ using PasswordManagerLocal.Common.Backend.Sync.Enrollment;
 namespace PasswordManagerLocal.Common.Backend.Utils;
 
 [JsonSourceGenerationOptions(WriteIndented = false)]
+[JsonSerializable(typeof(PasswordManagerLocal.Common.Backend.Internal.Recovery.UserRecoveryJournalSnapshot))]
 [JsonSerializable(typeof(UserData))]
+[JsonSerializable(typeof(UserDataBundle))]
 [JsonSerializable(typeof(SyncVersionStamp))]
 [JsonSerializable(typeof(TombstoneCausalReference))]
 [JsonSerializable(typeof(GeneralUserData))]

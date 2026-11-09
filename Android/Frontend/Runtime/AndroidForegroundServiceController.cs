@@ -191,7 +191,7 @@ public sealed class AndroidForegroundServiceController : IAndroidForegroundServi
         NotificationManager manager,
         NotificationChannel channel)
     {
-        if (Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu &&
+        if (OperatingSystem.IsAndroidVersionAtLeast(33) &&
             _service.CheckSelfPermission(global::Android.Manifest.Permission.PostNotifications) !=
                 Permission.Granted)
         {
@@ -219,7 +219,7 @@ public sealed class AndroidForegroundServiceController : IAndroidForegroundServi
 
         return new Notification.Builder(_service, NotificationChannelId)
             .SetSmallIcon(Resource.Drawable.ic_stat_password_manager)
-            .SetContentTitle("Password Manager")
+            .SetContentTitle(ApplicationBranding.DisplayName)
             .SetContentText(state switch
             {
                 AndroidForegroundNotificationState.WaitingForDeviceUnlock =>

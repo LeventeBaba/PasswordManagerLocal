@@ -35,8 +35,8 @@ internal sealed class IpcTestSession : IAsyncDisposable
         IEnumerable<IpcPeerRole>? acceptedClientRoles = null,
         IEnumerable<IWindowsIpcConnectionLifecycleObserver>? observers = null,
         IUiConnectionCoordinator? uiConnectionCoordinator = null,
-        int maximumPendingRequests = WindowsIpcClientOptions.DefaultMaximumPendingRequests,
-        int maximumActiveRequestsPerConnection = WindowsIpcServerOptions.DefaultMaximumActiveRequestsPerConnection)
+        int maximumPendingRequests = ClientConstants.WindowsIpcClientOptionsDefaultMaximumPendingRequests,
+        int maximumActiveRequestsPerConnection = ServerConstants.WindowsIpcServerOptionsDefaultMaximumActiveRequestsPerConnection)
     {
         var pair = new InMemoryIpcConnectionPair();
         var serializer = new WindowsIpcSerializer();

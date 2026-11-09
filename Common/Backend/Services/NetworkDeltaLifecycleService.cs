@@ -158,13 +158,20 @@ public sealed class NetworkDeltaLifecycleService : INetworkDeltaLifecycleService
 
     public async Task TouchSourceDeviceAsync(Device sourceDevice, CancellationToken ct)
     {
-        sourceDevice.LastSync = DateTime.UtcNow;
-        sourceDevice.LastSeen = DateTime.UtcNow;
-        sourceDevice.InvalidSyncAttemptCount = 0;
-        sourceDevice.LastInvalidSyncAttemptAt = null;
-        sourceDevice.GenerateIntegrityHash();
+        var device = _devices.GetObservationWriteTarget(sourceDevice);
+        if (device is null)
+        {
+            _syncDeviceIdentities.TryRemove(sourceDevice);
+            return;
+        }
 
-        await RefreshCachedDeviceAsync(sourceDevice, ct);
+        var now = DateTime.UtcNow;
+        device.LastSync = now;
+        device.LastSeen = now;
+        device.GenerateIntegrityHash();
+        _devices.Update(device);
+
+        await RefreshCachedDeviceAsync(device, ct);
     }
 
 
@@ -179,21 +186,21 @@ public sealed class NetworkDeltaLifecycleService : INetworkDeltaLifecycleService
             await _authorization.HasEligibleUserForDeviceAsync(device.Id, ct) &&
             await _syncQueue.HasPendingForDeviceAsync(device.Id, ct);
 
-        if (hasOrdinaryWork || await HasAccountDeletionRelayWorkAsync(device.Id, ct))
+        if (hasOrdinaryWork || await HasRevocationRelayWorkAsync(device.Id, ct))
             _syncDeviceIdentities.TryAdd(device);
     }
 
-    private async Task<bool> HasAccountDeletionRelayWorkAsync(Guid deviceId, CancellationToken ct)
+    private async Task<bool> HasRevocationRelayWorkAsync(Guid deviceId, CancellationToken ct)
     {
         if (_controlOperations is null || _membershipAuthorizations is null)
             return false;
 
-        var deletedUserIds = await _controlOperations.ListAppliedAccountDeletionUserIdsAsync(ct);
-        if (deletedUserIds.Count == 0)
+        var revokedUserIds = await _controlOperations.ListAppliedRevocationUserIdsAsync(ct);
+        if (revokedUserIds.Count == 0)
             return false;
 
         var historicalUserIds = await _membershipAuthorizations.ListUserIdsForDeviceAsync(deviceId, ct);
-        return historicalUserIds.Any(userId => deletedUserIds.Contains(userId));
+        return historicalUserIds.Any(userId => revokedUserIds.Contains(userId));
     }
 
 

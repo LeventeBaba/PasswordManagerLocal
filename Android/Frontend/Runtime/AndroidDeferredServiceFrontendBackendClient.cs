@@ -4,7 +4,9 @@ using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 
 namespace PasswordManagerLocal.Android.Frontend;
 
-public sealed class AndroidDeferredServiceFrontendBackendClient : IFrontendBackendClient<IEndpoints>
+public sealed class AndroidDeferredServiceFrontendBackendClient :
+    IFrontendBackendClient<IEndpoints>,
+    IFrontendChangeNotificationClient
 {
     private readonly AndroidActivityServiceAttachmentHandle _attachmentHandle;
     private readonly SemaphoreSlim _resolveLock = new(1, 1);
@@ -42,6 +44,21 @@ public sealed class AndroidDeferredServiceFrontendBackendClient : IFrontendBacke
     }
 
     public event EventHandler<BackendRuntimeStateChangedEventArgs>? StateChanged;
+    public event EventHandler? ChangeSourceChanged;
+
+    public IFrontendChangeNotificationSubscription SubscribeChangeNotifications(
+        Guid? userId = null,
+        int capacity = 64)
+    {
+        ThrowIfDisposed();
+        var inner = Volatile.Read(ref _inner)
+            ?? throw new InvalidOperationException(
+                "Connect and wait until the Android service attachment is ready before subscribing.");
+        if (inner is not IFrontendChangeNotificationClient notificationClient)
+            throw new InvalidOperationException(
+                "The Android service attachment does not expose change notifications.");
+        return notificationClient.SubscribeChangeNotifications(userId, capacity);
+    }
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default) =>
         await (await ResolveAsync(cancellationToken)).ConnectAsync(cancellationToken);
@@ -65,9 +82,14 @@ public sealed class AndroidDeferredServiceFrontendBackendClient : IFrontendBacke
             _disposed = true;
             inner = Interlocked.Exchange(ref _inner, null);
             StateChanged = null;
+            ChangeSourceChanged = null;
         }
         if (inner is not null)
+        {
             inner.StateChanged -= HandleInnerStateChanged;
+            if (inner is IFrontendChangeNotificationClient notificationClient)
+                notificationClient.ChangeSourceChanged -= HandleInnerChangeSourceChanged;
+        }
         await _attachmentHandle.DisposeAsync();
         GC.SuppressFinalize(this);
     }
@@ -94,6 +116,8 @@ public sealed class AndroidDeferredServiceFrontendBackendClient : IFrontendBacke
                 ThrowIfDisposed();
                 inner = attachment.BackendClient;
                 inner.StateChanged += HandleInnerStateChanged;
+                if (inner is IFrontendChangeNotificationClient notificationClient)
+                    notificationClient.ChangeSourceChanged += HandleInnerChangeSourceChanged;
                 Volatile.Write(ref _inner, inner);
             }
 
@@ -114,6 +138,28 @@ public sealed class AndroidDeferredServiceFrontendBackendClient : IFrontendBacke
             ? runtimeClient.Snapshot
             : args.Current;
         ApplyInnerSnapshot(current);
+    }
+
+    private void HandleInnerChangeSourceChanged(object? sender, EventArgs args)
+    {
+        if (_disposed)
+            return;
+
+        var handlers = ChangeSourceChanged;
+        if (handlers is null)
+            return;
+
+        foreach (EventHandler handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                handler(this, EventArgs.Empty);
+            }
+            catch
+            {
+                // Forwarding a lifecycle hint must not disrupt the service attachment.
+            }
+        }
     }
 
     private void ApplyInnerSnapshot(BackendRuntimeSnapshot current)

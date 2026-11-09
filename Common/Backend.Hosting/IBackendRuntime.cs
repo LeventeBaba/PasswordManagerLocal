@@ -1,11 +1,15 @@
 using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 
 namespace PasswordManagerLocal.Common.Backend.Hosting;
 
 public interface IBackendRuntime : IAsyncDisposable
 {
+    /// <summary>The event source for the active runtime, or null while no host is active.</summary>
+    IBackendChangeSource? ChangeSource { get; }
+
     BackendRuntimeSnapshot Snapshot { get; }
     InteractiveSessionLifecycleSnapshot InteractiveSessionSnapshot { get; }
     SyncRuntimeSnapshot SyncSnapshot { get; }

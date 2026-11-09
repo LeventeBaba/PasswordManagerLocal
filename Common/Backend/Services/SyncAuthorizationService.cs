@@ -81,7 +81,8 @@ public sealed class SyncAuthorizationService : ISyncAuthorizationService
             if (payload.ChangeType == SyncChangeType.Deleted)
                 return false;
 
-            var isDeletionOperation = payload.UserControlOperation?.OperationType == UserControlOperationType.AccountDeletion;
+            var isDeletionOperation = payload.UserControlOperation?.OperationType is
+                UserControlOperationType.AccountDeletion or UserControlOperationType.DeviceRemoval;
             var isDeletedLocally = _deletionBarriers is not null && await _deletionBarriers.ExistsAsync(payload.ModelId, ct);
             if ((isDeletionOperation || isDeletedLocally) && _membershipHistory is not null)
                 return await _membershipHistory.HasHistoricalAuthorizationAsync(payload.ModelId, sourceDeviceId, ct);
@@ -95,7 +96,16 @@ public sealed class SyncAuthorizationService : ISyncAuthorizationService
                 return false;
 
             if (payload.UserDevice.DeviceId == _identity.LocalDeviceId)
-                return payload.ChangeType == SyncChangeType.Deleted || payload.UserDevice.IsDeleted;
+            {
+                if (!SyncPayloadRules.DeletesLocalUserProfile(payload, _identity))
+                    return false;
+
+                // Legacy links have no signed membership. An authoritative local membership
+                // can only be ended by a verified removal operation.
+                return _membershipHistory is null ||
+                    (await _membershipHistory.ListActiveForDeviceAsync(
+                        payload.UserDevice.UserId, _identity.LocalDeviceId, ct)).Count == 0;
+            }
 
             return await _syncRoutes.IsEligibleAsync(payload.UserDevice.UserId, sourceDeviceId, ct);
         }

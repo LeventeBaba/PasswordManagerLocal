@@ -24,7 +24,7 @@ public sealed class EndpointRpcContractValidator
         typeof(DeleteUserAccountEndpointRequest),
         typeof(ChangeUsernameEndpointRequest),
         typeof(UpdateUserProfileInfoEndpointRequest),
-        typeof(GetLocalDeviceInfoEndpointRequest),
+        typeof(EmptyEndpointRequest),
         typeof(GetLocalUserSyncOnEndpointRequest),
         typeof(SetLocalUserSyncOnEndpointRequest),
         typeof(SetLocalDeviceNameEndpointRequest),
@@ -33,11 +33,7 @@ public sealed class EndpointRpcContractValidator
         typeof(SetUserDeviceSyncOnEndpointRequest),
         typeof(UnblockUserDeviceEndpointRequest),
         typeof(DisconnectUserDeviceEndpointRequest),
-        typeof(StartDeviceEnrollmentEndpointRequest),
-        typeof(GetDeviceEnrollmentStatusEndpointRequest),
-        typeof(CancelDeviceEnrollmentEndpointRequest),
         typeof(AddDeviceByCodeEndpointRequest),
-        typeof(RestoreRememberedSessionsEndpointRequest),
         typeof(InitializeRememberMeSessionEndpointRequest),
         typeof(SetRememberMeEndpointRequest),
         typeof(GetSavedPasswordsEndpointRequest),
@@ -54,6 +50,8 @@ public sealed class EndpointRpcContractValidator
         typeof(DeletePasswordTagEndpointRequest),
         typeof(ExportPasswordTagsToUserEndpointRequest),
         typeof(UpdatePasswordTagEndpointRequest),
+        typeof(RunSelfDiagnosticsAndRepairEndpointRequest),
+        typeof(ConfirmSelfDiagnosticsRepairEndpointRequest),
     };
 
     private static readonly IReadOnlySet<Type> ResponseTypes = new HashSet<Type>
@@ -61,43 +59,21 @@ public sealed class EndpointRpcContractValidator
         typeof(RegisterEndpointResponse),
         typeof(LoginEndpointResponse),
         typeof(RenewAuthSessionEndpointResponse),
-        typeof(LogoutEndpointResponse),
+        typeof(EmptyEndpointResponse),
         typeof(GetAuthSessionStatusEndpointResponse),
-        typeof(ChangeMasterPasswordEndpointResponse),
         typeof(GetUserProfileInfoEndpointResponse),
-        typeof(DeleteUserAccountEndpointResponse),
-        typeof(ChangeUsernameEndpointResponse),
-        typeof(UpdateUserProfileInfoEndpointResponse),
         typeof(GetLocalDeviceInfoEndpointResponse),
         typeof(GetLocalUserSyncOnEndpointResponse),
-        typeof(SetLocalUserSyncOnEndpointResponse),
-        typeof(SetLocalDeviceNameEndpointResponse),
         typeof(GetUserDevicesEndpointResponse),
-        typeof(SetUserDeviceNameEndpointResponse),
-        typeof(SetUserDeviceSyncOnEndpointResponse),
-        typeof(UnblockUserDeviceEndpointResponse),
         typeof(DisconnectUserDeviceEndpointResponse),
         typeof(StartDeviceEnrollmentEndpointResponse),
         typeof(GetDeviceEnrollmentStatusEndpointResponse),
-        typeof(CancelDeviceEnrollmentEndpointResponse),
-        typeof(AddDeviceByCodeEndpointResponse),
         typeof(RestoreRememberedSessionsEndpointResponse),
         typeof(InitializeRememberMeSessionEndpointResponse),
-        typeof(SetRememberMeEndpointResponse),
         typeof(GetSavedPasswordsEndpointResponse),
-        typeof(AddNewPasswordEndpointResponse),
-        typeof(RemovePasswordsEndpointResponse),
         typeof(GetUnsecurePasswordEndpointResponse),
-        typeof(UpdatePasswordEndpointResponse),
-        typeof(ExportPasswordsToUserEndpointResponse),
-        typeof(AddCustomUserColorsEndpointResponse),
-        typeof(DeleteCustomUserColorsEndpointResponse),
-        typeof(ExportCustomUserColorsToUserEndpointResponse),
-        typeof(UpdateCustomUserColorEndpointResponse),
-        typeof(AddPasswordTagEndpointResponse),
-        typeof(DeletePasswordTagEndpointResponse),
-        typeof(ExportPasswordTagsToUserEndpointResponse),
-        typeof(UpdatePasswordTagEndpointResponse),
+        typeof(RunSelfDiagnosticsAndRepairEndpointResponse),
+        typeof(ConfirmSelfDiagnosticsRepairEndpointResponse),
     };
 
     public bool CanValidateRequest(Type type) => RequestTypes.Contains(type);
@@ -121,7 +97,7 @@ public sealed class EndpointRpcContractValidator
             EndpointOperationId.DeleteUserAccount when value is DeleteUserAccountEndpointRequest request => Validate(request),
             EndpointOperationId.ChangeUsername when value is ChangeUsernameEndpointRequest request => Validate(request),
             EndpointOperationId.UpdateUserProfileInfo when value is UpdateUserProfileInfoEndpointRequest request => Validate(request),
-            EndpointOperationId.GetLocalDeviceInfo when value is GetLocalDeviceInfoEndpointRequest request => Validate(request),
+            EndpointOperationId.GetLocalDeviceInfo when value is EmptyEndpointRequest request => Validate(request),
             EndpointOperationId.GetLocalUserSyncOn when value is GetLocalUserSyncOnEndpointRequest request => Validate(request),
             EndpointOperationId.SetLocalUserSyncOn when value is SetLocalUserSyncOnEndpointRequest request => Validate(request),
             EndpointOperationId.SetLocalDeviceName when value is SetLocalDeviceNameEndpointRequest request => Validate(request),
@@ -130,11 +106,11 @@ public sealed class EndpointRpcContractValidator
             EndpointOperationId.SetUserDeviceSyncOn when value is SetUserDeviceSyncOnEndpointRequest request => Validate(request),
             EndpointOperationId.UnblockUserDevice when value is UnblockUserDeviceEndpointRequest request => Validate(request),
             EndpointOperationId.DisconnectUserDevice when value is DisconnectUserDeviceEndpointRequest request => Validate(request),
-            EndpointOperationId.StartDeviceEnrollment when value is StartDeviceEnrollmentEndpointRequest request => Validate(request),
-            EndpointOperationId.GetDeviceEnrollmentStatus when value is GetDeviceEnrollmentStatusEndpointRequest request => Validate(request),
-            EndpointOperationId.CancelDeviceEnrollment when value is CancelDeviceEnrollmentEndpointRequest request => Validate(request),
+            EndpointOperationId.StartDeviceEnrollment when value is EmptyEndpointRequest request => Validate(request),
+            EndpointOperationId.GetDeviceEnrollmentStatus when value is EmptyEndpointRequest request => Validate(request),
+            EndpointOperationId.CancelDeviceEnrollment when value is EmptyEndpointRequest request => Validate(request),
             EndpointOperationId.AddDeviceByCode when value is AddDeviceByCodeEndpointRequest request => Validate(request),
-            EndpointOperationId.RestoreRememberedSessions when value is RestoreRememberedSessionsEndpointRequest request => Validate(request),
+            EndpointOperationId.RestoreRememberedSessions when value is EmptyEndpointRequest request => Validate(request),
             EndpointOperationId.InitializeRememberMeSession when value is InitializeRememberMeSessionEndpointRequest request => Validate(request),
             EndpointOperationId.SetRememberMe when value is SetRememberMeEndpointRequest request => Validate(request),
             EndpointOperationId.GetSavedPasswords when value is GetSavedPasswordsEndpointRequest request => Validate(request),
@@ -151,6 +127,8 @@ public sealed class EndpointRpcContractValidator
             EndpointOperationId.DeletePasswordTag when value is DeletePasswordTagEndpointRequest request => Validate(request),
             EndpointOperationId.ExportPasswordTagsToUser when value is ExportPasswordTagsToUserEndpointRequest request => Validate(request),
             EndpointOperationId.UpdatePasswordTag when value is UpdatePasswordTagEndpointRequest request => Validate(request),
+            EndpointOperationId.RunSelfDiagnosticsAndRepair when value is RunSelfDiagnosticsAndRepairEndpointRequest request => Validate(request),
+            EndpointOperationId.ConfirmSelfDiagnosticsRepair when value is ConfirmSelfDiagnosticsRepairEndpointRequest request => Validate(request),
                 _ => false
             };
         }
@@ -174,43 +152,45 @@ public sealed class EndpointRpcContractValidator
             EndpointOperationId.Register when value is RegisterEndpointResponse response => Validate(response),
             EndpointOperationId.Login when value is LoginEndpointResponse response => Validate(response),
             EndpointOperationId.RenewAuthSession when value is RenewAuthSessionEndpointResponse response => Validate(response),
-            EndpointOperationId.Logout when value is LogoutEndpointResponse response => Validate(response),
+            EndpointOperationId.Logout when value is EmptyEndpointResponse response => Validate(response),
             EndpointOperationId.GetAuthSessionStatus when value is GetAuthSessionStatusEndpointResponse response => Validate(response),
-            EndpointOperationId.ChangeMasterPassword when value is ChangeMasterPasswordEndpointResponse response => Validate(response),
+            EndpointOperationId.ChangeMasterPassword when value is EmptyEndpointResponse response => Validate(response),
             EndpointOperationId.GetUserProfileInfo when value is GetUserProfileInfoEndpointResponse response => Validate(response),
-            EndpointOperationId.DeleteUserAccount when value is DeleteUserAccountEndpointResponse response => Validate(response),
-            EndpointOperationId.ChangeUsername when value is ChangeUsernameEndpointResponse response => Validate(response),
-            EndpointOperationId.UpdateUserProfileInfo when value is UpdateUserProfileInfoEndpointResponse response => Validate(response),
+            EndpointOperationId.DeleteUserAccount when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.ChangeUsername when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.UpdateUserProfileInfo when value is EmptyEndpointResponse response => Validate(response),
             EndpointOperationId.GetLocalDeviceInfo when value is GetLocalDeviceInfoEndpointResponse response => Validate(response),
             EndpointOperationId.GetLocalUserSyncOn when value is GetLocalUserSyncOnEndpointResponse response => Validate(response),
-            EndpointOperationId.SetLocalUserSyncOn when value is SetLocalUserSyncOnEndpointResponse response => Validate(response),
-            EndpointOperationId.SetLocalDeviceName when value is SetLocalDeviceNameEndpointResponse response => Validate(response),
+            EndpointOperationId.SetLocalUserSyncOn when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.SetLocalDeviceName when value is EmptyEndpointResponse response => Validate(response),
             EndpointOperationId.GetUserDevices when value is GetUserDevicesEndpointResponse response => Validate(response),
-            EndpointOperationId.SetUserDeviceName when value is SetUserDeviceNameEndpointResponse response => Validate(response),
-            EndpointOperationId.SetUserDeviceSyncOn when value is SetUserDeviceSyncOnEndpointResponse response => Validate(response),
-            EndpointOperationId.UnblockUserDevice when value is UnblockUserDeviceEndpointResponse response => Validate(response),
+            EndpointOperationId.SetUserDeviceName when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.SetUserDeviceSyncOn when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.UnblockUserDevice when value is EmptyEndpointResponse response => Validate(response),
             EndpointOperationId.DisconnectUserDevice when value is DisconnectUserDeviceEndpointResponse response => Validate(response),
             EndpointOperationId.StartDeviceEnrollment when value is StartDeviceEnrollmentEndpointResponse response => Validate(response),
             EndpointOperationId.GetDeviceEnrollmentStatus when value is GetDeviceEnrollmentStatusEndpointResponse response => Validate(response),
-            EndpointOperationId.CancelDeviceEnrollment when value is CancelDeviceEnrollmentEndpointResponse response => Validate(response),
-            EndpointOperationId.AddDeviceByCode when value is AddDeviceByCodeEndpointResponse response => Validate(response),
+            EndpointOperationId.CancelDeviceEnrollment when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.AddDeviceByCode when value is EmptyEndpointResponse response => Validate(response),
             EndpointOperationId.RestoreRememberedSessions when value is RestoreRememberedSessionsEndpointResponse response => Validate(response),
             EndpointOperationId.InitializeRememberMeSession when value is InitializeRememberMeSessionEndpointResponse response => Validate(response),
-            EndpointOperationId.SetRememberMe when value is SetRememberMeEndpointResponse response => Validate(response),
+            EndpointOperationId.SetRememberMe when value is EmptyEndpointResponse response => Validate(response),
             EndpointOperationId.GetSavedPasswords when value is GetSavedPasswordsEndpointResponse response => Validate(response),
-            EndpointOperationId.AddNewPassword when value is AddNewPasswordEndpointResponse response => Validate(response),
-            EndpointOperationId.RemovePasswords when value is RemovePasswordsEndpointResponse response => Validate(response),
+            EndpointOperationId.AddNewPassword when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.RemovePasswords when value is EmptyEndpointResponse response => Validate(response),
             EndpointOperationId.GetUnsecurePassword when value is GetUnsecurePasswordEndpointResponse response => Validate(response),
-            EndpointOperationId.UpdatePassword when value is UpdatePasswordEndpointResponse response => Validate(response),
-            EndpointOperationId.ExportPasswordsToUser when value is ExportPasswordsToUserEndpointResponse response => Validate(response),
-            EndpointOperationId.AddCustomUserColors when value is AddCustomUserColorsEndpointResponse response => Validate(response),
-            EndpointOperationId.DeleteCustomUserColors when value is DeleteCustomUserColorsEndpointResponse response => Validate(response),
-            EndpointOperationId.ExportCustomUserColorsToUser when value is ExportCustomUserColorsToUserEndpointResponse response => Validate(response),
-            EndpointOperationId.UpdateCustomUserColor when value is UpdateCustomUserColorEndpointResponse response => Validate(response),
-            EndpointOperationId.AddPasswordTag when value is AddPasswordTagEndpointResponse response => Validate(response),
-            EndpointOperationId.DeletePasswordTag when value is DeletePasswordTagEndpointResponse response => Validate(response),
-            EndpointOperationId.ExportPasswordTagsToUser when value is ExportPasswordTagsToUserEndpointResponse response => Validate(response),
-            EndpointOperationId.UpdatePasswordTag when value is UpdatePasswordTagEndpointResponse response => Validate(response),
+            EndpointOperationId.UpdatePassword when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.ExportPasswordsToUser when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.AddCustomUserColors when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.DeleteCustomUserColors when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.ExportCustomUserColorsToUser when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.UpdateCustomUserColor when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.AddPasswordTag when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.DeletePasswordTag when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.ExportPasswordTagsToUser when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.UpdatePasswordTag when value is EmptyEndpointResponse response => Validate(response),
+            EndpointOperationId.RunSelfDiagnosticsAndRepair when value is RunSelfDiagnosticsAndRepairEndpointResponse response => Validate(response),
+            EndpointOperationId.ConfirmSelfDiagnosticsRepair when value is ConfirmSelfDiagnosticsRepairEndpointResponse response => Validate(response),
                 _ => false
             };
         }
@@ -227,13 +207,11 @@ public sealed class EndpointRpcContractValidator
     {
         ArgumentNullException.ThrowIfNull(error);
         if (!Enum.IsDefined(error.ErrorCode) ||
-            !Enum.IsDefined(error.ErrorCategory) ||
+            !Enum.IsDefined(error.FailureKind) ||
             !Enum.IsDefined(error.MutationOutcome) ||
-            error.CorrelationId <= 0 ||
             string.IsNullOrWhiteSpace(error.SafeMessage) ||
             error.SafeMessage.Length > EndpointRpcLimits.MaximumSafeErrorMessageLength ||
-            error.OccurredAtUtc.Offset != TimeSpan.Zero ||
-            !HasExpectedErrorCategory(error.ErrorCode, error.ErrorCategory) ||
+            !HasValidFailureKind(error) ||
             !HasValidMutationOutcome(error) ||
             (error.RequiresProcessRestart &&
                 error.ErrorCode is not EndpointRpcErrorCode.RuntimeUnavailable and
@@ -249,8 +227,8 @@ public sealed class EndpointRpcContractValidator
         Validate(error);
         var descriptor = EndpointOperationManifest.Get(operationId);
         var valid = descriptor.MutatesState
-            ? HasValidMutationOutcomeForMutation(operationId, descriptor, error)
-            : error.MutationOutcome == EndpointMutationOutcome.NotApplicable && error.Recovery is null;
+            ? HasValidMutationOutcomeForMutation(descriptor, error)
+            : error.MutationOutcome == EndpointMutationOutcome.NotApplicable;
 
         if (!valid)
             throw new EndpointRpcPayloadException("The endpoint RPC error does not match the operation mutation policy.");
@@ -259,70 +237,76 @@ public sealed class EndpointRpcContractValidator
     private static bool HasValidMutationOutcome(EndpointRpcError error) => error.ErrorCode switch
     {
         EndpointRpcErrorCode.OperationPartiallyCommitted =>
-            error.MutationOutcome == EndpointMutationOutcome.PartiallyCommittedRecoveryRequired &&
-            !error.IsRetryable &&
-            (error.Recovery is null || ValidRecovery(error.Recovery)),
+            error.MutationOutcome == EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
         EndpointRpcErrorCode.OperationOutcomeUnknown =>
-            error.MutationOutcome == EndpointMutationOutcome.OutcomeUnknown &&
-            !error.IsRetryable &&
-            error.Recovery is null,
+            error.MutationOutcome == EndpointMutationOutcome.OutcomeUnknown,
         _ =>
-            error.MutationOutcome is EndpointMutationOutcome.NotApplicable or EndpointMutationOutcome.NotCommitted &&
-            error.Recovery is null
+            error.MutationOutcome is EndpointMutationOutcome.NotApplicable or EndpointMutationOutcome.NotCommitted
     };
 
     private static bool HasValidMutationOutcomeForMutation(
-        EndpointOperationId operationId,
         EndpointOperationDescriptor descriptor,
         EndpointRpcError error)
     {
         if (error.ErrorCode == EndpointRpcErrorCode.OperationPartiallyCommitted)
-        {
-            if (!descriptor.CanPartiallyCommit)
-                return false;
-
-            return operationId == EndpointOperationId.AddDeviceByCode
-                ? ValidRecovery(error.Recovery) && error.Recovery!.RecoveryKind == EndpointRecoveryKind.DeviceEnrollment
-                : error.Recovery is null;
-        }
+            return descriptor.CanPartiallyCommit;
 
         if (error.ErrorCode == EndpointRpcErrorCode.OperationOutcomeUnknown)
             return error.MutationOutcome == EndpointMutationOutcome.OutcomeUnknown;
 
-        return error.MutationOutcome == EndpointMutationOutcome.NotCommitted && error.Recovery is null;
+        return error.MutationOutcome == EndpointMutationOutcome.NotCommitted;
     }
 
-    private static bool ValidRecovery(EndpointRecoveryMetadata? recovery) =>
-        recovery is not null &&
-        recovery.RecoveryKind == EndpointRecoveryKind.DeviceEnrollment &&
-        recovery.TargetDeviceId != Guid.Empty &&
-        recovery.TargetOriginInstanceId != Guid.Empty &&
-        recovery.EnrollmentCommitId != Guid.Empty &&
-        recovery.RecoveryAvailable &&
-        recovery.RequiresSignedRemovalToUndo;
-
-
-    private static bool HasExpectedErrorCategory(
-        EndpointRpcErrorCode errorCode,
-        EndpointRpcErrorCategory errorCategory) => errorCode switch
+    private static bool HasValidFailureKind(EndpointRpcError error)
     {
-        EndpointRpcErrorCode.AuthenticationFailed => errorCategory == EndpointRpcErrorCategory.Authentication,
-        EndpointRpcErrorCode.AuthorizationFailed => errorCategory == EndpointRpcErrorCategory.Authorization,
+        if (error.EnrollmentErrorCode.HasValue && !Enum.IsDefined(error.EnrollmentErrorCode.Value))
+            return false;
+        if ((error.FailureKind == EndpointFailureKind.DeviceEnrollment) != error.EnrollmentErrorCode.HasValue)
+            return false;
+
+        return error.ErrorCode switch
+        {
+        EndpointRpcErrorCode.AuthenticationFailed => error.FailureKind == EndpointFailureKind.InvalidCredentials,
+        EndpointRpcErrorCode.AuthorizationFailed => error.FailureKind is EndpointFailureKind.InvalidSession or EndpointFailureKind.Generic,
         EndpointRpcErrorCode.ValidationFailed or EndpointRpcErrorCode.OperationRejected or
-            EndpointRpcErrorCode.RequestPayloadTooLarge or EndpointRpcErrorCode.ResponsePayloadTooLarge or
-            EndpointRpcErrorCode.UnknownOperation => errorCategory == EndpointRpcErrorCategory.Validation,
-        EndpointRpcErrorCode.NotFound => errorCategory == EndpointRpcErrorCategory.NotFound,
-        EndpointRpcErrorCode.Conflict => errorCategory == EndpointRpcErrorCategory.Conflict,
+            EndpointRpcErrorCode.RequestPayloadTooLarge =>
+                error.FailureKind is EndpointFailureKind.InvalidInput or
+                    EndpointFailureKind.LimitReached or
+                    EndpointFailureKind.RegistrationUsernameUnavailable or
+                    EndpointFailureKind.RegistrationUsernameAvailabilityIndeterminate or
+                    EndpointFailureKind.DeviceEnrollment or
+                    EndpointFailureKind.Generic,
+        EndpointRpcErrorCode.ResponsePayloadTooLarge or EndpointRpcErrorCode.UnknownOperation =>
+            error.FailureKind == EndpointFailureKind.Generic,
+        EndpointRpcErrorCode.NotFound =>
+            error.FailureKind is EndpointFailureKind.NotFound or EndpointFailureKind.DeviceEnrollment,
+        EndpointRpcErrorCode.Conflict =>
+            error.FailureKind is EndpointFailureKind.DuplicatePasswordName or
+                EndpointFailureKind.DuplicatePasswordTagName or
+                EndpointFailureKind.DuplicateCustomColorName or
+                EndpointFailureKind.DuplicateCustomColorCode or
+                EndpointFailureKind.DeviceEnrollment or
+                EndpointFailureKind.Generic,
         EndpointRpcErrorCode.InteractiveSessionUnavailable or EndpointRpcErrorCode.RuntimeUnavailable or
-            EndpointRpcErrorCode.Disconnected => errorCategory == EndpointRpcErrorCategory.Availability,
-        EndpointRpcErrorCode.OperationCancelled => errorCategory == EndpointRpcErrorCategory.Cancellation,
-        EndpointRpcErrorCode.OperationPartiallyCommitted => errorCategory == EndpointRpcErrorCategory.Recovery,
-        EndpointRpcErrorCode.OperationOutcomeUnknown or
-            EndpointRpcErrorCode.BackendFailure or
+            EndpointRpcErrorCode.Disconnected =>
+                error.FailureKind is EndpointFailureKind.DeviceIdentityUnavailable or
+                    EndpointFailureKind.DeviceEnrollment or
+                    EndpointFailureKind.Generic,
+        EndpointRpcErrorCode.OperationCancelled or EndpointRpcErrorCode.OperationOutcomeUnknown or
             EndpointRpcErrorCode.EndpointCorrelationMismatch =>
-                errorCategory == EndpointRpcErrorCategory.Internal,
+                error.FailureKind == EndpointFailureKind.Generic,
+        EndpointRpcErrorCode.OperationPartiallyCommitted =>
+            error.FailureKind is EndpointFailureKind.DeviceEnrollment or EndpointFailureKind.Generic,
+        EndpointRpcErrorCode.BackendFailure =>
+            error.FailureKind is EndpointFailureKind.DataIntegrity or
+                EndpointFailureKind.DeviceEnrollment or
+                EndpointFailureKind.Generic,
         _ => false
-    };
+        };
+    }
+
+    private static bool Validate(EmptyEndpointRequest value) => true;
+    private static bool Validate(EmptyEndpointResponse value) => true;
 
     private static bool Validate(RegisterEndpointRequest value) =>
         value.Request is not null && ValidSensitive(value.Request.Password) && value.Request.Validate(out _);
@@ -332,14 +316,14 @@ public sealed class EndpointRpcContractValidator
     private static bool Validate(LogoutEndpointRequest value) => ValidGuid(value.Token);
     private static bool Validate(GetAuthSessionStatusEndpointRequest value) => ValidGuid(value.Token);
     private static bool Validate(ChangeMasterPasswordEndpointRequest value) =>
-        value.Request is not null && ValidGuid(value.Request.Token) &&
+        value.Request is not null &&
         ValidSensitive(value.Request.Password) && ValidSensitive(value.Request.NewPassword) &&
         value.Request.Validate(out _);
     private static bool Validate(GetUserProfileInfoEndpointRequest value) => ValidGuid(value.Token);
     private static bool Validate(DeleteUserAccountEndpointRequest value) => ValidGuid(value.Token) && ValidSensitive(value.Password);
     private static bool Validate(ChangeUsernameEndpointRequest value) => ValidGuid(value.Token) && DataValidation.IsValidUsername(value.NewUsername);
-    private static bool Validate(UpdateUserProfileInfoEndpointRequest value) => value.Request is not null && ValidGuid(value.Request.Token) && value.Request.Validate(out _);
-    private static bool Validate(GetLocalDeviceInfoEndpointRequest value) => true;
+    private static bool Validate(UpdateUserProfileInfoEndpointRequest value) =>
+        value.Request is not null && value.Request.Validate(out _);
     private static bool Validate(GetLocalUserSyncOnEndpointRequest value) => ValidGuid(value.Token);
     private static bool Validate(SetLocalUserSyncOnEndpointRequest value) => ValidGuid(value.Token);
     private static bool Validate(SetLocalDeviceNameEndpointRequest value) => ValidGuid(value.Token) && DataValidation.IsValidUserDeviceName(value.Name);
@@ -348,11 +332,7 @@ public sealed class EndpointRpcContractValidator
     private static bool Validate(SetUserDeviceSyncOnEndpointRequest value) => ValidGuid(value.Token) && ValidGuid(value.DeviceId);
     private static bool Validate(UnblockUserDeviceEndpointRequest value) => ValidGuid(value.Token) && ValidGuid(value.DeviceId);
     private static bool Validate(DisconnectUserDeviceEndpointRequest value) => ValidGuid(value.Token) && ValidGuid(value.DeviceId) && ValidSensitive(value.MasterPassword);
-    private static bool Validate(StartDeviceEnrollmentEndpointRequest value) => true;
-    private static bool Validate(GetDeviceEnrollmentStatusEndpointRequest value) => true;
-    private static bool Validate(CancelDeviceEnrollmentEndpointRequest value) => true;
     private static bool Validate(AddDeviceByCodeEndpointRequest value) => ValidGuid(value.Token) && ValidString(value.Code, 1, EndpointRpcLimits.MaximumEnrollmentCodeLength);
-    private static bool Validate(RestoreRememberedSessionsEndpointRequest value) => true;
     private static bool Validate(InitializeRememberMeSessionEndpointRequest value) => ValidGuid(value.UserId);
     private static bool Validate(SetRememberMeEndpointRequest value) => ValidGuid(value.Token);
     private static bool Validate(GetSavedPasswordsEndpointRequest value) => ValidGuid(value.Token);
@@ -362,7 +342,7 @@ public sealed class EndpointRpcContractValidator
     private static bool Validate(RemovePasswordsEndpointRequest value) => ValidGuid(value.Token) && ValidIds(value.PasswordIds, requireNonEmpty: true);
     private static bool Validate(GetUnsecurePasswordEndpointRequest value) => ValidGuid(value.Token) && ValidGuid(value.PasswordId);
     private static bool Validate(UpdatePasswordEndpointRequest value) =>
-        ValidGuid(value.Token) && value.Request is not null && value.Request.Id != Guid.Empty &&
+        ValidGuid(value.Token) && value.Request is not null &&
         (value.Request.Password is null || ValidSensitive(value.Request.Password)) &&
         (value.Request.TagIds is null || ValidIds(value.Request.TagIds, requireNonEmpty: false)) &&
         value.Request.Validate(out _);
@@ -375,50 +355,37 @@ public sealed class EndpointRpcContractValidator
     private static bool Validate(DeletePasswordTagEndpointRequest value) => ValidGuid(value.Token) && ValidGuid(value.PasswordTagId);
     private static bool Validate(ExportPasswordTagsToUserEndpointRequest value) => ValidGuid(value.SourceToken) && value.Request is not null && value.Request.Validate(out _);
     private static bool Validate(UpdatePasswordTagEndpointRequest value) => ValidGuid(value.Token) && value.Request is not null && value.Request.Validate(out _);
+    private static bool Validate(RunSelfDiagnosticsAndRepairEndpointRequest value) => ValidGuid(value.Token);
+    private static bool Validate(ConfirmSelfDiagnosticsRepairEndpointRequest value) => ValidGuid(value.Token) && ValidRecoveryPlanId(value.PlanId) && ValidSensitive(value.MasterPassword);
 
     private static bool Validate(RegisterEndpointResponse value) => ValidGuid(value.Token);
     private static bool Validate(LoginEndpointResponse value) => ValidGuid(value.Token);
     private static bool Validate(RenewAuthSessionEndpointResponse value) => ValidGuid(value.RenewedToken);
-    private static bool Validate(LogoutEndpointResponse value) => true;
     private static bool Validate(GetAuthSessionStatusEndpointResponse value) => ValidAuthSessionStatus(value.Status);
-    private static bool Validate(ChangeMasterPasswordEndpointResponse value) => true;
     private static bool Validate(GetUserProfileInfoEndpointResponse value) => ValidProfile(value.Profile);
-    private static bool Validate(DeleteUserAccountEndpointResponse value) => true;
-    private static bool Validate(ChangeUsernameEndpointResponse value) => true;
-    private static bool Validate(UpdateUserProfileInfoEndpointResponse value) => true;
     private static bool Validate(GetLocalDeviceInfoEndpointResponse value) => ValidLocalDevice(value.Device);
     private static bool Validate(GetLocalUserSyncOnEndpointResponse value) => true;
-    private static bool Validate(SetLocalUserSyncOnEndpointResponse value) => true;
-    private static bool Validate(SetLocalDeviceNameEndpointResponse value) => true;
     private static bool Validate(GetUserDevicesEndpointResponse value) =>
         value.Devices is not null && value.Devices.Count <= EndpointRpcLimits.MaximumCollectionItems &&
         value.Devices.All(ValidUserDevice) &&
         value.Devices.Select(device => device.DeviceId).Distinct().Count() == value.Devices.Count;
-    private static bool Validate(SetUserDeviceNameEndpointResponse value) => true;
-    private static bool Validate(SetUserDeviceSyncOnEndpointResponse value) => true;
-    private static bool Validate(UnblockUserDeviceEndpointResponse value) => true;
     private static bool Validate(DisconnectUserDeviceEndpointResponse value) => ValidRemovalResult(value.Result);
     private static bool Validate(StartDeviceEnrollmentEndpointResponse value) => ValidEnrollmentCode(value.Enrollment);
     private static bool Validate(GetDeviceEnrollmentStatusEndpointResponse value) => ValidEnrollmentStatus(value.Status);
-    private static bool Validate(CancelDeviceEnrollmentEndpointResponse value) => true;
-    private static bool Validate(AddDeviceByCodeEndpointResponse value) => true;
     private static bool Validate(RestoreRememberedSessionsEndpointResponse value) => ValidIds(value.Tokens, requireNonEmpty: false);
     private static bool Validate(InitializeRememberMeSessionEndpointResponse value) => ValidGuid(value.Token);
-    private static bool Validate(SetRememberMeEndpointResponse value) => true;
     private static bool Validate(GetSavedPasswordsEndpointResponse value) => ValidSavedPasswords(value.Passwords);
-    private static bool Validate(AddNewPasswordEndpointResponse value) => true;
-    private static bool Validate(RemovePasswordsEndpointResponse value) => true;
     private static bool Validate(GetUnsecurePasswordEndpointResponse value) => ValidSensitive(value.Password);
-    private static bool Validate(UpdatePasswordEndpointResponse value) => true;
-    private static bool Validate(ExportPasswordsToUserEndpointResponse value) => true;
-    private static bool Validate(AddCustomUserColorsEndpointResponse value) => true;
-    private static bool Validate(DeleteCustomUserColorsEndpointResponse value) => true;
-    private static bool Validate(ExportCustomUserColorsToUserEndpointResponse value) => true;
-    private static bool Validate(UpdateCustomUserColorEndpointResponse value) => true;
-    private static bool Validate(AddPasswordTagEndpointResponse value) => true;
-    private static bool Validate(DeletePasswordTagEndpointResponse value) => true;
-    private static bool Validate(ExportPasswordTagsToUserEndpointResponse value) => true;
-    private static bool Validate(UpdatePasswordTagEndpointResponse value) => true;
+    private static bool Validate(RunSelfDiagnosticsAndRepairEndpointResponse value) => ValidSelfDiagnostics(value.Result);
+    private static bool Validate(ConfirmSelfDiagnosticsRepairEndpointResponse value) => ValidSelfDiagnostics(value.Result);
+    private static bool ValidRecoveryPlanId(string? value) => value is { Length: 64 } && value.All(Uri.IsHexDigit);
+    private static bool ValidSelfDiagnostics(PasswordManagerLocal.Common.Contracts.Responses.SelfDiagnosticsResultResponse? value) =>
+        value is not null && value.RepairedCount is >= 0 and <= 100_000 &&
+        value.Findings is not null && value.Findings.Count <= 32 && value.Findings.All(code => ValidString(code, 1, 64)) &&
+        value.RecoveryRisks is not null && value.RecoveryRisks.Count <= 16 && value.RecoveryRisks.All(code => ValidString(code, 1, 64)) &&
+        (value.RecoveryPlanId is null || (!value.Healthy && ValidRecoveryPlanId(value.RecoveryPlanId))) &&
+        (value.RecoveryJournalId is null || ValidGuid(value.RecoveryJournalId.Value)) &&
+        value.RecoveryAffectedDevices is >= 0 and <= 100_000 && value.RecoveryPendingSnapshots is >= 0 and <= 100_000;
 
     private static bool ValidGuid(Guid value) => value != Guid.Empty;
 
@@ -478,7 +445,9 @@ public sealed class EndpointRpcContractValidator
 
     private static bool ValidEnrollmentCode(DeviceEnrollmentCodeResponse? value) =>
         value is not null && ValidString(value.Code, 1, EndpointRpcLimits.MaximumEnrollmentCodeLength) &&
-        value.ExpiresAt.Offset == TimeSpan.Zero;
+        value.ExpiresAt.Offset == TimeSpan.Zero &&
+        ValidEnrollmentStatus(value.InitialStatus) &&
+        value.InitialStatus.ExpiresAt == value.ExpiresAt;
 
     private static bool ValidEnrollmentStatus(DeviceEnrollmentStatusResponse? value) =>
         value is not null && Enum.IsDefined(value.State) && Enum.IsDefined(value.ErrorCode) &&

@@ -36,6 +36,7 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
 
         var row = new UserMembershipAuthorization
         {
+            AuthorizationId = Guid.NewGuid(),
             UserId = user.UId,
             DeviceId = _identity.LocalDeviceId,
             OriginInstanceId = _identity.OriginInstanceId,
@@ -58,19 +59,27 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
         DeviceAdditionPayload payload,
         Guid operationId,
         byte[] operationHash,
+        DateTimeOffset createdAtUtc,
         CancellationToken ct = default)
     {
         UserControlOperationEnvelopeUtil.ValidateDeviceAdditionPayload(payload);
-        if (operationId == Guid.Empty || operationHash.Length != SyncConstants.SyncDeltaPayloadHashBytes)
+        if (operationId == Guid.Empty || operationHash.Length != SyncConstants.SyncDeltaPayloadHashBytes || createdAtUtc == default)
             throw new InvalidDataException("The authoritative addition reference is invalid.");
+
+        createdAtUtc = UtcDateTimeUtil.ToUtc(createdAtUtc);
 
         var existing = await _authorizations.GetActiveAsync(payload.UserId, payload.NewDeviceId, payload.NewOriginInstanceId, ct);
         if (existing is not null)
         {
-            if (existing.AdditionOperationId == operationId &&
+            if (!existing.IsGenesis &&
+                existing.AuthorizationId == operationId &&
+                existing.StartedMembershipEpoch == payload.ResultingMembershipEpoch &&
+                existing.AdditionOperationId == operationId &&
                 existing.AdditionOperationHash is not null &&
                 Hashing.Verify(existing.AdditionOperationHash, operationHash))
             {
+                if (UtcDateTimeUtil.ToUtc(existing.CreatedAtUtc) != createdAtUtc)
+                    throw new InvalidDataException("The retained authorization enrollment time does not match the signed addition operation.");
                 return existing;
             }
             throw new InvalidOperationException("The exact target installation already has a different active authorization.");
@@ -85,6 +94,7 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
 
         var row = new UserMembershipAuthorization
         {
+            AuthorizationId = operationId,
             UserId = payload.UserId,
             DeviceId = payload.NewDeviceId,
             OriginInstanceId = payload.NewOriginInstanceId,
@@ -98,7 +108,7 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
             IsActive = true,
             AdditionOperationId = operationId,
             AdditionOperationHash = operationHash.ToArray(),
-            CreatedAtUtc = DateTimeOffset.UtcNow
+            CreatedAtUtc = createdAtUtc
         };
         await _authorizations.AddAsync(row, ct);
         return row;
@@ -109,15 +119,32 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
         DeviceRemovalPayload payload,
         Guid operationId,
         byte[] operationHash,
+        DateTimeOffset createdAtUtc,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(authorization);
+        if (createdAtUtc == default)
+            throw new InvalidDataException("The authoritative removal timestamp is invalid.");
+        createdAtUtc = UtcDateTimeUtil.ToUtc(createdAtUtc);
         UserControlOperationEnvelopeUtil.ValidateDeviceRemovalPayload(payload);
         if (payload.UserId != authorization.UserId || payload.RemovedDeviceId != authorization.DeviceId)
             throw new InvalidDataException("The removal operation targets a different membership authorization.");
 
+        if (authorization.AuthorizationId == Guid.Empty ||
+            (authorization.IsGenesis
+                ? authorization.StartedMembershipEpoch != 1 || authorization.AdditionOperationId is not null ||
+                  authorization.AdditionOperationHash is not null
+                : authorization.StartedMembershipEpoch <= 1 || authorization.AdditionOperationId != authorization.AuthorizationId ||
+                  authorization.AdditionOperationHash is not { Length: SyncConstants.SyncDeltaPayloadHashBytes }))
+            throw new InvalidDataException("The membership authorization does not satisfy the current identity invariant.");
+
+        if (operationId == Guid.Empty || operationHash.Length != SyncConstants.SyncDeltaPayloadHashBytes)
+            throw new InvalidDataException("The authoritative removal reference is invalid.");
+        DeviceRemovalEvidenceUtil.ValidateAuthorization(payload, authorization);
+
+        var authorizationId = authorization.AuthorizationId;
         var origins = payload.Origins
-            .Where(item => item.AuthorizationId == authorization.AuthorizationId)
+            .Where(item => item.AuthorizationId == authorizationId)
             .OrderBy(item => item.UserKeyEpoch)
             .ToList();
         if (origins.Count == 0)
@@ -127,6 +154,26 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
                                   origin.UserKeyEpoch < authorization.MinimumKeyEpoch ||
                                   (authorization.MaximumKeyEpoch is long maximum && origin.UserKeyEpoch > maximum)))
             throw new InvalidDataException("A removal cutoff does not match the immutable authorization identity or key namespace.");
+        if (origins.Any(origin => authorization.IsGenesis
+                ? authorization.StartedMembershipEpoch != 1 || origin.AdditionOperationId is not null ||
+                  origin.AdditionOperationHash is not null
+                : authorization.AdditionOperationId is null || authorization.AdditionOperationHash is null ||
+                  origin.AdditionOperationId != authorization.AdditionOperationId || origin.AdditionOperationHash is null ||
+                  !Hashing.Verify(origin.AdditionOperationHash, authorization.AdditionOperationHash)))
+            throw new InvalidDataException("A removal cutoff does not match the authorization's addition evidence.");
+
+        foreach (var origin in origins)
+        {
+            var existing = await _cutoffs.GetAsync(payload.UserId, payload.RemovedDeviceId,
+                origin.OriginInstanceId, origin.UserKeyEpoch, ct);
+            if (existing is not null &&
+                (existing.AuthorizationId != authorizationId || existing.RemovalOperationId != operationId ||
+                 existing.ResultingMembershipEpoch != payload.ResultingMembershipEpoch ||
+                 !Hashing.Verify(existing.RemovalOperationHash, operationHash) ||
+                 existing.HighestAcceptedSnapshotRevision != origin.HighestAcceptedSnapshotRevision ||
+                 existing.HighestAcceptedControlSequence != origin.HighestAcceptedControlSequence))
+                throw new InvalidOperationException("A different removal cutoff already exists for the origin namespace.");
+        }
 
         if (!authorization.IsActive)
         {
@@ -142,7 +189,7 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
             authorization.MaximumKeyEpoch = origins.Max(origin => origin.UserKeyEpoch);
             authorization.RemovalOperationId = operationId;
             authorization.RemovalOperationHash = operationHash.ToArray();
-            authorization.EndedAtUtc = DateTimeOffset.UtcNow;
+            authorization.EndedAtUtc = createdAtUtc;
             authorization.Version = checked(authorization.Version + 1);
             _authorizations.Update(authorization);
         }
@@ -157,7 +204,7 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
                 ct);
             if (existingCutoff is not null)
             {
-                if (existingCutoff.AuthorizationId == authorization.AuthorizationId &&
+                if (existingCutoff.AuthorizationId == authorizationId &&
                     existingCutoff.RemovalOperationId == operationId &&
                     Hashing.Verify(existingCutoff.RemovalOperationHash, operationHash) &&
                     existingCutoff.HighestAcceptedSnapshotRevision == origin.HighestAcceptedSnapshotRevision &&
@@ -175,10 +222,10 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
                 HighestAcceptedSnapshotRevision = origin.HighestAcceptedSnapshotRevision,
                 HighestAcceptedControlSequence = origin.HighestAcceptedControlSequence,
                 ResultingMembershipEpoch = payload.ResultingMembershipEpoch,
-                AuthorizationId = authorization.AuthorizationId,
+                AuthorizationId = authorizationId,
                 RemovalOperationId = operationId,
                 RemovalOperationHash = operationHash.ToArray(),
-                CreatedAtUtc = DateTimeOffset.UtcNow
+                CreatedAtUtc = createdAtUtc
             }, ct);
         }
     }

@@ -19,6 +19,9 @@ public static class AgentLocalizationKeys
     public const string RuntimeInteractiveCleanupFailed = "Agent.Runtime.InteractiveCleanupFailed";
     public const string RuntimeBackgroundSyncDegraded = "Agent.Runtime.BackgroundSyncDegraded";
     public const string RuntimePlatformKeyUnavailable = "Agent.Runtime.PlatformKeyUnavailable";
+    public const string RuntimeDatabaseConfigurationInvalid = "Agent.Runtime.DatabaseConfigurationInvalid";
+    public const string RuntimeDatabaseKeyUnavailable = "Agent.Runtime.DatabaseKeyUnavailable";
+    public const string RuntimeDatabaseUnreadable = "Agent.Runtime.DatabaseUnreadable";
     public const string RuntimeStorageUnavailable = "Agent.Runtime.StorageUnavailable";
     public const string RuntimeDatabaseVersionUnsupported = "Agent.Runtime.DatabaseVersionUnsupported";
     public const string RuntimeShutdownShellCleanupFailed = "Agent.Runtime.ShutdownShellCleanupFailed";
@@ -47,7 +50,7 @@ public static class AgentLocalizationKeys
     public const string BackgroundSettingInvalid = "Agent.Background.SettingInvalid";
     public const string DatabaseResetInProgress = "Agent.Database.ResetInProgress";
     public const string DatabaseRestartRequired = "Agent.Database.RestartRequired";
-    public const string DatabaseCompatibilityRequired = "Agent.Database.CompatibilityRequired";
+    public const string DatabaseRecoveryRequired = "Agent.Database.RecoveryRequired";
     public const string DatabaseResetFailed = "Agent.Database.ResetFailed";
     public const string UiActivated = "Agent.Ui.Activated";
     public const string UiActivationRejected = "Agent.Ui.ActivationRejected";

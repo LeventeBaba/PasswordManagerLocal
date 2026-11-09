@@ -12,7 +12,7 @@ namespace PasswordManagerLocal.Windows.Tests.EndpointRpc.Client;
 public sealed class EndpointRpcTransmissionMappingTests
 {
     [TestMethod]
-    public async Task DefinitelyNotSentMutationsRemainConclusiveForEveryMutationClassification()
+    public async Task DefinitelyNotSentMutationsRemainConclusiveForEveryCommitModel()
     {
         foreach (var operationId in MutationRepresentatives())
         {
@@ -26,44 +26,29 @@ public sealed class EndpointRpcTransmissionMappingTests
 
             await Assert.ThrowsExactlyAsync<IOException>(() => InvokeAsync(proxy, operationId));
             Assert.AreEqual(1, sends, operationId.ToString());
+            CollectionAssert.AreEqual(new[] { true }, transport.MutationFlags, operationId.ToString());
         }
     }
 
     [TestMethod]
-    public async Task SentMutationsWithoutResponseReportUnknownForEveryMutationClassification()
+    [DataRow(EndpointRpcTransmissionState.Sent)]
+    [DataRow(EndpointRpcTransmissionState.TransmissionUnknown)]
+    public async Task PossibleTransmissionWithoutResponseLeavesEveryMutationCommitModelUncertain(EndpointRpcTransmissionState state)
     {
-        foreach (var operationId in MutationRepresentatives())
+        foreach (var operation in MutationRepresentatives())
         {
             var sends = 0;
             var transport = new RecordingEndpointRpcTransport((_, _, _) =>
             {
                 Interlocked.Increment(ref sends);
-                return Task.FromException<byte[]>(new IOException("response lost"));
-            }, EndpointRpcTransmissionState.Sent);
+                return Task.FromException<byte[]>(new IOException("response unavailable"));
+            }, state);
             await using var proxy = CreateProxy(transport);
 
-            await Assert.ThrowsExactlyAsync<EndpointOperationOutcomeUnknownException>(() =>
-                InvokeAsync(proxy, operationId));
-            Assert.AreEqual(1, sends, operationId.ToString());
-        }
-    }
+            await Assert.ThrowsExactlyAsync<EndpointOperationOutcomeUnknownException>(() => InvokeAsync(proxy, operation));
 
-    [TestMethod]
-    public async Task TransmissionUnknownMutationsReportUnknownForEveryMutationClassification()
-    {
-        foreach (var operationId in MutationRepresentatives())
-        {
-            var sends = 0;
-            var transport = new RecordingEndpointRpcTransport((_, _, _) =>
-            {
-                Interlocked.Increment(ref sends);
-                return Task.FromException<byte[]>(new IOException("send boundary failed"));
-            }, EndpointRpcTransmissionState.TransmissionUnknown);
-            await using var proxy = CreateProxy(transport);
-
-            await Assert.ThrowsExactlyAsync<EndpointOperationOutcomeUnknownException>(() =>
-                InvokeAsync(proxy, operationId));
-            Assert.AreEqual(1, sends, operationId.ToString());
+            Assert.AreEqual(1, sends, operation.ToString());
+            CollectionAssert.AreEqual(new[] { true }, transport.MutationFlags, operation.ToString());
         }
     }
 
@@ -77,6 +62,7 @@ public sealed class EndpointRpcTransmissionMappingTests
 
         await Assert.ThrowsExactlyAsync<IOException>(() => proxy.GetLocalDeviceInfoAsync());
         Assert.HasCount(1, transport.Operations);
+        CollectionAssert.AreEqual(new[] { false }, transport.MutationFlags);
     }
 
     [TestMethod]
@@ -84,21 +70,19 @@ public sealed class EndpointRpcTransmissionMappingTests
     {
         var error = new EndpointRpcError(
             EndpointRpcErrorCode.Conflict,
-            EndpointRpcErrorCategory.Conflict,
+            EndpointFailureKind.Generic,
             "The endpoint operation conflicts with current state.",
-            1,
-            DateTimeOffset.UtcNow,
-            false,
-            false,
-            EndpointMutationOutcome.NotCommitted,
-            Recovery: null);
+            RequiresProcessRestart: false,
+            EndpointMutationOutcome.NotCommitted);
         var transport = new RecordingEndpointRpcTransport((_, _, _) =>
             Task.FromException<byte[]>(new EndpointRpcRemoteException(error)));
         await using var proxy = CreateProxy(transport);
 
-        var exception = await Assert.ThrowsExactlyAsync<EndpointRpcRemoteException>(() =>
+        var exception = await Assert.ThrowsExactlyAsync<EndpointFailureException>(() =>
             proxy.SetLocalUserSyncOnAsync(EndpointRpcTestData.Token, true));
-        Assert.AreEqual(EndpointRpcErrorCode.Conflict, exception.Error.ErrorCode);
+        Assert.AreEqual(EndpointFailureKind.Generic, exception.FailureKind);
+        var remote = Assert.IsInstanceOfType<EndpointRpcRemoteException>(exception.InnerException);
+        Assert.AreEqual(EndpointRpcErrorCode.Conflict, remote.Error.ErrorCode);
         Assert.HasCount(1, transport.Operations);
     }
 
@@ -109,14 +93,10 @@ public sealed class EndpointRpcTransmissionMappingTests
         {
             var error = new EndpointRpcError(
                 EndpointRpcErrorCode.OperationOutcomeUnknown,
-                EndpointRpcErrorCategory.Internal,
+                EndpointFailureKind.Generic,
                 "The endpoint operation may have executed, but its outcome could not be confirmed.",
-                1,
-                DateTimeOffset.UtcNow,
-                false,
                 requiresProcessRestart,
-                EndpointMutationOutcome.OutcomeUnknown,
-                Recovery: null);
+                EndpointMutationOutcome.OutcomeUnknown);
             var transport = new RecordingEndpointRpcTransport((_, _, _) =>
                 Task.FromException<byte[]>(new EndpointRpcRemoteException(error)));
             await using var proxy = CreateProxy(transport);
@@ -131,21 +111,25 @@ public sealed class EndpointRpcTransmissionMappingTests
     }
 
     [TestMethod]
-    public void RepresentativeOperationsCoverEveryCancellationClassification()
+    public async Task ProxyTransportMutationFlagComesFromCommitModel()
     {
-        var representatives = new[]
-        {
-            EndpointOperationId.GetLocalDeviceInfo,
-            EndpointOperationId.SetLocalUserSyncOn,
-            EndpointOperationId.StartDeviceEnrollment,
-            EndpointOperationId.Logout
-        };
+        var transport = new RecordingEndpointRpcTransport((operationId, _, _) =>
+            Task.FromResult(operationId == EndpointOperationId.GetLocalUserSyncOn
+                ? "{\"isSyncOn\":true}"u8.ToArray()
+                : Array.Empty<byte>()));
+        await using var proxy = CreateProxy(transport);
 
-        CollectionAssert.AreEquivalent(
-            Enum.GetValues<EndpointOperationCancellationClassification>().Cast<object>().ToArray(),
-            representatives
-                .Select(id => (object)EndpointOperationManifest.Get(id).CancellationClassification)
-                .ToArray());
+        await proxy.GetLocalUserSyncOnAsync(EndpointRpcTestData.Token);
+        await proxy.SetLocalUserSyncOnAsync(EndpointRpcTestData.Token, true);
+
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                EndpointOperationManifest.Get(EndpointOperationId.GetLocalUserSyncOn).MutatesState,
+                EndpointOperationManifest.Get(EndpointOperationId.SetLocalUserSyncOn).MutatesState
+            },
+            transport.MutationFlags);
+        CollectionAssert.AreEqual(new[] { false, true }, transport.MutationFlags);
     }
 
     private static IReadOnlyList<EndpointOperationId> MutationRepresentatives() =>

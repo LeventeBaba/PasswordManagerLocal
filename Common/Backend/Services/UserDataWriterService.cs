@@ -18,6 +18,7 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 /// </summary>
 public sealed class UserDataWriterService : IUserDataWriterService
 {
+    private readonly IUserDataReaderService _reader;
     private readonly IUserRepository _users;
     private readonly IInteractiveUserDataStateAccessor _interactiveState;
     private readonly IUserLookupService _lookup;
@@ -33,6 +34,7 @@ public sealed class UserDataWriterService : IUserDataWriterService
 
     public UserDataWriterService(
         IUserRepository users,
+        IUserDataReaderService reader,
         IInteractiveUserDataStateAccessor interactiveState,
         IUserLookupService lookup,
         ISyncChangeQueueService syncQueue,
@@ -45,6 +47,7 @@ public sealed class UserDataWriterService : IUserDataWriterService
         IUserLoginIdentityProjectionService loginIdentities,
         IUserCanonicalHealthService? canonicalHealth = null)
     {
+        _reader = reader;
         _users = users;
         _interactiveState = interactiveState;
         _lookup = lookup;
@@ -57,6 +60,18 @@ public sealed class UserDataWriterService : IUserDataWriterService
         _uow = uow;
         _loginIdentities = loginIdentities;
         _canonicalHealth = canonicalHealth;
+    }
+
+    public Task ExecuteMutationAsync(Guid token, Func<CancellationToken, Task> mutation, CancellationToken ct = default) =>
+        _lifecycle.ExecuteAsync(_interactiveState.GetUserIdFromToken(token), mutation, ct);
+
+    public Task ExecuteMutationsAsync(Guid firstToken, Guid secondToken, Func<CancellationToken, Task> mutation, CancellationToken ct = default)
+    {
+        var first = _interactiveState.GetUserIdFromToken(firstToken);
+        var second = _interactiveState.GetUserIdFromToken(secondToken);
+        // Stable ordering prevents opposite-direction profile exports from deadlocking.
+        if (first.CompareTo(second) > 0) (first, second) = (second, first);
+        return _lifecycle.ExecuteAsync(first, inner => _lifecycle.ExecuteAsync(second, mutation, inner), ct);
     }
 
     public async Task AddNewUserAsync(User user, CancellationToken ct = default)
@@ -116,10 +131,16 @@ public sealed class UserDataWriterService : IUserDataWriterService
             key,
             BackendJsonSerializerContext.Default.UserData,
             ct: ct);
-        ReplaceEncryptedPayload(
-            user.EncryptedPayload,
-            newEncryptedPayload,
-            value => user.EncryptedPayload = value);
+        var candidate = new User
+        {
+            UId = user.UId, KeyEpoch = user.KeyEpoch, MembershipEpoch = user.MembershipEpoch,
+            EncryptedPayload = newEncryptedPayload,
+            EncryptedGeneralUserDataPayload = user.EncryptedGeneralUserDataPayload,
+            EncryptedUserPasswordsDataPayload = user.EncryptedUserPasswordsDataPayload,
+            EncryptedUserDevicesDataPayload = user.EncryptedUserDevicesDataPayload
+        };
+        using (var verified = await _reader.GetAndVerifyUserDataBundleAsync(candidate, key, ct)) { }
+        user.EncryptedPayload = newEncryptedPayload;
         user.UserDataLastModifiedAt = DateTimeOffset.UtcNow;
         await UpdateUserAsync(user, enqueueSync, ct);
     }
@@ -179,6 +200,11 @@ public sealed class UserDataWriterService : IUserDataWriterService
         bool enqueueSync,
         CancellationToken ct)
     {
+        var persisted = await _users.GetByIdAsNoTrackingAsync(user.UId, ct)
+            ?? throw new UserNotFoundException();
+        if (bundle.CanonicalGeneration is not null &&
+            !Hashing.Verify(bundle.CanonicalGeneration, UserDataGeneration.Capture(persisted)))
+            throw new InvalidOperationException("The account changed after this working bundle was read. Retry the complete mutation.");
         await AssignTombstoneCausalReferencesAsync(bundle, user, modifiedBlobs, ct);
         _validator.EnsureUserDataBundleCanBePersisted(bundle, user);
         await PersistUserDataBundleAsync(
@@ -209,16 +235,11 @@ public sealed class UserDataWriterService : IUserDataWriterService
         var user = await _lookup.GetAndVerifyUserAsync(token, ct);
         using var key = _interactiveState.GetEncryptionKeyFromToken(token);
         await UpdateUserDataBundleAsync(bundle, user, key, modifiedBlobs, enqueueSync, ct);
-        try
-        {
-            _interactiveState.SetUserBlobKeys(token, bundle.UserData);
-            _interactiveState.SetUserDataBundle(token, bundle);
-        }
+        // The caller owns the working bundle. Never install it into a session cache.
+        try { _interactiveState.SetUserBlobKeys(token, bundle.UserData); }
         catch (Exception ex) when (enqueueSync)
         {
-            throw new MutationPartiallyCommittedException(
-                "The user-data mutation was committed, but the interactive cache could not be refreshed.",
-                innerException: ex);
+            throw new MutationPartiallyCommittedException("The mutation was committed, but session key refresh failed.", innerException: ex);
         }
     }
 
@@ -394,6 +415,20 @@ public sealed class UserDataWriterService : IUserDataWriterService
             throw;
         }
 
+        // Verify the actual candidate ciphertext set BEFORE changing tracked state, signing,
+        // or enqueueing. This also checks every child retained by a partial update.
+        var candidate = new User
+        {
+            UId = user.UId,
+            KeyEpoch = user.KeyEpoch,
+            MembershipEpoch = user.MembershipEpoch,
+            EncryptedPayload = await userDataTask,
+            EncryptedGeneralUserDataPayload = generalTask is null ? user.EncryptedGeneralUserDataPayload : await generalTask,
+            EncryptedUserPasswordsDataPayload = passwordsTask is null ? user.EncryptedUserPasswordsDataPayload : await passwordsTask,
+            EncryptedUserDevicesDataPayload = devicesTask is null ? user.EncryptedUserDevicesDataPayload : await devicesTask
+        };
+        using (var verified = await _reader.GetAndVerifyUserDataBundleAsync(candidate, userKey, ct)) { }
+
         var now = DateTimeOffset.UtcNow;
         if (!preserveLogicalTimestamps && (modifiedBlobs != UserDataBlobKind.None || forceRewriteAllBlobs))
             user.UserDataLastModifiedAt = now;
@@ -402,36 +437,24 @@ public sealed class UserDataWriterService : IUserDataWriterService
         {
             if (!preserveLogicalTimestamps)
                 user.GeneralUserDataLastModifiedAt = now;
-            ReplaceEncryptedPayload(
-                user.EncryptedGeneralUserDataPayload,
-                await generalTask,
-                value => user.EncryptedGeneralUserDataPayload = value);
+            user.EncryptedGeneralUserDataPayload = candidate.EncryptedGeneralUserDataPayload;
         }
 
         if (passwordsTask is not null)
         {
             if (!preserveLogicalTimestamps)
                 user.UserPasswordsDataLastModifiedAt = now;
-            ReplaceEncryptedPayload(
-                user.EncryptedUserPasswordsDataPayload,
-                await passwordsTask,
-                value => user.EncryptedUserPasswordsDataPayload = value);
+            user.EncryptedUserPasswordsDataPayload = candidate.EncryptedUserPasswordsDataPayload;
         }
 
         if (devicesTask is not null)
         {
             if (!preserveLogicalTimestamps)
                 user.UserDevicesDataLastModifiedAt = now;
-            ReplaceEncryptedPayload(
-                user.EncryptedUserDevicesDataPayload,
-                await devicesTask,
-                value => user.EncryptedUserDevicesDataPayload = value);
+            user.EncryptedUserDevicesDataPayload = candidate.EncryptedUserDevicesDataPayload;
         }
 
-        ReplaceEncryptedPayload(
-            user.EncryptedPayload,
-            await userDataTask,
-            value => user.EncryptedPayload = value);
+        user.EncryptedPayload = candidate.EncryptedPayload;
 
         if (rewriteGeneral)
         {
@@ -451,6 +474,8 @@ public sealed class UserDataWriterService : IUserDataWriterService
         {
             await UpdateUserAsync(user, enqueueSync, ct);
         }
+        // Capture after metadata, integrity and persistence have reached the committed generation.
+        bundle.CanonicalGeneration = UserDataGeneration.Capture(user);
     }
 
     private async Task<byte[]> EncryptBlobAsync<T>(
@@ -467,19 +492,6 @@ public sealed class UserDataWriterService : IUserDataWriterService
     {
         if (task.Status == TaskStatus.RanToCompletion)
             CryptographicOperations.ZeroMemory(task.Result);
-    }
-
-    private void ReplaceEncryptedPayload(
-        byte[] currentPayload,
-        byte[] replacementPayload,
-        Action<byte[]> assignReplacement)
-    {
-        // User ciphertext columns are EF Core concurrency tokens. Do not mutate the tracked
-        // current byte[] in place: EF's OriginalValue may reference that same instance, and
-        // zeroing it would make the generated concurrency predicate use zeroed bytes. The old
-        // value is encrypted data and can be released normally after the successful update.
-        _ = currentPayload;
-        assignReplacement(replacementPayload);
     }
 
     private void EnsureBlobTimestamps(User user, DateTimeOffset value)

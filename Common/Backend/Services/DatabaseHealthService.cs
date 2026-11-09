@@ -1,26 +1,24 @@
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.Sqlite;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
-using System.Data;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
 
-public sealed class DatabaseHealthService : IDatabaseHealthService
+internal sealed class DatabaseHealthService : IDatabaseHealthService
 {
-    private readonly AppDbContext _db;
+    private readonly SqliteConnectionFactory _connections;
 
-    public DatabaseHealthService(AppDbContext db) => _db = db;
+    public DatabaseHealthService(SqliteConnectionFactory connections) => _connections = connections;
 
     public async Task<DatabaseHealthCheckResult> CheckAsync(CancellationToken ct = default)
     {
-        var connection = _db.Database.GetDbConnection();
-        var openedHere = connection.State != ConnectionState.Open;
-        if (openedHere)
-            await connection.OpenAsync(ct);
-
+        ct.ThrowIfCancellationRequested();
+        // Recovery checks the committed vault before it starts its write transaction.
+        await using var connection = _connections.CreateConnection();
         try
         {
+            await connection.OpenAsync(ct);
             await using var command = connection.CreateCommand();
             command.CommandText = "PRAGMA quick_check;";
             await using var reader = await command.ExecuteReaderAsync(ct);
@@ -35,22 +33,17 @@ public sealed class DatabaseHealthService : IDatabaseHealthService
                     healthy = false;
             }
 
+            ct.ThrowIfCancellationRequested();
             return rowCount == 1 && healthy
                 ? new DatabaseHealthCheckResult(true, "sqlite-quick-check-ok")
                 : new DatabaseHealthCheckResult(false, "sqlite-quick-check-failed");
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (SqliteException exception) when (exception.SqliteErrorCode is 11 or 26)
         {
-            throw;
-        }
-        catch
-        {
+            // SQLite can report a damaged vault or an invalid key as CORRUPT or NOTADB.
+            // Busy, permission and I/O errors propagate as storage failures.
+            ct.ThrowIfCancellationRequested();
             return new DatabaseHealthCheckResult(false, "sqlite-quick-check-error");
-        }
-        finally
-        {
-            if (openedHere)
-                await connection.CloseAsync();
         }
     }
 }

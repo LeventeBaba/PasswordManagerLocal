@@ -91,6 +91,8 @@ message UserSnapshotRevisionInventory {
   int64 known_snapshot_revision = 10;
   bytes known_snapshot_hash = 11;
   int64 retained_membership_epoch = 12;
+  // Exact snapshot authored by the inventory recipient with equivalent content.
+  bytes equivalent_peer_snapshot_hash = 13;
 }
 
 message UserSnapshotUserInventory {
@@ -114,9 +116,17 @@ message UserSnapshotRequest {
   bytes expected_snapshot_hash = 7;
 }
 
+message PeerEndpointHint {
+  string device_id = 1;
+  string host = 2;
+  int32 port = 3;
+  string tls_cert_fingerprint = 4;
+}
+
 message UserSnapshotInventoryExchangeReply {
   repeated UserSnapshotUserInventory users = 1;
   repeated UserSnapshotRequest requested_snapshots = 2;
+  repeated PeerEndpointHint endpoint_hints = 3;
 }
 
 message UserSnapshotRequestBatch {

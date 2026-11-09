@@ -6,7 +6,9 @@ param(
     [ValidateSet('win-x64')]
     [string]$RuntimeIdentifier = 'win-x64',
 
-    [string]$RepositoryRoot
+    [string]$RepositoryRoot,
+
+    [switch]$NativeAOT
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,8 +23,30 @@ function Assert-Files([string[]]$Names) {
     }
 }
 
+if ($NativeAOT) {
+    $requiredFiles = @(
+        'PasswordManagerLocal.exe',
+        'av_libglesv2.dll',
+        'libHarfBuzzSharp.dll',
+        'libSkiaSharp.dll',
+        'libsodium.dll',
+        'sqlite3mc.dll'
+    )
+    Assert-Files $requiredFiles
+    $entries = @(Get-ChildItem -LiteralPath $publish -Force)
+    $unexpected = @($entries | Where-Object { $_.PSIsContainer -or $_.Name -notin $requiredFiles })
+    if ($unexpected.Count -gt 0) {
+        throw "Unexpected Native AOT product entries: $($unexpected.Name -join ', ')"
+    }
+    $totalBytes = ($entries | Measure-Object -Property Length -Sum).Sum
+    Write-Host "Verified unified Native AOT publication for $RuntimeIdentifier."
+    Write-Host "Final files: $($entries.Count); final bytes: $totalBytes"
+    return
+}
+
 Assert-Files @(
     'PasswordManagerLocal.exe',
+    'PasswordManagerLocal.ico',
     'PasswordManagerLocal.dll',
     'PasswordManagerLocal.deps.json',
     'PasswordManagerLocal.runtimeconfig.json',
@@ -45,17 +69,21 @@ Assert-Files @(
     'hostpolicy.dll',
     'Avalonia.Win32.dll',
     'Avalonia.Skia.dll',
-    'Microsoft.EntityFrameworkCore.Sqlite.dll',
     'Microsoft.Data.Sqlite.dll',
     'SQLitePCLRaw.core.dll',
     'SQLitePCLRaw.batteries_v2.dll',
-    'SQLitePCLRaw.provider.e_sqlcipher.dll',
-    'e_sqlcipher.dll',
+    'SQLite3MC.PCLRaw.provider.dll',
+    'sqlite3mc.dll',
     'NSec.Cryptography.dll',
     'libsodium.dll',
-    'Google.Protobuf.dll',
-    'Assets\app_icon.ico'
+    'Google.Protobuf.dll'
 )
+
+$iconFiles = @(Get-ChildItem -LiteralPath $publish -Recurse -File | Where-Object { $_.Extension -ieq '.ico' })
+if ($iconFiles.Count -ne 1 -or
+    -not [string]::Equals($iconFiles[0].FullName, (Join-Path $publish 'PasswordManagerLocal.ico'), [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'The product must contain exactly one .ico file at its root: PasswordManagerLocal.ico.'
+}
 
 if (Test-Path -LiteralPath (Join-Path $publish 'AgentRuntime')) {
     throw 'The prohibited legacy AgentRuntime directory is present.'
@@ -70,13 +98,13 @@ foreach ($executable in @('PasswordManagerLocal.exe', 'PasswordManagerLocal.Wind
 
 $frontendDeps = Get-Content -LiteralPath (Join-Path $publish 'PasswordManagerLocal.deps.json') -Raw
 $agentDeps = Get-Content -LiteralPath (Join-Path $publish 'PasswordManagerLocal.Windows.Agent.deps.json') -Raw
-foreach ($name in @('PasswordManagerLocal.Common.Backend', 'PasswordManagerLocal.Windows.Backend', 'PasswordManagerLocal.Windows.EndpointRpc.Server', 'Microsoft.EntityFrameworkCore', 'Microsoft.Data.Sqlite', 'SQLitePCLRaw')) {
-    if ($frontendDeps.Contains($name)) { throw "Frontend manifest contains backend-only dependency: $name" }
+foreach ($name in @('PasswordManagerLocal.Common.Backend', 'PasswordManagerLocal.Windows.Backend', 'PasswordManagerLocal.Windows.EndpointRpc.Server', 'Microsoft.EntityFrameworkCore', 'Microsoft.Data.Sqlite', 'SQLitePCLRaw', 'SQLite3MC.PCLRaw')) {
+    if ($frontendDeps.IndexOf($name, [StringComparison]::OrdinalIgnoreCase) -ge 0) { throw "Frontend manifest contains backend-only dependency: $name" }
 }
-foreach ($name in @('PasswordManagerLocal.Common.Frontend', 'Avalonia', 'ReactiveUI', 'System.Windows.Forms', 'PresentationFramework', 'WindowsBase')) {
-    if ($agentDeps.Contains($name)) { throw "Agent manifest contains frontend/desktop dependency: $name" }
+foreach ($name in @('PasswordManagerLocal.Common.Frontend', 'Avalonia', 'ReactiveUI', 'System.Windows.Forms', 'PresentationFramework', 'WindowsBase', 'Microsoft.EntityFrameworkCore')) {
+    if ($agentDeps.IndexOf($name, [StringComparison]::OrdinalIgnoreCase) -ge 0) { throw "Agent manifest contains a forbidden dependency: $name" }
 }
-foreach ($name in @('PasswordManagerLocal.Common.Backend', 'PasswordManagerLocal.Windows.EndpointRpc.Server', 'Microsoft.EntityFrameworkCore.Sqlite')) {
+foreach ($name in @('PasswordManagerLocal.Common.Backend', 'PasswordManagerLocal.Windows.EndpointRpc.Server', 'Microsoft.Data.Sqlite', 'SQLite3MC.PCLRaw')) {
     if (-not $agentDeps.Contains($name)) { throw "Agent manifest is missing required dependency: $name" }
 }
 if ($frontendDeps.Contains('AgentRuntime') -or $agentDeps.Contains('AgentRuntime')) { throw 'A dependency manifest still references AgentRuntime.' }
@@ -86,7 +114,10 @@ $forbiddenNames = @(
     'mscordaccore.dll', 'mscordbi.dll', 'Microsoft.DiaSymReader.Native.amd64.dll'
 )
 foreach ($file in Get-ChildItem -LiteralPath $publish -Recurse -File) {
-    if ($file.Extension -ieq '.pdb' -or $file.Name -match '\.Tests?(\.|$)' -or $forbiddenNames -contains $file.Name -or $file.Name -like 'mscordaccore_*.dll') {
+    if ($file.Name -like 'Microsoft.EntityFrameworkCore*') {
+        throw "Entity Framework Core artifact is present: $($file.FullName)"
+    }
+    if ($file.Extension -in @('.ps1', '.bat', '.cmd') -or $file.Extension -ieq '.pdb' -or $file.Name -match '\.Tests?(\.|$)' -or $forbiddenNames -contains $file.Name -or $file.Name -like 'mscordaccore_*.dll') {
         throw "Development/debug/test artifact is present: $($file.FullName)"
     }
     if ($file.FullName.IndexOf('\staging\', [StringComparison]::OrdinalIgnoreCase) -ge 0 -or

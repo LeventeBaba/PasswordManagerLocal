@@ -36,7 +36,7 @@ public sealed class UserDevicesDataMergeService : IUserDevicesDataMergeService
             localDeleted.TryGetValue(id, out var firstDeleted);
             incomingDeleted.TryGetValue(id, out var secondDeleted);
 
-            var live = SelectSameKind(firstLive, secondLive, id, "user-device");
+            using var live = SelectLive(firstLive, secondLive, id);
             var deleted = SelectSameKind(firstDeleted, secondDeleted, id, "user-device-deletion");
             if (live is null && deleted is null)
                 continue;
@@ -86,6 +86,35 @@ public sealed class UserDevicesDataMergeService : IUserDevicesDataMergeService
         return true;
     }
 
+    private UserDeviceData? SelectLive(UserDeviceData? first, UserDeviceData? second, Guid id)
+    {
+        if (first is null) return second is null ? null : Clone(second);
+        if (second is null) return Clone(first);
+        var comparison = SyncVersionStampComparer.Instance.Compare(first.Version, second.Version);
+        var nameComparison = SyncVersionStampComparer.Instance.Compare(first.NameVersion ?? first.Version, second.NameVersion ?? second.Version);
+        if (nameComparison == 0 && !string.Equals(first.Name, second.Name, StringComparison.Ordinal))
+            throw new DeterministicSyncConflictException("user-device-name", id, first.NameVersion ?? first.Version,
+                first.CalculateIntegrityHash(), second.CalculateIntegrityHash());
+        if (comparison == 0)
+        {
+            // A previous field merge may already have changed the name at this record version.
+            using var normalized = Clone(second);
+            normalized.Name = first.Name;
+            normalized.NameVersion = first.NameVersion;
+            if (!first.CalculateIntegrityHash().AsSpan().SequenceEqual(normalized.CalculateIntegrityHash()))
+                throw new DeterministicSyncConflictException("user-device", id, first.Version,
+                    first.CalculateIntegrityHash(), second.CalculateIntegrityHash());
+        }
+        var winner = Clone(comparison >= 0 ? first : second);
+        var nameWinner = nameComparison >= 0 ? first : second;
+        winner.Name = nameWinner.Name;
+        // Retain a legacy null if no independent name version is needed.
+        winner.NameVersion = nameWinner.NameVersion ??
+            (SyncVersionStampComparer.Instance.Compare(winner.Version, nameWinner.Version) == 0 ? null : nameWinner.Version);
+        winner.GenerateIntegrityHash();
+        return winner;
+    }
+
     private T? SelectSameKind<T>(T? first, T? second, Guid id, string itemType)
         where T : PasswordManagerLocal.Common.Backend.Security.IntegrityCheckableBase
     {
@@ -120,6 +149,7 @@ public sealed class UserDevicesDataMergeService : IUserDevicesDataMergeService
         {
             Id = source.Id,
             Name = source.Name,
+            NameVersion = source.NameVersion,
             LinkedAt = source.LinkedAt,
             LastLoginDate = source.LastLoginDate,
             PreviousLoginDate = source.PreviousLoginDate,

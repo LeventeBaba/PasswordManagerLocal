@@ -4,6 +4,7 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Security;
+using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Sync;
 using System.Security.Cryptography;
 
@@ -63,10 +64,14 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
             var userInventory = new UserControlOperationUserInventory { UserId = userId.ToString("N") };
             if (rowsByUser.TryGetValue(userId, out var group))
             {
+                var relayCutoff = GetHistoricalRevocationCutoff(group, peerDeviceId);
                 foreach (var row in group
                              .Where(operation => activeUserIds.Contains(userId) ||
                                                  (operation.OperationType == UserControlOperationType.AccountDeletion &&
-                                                  operation.Status == UserControlOperationStatus.Applied))
+                                                  operation.Status == UserControlOperationStatus.Applied) ||
+                                                 (relayCutoff > 0 &&
+                                                  operation.Status == UserControlOperationStatus.Applied &&
+                                                  operation.ResultingMembershipEpoch <= relayCutoff))
                              .OrderBy(operation => operation.OriginDeviceId)
                              .ThenBy(operation => operation.OriginInstanceId)
                              .ThenBy(operation => operation.OriginSequence))
@@ -199,17 +204,16 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
             if (!seenIds.Add(operationId))
                 throw new InvalidDataException("The same control operation was requested more than once.");
 
-            var row = await _operations.GetByIdAsync(operationId, ct)
-                ?? throw new InvalidDataException("The requested control operation is not retained locally.");
-            var routeEligible = await _routes.IsEligibleAsync(userId, peerDeviceId, ct);
-            var historicalDeletionEligible = row.OperationType == UserControlOperationType.AccountDeletion &&
-                row.Status == UserControlOperationStatus.Applied &&
-                _membershipHistory is not null &&
-                await _membershipHistory.HasHistoricalAuthorizationAsync(userId, peerDeviceId, ct);
-            if (!routeEligible && !historicalDeletionEligible)
-                throw new UnauthorizedAccessException("The peer is not authorized for the requested control operation.");
-            if (row.UserId != userId || row.Status is UserControlOperationStatus.Rejected or UserControlOperationStatus.Quarantined)
-                throw new InvalidDataException("The requested control operation is not relayable.");
+            var row = await _operations.GetByIdAsync(operationId, ct);
+            // An operation ID can be guessed or learned out of band. Treat missing and
+            // inaccessible operations alike, including IDs paired with the wrong account.
+            if (row is null || row.UserId != userId ||
+                row.Status is UserControlOperationStatus.Rejected or UserControlOperationStatus.Quarantined ||
+                (!await _routes.IsEligibleAsync(userId, peerDeviceId, ct) &&
+                 !await CanRelayHistoricallyAsync(row, peerDeviceId, ct)))
+            {
+                throw new SyncStateUnavailableException("The requested control operation is unavailable for this peer.");
+            }
             if (!RequestMatchesRow(request, row))
                 throw new InvalidDataException("The requested control-operation identity or hash does not match durable storage.");
 
@@ -221,6 +225,37 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
         }
 
         return results;
+    }
+
+    private async Task<bool> CanRelayHistoricallyAsync(UserControlOperation row, Guid peerDeviceId, CancellationToken ct)
+    {
+        if (_membershipHistory is null ||
+            !await _membershipHistory.HasHistoricalAuthorizationAsync(row.UserId, peerDeviceId, ct))
+            return false;
+        if (row.Status != UserControlOperationStatus.Applied)
+            return false;
+        if (row.OperationType == UserControlOperationType.AccountDeletion)
+            return true;
+
+        var operations = await _operations.ListForUserAsync(row.UserId, ct);
+        var cutoff = GetHistoricalRevocationCutoff(operations, peerDeviceId);
+        return cutoff > 0 && row.ResultingMembershipEpoch <= cutoff;
+    }
+
+    private long GetHistoricalRevocationCutoff(IEnumerable<UserControlOperation> operations, Guid peerDeviceId)
+    {
+        var cutoff = long.MaxValue;
+        foreach (var operation in operations.Where(operation =>
+                     operation.OperationType == UserControlOperationType.DeviceRemoval &&
+                     operation.Status == UserControlOperationStatus.Applied))
+        {
+            var envelope = UserControlOperationEnvelopeUtil.Deserialize(operation.EnvelopePayload);
+            var removal = UserControlOperationEnvelopeUtil.DeserializeDeviceRemovalPayload(envelope.OperationPayload);
+            if (removal.RemovedDeviceId == peerDeviceId || removal.RemovedDeviceId == _identity.LocalDeviceId)
+                cutoff = Math.Min(cutoff, operation.ResultingMembershipEpoch);
+        }
+
+        return cutoff == long.MaxValue ? 0 : cutoff;
     }
 
     private async Task ValidatePeerAsync(Guid peerDeviceId, CancellationToken ct)

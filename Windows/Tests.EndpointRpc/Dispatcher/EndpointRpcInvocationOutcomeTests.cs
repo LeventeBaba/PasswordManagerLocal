@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Sync.Enrollment;
 using PasswordManagerLocal.Windows.EndpointRpc.Contracts;
+using PasswordManagerLocal.Windows.EndpointRpc.Contracts.Requests;
 using PasswordManagerLocal.Windows.EndpointRpc.Contracts.Responses;
 using PasswordManagerLocal.Windows.EndpointRpc.Metadata;
 using PasswordManagerLocal.Windows.EndpointRpc.Serialization;
@@ -62,8 +63,8 @@ public sealed class EndpointRpcInvocationOutcomeTests
         Assert.AreEqual(EndpointInvocationStage.Invoking, context.Invocation.Stage);
         Assert.AreEqual(EndpointRpcErrorCode.OperationOutcomeUnknown, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.OutcomeUnknown, result.Error.MutationOutcome);
+        Assert.AreEqual(EndpointFailureKind.Generic, result.Error.FailureKind);
         Assert.IsFalse(result.Error.SafeMessage.Contains("secret", StringComparison.Ordinal));
-        Assert.IsFalse(result.Error.IsRetryable);
         Assert.IsFalse(result.Error.RequiresProcessRestart);
     }
 
@@ -107,8 +108,8 @@ public sealed class EndpointRpcInvocationOutcomeTests
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationOutcomeUnknown, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.OutcomeUnknown, result.Error.MutationOutcome);
+        Assert.AreEqual(EndpointFailureKind.Generic, result.Error.FailureKind);
         Assert.IsTrue(result.Error.RequiresProcessRestart);
-        Assert.IsNull(result.Error.Recovery);
     }
 
     [TestMethod]
@@ -216,17 +217,17 @@ public sealed class EndpointRpcInvocationOutcomeTests
     [TestMethod]
     public async Task MutationResponseSerializationFailureIsOutcomeUnknown()
     {
-        var endpoints = new ConfiguredLogoutEndpoints();
+        var endpoints = new SuccessfulRecordingEndpoints();
         var serializer = new EndpointRpcSerializer(type =>
         {
-            if (type == typeof(LogoutEndpointResponse))
+            if (type == typeof(RegisterEndpointResponse))
                 throw new EndpointRpcPayloadException("response serialization failed");
         });
-        var context = CreateContext(EndpointOperationId.Logout, 106);
+        var context = CreateContext(EndpointOperationId.Register, 106);
         await using var dispatcher = CreateDispatcher(endpoints, serializer);
         var result = await dispatcher.DispatchAsync(
             context,
-            SerializeRequest(EndpointOperationId.Logout),
+            SerializeRequest(EndpointOperationId.Register),
             CancellationToken.None);
 
         Assert.AreEqual(EndpointInvocationStage.ResponseValidated, context.Invocation.Stage);
@@ -236,17 +237,17 @@ public sealed class EndpointRpcInvocationOutcomeTests
     [TestMethod]
     public async Task MutationResponseSizeFailureIsOutcomeUnknown()
     {
-        var endpoints = new ConfiguredLogoutEndpoints();
+        var endpoints = new SuccessfulRecordingEndpoints();
         var serializer = new EndpointRpcSerializer(
             serializationObserver: null,
-            serializedPayloadOverride: type => type == typeof(LogoutEndpointResponse)
+            serializedPayloadOverride: type => type == typeof(RegisterEndpointResponse)
                 ? new byte[EndpointRpcLimits.MaximumSmallResponsePayloadSize + 1]
                 : null);
-        var context = CreateContext(EndpointOperationId.Logout, 107);
+        var context = CreateContext(EndpointOperationId.Register, 107);
         await using var dispatcher = CreateDispatcher(endpoints, serializer);
         var result = await dispatcher.DispatchAsync(
             context,
-            SerializeRequest(EndpointOperationId.Logout),
+            SerializeRequest(EndpointOperationId.Register),
             CancellationToken.None);
 
         Assert.AreEqual(EndpointInvocationStage.ResponseSerialized, context.Invocation.Stage);
@@ -323,7 +324,8 @@ public sealed class EndpointRpcInvocationOutcomeTests
         var encodedRequest = codec.EncodeRequest(EndpointOperationId.Logout, requestPayload);
         var requestContext = new IpcRequestContext(
             connection,
-            new IpcRequestEnvelope(110, IpcOperationId.EndpointRpcRequest, encodedRequest),
+            110,
+            new IpcRequestEnvelope(IpcOperationId.EndpointRpcRequest, encodedRequest),
             new WindowsIpcSerializer());
 
         await Assert.ThrowsExactlyAsync<EndpointRpcPayloadException>(() =>
@@ -332,8 +334,6 @@ public sealed class EndpointRpcInvocationOutcomeTests
         Assert.AreEqual(1, endpoints.InvocationCount);
         Array.Clear(requestPayload);
     }
-
-
 
     [TestMethod]
     public async Task EnrollmentFullSuccessReturnsTheExistingSuccessResponse()
@@ -354,67 +354,34 @@ public sealed class EndpointRpcInvocationOutcomeTests
     }
 
     [TestMethod]
-    public async Task EnrollmentInvalidCodeBeforeCommitIsConclusive()
+    [DataRow(DeviceEnrollmentErrorCode.InvalidCode, false, EndpointRpcErrorCode.OperationRejected)]
+    [DataRow(DeviceEnrollmentErrorCode.NewDeviceNotFound, false, EndpointRpcErrorCode.NotFound)]
+    [DataRow(DeviceEnrollmentErrorCode.DeviceIdentityConflict, false, EndpointRpcErrorCode.Conflict)]
+    [DataRow(DeviceEnrollmentErrorCode.Unknown, true, EndpointRpcErrorCode.BackendFailure)]
+    public async Task KnownUncommittedEnrollmentFailurePreservesCodeAndConclusiveOutcome(
+        DeviceEnrollmentErrorCode cause, bool useExplicitRollback, EndpointRpcErrorCode expected)
     {
-        var endpoints = new ConfiguredEndpointFailureEndpoints(
-            EndpointOperationId.AddDeviceByCode,
-            new DeviceEnrollmentException(DeviceEnrollmentErrorCode.InvalidCode, "invalid code"));
+        // Preserve the coded-failure constructor's inferred pre-commit guarantee.
+        // The Unknown case supplies an explicit rollback guarantee instead.
+        var failure = useExplicitRollback
+            ? new DeviceEnrollmentException(cause, "safe test failure", isKnownNotCommitted: true)
+            : new DeviceEnrollmentException(cause, "safe test failure");
+        var endpoints = new ConfiguredEndpointFailureEndpoints(EndpointOperationId.AddDeviceByCode, failure);
         var context = CreateContext(EndpointOperationId.AddDeviceByCode, 120);
         await using var dispatcher = CreateDispatcher(endpoints, new EndpointRpcSerializer());
 
-        var result = await dispatcher.DispatchAsync(
-            context,
-            SerializeRequest(EndpointOperationId.AddDeviceByCode),
-            CancellationToken.None);
+        var result = await dispatcher.DispatchAsync(context, SerializeRequest(EndpointOperationId.AddDeviceByCode), CancellationToken.None);
 
-        Assert.AreEqual(EndpointRpcErrorCode.OperationRejected, result.Error!.ErrorCode);
+        Assert.AreEqual(1, endpoints.InvocationCount);
+        Assert.AreEqual(expected, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.NotCommitted, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
-    }
-
-    [TestMethod]
-    public async Task EnrollmentTargetMissingBeforeCommitIsConclusive()
-    {
-        var endpoints = new ConfiguredEndpointFailureEndpoints(
-            EndpointOperationId.AddDeviceByCode,
-            new DeviceEnrollmentException(DeviceEnrollmentErrorCode.NewDeviceNotFound, "target missing"));
-        var context = CreateContext(EndpointOperationId.AddDeviceByCode, 121);
-        await using var dispatcher = CreateDispatcher(endpoints, new EndpointRpcSerializer());
-
-        var result = await dispatcher.DispatchAsync(
-            context,
-            SerializeRequest(EndpointOperationId.AddDeviceByCode),
-            CancellationToken.None);
-
-        Assert.AreEqual(EndpointRpcErrorCode.NotFound, result.Error!.ErrorCode);
-        Assert.AreEqual(EndpointMutationOutcome.NotCommitted, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
-    }
-
-    [TestMethod]
-    public async Task EnrollmentIdentityConflictBeforeCommitIsConclusive()
-    {
-        var endpoints = new ConfiguredEndpointFailureEndpoints(
-            EndpointOperationId.AddDeviceByCode,
-            new DeviceEnrollmentException(
-                DeviceEnrollmentErrorCode.DeviceIdentityConflict,
-                "identity conflict"));
-        var context = CreateContext(EndpointOperationId.AddDeviceByCode, 115);
-        await using var dispatcher = CreateDispatcher(endpoints, new EndpointRpcSerializer());
-
-        var result = await dispatcher.DispatchAsync(
-            context,
-            SerializeRequest(EndpointOperationId.AddDeviceByCode),
-            CancellationToken.None);
-
-        Assert.AreEqual(EndpointRpcErrorCode.Conflict, result.Error!.ErrorCode);
-        Assert.AreEqual(EndpointMutationOutcome.NotCommitted, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
+        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, result.Error.FailureKind);
+        Assert.AreEqual(cause, result.Error.EnrollmentErrorCode);
         Assert.IsFalse(result.Error.RequiresProcessRestart);
     }
 
     [TestMethod]
-    public async Task EnrollmentIdentityConflictAfterCommitRequiresRecovery()
+    public async Task EnrollmentIdentityConflictAfterCommitPreservesSafeFailureCode()
     {
         var recovery = CreatePartialCommitFailure(
             DeviceEnrollmentErrorCode.DeviceIdentityConflict,
@@ -431,17 +398,10 @@ public sealed class EndpointRpcInvocationOutcomeTests
             CancellationToken.None);
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, result.Error!.ErrorCode);
-        Assert.AreEqual(EndpointRpcErrorCategory.Recovery, result.Error.ErrorCategory);
         Assert.AreEqual(EndpointMutationOutcome.PartiallyCommittedRecoveryRequired, result.Error.MutationOutcome);
-        Assert.IsFalse(result.Error.IsRetryable);
+        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, result.Error.FailureKind);
+        Assert.AreEqual(DeviceEnrollmentErrorCode.DeviceIdentityConflict, result.Error.EnrollmentErrorCode);
         Assert.IsFalse(result.Error.RequiresProcessRestart);
-        Assert.IsNotNull(result.Error.Recovery);
-        Assert.AreEqual(recovery.TargetDeviceId, result.Error.Recovery.TargetDeviceId);
-        Assert.AreEqual(recovery.TargetOriginInstanceId, result.Error.Recovery.TargetOriginInstanceId);
-        Assert.AreEqual(recovery.EnrollmentCommitId, result.Error.Recovery.EnrollmentCommitId);
-        Assert.IsTrue(result.Error.Recovery.RecoveryAvailable);
-        Assert.IsTrue(result.Error.Recovery.TransferPending);
-        Assert.IsTrue(result.Error.Recovery.RequiresSignedRemovalToUndo);
     }
 
     [TestMethod]
@@ -462,53 +422,33 @@ public sealed class EndpointRpcInvocationOutcomeTests
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.PartiallyCommittedRecoveryRequired, result.Error.MutationOutcome);
+        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, result.Error.FailureKind);
+        Assert.AreEqual(DeviceEnrollmentErrorCode.UnsupportedDatabaseVersion, result.Error.EnrollmentErrorCode);
         Assert.IsTrue(result.Error.RequiresProcessRestart);
-        Assert.IsNotNull(result.Error.Recovery);
     }
 
     [TestMethod]
-    public async Task EnrollmentKnownRollbackWithUnclassifiedCauseIsConclusive()
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task UnclassifiedEnrollmentFailureAfterInvocationHasUnknownOutcome(bool domainFailure)
     {
-        var endpoints = new ConfiguredEndpointFailureEndpoints(
-            EndpointOperationId.AddDeviceByCode,
-            new DeviceEnrollmentException(
-                DeviceEnrollmentErrorCode.Unknown,
-                "rolled back",
-                isKnownNotCommitted: true));
-        var context = CreateContext(EndpointOperationId.AddDeviceByCode, 122);
-        await using var dispatcher = CreateDispatcher(endpoints, new EndpointRpcSerializer());
-
-        var result = await dispatcher.DispatchAsync(
-            context,
-            SerializeRequest(EndpointOperationId.AddDeviceByCode),
-            CancellationToken.None);
-
-        Assert.AreEqual(EndpointRpcErrorCode.BackendFailure, result.Error!.ErrorCode);
-        Assert.AreEqual(EndpointMutationOutcome.NotCommitted, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
-    }
-
-    [TestMethod]
-    public async Task EnrollmentUnknownDomainFailureAfterInvocationRemainsOutcomeUnknown()
-    {
-        var endpoints = new ConfiguredEndpointFailureEndpoints(
-            EndpointOperationId.AddDeviceByCode,
-            new DeviceEnrollmentException(DeviceEnrollmentErrorCode.Unknown, "uncertain transaction"));
+        Exception failure = domainFailure
+            ? new DeviceEnrollmentException(DeviceEnrollmentErrorCode.Unknown, "uncertain transaction")
+            : new IOException("response unavailable");
+        var endpoints = new ConfiguredEndpointFailureEndpoints(EndpointOperationId.AddDeviceByCode, failure);
         var context = CreateContext(EndpointOperationId.AddDeviceByCode, 119);
         await using var dispatcher = CreateDispatcher(endpoints, new EndpointRpcSerializer());
 
-        var result = await dispatcher.DispatchAsync(
-            context,
-            SerializeRequest(EndpointOperationId.AddDeviceByCode),
-            CancellationToken.None);
+        var result = await dispatcher.DispatchAsync(context, SerializeRequest(EndpointOperationId.AddDeviceByCode), CancellationToken.None);
 
+        Assert.AreEqual(1, endpoints.InvocationCount);
         Assert.AreEqual(EndpointRpcErrorCode.OperationOutcomeUnknown, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.OutcomeUnknown, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
+        Assert.AreEqual(EndpointFailureKind.Generic, result.Error.FailureKind);
     }
 
     [TestMethod]
-    public async Task KnownGenericPartialCommitUsesManifestPolicyWithoutEnrollmentMetadata()
+    public async Task KnownGenericPartialCommitUsesManifestPolicyWithoutEnrollmentDetails()
     {
         var endpoints = new ConfiguredEndpointFailureEndpoints(
             EndpointOperationId.ChangeMasterPassword,
@@ -523,8 +463,8 @@ public sealed class EndpointRpcInvocationOutcomeTests
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.PartiallyCommittedRecoveryRequired, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
-        Assert.IsFalse(result.Error.IsRetryable);
+        Assert.AreEqual(EndpointFailureKind.Generic, result.Error.FailureKind);
+        Assert.IsNull(result.Error.EnrollmentErrorCode);
     }
 
     [TestMethod]
@@ -543,7 +483,7 @@ public sealed class EndpointRpcInvocationOutcomeTests
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationOutcomeUnknown, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.OutcomeUnknown, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
+        Assert.AreEqual(EndpointFailureKind.Generic, result.Error.FailureKind);
     }
 
     [TestMethod]
@@ -562,7 +502,7 @@ public sealed class EndpointRpcInvocationOutcomeTests
 
         Assert.AreEqual(EndpointRpcErrorCode.OperationOutcomeUnknown, result.Error!.ErrorCode);
         Assert.AreEqual(EndpointMutationOutcome.OutcomeUnknown, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
+        Assert.AreEqual(EndpointFailureKind.Generic, result.Error.FailureKind);
     }
 
     [TestMethod]
@@ -608,8 +548,8 @@ public sealed class EndpointRpcInvocationOutcomeTests
                 out var error), operationId.ToString());
             Assert.AreEqual(EndpointRpcErrorCode.OperationPartiallyCommitted, error.ErrorCode, operationId.ToString());
             Assert.AreEqual(EndpointMutationOutcome.PartiallyCommittedRecoveryRequired, error.MutationOutcome, operationId.ToString());
-            Assert.IsNull(error.Recovery, operationId.ToString());
-            Assert.IsFalse(error.IsRetryable, operationId.ToString());
+            Assert.AreEqual(EndpointFailureKind.Generic, error.FailureKind, operationId.ToString());
+            Assert.IsNull(error.EnrollmentErrorCode, operationId.ToString());
         }
 
         var atomicContext = CreateContext(EndpointOperationId.DisconnectUserDevice, 299);
@@ -620,26 +560,6 @@ public sealed class EndpointRpcInvocationOutcomeTests
             out _));
     }
 
-    [TestMethod]
-    public async Task EnrollmentUnknownFailureAfterInvocationRemainsOutcomeUnknown()
-    {
-        var endpoints = new ConfiguredEndpointFailureEndpoints(
-            EndpointOperationId.AddDeviceByCode,
-            new IOException("response lost"));
-        var context = CreateContext(EndpointOperationId.AddDeviceByCode, 118);
-        await using var dispatcher = CreateDispatcher(endpoints, new EndpointRpcSerializer());
-
-        var result = await dispatcher.DispatchAsync(
-            context,
-            SerializeRequest(EndpointOperationId.AddDeviceByCode),
-            CancellationToken.None);
-
-        Assert.AreEqual(EndpointRpcErrorCode.OperationOutcomeUnknown, result.Error!.ErrorCode);
-        Assert.AreEqual(EndpointMutationOutcome.OutcomeUnknown, result.Error.MutationOutcome);
-        Assert.IsNull(result.Error.Recovery);
-        Assert.IsFalse(result.Error.IsRetryable);
-    }
-
     private static EndpointRpcDispatcher CreateDispatcher(
         PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints endpoints,
         EndpointRpcSerializer serializer) =>
@@ -648,7 +568,6 @@ public sealed class EndpointRpcInvocationOutcomeTests
             serializer,
             new EndpointRpcContractValidator(),
             new EndpointRpcBackendErrorMapper());
-
 
     private static DeviceEnrollmentPartiallyCommittedException CreatePartialCommitFailure(
         DeviceEnrollmentErrorCode errorCode,
@@ -679,6 +598,9 @@ public sealed class EndpointRpcInvocationOutcomeTests
     private static byte[] SerializeRequest(EndpointOperationId operationId)
     {
         var descriptor = EndpointOperationManifest.Get(operationId);
+        if (descriptor.RequestType == typeof(EmptyEndpointRequest))
+            return Array.Empty<byte>();
+
         var value = EndpointRpcTestData.CreateRequest(operationId);
         var typeInfo = EndpointRpcJsonContext.Default.GetTypeInfo(descriptor.RequestType)
             ?? throw new InvalidOperationException(descriptor.RequestType.FullName);

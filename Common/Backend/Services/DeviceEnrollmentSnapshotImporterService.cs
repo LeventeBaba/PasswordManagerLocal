@@ -3,6 +3,7 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Constants;
+using PasswordManagerLocal.Common.Backend.Diagnostics;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Sync;
@@ -87,25 +88,25 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             foreach (var deviceSnapshot in validated.CurrentRemoteDevices)
                 await UpsertRemoteDeviceAsync(devices, userDevices, deviceSnapshot, ct);
 
-            var user = await users.GetByIdAsync(validated.User.UId, ct);
-            if (user is null)
-            {
-                user = new User { UId = validated.User.UId };
-                await users.AddAsync(user, ct);
-            }
+            var existingUser = await users.GetByIdAsync(validated.User.UId, ct);
+            var user = existingUser ?? new User { UId = validated.User.UId };
             ApplyUser(validated.User, user);
+            if (existingUser is null)
+                await users.AddAsync(user, ct);
+            else
+                users.Update(user);
 
             foreach (var groupSnapshot in snapshot.Groups)
             {
-                var group = await groups.GetByIdWithUsersAsync(groupSnapshot.Id, ct);
-                if (group is null)
-                {
-                    group = new Group { Id = groupSnapshot.Id };
-                    await groups.AddAsync(group, ct);
-                }
+                var existingGroup = await groups.GetByIdWithUsersAsync(groupSnapshot.Id, ct);
+                var group = existingGroup ?? new Group { Id = groupSnapshot.Id };
                 group.EncryptedPayload = groupSnapshot.EncryptedPayload.ToArray();
                 group.LastModifiedAt = UtcDateTimeUtil.ToUtc(groupSnapshot.LastModifiedAt);
                 group.IntegrityHash = groupSnapshot.IntegrityHash.ToArray();
+                if (existingGroup is null)
+                    await groups.AddAsync(group, ct);
+                else
+                    groups.Update(group);
             }
             await unitOfWork.SaveChangesAsync(ct);
 
@@ -115,14 +116,14 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
                     ?? throw new InvalidDataException("An enrollment group could not be persisted.");
                 var importedUserIds = groupSnapshot.UserIds.Where(id => id != Guid.Empty).Distinct().ToHashSet();
                 foreach (var current in group.Users.Where(item => !importedUserIds.Contains(item.UId)).ToList())
-                    group.Users.Remove(current);
+                    groups.SetMember(group, current, isMember: false);
                 foreach (var importedUserId in importedUserIds)
                 {
                     if (group.Users.Any(item => item.UId == importedUserId))
                         continue;
                     var importedUser = await users.GetByIdAsync(importedUserId, ct);
                     if (importedUser is not null)
-                        group.Users.Add(importedUser);
+                        groups.SetMember(group, importedUser, isMember: true);
                 }
             }
 
@@ -185,6 +186,7 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             state.ConflictingOperationId = validated.ControlState.ConflictingOperationId;
             state.ConflictingOperationHash = validated.ControlState.ConflictingOperationHash?.ToArray();
             state.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
+            controlStates.Update(state);
 
             foreach (var row in snapshot.RevisionKnowledge)
             {
@@ -239,7 +241,7 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
                 }
                 else
                 {
-                    if (existing.Status == UserSyncSnapshotStatus.Quarantined)
+                    if (existing.Status == UserSyncSnapshotStatus.IsolatedFork)
                         throw new InvalidDataException("The enrollment bootstrap cannot overwrite locally retained snapshot quarantine evidence.");
                     CopySnapshotRow(CreateSnapshotRow(item, envelope), existing);
                     pendingSnapshots.Update(existing);
@@ -251,46 +253,58 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
                 .Select(row => row.DeviceId)
                 .Distinct()
                 .ToHashSet();
+            var relationshipByDevice = snapshot.UserDevices.ToDictionary(row => row.DeviceId);
             var currentLinks = await userDevices.ListByUserAsync(snapshot.PrimaryUserId, ct);
             foreach (var current in currentLinks)
             {
                 var shouldBeActive = current.DeviceId != _identity.LocalDeviceId && activeDeviceIds.Contains(current.DeviceId);
-                current.IsDeleted = !shouldBeActive;
-                current.IsSyncOn = shouldBeActive;
-                current.DeletedAt = shouldBeActive ? null : DateTimeOffset.UtcNow;
-                current.LastModifiedAt = DateTimeOffset.UtcNow;
+                if (shouldBeActive)
+                {
+                    var relationship = relationshipByDevice[current.DeviceId];
+                    current.IsDeleted = false;
+                    current.IsSyncOn = relationship.IsSyncOn;
+                    current.DeletedAt = null;
+                    current.LastModifiedAt = UtcDateTimeUtil.ToUtc(relationship.LastModifiedAt);
+                }
+                else
+                {
+                    current.IsDeleted = true;
+                    current.IsSyncOn = false;
+                    current.DeletedAt ??= DateTimeOffset.UtcNow;
+                    current.LastModifiedAt = current.DeletedAt.Value;
+                }
                 userDevices.Update(current);
             }
             foreach (var deviceId in activeDeviceIds.Where(id => id != _identity.LocalDeviceId))
             {
                 if (currentLinks.Any(link => link.DeviceId == deviceId))
                     continue;
+                var relationship = relationshipByDevice[deviceId];
                 await userDevices.AddAsync(new UserDevice
                 {
                     UserId = snapshot.PrimaryUserId,
                     DeviceId = deviceId,
-                    IsSyncOn = true,
+                    IsSyncOn = relationship.IsSyncOn,
                     IsDeleted = false,
-                    LastModifiedAt = DateTimeOffset.UtcNow
+                    DeletedAt = null,
+                    LastModifiedAt = UtcDateTimeUtil.ToUtc(relationship.LastModifiedAt)
                 }, ct);
             }
 
             await _localLinks.EnsureLocalUserDeviceAsync(devices, localUserDevices, snapshot.PrimaryUserId, ct);
 
-            var syncState = await syncStates.GetAsync(snapshot.PrimaryUserId, ct);
-            if (syncState is null)
-            {
-                syncState = new UserSyncState { UserId = snapshot.PrimaryUserId, NextOriginRevision = 1 };
-                await syncStates.AddAsync(syncState, ct);
-            }
-            else if (syncState.LocalOriginInstanceId != Guid.Empty && syncState.LocalOriginInstanceId != _identity.OriginInstanceId)
-            {
+            var existingSyncState = await syncStates.GetAsync(snapshot.PrimaryUserId, ct);
+            var syncState = existingSyncState ?? new UserSyncState { UserId = snapshot.PrimaryUserId, NextOriginRevision = 1 };
+            if (syncState.LocalOriginInstanceId != Guid.Empty && syncState.LocalOriginInstanceId != _identity.OriginInstanceId)
                 throw new InvalidDataException("The local snapshot state belongs to a different installation origin.");
-            }
             syncState.LocalOriginInstanceId = _identity.OriginInstanceId;
             syncState.NextOriginRevision = Math.Max(1, syncState.NextOriginRevision);
             syncState.LastPublishedContentHash = [];
             syncState.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
+            if (existingSyncState is null)
+                await syncStates.AddAsync(syncState, ct);
+            else
+                syncStates.Update(syncState);
 
             // Enrollment has authenticated the complete canonical graph and bound it to this exact
             // installation identity. Create the installation-local signed checkpoint before exposing
@@ -309,20 +323,21 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             throw;
         }
 
-        versionClock.Observe(
-            validated.PendingSnapshots
-                .Select(item => item.Envelope.User.GeneralUserDataVersion)
-                .Prepend(validated.User.GeneralUserDataVersion));
-
-        foreach (var device in await devices.ListTrustedUnblockedAsync(ct))
-            syncIdentities.TryAdd(device);
         try
         {
+            versionClock.Observe(
+                validated.PendingSnapshots
+                    .Select(item => item.Envelope.User.GeneralUserDataVersion)
+                    .Prepend(validated.User.GeneralUserDataVersion));
+
+            foreach (var device in await devices.ListTrustedUnblockedAsync(CancellationToken.None))
+                syncIdentities.TryAdd(device);
             await services.GetRequiredService<IPendingSyncActivationService>().ActivatePendingAsync(CancellationToken.None);
         }
-        catch
+        catch (Exception ex)
         {
             // The committed queue remains discoverable for normal retry.
+            BackendDebugLog.Error($"Enrollment was imported but refreshing sync state failed: {ex.Message}", ex);
         }
     }
 
@@ -364,6 +379,25 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         foreach (var auth in snapshot.MembershipAuthorizations)
             ValidateAuthorization(auth, snapshot.PrimaryUserId);
 
+        if (snapshot.UserDevices.Select(row => row.DeviceId).Distinct().Count() != snapshot.UserDevices.Count)
+            throw new InvalidDataException("The enrollment bootstrap contains duplicate user-device relationships.");
+        foreach (var relationship in snapshot.UserDevices)
+            ValidateUserDeviceRelationship(relationship, snapshot.PrimaryUserId);
+        var activeDeviceIds = snapshot.MembershipAuthorizations
+            .Where(row => row.IsActive)
+            .Select(row => row.DeviceId)
+            .Distinct()
+            .OrderBy(id => id)
+            .ToArray();
+        var relationshipDeviceIds = snapshot.UserDevices
+            .Where(row => !row.IsDeleted)
+            .Select(row => row.DeviceId)
+            .Distinct()
+            .OrderBy(id => id)
+            .ToArray();
+        if (!activeDeviceIds.SequenceEqual(relationshipDeviceIds))
+            throw new InvalidDataException("The enrollment bootstrap user-device relationships do not match active membership.");
+
         var targetAuthorization = snapshot.MembershipAuthorizations.SingleOrDefault(row => row.IsActive && row.DeviceId == _identity.LocalDeviceId && row.OriginInstanceId == _identity.OriginInstanceId)
             ?? throw new InvalidDataException("The target installation has no active authoritative membership authorization.");
         if (!Hashing.Verify(targetAuthorization.SignPublicKeyHash, Hashing.SHA256Hash(_identity.SignPublicKey)) ||
@@ -379,15 +413,30 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         foreach (var cutoff in snapshot.RemovalCutoffs)
             ValidateCutoff(cutoff, authById);
 
+        PasswordManagerLocal.Common.Backend.Sync.Tombstones.TombstoneGarbageCollectionRules.ValidateEvidenceStructure(
+            userSnapshot.UId, userSnapshot.KeyEpoch, userSnapshot.MembershipEpoch,
+            snapshot.MembershipAuthorizations.Select(ToAuthorization).ToArray(),
+            snapshot.RemovalCutoffs.Select(ToCutoff).ToArray(), []);
+
         var controlItems = new List<ValidatedControlOperation>();
-        foreach (var operationSnapshot in snapshot.ControlOperations)
+        // Legacy sources may still include rejected forensic rows. They carry no
+        // bootstrap authority and must not be parsed, applied, or relayed here.
+        foreach (var operationSnapshot in snapshot.ControlOperations.Where(operation => operation.Status != UserControlOperationStatus.Rejected))
         {
             var envelope = UserControlOperationEnvelopeUtil.Deserialize(operationSnapshot.EnvelopePayload);
             if (envelope.UserId != snapshot.PrimaryUserId)
                 throw new InvalidDataException("A control operation belongs to another user.");
             var authorization = FindAuthorization(snapshot.MembershipAuthorizations, envelope.OriginDeviceId, envelope.OriginInstanceId, envelope.PreviousMembershipEpoch, envelope.PreviousKeyEpoch);
             UserControlOperationEnvelopeUtil.VerifyWithSigningKey(envelope, authorization.SignPublicKey);
-            ValidateControlPayload(envelope);
+            try
+            {
+                ValidateControlPayload(envelope, authById);
+            }
+            catch (InvalidDataException ex)
+            {
+                throw new InvalidDataException(
+                    $"Enrollment history operation {envelope.OperationId} ({envelope.OperationType}) failed validation: {ex.Message}", ex);
+            }
             if (envelope.OperationType == UserControlOperationType.AccountDeletion)
                 throw new InvalidDataException("A deleted account identity cannot be imported through enrollment bootstrap.");
             if (!authorization.IsActive)
@@ -417,7 +466,8 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             additionPayload.DeviceType != _identity.DeviceType || additionPayload.ResultingMembershipEpoch != userSnapshot.MembershipEpoch)
             throw new InvalidDataException("The authorizing addition payload does not authorize this exact target installation.");
 
-        ValidateAppliedTransitionChains(controlItems, userSnapshot);
+        ValidateAppliedTransitionChains(controlItems, userSnapshot,
+            snapshot.MembershipAuthorizations.Single(row => row.IsGenesis).MinimumKeyEpoch);
 
         var controlState = snapshot.ControlStates.SingleOrDefault(row => row.UserId == snapshot.PrimaryUserId)
             ?? throw new InvalidDataException("The authoritative control state is missing.");
@@ -429,7 +479,7 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         {
             if (!Enum.IsDefined(pending.Status))
                 throw new InvalidDataException("A retained user snapshot has an invalid status.");
-            if (pending.Status == UserSyncSnapshotStatus.Quarantined)
+            if (pending.Status == UserSyncSnapshotStatus.IsolatedFork)
             {
                 if (string.IsNullOrWhiteSpace(pending.QuarantineReason) ||
                     pending.ConflictingSnapshotHash is { Length: not CryptographyConstants.Sha256HashSizeInBytes })
@@ -534,6 +584,26 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         target.GenerateIntegrityHash();
     }
 
+    private void ValidateUserDeviceRelationship(DeviceEnrollmentUserDeviceSnapshot row, Guid userId)
+    {
+        if (row.UserId != userId || row.DeviceId == Guid.Empty || row.LastModifiedAt == default || row.IsDeleted || row.DeletedAt is not null)
+            throw new InvalidDataException("The enrollment bootstrap contains an invalid active user-device relationship.");
+
+        var relationship = new UserDevice
+        {
+            UserId = row.UserId,
+            DeviceId = row.DeviceId,
+            IsSyncOn = row.IsSyncOn,
+            IsDeleted = false,
+            DeletedAt = null,
+            LastModifiedAt = UtcDateTimeUtil.ToUtc(row.LastModifiedAt)
+        };
+        relationship.GenerateIntegrityHash();
+        if (row.IntegrityHash.Length != CryptographyConstants.Sha256HashSizeInBytes ||
+            !Hashing.Verify(row.IntegrityHash, relationship.IntegrityHash))
+            throw new InvalidDataException("The enrollment bootstrap user-device relationship integrity hash is invalid.");
+    }
+
     private void ValidateAuthorization(DeviceEnrollmentMembershipAuthorizationSnapshot row, Guid userId)
     {
         if (row.AuthorizationId == Guid.Empty || row.UserId != userId || row.DeviceId == Guid.Empty || row.OriginInstanceId == Guid.Empty ||
@@ -544,8 +614,10 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             row.StartedMembershipEpoch <= 0 || row.MinimumKeyEpoch <= 0 ||
             (row.EndedMembershipEpoch.HasValue && row.EndedMembershipEpoch <= row.StartedMembershipEpoch) ||
             row.IsActive == row.EndedMembershipEpoch.HasValue ||
-            (!row.IsGenesis && (!row.AdditionOperationId.HasValue || row.AdditionOperationHash is not { Length: CryptographyConstants.Sha256HashSizeInBytes })) ||
-            (row.IsGenesis && row.StartedMembershipEpoch != 1) ||
+            (!row.IsGenesis && (!row.AdditionOperationId.HasValue || row.AuthorizationId != row.AdditionOperationId.Value ||
+                                row.AdditionOperationHash is not { Length: CryptographyConstants.Sha256HashSizeInBytes })) ||
+            (row.IsGenesis && (row.StartedMembershipEpoch != 1 || row.AdditionOperationId is not null ||
+                               row.AdditionOperationHash is { Length: > 0 })) ||
             (!row.IsActive && (!row.RemovalOperationId.HasValue || row.RemovalOperationHash is not { Length: CryptographyConstants.Sha256HashSizeInBytes })))
             throw new InvalidDataException("The enrollment bootstrap contains invalid membership history.");
     }
@@ -570,7 +642,9 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         return ToAuthorization(row);
     }
 
-    private void ValidateControlPayload(UserControlOperationEnvelope envelope)
+    private void ValidateControlPayload(
+        UserControlOperationEnvelope envelope,
+        IReadOnlyDictionary<Guid, DeviceEnrollmentMembershipAuthorizationSnapshot> authorizations)
     {
         switch (envelope.OperationType)
         {
@@ -596,6 +670,26 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
                 if (payload.UserId != envelope.UserId || payload.KeyEpoch != envelope.PreviousKeyEpoch || payload.PreviousMembershipEpoch != envelope.PreviousMembershipEpoch ||
                     payload.ResultingMembershipEpoch != envelope.ResultingMembershipEpoch)
                     throw new InvalidDataException("A device-removal payload does not match its immutable header.");
+                foreach (var authorizationId in payload.Origins.Select(origin => origin.AuthorizationId).Distinct())
+                {
+                    if (!authorizations.TryGetValue(authorizationId, out var target))
+                        throw new InvalidDataException("The removal references a missing installation authorization.");
+                    DeviceRemovalEvidenceUtil.ValidateAuthorization(payload, ToAuthorization(target));
+                }
+                foreach (var origin in payload.Origins)
+                {
+                    if (!authorizations.TryGetValue(origin.AuthorizationId, out var authorization) ||
+                        authorization.UserId != payload.UserId || authorization.DeviceId != payload.RemovedDeviceId ||
+                        authorization.OriginInstanceId != origin.OriginInstanceId ||
+                        !Hashing.Verify(authorization.SignPublicKeyHash, origin.SignPublicKeyHash) ||
+                        (authorization.IsGenesis
+                            ? authorization.StartedMembershipEpoch != 1 || origin.AdditionOperationId is not null ||
+                              origin.AdditionOperationHash is not null
+                            : authorization.AdditionOperationId is null || authorization.AdditionOperationHash is null ||
+                              origin.AdditionOperationId != authorization.AdditionOperationId || origin.AdditionOperationHash is null ||
+                              !Hashing.Verify(origin.AdditionOperationHash, authorization.AdditionOperationHash)))
+                        throw new InvalidDataException("A signed removal cutoff conflicts with immutable membership history.");
+                }
                 break;
             }
             default:
@@ -603,24 +697,24 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         }
     }
 
-    private void ValidateAppliedTransitionChains(IReadOnlyList<ValidatedControlOperation> operations, DeviceEnrollmentUserSnapshot user)
+    private void ValidateAppliedTransitionChains(IReadOnlyList<ValidatedControlOperation> operations, DeviceEnrollmentUserSnapshot user, long snapshotGenesisKeyEpoch)
     {
         var membership = operations.Where(item => item.Snapshot.Status == UserControlOperationStatus.Applied &&
             item.Envelope.OperationType is UserControlOperationType.DeviceAddition or UserControlOperationType.DeviceRemoval).ToList();
-        for (var epoch = 1L; epoch < user.MembershipEpoch; epoch++)
-        {
-            if (membership.Count(item => item.Envelope.PreviousMembershipEpoch == epoch) != 1)
-                throw new InvalidDataException("The applied membership transition history is incomplete or ambiguous.");
-        }
-        if (membership.Any(item => item.Envelope.ResultingMembershipEpoch > user.MembershipEpoch))
-            throw new InvalidDataException("The membership transition history is ahead of canonical state.");
+        if (membership.Count != user.MembershipEpoch - 1 ||
+            membership.Select(item => item.Envelope.PreviousMembershipEpoch).Distinct().Count() != membership.Count ||
+            membership.Any(item => item.Envelope.PreviousMembershipEpoch < 1 ||
+                item.Envelope.ResultingMembershipEpoch > user.MembershipEpoch))
+            throw new InvalidDataException("The applied membership transition history is incomplete or ambiguous.");
 
         var key = operations.Where(item => item.Snapshot.Status == UserControlOperationStatus.Applied && item.Envelope.OperationType == UserControlOperationType.KeyEpochReplacement).ToList();
-        for (var epoch = 1L; epoch < user.KeyEpoch; epoch++)
-        {
-            if (key.Count(item => item.Envelope.PreviousKeyEpoch == epoch) != 1)
-                throw new InvalidDataException("The applied key transition history is incomplete or ambiguous.");
-        }
+        // A verified local-only recovery starts a new genesis in a fresh key namespace.
+        // Every transition from that genesis must still be present and unambiguous.
+        if (key.Count != user.KeyEpoch - snapshotGenesisKeyEpoch ||
+            key.Select(item => item.Envelope.PreviousKeyEpoch).Distinct().Count() != key.Count ||
+            key.Any(item => item.Envelope.PreviousKeyEpoch < snapshotGenesisKeyEpoch ||
+                item.Envelope.ResultingKeyEpoch > user.KeyEpoch))
+            throw new InvalidDataException("The applied key transition history is incomplete or ambiguous.");
     }
 
     private void ValidateDeviceSnapshot(DeviceEnrollmentDeviceSnapshot source)
@@ -645,11 +739,9 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
     private async Task UpsertRemoteDeviceAsync(IDeviceRepository devices, IUserDeviceRepository userDevices, DeviceEnrollmentDeviceSnapshot source, CancellationToken ct)
     {
         var existing = await devices.GetByIdAsync(source.Id, ct);
+        var isNew = existing is null;
         if (existing is null)
-        {
             existing = new Device { Id = source.Id };
-            await devices.AddAsync(existing, ct);
-        }
         else
         {
             var identityDiffers = (!existing.SignPublicKey.SequenceEqual(source.SignPublicKey) && existing.SignPublicKey.Length != 0) ||
@@ -674,6 +766,10 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         existing.LastInvalidSyncAttemptAt = UtcDateTimeUtil.ToUtc(source.LastInvalidSyncAttemptAt);
         existing.LastModifiedAt = UtcDateTimeUtil.ToUtc(source.LastModifiedAt);
         existing.GenerateIntegrityHash();
+        if (isNew)
+            await devices.AddAsync(existing, ct);
+        else
+            devices.Update(existing);
     }
 
     private UserSyncSnapshot CreateSnapshotRow(ValidatedPendingSnapshot item, UserSnapshotEnvelope envelope) => new()
@@ -726,8 +822,12 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         TlsCertFingerprint = SyncIdentityUtil.NormalizeFingerprint(row.TlsCertFingerprint), DeviceType = row.DeviceType,
         StartedMembershipEpoch = row.StartedMembershipEpoch, EndedMembershipEpoch = row.EndedMembershipEpoch,
         MinimumKeyEpoch = row.MinimumKeyEpoch, MaximumKeyEpoch = row.MaximumKeyEpoch, IsActive = row.IsActive, IsGenesis = row.IsGenesis,
-        AdditionOperationId = row.AdditionOperationId, AdditionOperationHash = row.AdditionOperationHash?.ToArray(),
-        RemovalOperationId = row.RemovalOperationId, RemovalOperationHash = row.RemovalOperationHash?.ToArray(),
+        AdditionOperationId = row.AdditionOperationId,
+        AdditionOperationHash = row.IsGenesis && row.AdditionOperationId is null && row.AdditionOperationHash is { Length: 0 }
+            ? null : row.AdditionOperationHash?.ToArray(),
+        RemovalOperationId = row.RemovalOperationId,
+        RemovalOperationHash = row.RemovalOperationHash is { Length: > 0 }
+            ? row.RemovalOperationHash.ToArray() : null,
         CreatedAtUtc = UtcDateTimeUtil.ToUtc(row.CreatedAtUtc), EndedAtUtc = UtcDateTimeUtil.ToUtc(row.EndedAtUtc)
     };
 

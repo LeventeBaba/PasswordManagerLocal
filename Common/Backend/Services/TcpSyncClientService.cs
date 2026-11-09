@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using Google.Protobuf;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Presence;
@@ -26,15 +28,18 @@ public sealed class TcpSyncClientService : ISyncTransportClientService
     private readonly IDeviceIdentityService _identity;
     private readonly ISyncDeviceIdentityService _syncDeviceIdentities;
     private readonly IDevicePresenceRegistry _presenceRegistry;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     public TcpSyncClientService(
         IDeviceIdentityService identity,
         ISyncDeviceIdentityService syncDeviceIdentities,
-        IDevicePresenceRegistry presenceRegistry)
+        IDevicePresenceRegistry presenceRegistry,
+        IServiceScopeFactory scopeFactory)
     {
         _identity = identity ?? throw new ArgumentNullException(nameof(identity));
         _syncDeviceIdentities = syncDeviceIdentities ?? throw new ArgumentNullException(nameof(syncDeviceIdentities));
         _presenceRegistry = presenceRegistry ?? throw new ArgumentNullException(nameof(presenceRegistry));
+        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
     }
 
 
@@ -126,8 +131,7 @@ public sealed class TcpSyncClientService : ISyncTransportClientService
         {
             await using var connection = await ConnectAsync(host, port, serverFingerprintHex, ct);
 
-            var hello = await SendHelloAsync(connection.Stream, ct);
-            RefreshOutgoingPresence(host, port, serverFingerprintHex, hello);
+            await AuthenticateSyncPeerAsync(connection, host, port, ct);
 
             await WriteFrameAsync(connection.Stream, SyncTcpMessageType.PushDeltaStart, ct);
 
@@ -145,29 +149,31 @@ public sealed class TcpSyncClientService : ISyncTransportClientService
             var expectedSnapshots = list.Where(delta => delta.SnapshotOriginRevision > 0).ToArray();
             foreach (var expected in expectedSnapshots)
             {
-                var receipt = ack.UserSnapshotReceipts.FirstOrDefault(candidate =>
+                var receipts = ack.UserSnapshotReceipts.Where(candidate =>
                     Guid.TryParse(candidate.UserId, out var userId) && userId == expected.SnapshotUserId &&
                     Guid.TryParse(candidate.OriginDeviceId, out var originDeviceId) && originDeviceId == expected.SnapshotOriginDeviceId &&
                     Guid.TryParse(candidate.OriginInstanceId, out var originInstanceId) && originInstanceId == expected.SnapshotOriginInstanceId &&
-                    candidate.OriginRevision == expected.SnapshotOriginRevision &&
-                    CryptographicOperations.FixedTimeEquals(candidate.SnapshotHash.ToByteArray(), expected.SnapshotHash));
+                    candidate.OriginRevision == expected.SnapshotOriginRevision).ToArray();
 
-                if (receipt is null || !IsDurableSnapshotReceipt(receipt.State))
+                if (receipts.Length == 0 || receipts.Any(receipt =>
+                    !IsDurableSnapshotReceipt(receipt.State) ||
+                    !CryptographicOperations.FixedTimeEquals(receipt.SnapshotHash.Span, expected.SnapshotHash)))
                     return false;
             }
 
             var expectedOperations = list.Where(delta => delta.ControlOperationOriginSequence > 0).ToArray();
             foreach (var expected in expectedOperations)
             {
-                var receipt = ack.UserControlOperationReceipts.FirstOrDefault(candidate =>
-                    Guid.TryParse(candidate.OperationId, out var operationId) && operationId == expected.ControlOperationId &&
-                    Guid.TryParse(candidate.UserId, out var userId) && userId == expected.ControlOperationUserId &&
-                    Guid.TryParse(candidate.OriginDeviceId, out var originDeviceId) && originDeviceId == expected.ControlOperationOriginDeviceId &&
-                    Guid.TryParse(candidate.OriginInstanceId, out var originInstanceId) && originInstanceId == expected.ControlOperationOriginInstanceId &&
-                    candidate.OriginSequence == expected.ControlOperationOriginSequence &&
-                    CryptographicOperations.FixedTimeEquals(candidate.OperationHash.ToByteArray(), expected.ControlOperationHash));
+                var receipts = ack.UserControlOperationReceipts.Where(candidate =>
+                    Guid.TryParse(candidate.OperationId, out var operationId) && operationId == expected.ControlOperationId).ToArray();
 
-                if (receipt is null || !IsDurableControlOperationReceipt(receipt.State))
+                if (receipts.Length == 0 || receipts.Any(receipt =>
+                    !Guid.TryParse(receipt.UserId, out var userId) || userId != expected.ControlOperationUserId ||
+                    !Guid.TryParse(receipt.OriginDeviceId, out var originDeviceId) || originDeviceId != expected.ControlOperationOriginDeviceId ||
+                    !Guid.TryParse(receipt.OriginInstanceId, out var originInstanceId) || originInstanceId != expected.ControlOperationOriginInstanceId ||
+                    receipt.OriginSequence != expected.ControlOperationOriginSequence ||
+                    !IsDurableControlOperationReceipt(receipt.State) ||
+                    !CryptographicOperations.FixedTimeEquals(receipt.OperationHash.Span, expected.ControlOperationHash)))
                     return false;
             }
 
@@ -223,14 +229,14 @@ public sealed class TcpSyncClientService : ISyncTransportClientService
         }
 
         await using var connection = await ConnectAsync(host, port, serverFingerprintHex, ct);
-        var hello = await SendHelloAsync(connection.Stream, ct);
-        RefreshOutgoingPresence(host, port, serverFingerprintHex, hello);
+        await AuthenticateSyncPeerAsync(connection, host, port, ct);
         await WriteFrameAsync(connection.Stream, SyncTcpMessageType.UserSnapshotInventoryRequest, request, ct);
         var frame = await ReadRequiredAsync(connection.Stream, SyncTcpMessageType.UserSnapshotInventoryReply, ct);
         var reply = frame.Parse(UserSnapshotInventoryExchangeReply.Parser);
         if (reply.Users.Count > SyncConstants.MaxUserSnapshotInventoryUsers ||
             reply.Users.Sum(user => user.Revisions.Count) > SyncConstants.MaxUserSnapshotInventoryEntries ||
-            reply.RequestedSnapshots.Count > SyncConstants.MaxUserSnapshotRequestsPerCall)
+            reply.RequestedSnapshots.Count > SyncConstants.MaxUserSnapshotRequestsPerCall ||
+            reply.EndpointHints.Count > SyncConstants.MaxPeerEndpointHints)
         {
             throw new InvalidDataException("The remote user snapshot inventory exceeds the protocol limits.");
         }
@@ -251,8 +257,7 @@ public sealed class TcpSyncClientService : ISyncTransportClientService
             throw new InvalidDataException("Too many user snapshots were requested.");
 
         await using var connection = await ConnectAsync(host, port, serverFingerprintHex, ct);
-        var hello = await SendHelloAsync(connection.Stream, ct);
-        RefreshOutgoingPresence(host, port, serverFingerprintHex, hello);
+        await AuthenticateSyncPeerAsync(connection, host, port, ct);
         await WriteFrameAsync(connection.Stream, SyncTcpMessageType.UserSnapshotRequestBatch, request, ct);
         await ReadRequiredAsync(connection.Stream, SyncTcpMessageType.UserSnapshotRelayStart, ct);
 
@@ -303,8 +308,7 @@ public sealed class TcpSyncClientService : ISyncTransportClientService
         }
 
         await using var connection = await ConnectAsync(host, port, serverFingerprintHex, ct);
-        var hello = await SendHelloAsync(connection.Stream, ct);
-        RefreshOutgoingPresence(host, port, serverFingerprintHex, hello);
+        await AuthenticateSyncPeerAsync(connection, host, port, ct);
         await WriteFrameAsync(connection.Stream, SyncTcpMessageType.UserControlOperationInventoryRequest, request, ct);
         var frame = await ReadRequiredAsync(connection.Stream, SyncTcpMessageType.UserControlOperationInventoryReply, ct);
         var reply = frame.Parse(UserControlOperationInventoryExchangeReply.Parser);
@@ -330,8 +334,7 @@ public sealed class TcpSyncClientService : ISyncTransportClientService
             throw new InvalidDataException("Too many control operations were requested.");
 
         await using var connection = await ConnectAsync(host, port, serverFingerprintHex, ct);
-        var hello = await SendHelloAsync(connection.Stream, ct);
-        RefreshOutgoingPresence(host, port, serverFingerprintHex, hello);
+        await AuthenticateSyncPeerAsync(connection, host, port, ct);
         await WriteFrameAsync(connection.Stream, SyncTcpMessageType.UserControlOperationRequestBatch, request, ct);
         await ReadRequiredAsync(connection.Stream, SyncTcpMessageType.UserControlOperationRelayStart, ct);
 
@@ -389,25 +392,28 @@ public sealed class TcpSyncClientService : ISyncTransportClientService
         return hello;
     }
 
-    private void RefreshOutgoingPresence(
+    private async Task AuthenticateSyncPeerAsync(
+        TcpSyncClientConnection connection,
         string host,
         int port,
-        string serverFingerprintHex,
-        HelloReply hello)
+        CancellationToken ct)
     {
-        if (!_syncDeviceIdentities.TryGetByFingerprint(serverFingerprintHex, out var device) ||
-            device is null ||
-            !IsExpectedPeerIdentity(
-                hello,
-                Convert.ToHexString(Hashing.SHA256Hash(device.SignPublicKey)),
-                device.SignPublicKey))
+        var serverFingerprintHex = connection.ServerFingerprintHex;
+        var hello = await SendHelloAsync(connection.Stream, ct);
+        if (!_syncDeviceIdentities.TryGetByFingerprint(serverFingerprintHex, out var device) || device is null)
         {
-            BackendDebugLog.DebugRateLimited(
-                $"outgoing-presence-identity-mismatch:{FingerprintUtil.NormalizeOrEmpty(serverFingerprintHex)}",
-                TimeSpan.FromSeconds(10),
-                $"A successful outgoing TLS/hello session was not used for presence because the peer identity did not match the cached trusted device. FingerprintPrefix={FingerprintPrefix(serverFingerprintHex)}.",
-                "Presence");
-            return;
+            // The worker can evict idle peers from the cache. Recover the expected identity
+            // from local storage without accepting anything from the peer's Hello as trust.
+            using var scope = _scopeFactory.CreateScope();
+            device = await scope.ServiceProvider.GetRequiredService<IDeviceRepository>()
+                .GetByTlsCertFingerprintAsync(serverFingerprintHex, ct);
+        }
+
+        if (device is null || !device.IsTrusted || device.IsBlocked || device.Id == _identity.LocalDeviceId ||
+            device.SignPublicKey.Length == 0 ||
+            !IsExpectedPeerIdentity(hello, Convert.ToHexString(Hashing.SHA256Hash(device.SignPublicKey)), device.SignPublicKey))
+        {
+            throw new InvalidDataException("The synchronization hello does not match the trusted identity for this TLS certificate.");
         }
 
         _presenceRegistry.RefreshAuthenticated(
@@ -475,7 +481,16 @@ public sealed class TcpSyncClientService : ISyncTransportClientService
 
         await WriteFrameAsync(connection.Stream, SyncTcpMessageType.GetDeviceEnrollmentInfoRequest, request, ct);
         var frame = await ReadRequiredAsync(connection.Stream, SyncTcpMessageType.GetDeviceEnrollmentInfoReply, ct);
-        return frame.Parse(GetDeviceEnrollmentInfoReply.Parser);
+        var reply = frame.Parse(GetDeviceEnrollmentInfoReply.Parser);
+        if (reply.Ok && !string.Equals(
+            FingerprintUtil.NormalizeOrEmpty(reply.TlsCertFingerprint),
+            connection.ServerFingerprintHex,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            throw new AuthenticationException("The enrollment fingerprint does not match the connected TLS certificate.");
+        }
+
+        return reply;
     }
 
 
@@ -535,12 +550,13 @@ public sealed class TcpSyncClientService : ISyncTransportClientService
                 CertificateRevocationCheckMode = X509RevocationMode.NoCheck
             }, handshakeTimeout.Token);
 
-            var serverFingerprint = stream.RemoteCertificate is null
-                ? string.Empty
-                : _identity.GetFingerprintHex(new X509Certificate2(stream.RemoteCertificate));
+            var remoteCertificate = stream.RemoteCertificate
+                ?? throw new AuthenticationException("The server did not present a TLS certificate.");
+            using var certificate = new X509Certificate2(remoteCertificate);
+            var serverFingerprint = FingerprintUtil.Normalize(_identity.GetFingerprintHex(certificate));
 
-            BackendDebugLog.Info($"TLS authentication completed. Local={localEndpoint}, Remote={remoteEndpoint}, ServerFingerprintPrefix={FingerprintUtil.Normalize(serverFingerprint)[..Math.Min(16, FingerprintUtil.Normalize(serverFingerprint).Length)]}.");
-            return new TcpSyncClientConnection(client, stream);
+            BackendDebugLog.Info($"TLS authentication completed. Local={localEndpoint}, Remote={remoteEndpoint}, ServerFingerprintPrefix={FingerprintPrefix(serverFingerprint)}.");
+            return new TcpSyncClientConnection(client, stream, serverFingerprint);
         }
         catch
         {

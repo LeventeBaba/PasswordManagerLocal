@@ -8,44 +8,14 @@ namespace PasswordManagerLocal.Common.Backend.Utils;
 
 internal static class DataCodec
 {
-    internal static Task<byte[]> SerializeCompressEncryptAsync<T>(
+    internal static async Task<byte[]> SerializeCompressEncryptAsync<T>(
         T value,
         EncryptionKey key,
         JsonTypeInfo<T> typeInfo,
         int level = 11,
         byte[]? associatedData = null,
         int aesFrameSize = CryptographyConstants.DefaultAesFrameSizeBytes,
-        CancellationToken ct = default) where T : class =>
-        SerializeCompressEncryptCoreAsync(
-            value,
-            key,
-            (stream, token) => JsonSerializer.SerializeAsync(stream, value, typeInfo, token),
-            level,
-            associatedData,
-            aesFrameSize,
-            ct);
-
-    internal static Task<T?> DecryptDecompressDeserializeAsync<T>(
-        byte[] blob,
-        EncryptionKey key,
-        JsonTypeInfo<T> typeInfo,
-        byte[]? associatedData = null,
-        CancellationToken ct = default) where T : class =>
-        DecryptDecompressDeserializeCoreAsync(
-            blob,
-            key,
-            (stream, token) => JsonSerializer.DeserializeAsync(stream, typeInfo, token),
-            associatedData,
-            ct);
-
-    private static async Task<byte[]> SerializeCompressEncryptCoreAsync<T>(
-        T value,
-        EncryptionKey key,
-        Func<Stream, CancellationToken, Task> serializeAsync,
-        int level,
-        byte[]? associatedData,
-        int aesFrameSize,
-        CancellationToken ct) where T : class
+        CancellationToken ct = default) where T : class
     {
         await using var producer = new ChannelStream();
         using var cipherOutput = new MemoryStream();
@@ -55,8 +25,8 @@ internal static class DataCodec
         {
             await using (var compressionStream = await CompressionUtil.OpenWriteAsync(producer, level, leaveOpen: true))
             {
-                UtcDateTimeUtil.NormalizeObjectGraph(value);
-                await serializeAsync(compressionStream, ct);
+                UtcDateTimeUtil.NormalizeObjectGraph(value, typeInfo);
+                await JsonSerializer.SerializeAsync(compressionStream, value, typeInfo, ct);
                 await compressionStream.FlushAsync(ct);
             }
 
@@ -80,12 +50,12 @@ internal static class DataCodec
         }
     }
 
-    private static async Task<T?> DecryptDecompressDeserializeCoreAsync<T>(
+    internal static async Task<T?> DecryptDecompressDeserializeAsync<T>(
         byte[] blob,
         EncryptionKey key,
-        Func<Stream, CancellationToken, ValueTask<T?>> deserializeAsync,
-        byte[]? associatedData,
-        CancellationToken ct) where T : class
+        JsonTypeInfo<T> typeInfo,
+        byte[]? associatedData = null,
+        CancellationToken ct = default) where T : class
     {
         using var input = new MemoryStream(blob, writable: false);
         await using var plaintextPipe = new ChannelStream();
@@ -94,7 +64,7 @@ internal static class DataCodec
         try
         {
             await using var decompressionStream = await CompressionUtil.OpenReadAsync(plaintextPipe, leaveOpen: true);
-            var value = await deserializeAsync(decompressionStream, ct);
+            var value = await JsonSerializer.DeserializeAsync(decompressionStream, typeInfo, ct);
 
             // Consume the complete authenticated and compressed stream before accepting
             // the decoded object. This both authenticates every AES-GCM frame and prevents
@@ -103,7 +73,7 @@ internal static class DataCodec
             await DrainSensitiveStreamAsync(decompressionStream, ct);
             await decryptionTask;
 
-            return value is null ? null : UtcDateTimeUtil.NormalizeObjectGraph(value);
+            return value is null ? null : UtcDateTimeUtil.NormalizeObjectGraph(value, typeInfo);
         }
         catch
         {

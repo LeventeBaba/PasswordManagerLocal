@@ -33,12 +33,10 @@ public sealed class WindowsAgentAdmissionRequestHandler : IWindowsIpcRequestHand
         if (!_admissionGate.TryEnter(out var admission))
         {
             return Task.FromResult(IpcResponseEnvelope.Failure(
-                context.Request.CorrelationId,
                 new IpcError(
                     IpcErrorCode.AgentUnavailable,
                     IpcErrorCategory.Availability,
                     _localizer.GetString(AgentLocalizationKeys.IpcAdmissionClosed),
-                    context.Request.CorrelationId,
                     DateTimeOffset.UtcNow,
                     IsRetryable: true,
                     RequiresProcessRestart: false)));

@@ -1,6 +1,6 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSec.Cryptography;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
@@ -49,13 +49,17 @@ public sealed class AuthoritativeMembershipControlTests
     [TestCategory("Integration")]
     public async Task DatabaseConstraint_BlocksCrossTypeActiveTransitionsFromSameMembershipBase()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var userId = Guid.NewGuid();
         await database.UserControlOperations.AddAsync(CreateStoredRow(userId, UserControlOperationType.DeviceAddition, 1));
         await database.UserControlOperations.AddAsync(CreateStoredRow(userId, UserControlOperationType.DeviceRemoval, 1));
 
-        await MSTestAssert.ThrowsExactlyAsync<DbUpdateException>(() => database.UnitOfWork.SaveChangesAsync());
+        var conflict = await MSTestAssert.ThrowsExactlyAsync<StorageWriteException>(
+            () => database.UnitOfWork.SaveChangesAsync());
+        MSTestAssert.AreEqual(StorageWriteException.FailureKind.UniqueKeyConflict, conflict.Kind);
+        MSTestAssert.AreEqual(typeof(UserControlOperation), conflict.RowType);
         database.UnitOfWork.ClearTrackedChanges();
+        MSTestAssert.IsEmpty(await database.UserControlOperations.ListForUserAsync(userId));
 
         var first = CreateStoredRow(userId, UserControlOperationType.DeviceAddition, 1);
         var second = CreateStoredRow(userId, UserControlOperationType.DeviceRemoval, 1);
@@ -64,6 +68,7 @@ public sealed class AuthoritativeMembershipControlTests
         await database.UserControlOperations.AddAsync(first);
         await database.UserControlOperations.AddAsync(second);
         await database.UnitOfWork.SaveChangesAsync();
+        MSTestAssert.HasCount(2, await database.UserControlOperations.ListForUserAsync(userId));
     }
 
     [TestMethod]
@@ -72,7 +77,7 @@ public sealed class AuthoritativeMembershipControlTests
     [TestCategory("Security")]
     public async Task LockedTargetInstallation_AppliesSignedRemovalAndInvalidatesLocalRuntimeAfterCommit()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         using var sourceSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         using var targetSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var source = CreateIdentity(sourceSigningKey, Guid.NewGuid(), Guid.NewGuid(), 'A');
@@ -98,12 +103,13 @@ public sealed class AuthoritativeMembershipControlTests
         var additionOperationId = Guid.NewGuid();
         var additionOperationHash = Enumerable.Repeat((byte)0x25, 32).ToArray();
         var targetAuthorization = CreateAuthorization(user.UId, target, startedMembershipEpoch: 2, isGenesis: false);
+        targetAuthorization.AuthorizationId = additionOperationId;
         targetAuthorization.AdditionOperationId = additionOperationId;
         targetAuthorization.AdditionOperationHash = additionOperationHash;
 
         await database.Users.AddAsync(user);
         await database.Devices.AddAsync(targetDevice);
-        await database.Db.LocalDeviceIdentities.AddAsync(localIdentity);
+        await database.DeviceIdentity.Create(localIdentity);
         await database.UserDevices.AddAsync(targetLink);
         await database.LocalUserDevices.AddAsync(localLink);
         await database.UserMembershipAuthorizations.AddAsync(sourceAuthorization);
@@ -150,7 +156,6 @@ public sealed class AuthoritativeMembershipControlTests
 
         var receipt = await inbox.StoreAndApplyAsync(removalEnvelope, source.LocalDeviceId);
 
-        database.Db.ChangeTracker.Clear();
         var reloadedUser = await database.Users.GetByIdAsync(user.UId);
         var reloadedTarget = await database.UserMembershipAuthorizations.GetByIdAsync(targetAuthorization.AuthorizationId);
         var reloadedLink = await database.UserDevices.GetAsync(user.UId, target.LocalDeviceId);
@@ -195,6 +200,7 @@ public sealed class AuthoritativeMembershipControlTests
 
     private static UserMembershipAuthorization CreateAuthorization(Guid userId, FakeDeviceIdentityService identity, long startedMembershipEpoch, bool isGenesis) => new()
     {
+        AuthorizationId = Guid.NewGuid(),
         UserId = userId, DeviceId = identity.LocalDeviceId, OriginInstanceId = identity.OriginInstanceId,
         SignPublicKey = identity.SignPublicKey.ToArray(), SignPublicKeyHash = Hashing.SHA256Hash(identity.SignPublicKey),
         AgreementPublicKeyHash = Hashing.SHA256Hash(identity.AgreementPublicKey), TlsCertFingerprint = identity.FingerprintHex,

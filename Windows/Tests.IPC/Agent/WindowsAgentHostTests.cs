@@ -482,38 +482,17 @@ public sealed class WindowsAgentHostTests
     }
 
     [TestMethod]
-    public async Task RestartRequiredShutdownRetainsLockEvenAfterSuccessfulCleanup()
+    [DataRow(WindowsAgentShutdownReason.RestartRequired)]
+    [DataRow(WindowsAgentShutdownReason.FatalLifecycleFailure)]
+    public async Task ReplacementShutdownRetainsOwnershipAfterSuccessfulCleanup(WindowsAgentShutdownReason reason)
     {
         var processLock = new FakeProcessInstanceLock();
         await using var host = CreateHost(
-            processLock,
-            new FakeWindowsIpcServerHost(),
-            new FakeWindowsAgentEndpointHost(),
-            new FakeWindowsAgentBackendRuntimeOwner(),
-            new FakeTrayIconController());
+            processLock, new FakeWindowsIpcServerHost(), new FakeWindowsAgentEndpointHost(),
+            new FakeWindowsAgentBackendRuntimeOwner(), new FakeTrayIconController());
         await host.StartAsync();
 
-        var result = await host.RequestShutdownAsync(WindowsAgentShutdownReason.RestartRequired);
-
-        Assert.AreEqual(WindowsAgentShutdownResultKind.Completed, result.Kind);
-        Assert.IsFalse(processLock.IsDisposed);
-        Assert.IsTrue(host.RetainsProcessOwnershipUntilTermination);
-    }
-
-
-    [TestMethod]
-    public async Task FatalLifecycleShutdownRetainsLockUntilProcessTermination()
-    {
-        var processLock = new FakeProcessInstanceLock();
-        await using var host = CreateHost(
-            processLock,
-            new FakeWindowsIpcServerHost(),
-            new FakeWindowsAgentEndpointHost(),
-            new FakeWindowsAgentBackendRuntimeOwner(),
-            new FakeTrayIconController());
-        await host.StartAsync();
-
-        var result = await host.RequestShutdownAsync(WindowsAgentShutdownReason.FatalLifecycleFailure);
+        var result = await host.RequestShutdownAsync(reason);
 
         Assert.AreEqual(WindowsAgentShutdownResultKind.Completed, result.Kind);
         Assert.IsFalse(processLock.IsDisposed);
@@ -641,7 +620,6 @@ public sealed class WindowsAgentHostTests
         Assert.AreEqual(AgentState.Stopped, state.State);
     }
 
-
     [TestMethod]
     public async Task StartupRestoresBackgroundStateBeforeControlAndEndpointAcceptance()
     {
@@ -669,7 +647,6 @@ public sealed class WindowsAgentHostTests
         Assert.IsTrue(operations.IndexOf("background-initialize") < operations.IndexOf("control-start"));
         Assert.IsTrue(operations.IndexOf("background-initialize") < operations.IndexOf("endpoint-start"));
     }
-
 
     [TestMethod]
     public async Task StartupShowsTrayOnlyWhenBackgroundSyncIsEnabled()
@@ -797,7 +774,6 @@ public sealed class WindowsAgentHostTests
         Assert.IsTrue(background.State.IsEnabled);
         Assert.IsFalse(background.State.IsBackgroundLeaseActive);
     }
-
 
     [TestMethod]
     public async Task BackgroundLeaseCleanupFailureRetainsProcessOwnership()

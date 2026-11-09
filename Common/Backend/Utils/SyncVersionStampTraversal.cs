@@ -28,7 +28,10 @@ public static class SyncVersionStampTraversal
     public static IEnumerable<SyncVersionStamp> Enumerate(UserDevicesData data)
     {
         foreach (var item in data.Devices)
+        {
             yield return item.Version;
+            if (item.NameVersion is not null) yield return item.NameVersion;
+        }
         foreach (var item in data.DeletedDevices) yield return item.Version;
     }
 
@@ -45,6 +48,9 @@ public static class SyncVersionStampTraversal
     {
         foreach (var stamp in Enumerate(data))
             SyncVersionStampComparer.Validate(stamp);
+        foreach (var item in data.Devices)
+            if (item.NameVersion is not null && SyncVersionStampComparer.Instance.Compare(item.NameVersion, item.Version) > 0)
+                throw new InvalidDataException("A device name version cannot exceed its record version.");
         TombstoneCausalReferenceUtil.Validate(data);
     }
 }

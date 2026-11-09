@@ -1,85 +1,49 @@
-using Microsoft.EntityFrameworkCore;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
-using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
 namespace PasswordManagerLocal.Common.Backend.Repositories;
 
-public sealed class SyncRouteRepository : ISyncRouteRepository
+internal sealed class SyncRouteRepository(SqliteSession session) : ISyncRouteRepository
 {
-    private readonly DbSet<UserDevice> _userDevices;
-    private readonly DbSet<LocalUserDevice> _localUsers;
+    // Route eligibility is a narrow relationship projection. Peer trust and membership
+    // authorization are evaluated by the calling services.
+    private const string EligibleRoutes = """
+        FROM "UserDevices" ud WHERE ud."DeviceId" = $device AND ud."IsDeleted" = 0 AND ud."IsSyncOn" = 1
+          AND EXISTS (SELECT 1 FROM "LocalUserDevices" lu WHERE lu."UserId" = ud."UserId" AND lu."IsSyncOn" = 1)
+        """;
 
-    public SyncRouteRepository(AppDbContext context)
-    {
-        _userDevices = context.UserDevices;
-        _localUsers = context.LocalUserDevices;
-    }
+    public Task<bool> IsEligibleAsync(Guid userId, Guid remoteDeviceId, CancellationToken ct = default) =>
+        userId == Guid.Empty || remoteDeviceId == Guid.Empty
+            ? Task.FromResult(false)
+            : session.ExistsAsync($"""SELECT 1 {EligibleRoutes} AND ud."UserId" = $user""",
+                ct, ("$device", remoteDeviceId), ("$user", userId));
 
-    public Task<bool> IsEligibleAsync(Guid userId, Guid remoteDeviceId, CancellationToken ct = default)
-    {
-        if (userId == Guid.Empty || remoteDeviceId == Guid.Empty)
-            return Task.FromResult(false);
-
-        return EligibleRoutes(remoteDeviceId)
-            .AnyAsync(link => link.UserId == userId, ct);
-    }
-
-    public Task<bool> HasAnyEligibleAsync(IReadOnlyCollection<Guid> userIds, Guid remoteDeviceId, CancellationToken ct = default)
-    {
-        var ids = NormalizeUserIds(userIds);
-        if (ids.Length == 0 || remoteDeviceId == Guid.Empty)
-            return Task.FromResult(false);
-
-        return EligibleRoutes(remoteDeviceId)
-            .AnyAsync(link => ids.Contains(link.UserId), ct);
-    }
+    public async Task<bool> HasAnyEligibleAsync(IReadOnlyCollection<Guid> userIds, Guid remoteDeviceId, CancellationToken ct = default) =>
+        (await ListEligibleUserIdsAsync(userIds, remoteDeviceId, ct)).Count != 0;
 
     public async Task<IReadOnlyList<Guid>> ListEligibleUserIdsAsync(
-        IReadOnlyCollection<Guid> userIds,
-        Guid remoteDeviceId,
-        CancellationToken ct = default)
-    {
-        var ids = NormalizeUserIds(userIds);
-        if (ids.Length == 0 || remoteDeviceId == Guid.Empty)
-            return [];
-
-        return await EligibleRoutes(remoteDeviceId)
-            .Where(link => ids.Contains(link.UserId))
-            .Select(link => link.UserId)
-            .Distinct()
-            .ToListAsync(ct);
-    }
-
-    public async Task<IReadOnlyList<Guid>> ListAllEligibleUserIdsAsync(
-        Guid remoteDeviceId,
-        CancellationToken ct = default)
+        IReadOnlyCollection<Guid> userIds, Guid remoteDeviceId, CancellationToken ct = default)
     {
         if (remoteDeviceId == Guid.Empty)
             return [];
 
-        return await EligibleRoutes(remoteDeviceId)
-            .Select(link => link.UserId)
-            .Distinct()
-            .OrderBy(id => id)
-            .ToListAsync(ct);
+        return await session.ReadByIdsAsync(userIds.Where(id => id != Guid.Empty).ToArray(),
+            """SELECT DISTINCT ud."UserId" """ + EligibleRoutes + """ AND ud."UserId" IN ({ids});""",
+            row => row.GetGuid(0), ct, ("$device", remoteDeviceId));
     }
 
-    public Task<bool> HasEligibleUserForDeviceAsync(Guid deviceId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<Guid>> ListAllEligibleUserIdsAsync(Guid remoteDeviceId, CancellationToken ct = default)
     {
-        if (deviceId == Guid.Empty)
-            return Task.FromResult(false);
+        if (remoteDeviceId == Guid.Empty)
+            return [];
 
-        return EligibleRoutes(deviceId).AnyAsync(ct);
+        return await session.ReadAsync($"""
+            SELECT DISTINCT ud."UserId" {EligibleRoutes} ORDER BY ud."UserId";
+            """, row => row.GetGuid(0), ct, ("$device", remoteDeviceId));
     }
 
-    private IQueryable<UserDevice> EligibleRoutes(Guid remoteDeviceId) =>
-        _userDevices.AsNoTracking().Where(link =>
-            link.DeviceId == remoteDeviceId &&
-            !link.IsDeleted &&
-            link.IsSyncOn &&
-            _localUsers.Any(local => local.UserId == link.UserId && local.IsSyncOn));
-
-    private Guid[] NormalizeUserIds(IReadOnlyCollection<Guid> userIds) =>
-        userIds.Where(id => id != Guid.Empty).Distinct().ToArray();
+    public Task<bool> HasEligibleUserForDeviceAsync(Guid deviceId, CancellationToken ct = default) =>
+        deviceId == Guid.Empty
+            ? Task.FromResult(false)
+            : session.ExistsAsync($"SELECT 1 {EligibleRoutes}", ct, ("$device", deviceId));
 }

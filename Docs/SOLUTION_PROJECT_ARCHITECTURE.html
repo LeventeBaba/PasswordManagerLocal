@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>PasswordManagerLocal — Solution Architecture</title>
+<style>
+:root{color-scheme:dark;--bg:#080f1c;--panel:#111d2e;--panel2:#17253a;--line:#26364e;--text:#e8eef8;--muted:#a3b2c8;--cyan:#54d6e8;--violet:#ac94ff;--amber:#f7bf62;--green:#53d6a0;--blue:#65a9ff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 50% -20%,#1b3150 0,#0b1422 48%,var(--bg) 100%);color:var(--text);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}header{max-width:1480px;margin:auto;padding:28px 30px 18px}h1{font-size:clamp(25px,3vw,38px);line-height:1.1;margin:0 0 10px;letter-spacing:-.025em}.lede{max-width:1000px;color:#bdc9dc;margin:0}.meta{display:flex;gap:9px;flex-wrap:wrap;margin-top:17px}.chip{font-size:12px;border:1px solid #30435e;background:#101c2c;color:#ced8e8;border-radius:999px;padding:5px 10px}.tabs{max-width:1480px;margin:0 auto;padding:0 30px;display:flex;gap:8px;border-bottom:1px solid var(--line)}.tab{border:1px solid transparent;border-bottom:0;border-radius:9px 9px 0 0;background:transparent;color:#aab9cd;padding:11px 16px;font:600 14px system-ui;cursor:pointer}.tab[aria-selected=true]{background:#14233a;border-color:#2a3e5c;color:#f4f8ff}.tab:hover{color:#fff;background:#15243a}.content{display:none}.content.active{display:block}.toolbar{max-width:1480px;margin:0 auto;padding:16px 30px 12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}.toolbar label,.toolbar button{font:500 13px system-ui;color:#d6deea}.toolbar input[type=search]{min-width:220px;background:#0e1929;border:1px solid #30445f;border-radius:8px;color:#fff;padding:9px 11px}.toolbar button{background:#17253a;border:1px solid #30445f;border-radius:8px;padding:8px 11px;cursor:pointer}.toolbar button:hover{border-color:#63cde0}.toolbar input[type=checkbox]{accent-color:#62cfe1;vertical-align:-2px}.hint{color:#96a7be;font-size:12px}.legend{max-width:1480px;margin:0 auto 14px;padding:0 30px;display:flex;gap:18px;flex-wrap:wrap;color:#acbbcf;font-size:12px}.key{display:inline-flex;align-items:center;gap:7px}.swatch{width:21px;height:4px;border-radius:5px;background:#54d6e8}.swatch.build{background:repeating-linear-gradient(90deg,#9eabc0 0 3px,transparent 3px 7px)}.swatch.indirect{background:repeating-linear-gradient(90deg,#ac94ff 0 6px,transparent 6px 10px)}.swatch.ipc{background:repeating-linear-gradient(90deg,#53d6a0 0 8px,transparent 8px 13px)}
+.map-shell{width:100%;overflow:auto;border-block:1px solid #25364d;background:linear-gradient(180deg,#0c1726,#091321);padding:8px 12px}.map-svg{display:block;width:100%;min-width:1200px;height:auto;margin:auto}.zone{fill:#0d1b2a;stroke:#233954;stroke-width:2}.zone.android{fill:#0c1b2b;stroke:#3276a5}.zone.common{fill:#102328;stroke:#328177}.zone.windows{fill:#17172c;stroke:#5d52a4}.zone.tests{fill:#221d14;stroke:#7d6030}.zoneTitle{font-size:25px;font-weight:750;fill:#f0f5ff}.zoneNote{font-size:14px;fill:#9eafc5}.edge{fill:none;stroke:#6f829e;stroke-width:2;opacity:.24;marker-end:url(#arrow)}.edge.build{stroke:#a3adbe;stroke-dasharray:2 9;stroke-linecap:round;opacity:.6;marker-end:url(#arrowBuild)}.edge.tests{opacity:.15}.edge.highlight-direct{stroke:#54d6e8;stroke-width:4;opacity:1;marker-end:url(#arrowHot)}.edge.highlight-chain{stroke:#ac94ff;stroke-width:3;stroke-dasharray:8 8;opacity:.9;marker-end:url(#arrowViolet)}.edge.highlight-build{stroke:#d1d8e4;stroke-width:3;opacity:1;marker-end:url(#arrowBuild)}.edge.hidden{display:none}.node{cursor:pointer}.node .card{fill:#111f31;stroke:#49617e;stroke-width:2}.node.android .card{stroke:#367eb3}.node.common .card{stroke:#399989}.node.windows .card{stroke:#7765c2}.node.tests .card{stroke:#a17b3c;fill:#211d16}.node:hover .card{stroke:#f1f6ff;stroke-width:3}.node.selected .card{stroke:#f5fcff;stroke-width:4;filter:url(#glow)}.node.direct .card{stroke:#54d6e8;stroke-width:3}.node.indirect .card{stroke:#ac94ff;stroke-width:3}.node .title{font-size:17px;fill:#f2f6fd;font-weight:750}.node .assembly{font-size:10.5px;fill:#93a7c1}.node .desc{font-size:12px;fill:#c4d0e1}.node .badge{font-size:10px;fill:#0a1220;font-weight:800}.node .tag{fill:#21364d}.node .tagText{font-size:10px;fill:#b9cce2}.node .count{font-size:10px;fill:#9eacc0}.proc{fill:none;stroke:#91a0b6;stroke-width:2;stroke-dasharray:8 8}.procLabel{font-size:12px;fill:#c6d2e3;font-weight:700;letter-spacing:.04em}.detailWrap{max-width:1480px;margin:18px auto 50px;padding:0 30px}.detail{background:linear-gradient(145deg,#132137,#0f1b2c);border:1px solid #2c405c;border-radius:13px;padding:18px 20px;min-height:110px}.detail h2{font-size:18px;margin:0 0 8px}.detail p{color:#b9c7da;margin:5px 0}.detailgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:15px}.detailcol{background:#0c1726;border:1px solid #26384f;border-radius:9px;padding:11px}.detailcol h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#a9b9ce;margin:0 0 7px}.detailcol ul{margin:0;padding-left:18px;color:#d6e0ee;font-size:12px}.detailcol li{margin:3px 0}.path{color:#b3a4ff}.boundary-note{max-width:1480px;margin:12px auto;padding:0 30px;color:#a9b8cc;font-size:13px}.wide-svg{display:block;width:min(100%,1540px);height:auto;margin:14px auto 28px}.processPanel{fill:#101d30;stroke:#5378a8;stroke-width:2}.agentPanel{fill:#15182c;stroke:#8171c8;stroke-width:2}.comp{fill:#1a2b42;stroke:#456383;stroke-width:1.5}.compLabel{font-size:16px;fill:#f2f6fc;font-weight:700}.compSub{font-size:12px;fill:#afbed2}.appTitle{font-size:20px;fill:#f1f6ff;font-weight:800}.appSub{font-size:13px;fill:#aebed2}.ipclane{fill:#10261f;stroke:#348c69;stroke-width:2;stroke-dasharray:10 8}.ipcText{font-size:15px;fill:#c8f6e0;font-weight:750}.ipcSub{font-size:12px;fill:#a8d2bd}.wireReq{fill:none;stroke:#53d6a0;stroke-width:4;marker-end:url(#arrowGreen)}.wireResp{fill:none;stroke:#9ae2c4;stroke-width:3;marker-end:url(#arrowGreen);stroke-dasharray:9 6}.wireChange{fill:none;stroke:#ac94ff;stroke-width:3;marker-end:url(#arrowViolet);stroke-dasharray:2 7;stroke-linecap:round}.wireLabel{font-size:12px;fill:#d4e3f0}.callout{fill:#13243a;stroke:#314967;stroke-width:1}.calloutText{font-size:13px;fill:#cfdaea}.androidBoundary{fill:#0e1f2c;stroke:#4aafbc;stroke-width:2;stroke-dasharray:9 7}.androidComp{fill:#122b3a;stroke:#4e9baf;stroke-width:1.6}.androidCall{fill:none;stroke:#68ced7;stroke-width:3;marker-end:url(#arrowCyan)}.androidTitle{font-size:20px;fill:#eff8ff;font-weight:800}.androidSub{font-size:13px;fill:#b6c8d5}.foot{max-width:1480px;margin:0 auto 30px;padding:0 30px;color:#8294ac;font-size:11px}@media(max-width:800px){header{padding:23px 18px 14px}.tabs{padding:0 12px;overflow:auto}.tab{white-space:nowrap}.toolbar,.legend,.detailWrap,.boundary-note,.foot{padding-left:16px;padding-right:16px}.detailgrid{grid-template-columns:1fr}.map-svg{min-width:1150px}.wide-svg{min-width:1100px}.map-shell{padding:4px}}
+
+/* Focused dependency graph: keep selected paths legible and the full map available. */
+.edge{opacity:.10}.edge.tests{opacity:.045}.edge.dimmed{opacity:.025}.edge.highlight-direct{stroke:#55d6e8;stroke-width:4;opacity:1;marker-end:url(#arrowHot)}.edge.highlight-chain{stroke:#ac94ff;stroke-width:3;stroke-dasharray:8 8;opacity:.94;marker-end:url(#arrowViolet)}.edge.highlight-build{stroke:#d1d8e4;stroke-width:3;opacity:1;marker-end:url(#arrowBuild)}
+.node{transition:opacity .16s ease}.node.unrelated{opacity:.30}.node.hidden{display:none}.node.direct .card{stroke:#54d6e8;stroke-width:3}.node.indirect .card{stroke:#ac94ff;stroke-width:3}.node.buildTarget .card{stroke:#d1d8e4;stroke-dasharray:5 4;stroke-width:3}.node.tests .card{stroke:#d6a84f;fill:#211d16}.node.selected .card{stroke:#f5fcff;stroke-width:3.5;filter:none}.node:focus-visible .card{stroke:#fff;stroke-width:4;filter:none;stroke-dasharray:7 3}
+.map-shell{min-height:430px;overflow:auto;overscroll-behavior:contain}.map-svg{min-width:1200px;width:100%;height:auto}.map-svg.focused{min-width:520px;width:auto}.focus-layer{font-size:14px;font-weight:700;letter-spacing:.04em;fill:#99acc5}.focus-note{font-size:12px;fill:#8ea1b8}.toolbar select{min-height:38px;max-width:100%;background:#0e1929;border:1px solid #30445f;border-radius:8px;color:#edf3fb;padding:8px 10px}.toolbar label{display:inline-flex;align-items:center;gap:7px}.toolbar .field-label{display:flex;flex-direction:column;align-items:stretch;gap:4px;color:#aebed2;font-size:12px}.toolbar input[type=checkbox]{width:16px;height:16px}.toolbar button:focus-visible,.toolbar select:focus-visible,.tab:focus-visible,.node:focus-visible{outline:3px solid #78d8e6;outline-offset:2px}.graph-status{color:#bdc9dc;font-size:12px;min-width:220px;flex:1}.graph-status strong{color:#f1f6ff}.detail{scroll-margin-top:14px}.detailgrid{align-items:start}.detailcol{min-width:0}.detailcol li small{overflow-wrap:anywhere}
+@media(max-width:800px){.toolbar{align-items:flex-end}.toolbar .field-label{min-width:100%;}.map-svg.focused{min-width:100%}}
+</style></head><body>
+<header><h1>PasswordManagerLocal solution architecture</h1><p class="lede">An interactive graph of the default references among the 20 projects in <code>PasswordManagerLocal.sln</code>. Choose whether to inspect a project's dependencies or the projects that directly use it, then focus on that relationship or browse the full solution. Windows IPC and Android process boundaries have their own views. Package dependencies are omitted.</p><div class="meta"><span class="chip">20 solution projects</span><span class="chip">Project references only</span><span class="chip">Windows and Android shown separately</span><span class="chip">Static snapshot from the checked-out solution</span></div></header>
+<nav class="tabs" role="tablist" aria-label="Architecture views"><button class="tab" aria-selected="true" data-tab="overview">Solution projects</button><button class="tab" aria-selected="false" data-tab="windows">Windows process boundary</button><button class="tab" aria-selected="false" data-tab="android">Android app boundary</button></nav>
+<section id="overview" class="content active">
+<div class="toolbar">
+  <label class="field-label" for="project-select">Project to inspect<select id="project-select" aria-label="Project to inspect"></select></label>
+  <label class="field-label" for="relationship-direction">Relationship to show<select id="relationship-direction"><option value="dependencies" selected>Dependencies of this project</option><option value="users">Projects directly using this project</option></select></label>
+  <label class="field-label" for="graph-mode">Graph scope<select id="graph-mode"><option value="focus" selected>Selected relationship only</option><option value="all">Entire solution</option></select></label>
+  <label><input id="tests-toggle" type="checkbox" checked> Include test projects in the full graph</label>
+  <button id="zoom-in" type="button" aria-label="Zoom in">Zoom in</button><button id="zoom-out" type="button" aria-label="Zoom out">Zoom out</button><button id="zoom-fit" type="button">Fit view</button>
+  <span id="graph-status" class="graph-status" aria-live="polite"></span>
+</div>
+<div class="legend"><span class="key"><i class="swatch"></i>Highlighted direct project reference · arrow points to the referenced project</span><span class="key"><i class="swatch indirect"></i>Further links in the dependency chain (dependency view)</span><span class="key"><i class="swatch build"></i>Build-only reference · ReferenceOutputAssembly=false</span><span class="key">Card colors: Android · shared Common · Windows · tests</span></div>
+<div class="map-shell"><svg id="project-map" class="map-svg focused" viewBox="0 0 1500 600" role="img" aria-label="Focused project dependency graph"></svg></div>
+<div class="detailWrap"><div class="detail" id="detail" aria-live="polite"></div></div>
+</section>
+<section id="windows" class="content"><p class="boundary-note">The frontend and Agent run in separate Windows processes and communicate over named pipes. Managed builds use separate executables. Native AOT links the Agent into PasswordManagerLocal.exe and runs it in a separate process with --agent. The project-reference graph shows the default build.</p>
+<svg class="wide-svg" viewBox="0 0 1700 790" role="img" aria-label="Windows Frontend and Agent processes with named-pipe IPC">
+<defs><marker id="arrowLocal" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#83a9d5"/></marker><marker id="arrowGreen" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#53d6a0"/></marker><marker id="arrowViolet" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#ac94ff"/></marker></defs>
+<rect class="processPanel" x="45" y="55" width="630" height="625" rx="20"/><text class="appTitle" x="76" y="93">Windows Frontend process</text><text class="appSub" x="76" y="117">PasswordManagerLocal.exe · Windows.Frontend entry point</text>
+<rect class="agentPanel" x="1025" y="55" width="630" height="625" rx="20"/><text class="appTitle" x="1056" y="93">Windows Agent process</text><text class="appSub" x="1056" y="117">Managed Agent executable or PasswordManagerLocal.exe --agent</text>
+<!-- Frontend process project components -->
+<rect class="comp" x="82" y="155" width="252" height="110" rx="12"/><text class="compLabel" x="101" y="185">Windows.Frontend</text><text class="compSub" x="101" y="210">UI executable · starts/connects to Agent</text><text class="compSub" x="101" y="234">Shared UI: Common.Frontend</text>
+<rect class="comp" x="365" y="155" width="270" height="110" rx="12"/><text class="compLabel" x="384" y="185">EndpointRpc.Client</text><text class="compSub" x="384" y="210">Typed endpoint client and proxy</text><text class="compSub" x="384" y="234">Project: Windows.EndpointRpc.Client</text>
+<rect class="comp" x="82" y="315" width="252" height="104" rx="12"/><text class="compLabel" x="101" y="347">RPC contracts</text><text class="compSub" x="101" y="372">Windows.EndpointRpc.Contracts</text><text class="compSub" x="101" y="395">Payloads compiled into this process</text>
+<rect class="comp" x="365" y="315" width="270" height="104" rx="12"/><text class="compLabel" x="384" y="347">Windows IPC · client copy</text><text class="compSub" x="384" y="372">Named-pipe client + framed protocol</text><text class="compSub" x="384" y="395">Windows.Ipc project</text>
+<rect class="callout" x="82" y="474" width="553" height="151" rx="12"/><text class="calloutText" x="103" y="507">Also loaded through the direct/transitive reference graph:</text><text class="calloutText" x="103" y="537">Common.Contracts · Common.Preferences</text><text class="calloutText" x="103" y="566">EndpointRpc.Client references Windows.Ipc and RPC contracts.</text><text class="calloutText" x="103" y="595">Frontend calls across the pipe; it does not load the Agent assembly.</text>
+<!-- Agent process project components -->
+<rect class="comp" x="1062" y="155" width="252" height="110" rx="12"/><text class="compLabel" x="1081" y="185">Windows.Agent</text><text class="compSub" x="1081" y="210">Background executable / composition root</text><text class="compSub" x="1081" y="234">Owns backend runtime and endpoint host</text>
+<rect class="comp" x="1345" y="155" width="270" height="110" rx="12"/><text class="compLabel" x="1364" y="185">EndpointRpc.Server</text><text class="compSub" x="1364" y="210">Dispatches endpoint requests to handlers</text><text class="compSub" x="1364" y="234">Project: Windows.EndpointRpc.Server</text>
+<rect class="comp" x="1345" y="315" width="270" height="104" rx="12"/><text class="compLabel" x="1364" y="347">Windows Backend</text><text class="compSub" x="1364" y="372">Windows.Backend + Common backend</text><text class="compSub" x="1364" y="395">Storage, keys, domain services</text>
+<rect class="comp" x="1045" y="315" width="270" height="104" rx="12"/><text class="compLabel" x="1064" y="347">Windows IPC · server copy</text><text class="compSub" x="1064" y="372">Named-pipe listener + request sessions</text><text class="compSub" x="1064" y="395">Windows.Ipc project</text>
+<rect class="callout" x="1062" y="474" width="553" height="151" rx="12"/><text class="calloutText" x="1083" y="507">Also loaded through direct/transitive project references:</text><text class="calloutText" x="1083" y="537">Common.Backend.Hosting · Common.Contracts · Common.Preferences</text><text class="calloutText" x="1083" y="566">Windows.EndpointRpc.Contracts is used on both sides.</text><text class="calloutText" x="1083" y="595">Windows IPC has a distinct in-process copy in each process.</text>
+<path d="M500 265 L500 315" fill="none" stroke="#83a9d5" stroke-width="2.5" marker-end="url(#arrowLocal)"/><text class="compSub" x="512" y="296">uses pipe transport</text>
+<path d="M1315 360 C1370 360 1395 300 1480 265" fill="none" stroke="#83a9d5" stroke-width="2.5" marker-end="url(#arrowLocal)"/><text class="compSub" x="1335" y="340">dispatch</text>
+<path d="M1480 265 L1480 315" fill="none" stroke="#83a9d5" stroke-width="2.5" marker-end="url(#arrowLocal)"/><text class="compSub" x="1493" y="295">to backend</text>
+<!-- runtime transport lane crossing the two process envelopes -->
+<rect class="ipclane" x="690" y="224" width="345" height="292" rx="18"/><text class="ipcText" x="862" y="257" text-anchor="middle">Windows named-pipe IPC</text><text class="ipcSub" x="862" y="278" text-anchor="middle">runtime communication · crosses process boundary</text>
+<path class="wireReq" d="M635 335 C700 335 720 325 780 325 L945 325 C985 325 1000 335 1045 335"/><text class="wireLabel" x="862" y="314" text-anchor="middle">Endpoint RPC request →</text>
+<path class="wireResp" d="M1045 380 C1000 380 985 390 945 390 L780 390 C720 390 700 380 635 380"/><text class="wireLabel" x="862" y="414" text-anchor="middle">← result / response</text>
+<path class="wireChange" d="M1045 455 C1000 455 985 465 945 465 L780 465 C720 465 700 455 635 455"/><text class="wireLabel" x="862" y="487" text-anchor="middle">← status / change notifications</text>
+<text class="boundary-note" x="48" y="730">Build-only solution edge: Windows.Frontend → Windows.Agent has ReferenceOutputAssembly=false. It arranges the Agent build output; runtime calls use EndpointRpc.Client → named-pipe IPC → EndpointRpc.Server.</text>
+</svg></section>
+<section id="android" class="content"><p class="boundary-note">Android is shown separately because its runtime architecture differs from Windows. The Android manifest declares a non-exported foreground Service and does not assign it a separate <code>android:process</code>, so the Activity and Service live in the same application process. The service attachment is Android Binder/service communication inside that process; there is no Windows named-pipe IPC path here.</p>
+<svg class="wide-svg" viewBox="0 0 1320 820" role="img" aria-label="Android application process and project components">
+<defs><marker id="arrowCyan" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#68ced7"/></marker></defs>
+<rect class="androidBoundary" x="42" y="45" width="1236" height="720" rx="24"/><text class="androidTitle" x="78" y="88">PasswordManagerLocal Android application · one app process</text><text class="androidSub" x="78" y="114">Manifest: PasswordManagerBackgroundService is exported=false; no separate android:process is declared.</text>
+<rect class="androidComp" x="82" y="175" width="335" height="160" rx="14"/><text class="compLabel" x="106" y="210">Android.Frontend</text><text class="compSub" x="106" y="240">APK entry project · MainActivity</text><text class="compSub" x="106" y="265">Also declares the background Service</text><text class="compSub" x="106" y="290">Hosts Avalonia UI and Android adapters</text><text class="compSub" x="106" y="315">Direct refs: Common.Frontend, Runtime, Backend…</text>
+<rect class="androidComp" x="493" y="175" width="335" height="160" rx="14"/><text class="compLabel" x="517" y="210">Android.Runtime</text><text class="compSub" x="517" y="240">Service host and lifecycle state</text><text class="compSub" x="517" y="265">UI/service attachment and runtime client</text><text class="compSub" x="517" y="290">Common backend hosting abstractions</text><text class="compSub" x="517" y="315">Library used inside the Android process</text>
+<rect class="androidComp" x="904" y="175" width="335" height="160" rx="14"/><text class="compLabel" x="928" y="210">Android.Backend</text><text class="compSub" x="928" y="240">Android runtime factory</text><text class="compSub" x="928" y="265">Android key protection and discovery</text><text class="compSub" x="928" y="290">Builds the shared backend composition</text><text class="compSub" x="928" y="315">Library used inside the Android process</text>
+<path class="androidCall" d="M417 256 C450 256 460 256 493 256"/><text class="androidSub" x="455" y="238" text-anchor="middle">bound Service</text><path class="androidCall" d="M493 305 C460 305 450 305 417 305"/><text class="androidSub" x="455" y="329" text-anchor="middle">Binder/client</text>
+<rect class="callout" x="82" y="390" width="1157" height="112" rx="13"/><text class="calloutText" x="108" y="424">Local runtime path:</text><text class="calloutText" x="108" y="453">MainActivity → Android service attachment/Binder → AndroidRuntimeServiceHost → backend composition.</text><text class="calloutText" x="108" y="480">The Android.Frontend project contains the Activity and Service components; Runtime and Backend are separate solution projects loaded into the same app process.</text>
+<text class="appSub" x="82" y="552">Shared projects reached by Android's direct and transitive ProjectReferences:</text>
+<rect class="comp" x="82" y="578" width="260" height="100" rx="12"/><text class="compLabel" x="102" y="612">Common.Frontend</text><text class="compSub" x="102" y="640">Shared screens and viewmodels</text>
+<rect class="comp" x="367" y="578" width="260" height="100" rx="12"/><text class="compLabel" x="387" y="612">Common.Backend</text><text class="compSub" x="387" y="640">Shared domain and persistence</text>
+<rect class="comp" x="652" y="578" width="260" height="100" rx="12"/><text class="compLabel" x="672" y="612">Common.Backend.Hosting</text><text class="compSub" x="672" y="640">Shared runtime composition</text>
+<rect class="comp" x="937" y="578" width="302" height="100" rx="12"/><text class="compLabel" x="957" y="612">Common.Contracts + Preferences</text><text class="compSub" x="957" y="640">Shared contracts and settings</text>
+<text class="appSub" x="82" y="721">For exact compile-time edges, including the Android runtime tests, see the Solution projects tab.</text>
+</svg></section>
+<div class="foot">Generated from the project entries and ProjectReference elements in PasswordManagerLocal.sln and its .csproj files. “Indirect” means reachable through direct project-reference hops; the map does not invent transitive project-reference edges. Package dependencies are omitted by design.</div>
+<script>
+const PROJECTS=[{"id":"Android/Backend","title":"Android Backend","description":"Android key protection and local network-discovery integration for the shared backend.","assembly":"PasswordManagerLocal.Android.Backend","framework":"net10.0-android36.0","outputType":"Library","test":false,"scope":"android","group":"android","file":"Android/Backend/PasswordManagerLocal.Android.Backend.csproj","refs":[{"to":"Common/Backend","buildOnly":false},{"to":"Common/Backend.Hosting","buildOnly":false},{"to":"Common/Contracts","buildOnly":false}]},{"id":"Android/Frontend","title":"Android Frontend","description":"Android app entry point: Avalonia activity, platform adapters, and background-service component.","assembly":"PasswordManagerLocal.Android.Frontend","framework":"net10.0-android36.0","outputType":"Exe","test":false,"scope":"android","group":"android","file":"Android/Frontend/PasswordManagerLocal.Android.Frontend.csproj","refs":[{"to":"Common/Frontend","buildOnly":false},{"to":"Android/Backend","buildOnly":false},{"to":"Common/Backend.Hosting","buildOnly":false},{"to":"Common/Contracts","buildOnly":false},{"to":"Android/Runtime","buildOnly":false}]},{"id":"Android/Runtime","title":"Android Runtime","description":"Foreground/background service lifecycle, UI attachment, and runtime notification coordination.","assembly":"PasswordManagerLocal.Android.Runtime","framework":"net10.0","outputType":"Library","test":false,"scope":"android","group":"android","file":"Android/Runtime/PasswordManagerLocal.Android.Runtime.csproj","refs":[{"to":"Common/Backend","buildOnly":false},{"to":"Common/Backend.Hosting","buildOnly":false},{"to":"Common/Contracts","buildOnly":false}]},{"id":"Common/Backend","title":"Common Backend","description":"Shared password-management domain, persistence, and backend service logic.","assembly":"PasswordManagerLocal.Common.Backend","framework":"net10.0","outputType":"Library","test":false,"scope":"common","group":"common","file":"Common/Backend/PasswordManagerLocal.Common.Backend.csproj","refs":[{"to":"Common/Contracts","buildOnly":false}]},{"id":"Common/Backend.Hosting","title":"Common Backend.Hosting","description":"Composes backend services and coordinates runtime ownership and lifetime.","assembly":"PasswordManagerLocal.Common.Backend.Hosting","framework":"net10.0","outputType":"Library","test":false,"scope":"common","group":"common","file":"Common/Backend.Hosting/PasswordManagerLocal.Common.Backend.Hosting.csproj","refs":[{"to":"Common/Backend","buildOnly":false},{"to":"Common/Contracts","buildOnly":false}]},{"id":"Common/Contracts","title":"Common Contracts","description":"Platform-neutral interfaces, request/response models, and shared data contracts.","assembly":"PasswordManagerLocal.Common.Contracts","framework":"net10.0","outputType":"Library","test":false,"scope":"common","group":"common","file":"Common/Contracts/PasswordManagerLocal.Common.Contracts.csproj","refs":[]},{"id":"Common/Frontend","title":"Common Frontend","description":"Shared Avalonia screens, viewmodels, navigation, and user-facing workflows.","assembly":"PasswordManagerLocal.Common.Frontend","framework":"net10.0","outputType":"Library","test":false,"scope":"common","group":"common","file":"Common/Frontend/PasswordManagerLocal.Common.Frontend.csproj","refs":[{"to":"Common/Contracts","buildOnly":false},{"to":"Common/Preferences","buildOnly":false}]},{"id":"Common/Preferences","title":"Common Preferences","description":"Shared preference models and settings contracts used across platforms.","assembly":"PasswordManagerLocal.Common.Preferences","framework":"net10.0","outputType":"Library","test":false,"scope":"common","group":"common","file":"Common/Preferences/PasswordManagerLocal.Common.Preferences.csproj","refs":[{"to":"Common/Contracts","buildOnly":false}]},{"id":"Common/Tests","title":"Common Tests","description":"Cross-platform tests for shared layers and selected Android runtime behavior.","assembly":"PasswordManagerLocal.Common.Tests","framework":"net10.0","outputType":"Library","test":true,"scope":"common","group":"tests","file":"Common/Tests/PasswordManagerLocal.Common.Tests.csproj","refs":[{"to":"Common/Backend","buildOnly":false},{"to":"Common/Backend.Hosting","buildOnly":false},{"to":"Common/Frontend","buildOnly":false},{"to":"Common/Contracts","buildOnly":false},{"to":"Common/Preferences","buildOnly":false},{"to":"Android/Runtime","buildOnly":false}]},{"id":"Windows/Agent","title":"Windows Agent","description":"Owns the backend runtime and RPC server. Ships separately in managed builds and links into the frontend executable for Native AOT.","assembly":"PasswordManagerLocal.Windows.Agent","framework":"net10.0-windows","outputType":"WinExe","test":false,"scope":"windows","group":"windows","file":"Windows/Agent/PasswordManagerLocal.Windows.Agent.csproj","refs":[{"to":"Common/Backend","buildOnly":false},{"to":"Common/Backend.Hosting","buildOnly":false},{"to":"Windows/Backend","buildOnly":false},{"to":"Common/Contracts","buildOnly":false},{"to":"Common/Preferences","buildOnly":false},{"to":"Windows/EndpointRpc/Server","buildOnly":false},{"to":"Windows/IPC","buildOnly":false}]},{"id":"Windows/Backend","title":"Windows Backend","description":"Windows-specific backend integrations, including DPAPI key protection and local discovery.","assembly":"PasswordManagerLocal.Windows.Backend","framework":"net10.0-windows","outputType":"Library","test":false,"scope":"windows","group":"windows","file":"Windows/Backend/PasswordManagerLocal.Windows.Backend.csproj","refs":[{"to":"Common/Backend","buildOnly":false},{"to":"Common/Backend.Hosting","buildOnly":false},{"to":"Common/Contracts","buildOnly":false}]},{"id":"Windows/EndpointRpc/Client","title":"EndpointRpc Client","description":"Frontend-side endpoint client; sends typed requests through Windows IPC.","assembly":"PasswordManagerLocal.Windows.EndpointRpc.Client","framework":"net10.0-windows","outputType":"Library","test":false,"scope":"windows","group":"windows","file":"Windows/EndpointRpc/Client/PasswordManagerLocal.Windows.EndpointRpc.Client.csproj","refs":[{"to":"Windows/EndpointRpc/Contracts","buildOnly":false},{"to":"Common/Contracts","buildOnly":false},{"to":"Windows/IPC","buildOnly":false}]},{"id":"Windows/EndpointRpc/Contracts","title":"EndpointRpc Contracts","description":"Windows endpoint operation identifiers, payloads, and RPC error contracts.","assembly":"PasswordManagerLocal.Windows.EndpointRpc.Contracts","framework":"net10.0-windows","outputType":"Library","test":false,"scope":"windows","group":"windows","file":"Windows/EndpointRpc/Contracts/PasswordManagerLocal.Windows.EndpointRpc.Contracts.csproj","refs":[{"to":"Common/Contracts","buildOnly":false}]},{"id":"Windows/EndpointRpc/Server","title":"EndpointRpc Server","description":"Agent-side RPC dispatch; routes IPC requests to backend endpoint handlers.","assembly":"PasswordManagerLocal.Windows.EndpointRpc.Server","framework":"net10.0-windows","outputType":"Library","test":false,"scope":"windows","group":"windows","file":"Windows/EndpointRpc/Server/PasswordManagerLocal.Windows.EndpointRpc.Server.csproj","refs":[{"to":"Windows/EndpointRpc/Contracts","buildOnly":false},{"to":"Common/Backend","buildOnly":false},{"to":"Common/Contracts","buildOnly":false},{"to":"Windows/IPC","buildOnly":false}]},{"id":"Windows/Frontend","title":"Windows Frontend","description":"Windows desktop executable; hosts the UI and connects to the separate Agent.","assembly":"PasswordManagerLocal","framework":"net10.0-windows","outputType":"WinExe","test":false,"scope":"windows","group":"windows","file":"Windows/Frontend/PasswordManagerLocal.Windows.Frontend.csproj","refs":[{"to":"Common/Frontend","buildOnly":false},{"to":"Common/Contracts","buildOnly":false},{"to":"Windows/EndpointRpc/Client","buildOnly":false},{"to":"Windows/IPC","buildOnly":false},{"to":"Windows/Agent","buildOnly":true}]},{"id":"Windows/IPC","title":"Windows IPC","description":"Framed named-pipe transport, serialization, authorization, and connection lifecycle.","assembly":"PasswordManagerLocal.Windows.Ipc","framework":"net10.0-windows","outputType":"Library","test":false,"scope":"windows","group":"windows","file":"Windows/IPC/PasswordManagerLocal.Windows.Ipc.csproj","refs":[{"to":"Common/Contracts","buildOnly":false}]},{"id":"Windows/Packaging","title":"Windows Packaging","description":"Validates and merges staged Windows Frontend and Agent release outputs.","assembly":"PasswordManagerLocal.Windows.Packaging","framework":"net10.0","outputType":"Exe","test":false,"scope":"windows","group":"windows","file":"Windows/Packaging/PasswordManagerLocal.Windows.Packaging.csproj","refs":[]},{"id":"Windows/Tests.EndpointRpc","title":"Windows EndpointRpc Tests","description":"Tests endpoint RPC client/server behavior with frontend and backend adapters.","assembly":"PasswordManagerLocal.Windows.Tests.EndpointRpc","framework":"net10.0-windows","outputType":"Library","test":true,"scope":"windows","group":"tests","file":"Windows/Tests.EndpointRpc/PasswordManagerLocal.Windows.Tests.EndpointRpc.csproj","refs":[{"to":"Common/Frontend","buildOnly":false},{"to":"Windows/EndpointRpc/Contracts","buildOnly":false},{"to":"Windows/EndpointRpc/Client","buildOnly":false},{"to":"Windows/EndpointRpc/Server","buildOnly":false},{"to":"Common/Backend","buildOnly":false},{"to":"Common/Contracts","buildOnly":false},{"to":"Windows/IPC","buildOnly":false}]},{"id":"Windows/Tests.Host","title":"Windows Test Host","description":"Helper executable launched by cross-process IPC tests.","assembly":"PasswordManagerLocal.Windows.Tests.Host","framework":"net10.0-windows","outputType":"Exe","test":true,"scope":"windows","group":"tests","file":"Windows/Tests.Host/PasswordManagerLocal.Windows.Tests.Host.csproj","refs":[{"to":"Windows/IPC","buildOnly":false}]},{"id":"Windows/Tests.IPC","title":"Windows IPC Tests","description":"Integration tests for named pipes, separate processes, release packaging, and IPC.","assembly":"PasswordManagerLocal.Windows.Tests.IPC","framework":"net10.0-windows","outputType":"Library","test":true,"scope":"windows","group":"tests","file":"Windows/Tests.IPC/PasswordManagerLocal.Windows.Tests.IPC.csproj","refs":[{"to":"Windows/IPC","buildOnly":false},{"to":"Windows/EndpointRpc/Contracts","buildOnly":false},{"to":"Windows/EndpointRpc/Client","buildOnly":false},{"to":"Windows/EndpointRpc/Server","buildOnly":false},{"to":"Common/Backend","buildOnly":false},{"to":"Windows/Agent","buildOnly":false},{"to":"Windows/Frontend","buildOnly":false},{"to":"Windows/Packaging","buildOnly":false},{"to":"Windows/Tests.Host","buildOnly":true},{"to":"Common/Contracts","buildOnly":false},{"to":"Common/Preferences","buildOnly":false}]}];
+const FULL_POS={
+'Android/Frontend':[70,350],'Android/Backend':[405,210],'Android/Runtime':[405,485],
+'Common/Contracts':[790,150],'Common/Preferences':[1095,150],'Common/Backend':[790,370],'Common/Backend.Hosting':[1095,370],'Common/Frontend':[790,590],
+'Windows/IPC':[1450,150],'Windows/EndpointRpc/Contracts':[1750,150],'Windows/Backend':[1450,650],
+'Windows/EndpointRpc/Client':[1750,390],'Windows/EndpointRpc/Server':[2050,650],'Windows/Frontend':[1450,390],
+'Windows/Agent':[1750,650],'Windows/Packaging':[2370,650],
+'Common/Tests':[65,1110],'Windows/Tests.EndpointRpc':[710,1110],'Windows/Tests.Host':[1355,1110],'Windows/Tests.IPC':[2000,1110]
+};
+const NS='http://www.w3.org/2000/svg';
+const byId=new Map(PROJECTS.map(p=>[p.id,p]));
+const svg=document.getElementById('project-map');
+const shell=document.querySelector('.map-shell');
+const projectSelect=document.getElementById('project-select');
+const relationshipDirection=document.getElementById('relationship-direction');
+const graphMode=document.getElementById('graph-mode');
+const testsToggle=document.getElementById('tests-toggle');
+let selectedId='Windows/Frontend';
+let direction='dependencies';
+let mode='focus';
+let zoom=1;
+let graphWidth=1500;
+let graphHeight=600;
+
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function getCompileRefs(p){return p.refs.filter(r=>!r.buildOnly)}
+function getDirectUsers(rootId){return PROJECTS.filter(project=>project.id!==rootId&&project.refs.some(ref=>ref.to===rootId)).sort((a,b)=>a.title.localeCompare(b.title))}
+function getDependencyPaths(rootId){
+  const distance=new Map([[rootId,0]]),previous=new Map(),queue=[rootId];
+  while(queue.length){
+    const current=queue.shift();
+    for(const ref of getCompileRefs(byId.get(current))){
+      if(!distance.has(ref.to)){distance.set(ref.to,distance.get(current)+1);previous.set(ref.to,current);queue.push(ref.to)}
+    }
+  }
+  return {distance,previous};
+}
+function svgElement(tag,attrs={},parent=svg){
+  const node=document.createElementNS(NS,tag);
+  for(const [key,value] of Object.entries(attrs))node.setAttribute(key,String(value));
+  parent.appendChild(node);
+  return node;
+}
+function addText(parent,x,y,value,className){const node=svgElement('text',{x,y,class:className},parent);node.textContent=value;return node}
+function wrapText(value,maxChars){
+  const words=value.split(/\s+/),lines=[];let line='';
+  for(const word of words){if((line+' '+word).trim().length>maxChars&&line){lines.push(line);line=word}else line=(line+' '+word).trim()}
+  if(line)lines.push(line);
+  return lines;
+}
+function addDefs(){
+  const defs=svgElement('defs');
+  const filter=svgElement('filter',{id:'glow',x:'-25%',y:'-25%',width:'150%',height:'150%'},defs);
+  svgElement('feGaussianBlur',{stdDeviation:'4',result:'blur'},filter);
+  const merge=svgElement('feMerge',{},filter);
+  svgElement('feMergeNode',{in:'blur'},merge);svgElement('feMergeNode',{in:'SourceGraphic'},merge);
+  for(const [id,color] of [['arrow','#7387a2'],['arrowBuild','#a3adbe'],['arrowHot','#54d6e8'],['arrowViolet','#ac94ff']]){
+    const marker=svgElement('marker',{id,markerWidth:'9',markerHeight:'9',refX:'8',refY:'4.5',orient:'auto'},defs);
+    svgElement('path',{d:'M0 0 L9 4.5 L0 9 Z',fill:color},marker);
+  }
+}
+function addZone(x,y,w,h,cls,title,note){
+  svgElement('rect',{x,y,width:w,height:h,rx:22,class:'zone '+cls});
+  addText(svg,x+24,y+39,title,'zoneTitle');addText(svg,x+24,y+65,note,'zoneNote');
+}
+function addProcessOutline(x,y,w,h,label){
+  svgElement('rect',{x,y,width:w,height:h,rx:18,class:'proc'});
+  addText(svg,x+12,y-14,label,'procLabel');
+}
+function nodeSize(project,focused){
+  if(focused)return project.test?[470,180]:[340,174];
+  return project.test?[570,185]:[270,165];
+}
+function makeFullLayout(visible){
+  const layout=new Map();
+  for(const p of visible){const [x,y]=FULL_POS[p.id];layout.set(p.id,{x,y,w:nodeSize(p,false)[0],h:nodeSize(p,false)[1]})}
+  graphWidth=2700;graphHeight=1530;
+  return layout;
+}
+function makeFocusedLayout(visible,distances){
+  const layers=new Map();
+  for(const p of visible){
+    let level=distances.get(p.id);
+    if(level===undefined)level=1; // selected build-only target
+    if(!layers.has(level))layers.set(level,[]);
+    layers.get(level).push(p);
+  }
+  for(const projects of layers.values())projects.sort((a,b)=>a.title.localeCompare(b.title));
+  const maxLevel=Math.max(...layers.keys());
+  const widths=[];
+  for(let level=0;level<=maxLevel;level++){
+    const projects=layers.get(level)||[];
+    widths[level]=Math.max(360,...projects.map(p=>nodeSize(p,true)[0]));
+  }
+  const xByLevel=[];let cursor=55;
+  for(let level=0;level<=maxLevel;level++){xByLevel[level]=cursor;cursor+=widths[level]+90}
+  const maxRows=Math.max(...[...layers.values()].map(a=>a.length));
+  graphWidth=cursor+25;graphHeight=Math.max(500,95+maxRows*205);
+  const layout=new Map();
+  for(let level=0;level<=maxLevel;level++){
+    const projects=layers.get(level)||[];
+    projects.forEach((p,index)=>{
+      const [w,h]=nodeSize(p,true);
+      layout.set(p.id,{x:xByLevel[level],y:72+index*205,w,h});
+    });
+  }
+  return layout;
+}
+function makeUsersFocusedLayout(users,selected){
+  const targetSize=nodeSize(selected,true);
+  if(!users.length){
+    graphWidth=520;graphHeight=500;
+    return new Map([[selected.id,{x:(graphWidth-targetSize[0])/2,y:(graphHeight-targetSize[1])/2,w:targetSize[0],h:targetSize[1]}]]);
+  }
+  const userWidth=Math.max(...users.map(project=>nodeSize(project,true)[0]));
+  const userHeight=Math.max(...users.map(project=>nodeSize(project,true)[1]));
+  const groupHeight=(users.length-1)*205+userHeight;
+  graphWidth=55+userWidth+120+targetSize[0]+25;
+  graphHeight=Math.max(500,130+groupHeight);
+  const groupY=Math.max(72,(graphHeight-groupHeight)/2);
+  const targetX=55+userWidth+120;
+  const layout=new Map();
+  users.forEach((project,index)=>{
+    const [w,h]=nodeSize(project,true);
+    layout.set(project.id,{x:55,y:groupY+index*205,w,h});
+  });
+  layout.set(selected.id,{x:targetX,y:groupY+(groupHeight-targetSize[1])/2,w:targetSize[0],h:targetSize[1]});
+  return layout;
+}
+function edgePath(from,to,layout){
+  const a=layout.get(from),b=layout.get(to);
+  const acx=a.x+a.w/2,acy=a.y+a.h/2,bcx=b.x+b.w/2,bcy=b.y+b.h/2;
+  if(b.x>=a.x+a.w-4){const sx=a.x+a.w,tx=b.x;const bend=Math.max(35,(tx-sx)*.42);return `M${sx},${acy} C${sx+bend},${acy} ${tx-bend},${bcy} ${tx},${bcy}`}
+  if(a.x>=b.x+b.w-4){const sx=a.x,tx=b.x+b.w;const bend=Math.max(35,(sx-tx)*.42);return `M${sx},${acy} C${sx-bend},${acy} ${tx+bend},${bcy} ${tx},${bcy}`}
+  const down=bcy>=acy,sy=down?a.y+a.h:a.y,ty=down?b.y:b.y+b.h,bend=Math.max(35,Math.abs(ty-sy)*.4);
+  return `M${acx},${sy} C${acx},${sy+(down?bend:-bend)} ${bcx},${ty-(down?bend:-bend)} ${bcx},${ty}`;
+}
+function drawNode(project,layout,focused){
+  const box=layout.get(project.id);if(!box)return;
+  const g=svgElement('g',{class:`node ${project.scope}${project.test?' tests':''}`,'data-id':project.id,tabindex:'0',role:'button','aria-label':`${project.assembly}: ${project.description}`});
+  svgElement('rect',{x:box.x,y:box.y,width:box.w,height:box.h,rx:12,class:'card'},g);
+  const titleChars=Math.floor((box.w-34)/8.5),descChars=Math.floor((box.w-34)/7.1);
+  const titleLines=wrapText(project.title,titleChars).slice(0,2);
+  titleLines.forEach((line,index)=>addText(g,box.x+16,box.y+26+index*21,line,'title'));
+  addText(g,box.x+16,box.y+68,project.assembly.replace('PasswordManagerLocal.',''),'assembly');
+  const descLines=wrapText(project.description,descChars).slice(0,3);
+  descLines.forEach((line,index)=>addText(g,box.x+16,box.y+91+index*16,line,'desc'));
+  const tag=project.test?`TEST · ${project.scope.toUpperCase()}`:project.scope.toUpperCase();
+  const tagWidth=Math.min(box.w-36,tag.length*7+18);
+  svgElement('rect',{x:box.x+15,y:box.y+box.h-26,width:tagWidth,height:16,rx:8,class:'tag'},g);
+  addText(g,box.x+23,box.y+box.h-14,tag,'tagText');
+  addText(g,box.x+box.w-14,box.y+box.h-14,`${project.framework} · ${project.refs.length} refs`,'count').setAttribute('text-anchor','end');
+  g.addEventListener('click',()=>selectProject(project.id));
+  g.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();selectProject(project.id)}});
+}
+function addArrow(project,ref,layout){
+  const edge=svgElement('path',{d:edgePath(project.id,ref.to,layout),class:'edge'+(ref.buildOnly?' build':'')+(project.test?' tests':''),'data-from':project.id,'data-to':ref.to,'data-build':String(ref.buildOnly)});
+  const title=svgElement('title',{},edge);
+  title.textContent=`${project.assembly} → ${byId.get(ref.to).assembly}${ref.buildOnly?' · build-only (no assembly reference)':' · direct ProjectReference'}`;
+  return edge;
+}
+function fillProjectSelect(){
+  const labels={android:'Android',common:'Shared Common',windows:'Windows',tests:'Test and test-support projects'};
+  for(const group of ['android','common','windows','tests']){
+    const optgroup=document.createElement('optgroup');optgroup.label=labels[group];
+    for(const p of PROJECTS.filter(x=>x.group===group).sort((a,b)=>a.title.localeCompare(b.title))){
+      const option=document.createElement('option');option.value=p.id;option.textContent=p.title;optgroup.appendChild(option);
+    }
+    projectSelect.appendChild(optgroup);
+  }
+  projectSelect.value=selectedId;
+}
+function renderDetail(){
+  const project=byId.get(selectedId),{distance,previous}=getDependencyPaths(selectedId);
+  const direct=getCompileRefs(project).map(r=>byId.get(r.to).assembly);
+  const build=project.refs.filter(r=>r.buildOnly).map(r=>byId.get(r.to).assembly);
+  const dependents=PROJECTS.flatMap(candidate=>candidate.refs.filter(r=>r.to===selectedId).map(r=>`${candidate.assembly}${r.buildOnly?' (build-only)':''}`));
+  const indirect=[];
+  for(const [target,hops] of distance){
+    if(hops<2)continue;
+    const chain=[target];let current=target;
+    while(previous.has(current)){current=previous.get(current);chain.unshift(current)}
+    indirect.push({name:byId.get(target).assembly,hops,chain:chain.map(id=>byId.get(id).assembly).join(' → ')});
+  }
+  indirect.sort((a,b)=>a.hops-b.hops||a.name.localeCompare(b.name));
+  const list=items=>items.length?'<ul>'+items.map(item=>`<li>${esc(item)}</li>`).join('')+'</ul>':'<p>None</p>';
+  document.getElementById('detail').innerHTML=`<h2>${esc(project.assembly)}</h2><p><strong>${esc(project.file)}</strong> · ${esc(project.framework)} · ${project.test?'test/support project':'production project'} · ${direct.length} direct compile reference${direct.length===1?'':'s'}${build.length?` · ${build.length} build-only reference${build.length===1?'':'s'}`:''}</p><p>${esc(project.description)}</p><div class="detailgrid"><div class="detailcol"><h3>Direct compile references</h3>${list(direct)}${build.length?`<h3>Build-only references</h3>${list(build)}`:''}</div><div class="detailcol"><h3>Referenced directly by</h3>${list(dependents)}</div><div class="detailcol"><h3>Indirect dependencies (${indirect.length})</h3>${indirect.length?'<ul>'+indirect.map(item=>`<li><span class="path">${esc(item.name)}</span><br><small>${item.hops} hops · ${esc(item.chain)}</small></li>`).join('')+'</ul>':'<p>No indirect dependencies in the solution graph.</p>'}</div></div>`;
+}
+function renderGraph(){
+  direction=relationshipDirection.value;
+  mode=graphMode.value;
+  const selected=byId.get(selectedId);
+  const {distance}=getDependencyPaths(selectedId);
+  const users=getDirectUsers(selectedId);
+  let visible;
+  if(mode==='focus'&&direction==='dependencies'){
+    const included=new Set(distance.keys());
+    for(const ref of selected.refs.filter(r=>r.buildOnly))included.add(ref.to);
+    visible=PROJECTS.filter(p=>included.has(p.id));
+  }else if(mode==='focus'){
+    visible=[selected,...users];
+  }else{
+    visible=PROJECTS.filter(p=>testsToggle.checked||!p.test);
+    if(selected.test&&!visible.some(p=>p.id===selectedId))visible.push(selected);
+  }
+  const layout=mode==='focus'?(direction==='dependencies'?makeFocusedLayout(visible,distance):makeUsersFocusedLayout(users,selected)):makeFullLayout(visible);
+  svg.replaceChildren();svg.classList.toggle('focused',mode==='focus');
+  svg.setAttribute('viewBox',`0 0 ${graphWidth} ${graphHeight}`);
+  svg.setAttribute('aria-label',mode==='focus'?(direction==='dependencies'?`Dependencies of ${selected.title}`:`Projects that directly use ${selected.title}`):'All solution project references');
+  addDefs();
+  if(mode==='all'){
+    addZone(35,45,660,865,'android','ANDROID SIDE','Android APK and platform-specific runtime projects');
+    addZone(730,45,685,865,'common','SHARED COMMON PROJECTS','Platform-neutral projects referenced across the apps');
+    addZone(1435,45,1230,865,'windows','WINDOWS SIDE','Windows UI, Agent executables, RPC layers, platform backend');
+    if(testsToggle.checked)addZone(35,950,2630,510,'tests','TEST PROJECTS','Test and support projects from the solution · select a node to inspect its links');
+    addProcessOutline(1425,360,600,205,'FRONTEND PROCESS · PasswordManagerLocal.exe');
+    addProcessOutline(1425,620,910,205,'AGENT PROCESS · Managed Agent or Native AOT --agent');
+  }else{
+    if(direction==='dependencies'){
+      const levels=[...new Set(visible.map(project=>distance.get(project.id)??1))].sort((a,b)=>a-b);
+      for(const level of levels){
+        const first=visible.find(project=>(distance.get(project.id)??1)===level);
+        const caption=level===0?'SELECTED PROJECT':level===1?'DIRECT REFERENCES':`${level} HOPS`;
+        addText(svg,layout.get(first.id).x,34,caption,'focus-layer');
+      }
+      addText(svg,55,graphHeight-14,'Only this project’s dependency chain is shown. Use “Entire solution” to browse every project and reference.','focus-note');
+    }else if(users.length){
+      addText(svg,55,34,'PROJECTS THAT DIRECTLY USE THIS PROJECT','focus-layer');
+      addText(svg,layout.get(selectedId).x,34,'SELECTED PROJECT','focus-layer');
+      addText(svg,55,graphHeight-14,'Only direct ProjectReference users are shown; no transitive users are included.','focus-note');
+    }else{
+      addText(svg,55,34,'NO DIRECT USERS','focus-layer');
+      addText(svg,55,graphHeight-14,'No other solution project directly references this project.','focus-note');
+    }
+  }
+  const allowed=new Set(visible.map(p=>p.id));
+  if(mode==='focus'&&direction==='users'){
+    for(const project of users){
+      const ref=project.refs.find(item=>item.to===selectedId);
+      if(ref)addArrow(project,ref,layout);
+    }
+  }else{
+    for(const project of visible){
+      for(const ref of project.refs){
+        if(!allowed.has(ref.to))continue;
+        if(mode==='focus'&&ref.buildOnly&&project.id!==selectedId)continue;
+        addArrow(project,ref,layout);
+      }
+    }
+  }
+  for(const project of visible)drawNode(project,layout,mode==='focus');
+  if(mode==='focus'){
+    if(direction==='dependencies'){
+      for(const edge of svg.querySelectorAll('.edge')){
+        const from=edge.dataset.from,to=edge.dataset.to;
+        if(from===selectedId)edge.classList.add(edge.dataset.build==='true'?'highlight-build':'highlight-direct');
+        else if(!edge.classList.contains('build'))edge.classList.add('highlight-chain');
+      }
+      for(const node of svg.querySelectorAll('.node')){
+        const id=node.dataset.id;if(id===selectedId)node.classList.add('selected');
+        else if((distance.get(id)??0)===1)node.classList.add('direct');
+        else if(distance.has(id))node.classList.add('indirect');
+        else node.classList.add('buildTarget');
+      }
+    }else{
+      for(const edge of svg.querySelectorAll('.edge'))edge.classList.add(edge.dataset.build==='true'?'highlight-build':'highlight-direct');
+      for(const node of svg.querySelectorAll('.node')){
+        const id=node.dataset.id;if(id===selectedId)node.classList.add('selected');
+        else node.classList.add('direct');
+      }
+    }
+  }else{
+    if(direction==='dependencies'){
+      for(const node of svg.querySelectorAll('.node')){
+        const id=node.dataset.id;if(id===selectedId)node.classList.add('selected');
+        else if((distance.get(id)??0)===1)node.classList.add('direct');
+        else if(distance.has(id))node.classList.add('indirect');
+        else node.classList.add('unrelated');
+      }
+      for(const edge of svg.querySelectorAll('.edge')){
+        const from=edge.dataset.from,to=edge.dataset.to;
+        if(from===selectedId)edge.classList.add(edge.dataset.build==='true'?'highlight-build':'highlight-direct');
+        else if(distance.has(from)&&distance.has(to)&&(distance.get(to)>distance.get(from)))edge.classList.add('highlight-chain');
+        else edge.classList.add('dimmed');
+      }
+    }else{
+      const userIds=new Set(users.map(project=>project.id));
+      for(const node of svg.querySelectorAll('.node')){
+        const id=node.dataset.id;if(id===selectedId)node.classList.add('selected');
+        else if(userIds.has(id))node.classList.add('direct');
+        else node.classList.add('unrelated');
+      }
+      for(const edge of svg.querySelectorAll('.edge')){
+        if(edge.dataset.to===selectedId)edge.classList.add(edge.dataset.build==='true'?'highlight-build':'highlight-direct');
+        else edge.classList.add('dimmed');
+      }
+    }
+  }
+  const visibleEdges=svg.querySelectorAll('.edge').length;
+  document.getElementById('graph-status').innerHTML=mode==='focus'
+    ?direction==='dependencies'?`<strong>${visible.length} of ${PROJECTS.length}</strong> projects · ${visibleEdges} references in this dependency chain`:`<strong>${users.length} direct users</strong> · ${visible.length} of ${PROJECTS.length} projects shown`
+    :direction==='dependencies'?`<strong>${visible.length} of ${PROJECTS.length}</strong> projects · ${visibleEdges} visible references`:`<strong>${users.filter(project=>allowed.has(project.id)).length} direct users</strong> highlighted · ${visible.length} of ${PROJECTS.length} projects shown`;
+  applyZoom();
+  renderDetail();
+}
+function applyZoom(){
+  const available=Math.max(320,shell.clientWidth-24);
+  const wanted=mode==='focus'?Math.max(520,graphWidth*zoom):Math.max(1200,available*zoom);
+  svg.style.width=wanted+'px';
+  svg.style.margin=mode==='focus'&&wanted<available?'0 auto':'0';
+}
+function selectProject(id){if(!byId.has(id))return;selectedId=id;projectSelect.value=id;renderGraph()}
+projectSelect.addEventListener('change',()=>selectProject(projectSelect.value));
+relationshipDirection.addEventListener('change',renderGraph);graphMode.addEventListener('change',renderGraph);testsToggle.addEventListener('change',renderGraph);
+document.getElementById('zoom-in').addEventListener('click',()=>{zoom=Math.min(1.5,zoom+.1);applyZoom()});
+document.getElementById('zoom-out').addEventListener('click',()=>{zoom=Math.max(.55,zoom-.1);applyZoom()});
+document.getElementById('zoom-fit').addEventListener('click',()=>{zoom=1;applyZoom()});
+document.querySelectorAll('.tab').forEach(button=>button.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(tab=>tab.setAttribute('aria-selected',String(tab===button)));
+  document.querySelectorAll('.content').forEach(panel=>panel.classList.toggle('active',panel.id===button.dataset.tab));
+}));
+window.addEventListener('resize',applyZoom);
+fillProjectSelect();renderGraph();
+</script></body></html>

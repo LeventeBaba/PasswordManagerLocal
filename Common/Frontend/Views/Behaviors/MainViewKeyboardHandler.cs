@@ -1,6 +1,9 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Platform;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
+using System.ComponentModel;
 using PasswordManagerLocal.Common.Frontend.ViewModels;
 using PasswordManagerLocal.Common.Frontend.Views;
 
@@ -17,9 +20,6 @@ internal sealed class MainViewKeyboardHandler
 
     public async Task HandleTopLevelKeyDownAsync(KeyEventArgs e)
     {
-        if (await TryHandleRefreshShortcutAsync(e))
-            return;
-
         if (await TryHandleConfirmationShortcutAsync(e))
             return;
 
@@ -38,9 +38,6 @@ internal sealed class MainViewKeyboardHandler
     public async Task HandleKeyDownAsync(KeyEventArgs e)
     {
         if (e.Handled)
-            return;
-
-        if (await TryHandleRefreshShortcutAsync(e))
             return;
 
         if (!OperatingSystem.IsAndroid()
@@ -77,22 +74,6 @@ internal sealed class MainViewKeyboardHandler
             await TextBoxClipboardHandler.CutSelectedTextAsync(textBox, e, _view.PlatformServices?.Clipboard);
     }
 
-    private async Task<bool> TryHandleRefreshShortcutAsync(KeyEventArgs e)
-    {
-        if (!OperatingSystem.IsWindows()
-            || e.Handled
-            || e.Key != Key.F5
-            || e.KeyModifiers != KeyModifiers.None
-            || _view.DataContext is not MainViewModel { IsAuthenticated: true, IsApplicationInteractionEnabled: true } viewModel)
-        {
-            return false;
-        }
-
-        e.Handled = true;
-        await viewModel.RequestRefreshVisiblePageAsync();
-        return true;
-    }
-
     private async Task<bool> TryHandleConfirmationShortcutAsync(KeyEventArgs e)
     {
         if (!OperatingSystem.IsWindows()
@@ -105,6 +86,12 @@ internal sealed class MainViewKeyboardHandler
             return false;
         }
 
+        // Respect the focused button, especially Cancel. A global Enter shortcut
+        // must not approve a change when the user is activating another action.
+        if (e.Source is Control source &&
+            (source is Button || source.GetVisualAncestors().OfType<Button>().Any()))
+            return false;
+
         // Mark the routed event handled before awaiting so the focused control cannot
         // also process Enter while the confirmation operation is running.
         e.Handled = true;
@@ -114,6 +101,15 @@ internal sealed class MainViewKeyboardHandler
 
     internal async Task<bool> HandleBackRequestCoreAsync()
     {
+        // Android Back dismisses the input pane before navigating or cancelling a draft.
+        if (OperatingSystem.IsAndroid() && TopLevel.GetTopLevel(_view) is { } topLevel
+            && topLevel.InputPane?.State == InputPaneState.Open)
+        {
+            topLevel.FocusManager?.Focus(null);
+            _view.PlatformServices?.Keyboard.Hide();
+            return true;
+        }
+
         if (_view.DataContext is not MainViewModel viewModel)
             return true;
 
@@ -126,10 +122,11 @@ internal sealed class MainViewKeyboardHandler
         if (viewModel.IsAuthenticated)
         {
             if (await ShowConfirmationDialogAsync(
-                    viewModel.LogoutConfirmationTitle,
-                    viewModel.LogoutConfirmationMessage,
-                    viewModel.YesLabel,
-                    viewModel.NoLabel))
+                    viewModel,
+                    () => viewModel.LogoutConfirmationTitle,
+                    () => viewModel.LogoutConfirmationMessage,
+                    () => viewModel.YesLabel,
+                    () => viewModel.NoLabel))
             {
                 await viewModel.RequestLogoutAsync();
             }
@@ -138,10 +135,11 @@ internal sealed class MainViewKeyboardHandler
         }
 
         if (await ShowConfirmationDialogAsync(
-                viewModel.ExitConfirmationTitle,
-                viewModel.ExitConfirmationMessage,
-                viewModel.YesLabel,
-                viewModel.NoLabel))
+                viewModel,
+                () => viewModel.ExitConfirmationTitle,
+                () => viewModel.ExitConfirmationMessage,
+                () => viewModel.YesLabel,
+                () => viewModel.NoLabel))
         {
             (TopLevel.GetTopLevel(_view) as Window)?.Close();
         }
@@ -149,12 +147,30 @@ internal sealed class MainViewKeyboardHandler
         return true;
     }
 
-    private async Task<bool> ShowConfirmationDialogAsync(string title, string message, string yesLabel, string noLabel)
+    private async Task<bool> ShowConfirmationDialogAsync(
+        MainViewModel viewModel,
+        Func<string> title,
+        Func<string> message,
+        Func<string> yesLabel,
+        Func<string> noLabel)
     {
         if (TopLevel.GetTopLevel(_view) is not Window owner)
             return false;
 
-        var dialog = new ConfirmationDialog(title, message, yesLabel, noLabel);
-        return await dialog.ShowDialog<bool?>(owner) == true;
+        var dialog = new ConfirmationDialog(title(), message(), yesLabel(), noLabel());
+        PropertyChangedEventHandler languageChanged = (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.CurrentLanguage))
+                dialog.UpdateContent(title(), message(), yesLabel(), noLabel());
+        };
+        viewModel.PropertyChanged += languageChanged;
+        try
+        {
+            return await dialog.ShowDialog<bool?>(owner) == true;
+        }
+        finally
+        {
+            viewModel.PropertyChanged -= languageChanged;
+        }
     }
 }

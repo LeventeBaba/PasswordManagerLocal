@@ -4,7 +4,6 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Backend.Utils;
-using Microsoft.EntityFrameworkCore;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
 
@@ -31,6 +30,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
     private readonly ISyncVersionClockService? _versionClock;
     private readonly IUserCanonicalHealthService? _canonicalHealth;
     private readonly IUserSyncFaultService? _syncFaults;
+    private readonly IPendingSyncActivationService? _pendingSyncActivation;
 
     public UserControlOperationInboxService(
         IUserControlOperationRepository operations,
@@ -53,7 +53,8 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         IUserLoginIdentityProjectionService? loginIdentities = null,
         ISyncVersionClockService? versionClock = null,
         IUserCanonicalHealthService? canonicalHealth = null,
-        IUserSyncFaultService? syncFaults = null)
+        IUserSyncFaultService? syncFaults = null,
+        IPendingSyncActivationService? pendingSyncActivation = null)
     {
         _operations = operations;
         _states = states;
@@ -76,6 +77,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         _versionClock = versionClock;
         _canonicalHealth = canonicalHealth;
         _syncFaults = syncFaults;
+        _pendingSyncActivation = pendingSyncActivation;
     }
 
     public async Task<UserControlOperationReceiptResult> StoreAndApplyAsync(
@@ -303,7 +305,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
             await _uow.SaveChangesAsync(ct);
             return Receipt(envelope, UserControlOperationReceiptState.StoredPending);
         }
-        catch (DbUpdateException ex)
+        catch (StorageWriteException ex) when (ex.Kind == StorageWriteException.FailureKind.UniqueKeyConflict)
         {
             _uow.ClearTrackedChanges();
             return await ResolveConcurrentStoreAsync(envelope, transportPeerDeviceId, ex, ct);
@@ -313,7 +315,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
     private async Task<UserControlOperationReceiptResult> ResolveConcurrentStoreAsync(
         UserControlOperationEnvelope envelope,
         Guid transportPeerDeviceId,
-        DbUpdateException originalException,
+        Exception originalException,
         CancellationToken ct)
     {
         var existing = await _operations.GetByIdAsync(envelope.OperationId, ct);
@@ -627,6 +629,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
             state.AppliedKeyEpoch = Math.Max(state.AppliedKeyEpoch, envelope.ResultingKeyEpoch);
             state.AppliedMembershipEpoch = Math.Max(state.AppliedMembershipEpoch, envelope.ResultingMembershipEpoch);
             state.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
+            _states.Update(state);
             _operations.Update(row);
             if (_loginIdentities is not null)
                 await _loginIdentities.RecalculateUnderLifecycleAsync(user.UId, ct);
@@ -689,7 +692,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         var obsoleteSnapshots = (await _snapshots.ListForUserAsync(user.UId, ct))
             .Where(snapshot =>
                 snapshot.UserKeyEpoch <= envelope.PreviousKeyEpoch &&
-                snapshot.Status != UserSyncSnapshotStatus.Quarantined)
+                snapshot.Status != UserSyncSnapshotStatus.IsolatedFork)
             .ToList();
         if (obsoleteSnapshots.Count != 0)
             _snapshots.DeleteRange(obsoleteSnapshots);
@@ -701,6 +704,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         state.AppliedKeyEpoch = envelope.ResultingKeyEpoch;
         state.AppliedMembershipEpoch = envelope.ResultingMembershipEpoch;
         state.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
+        _states.Update(state);
         if (_loginIdentities is not null)
             await _loginIdentities.SetCanonicalAsync(user, user.GetGeneralUserDataVersion(), ct);
 
@@ -807,12 +811,15 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         if (user.MembershipEpoch > envelope.PreviousMembershipEpoch)
         {
             var authorization = await _authorizationRows.GetActiveAsync(payload.UserId, payload.NewDeviceId, payload.NewOriginInstanceId, ct);
-            if (authorization?.AdditionOperationId == envelope.OperationId && authorization.AdditionOperationHash is not null && HashEquals(authorization.AdditionOperationHash, envelope.OperationHash))
+            if (authorization?.AuthorizationId == envelope.OperationId &&
+                authorization.AdditionOperationId == envelope.OperationId && authorization.AdditionOperationHash is not null &&
+                HashEquals(authorization.AdditionOperationHash, envelope.OperationHash))
             {
                 MarkApplied(row, state, envelope, "The exact device addition was already reflected in canonical membership.");
                 if (_loginIdentities is not null)
                     await _loginIdentities.RecalculateUnderLifecycleAsync(user.UId, ct);
                 await _uow.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
+                await TryActivateAdditionSyncPeersAsync(row, payload);
                 return Receipt(envelope, UserControlOperationReceiptState.Applied, row.StatusReason);
             }
             row.Status = UserControlOperationStatus.Rejected;
@@ -828,8 +835,8 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
 
         try
         {
-            await _membershipAuthorization.AuthorizeAdditionAsync(payload, envelope.OperationId, envelope.OperationHash, ct);
-            await ApplyCurrentAdditionAsync(payload, ct);
+            await _membershipAuthorization.AuthorizeAdditionAsync(payload, envelope.OperationId, envelope.OperationHash, envelope.CreatedAtUtc, ct);
+            await ApplyCurrentAdditionAsync(payload, envelope.CreatedAtUtc, ct);
         }
         catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or UnauthorizedAccessException)
         {
@@ -856,7 +863,72 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
             await _loginIdentities.RecalculateUnderLifecycleAsync(user.UId, ct);
         await _uow.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
+        await TryActivateAdditionSyncPeersAsync(row, payload);
+        try { await _syncRuntime.RefreshSyncEnabledAsync(CancellationToken.None); }
+        catch (Exception ex)
+        {
+            PasswordManagerLocal.Common.Backend.Diagnostics.BackendDebugLog.Warning(
+                $"Membership catch-up committed; runtime refresh pending. User={user.UId}, Failure={ex.GetType().Name}.", category: "Synchronization");
+        }
         return Receipt(envelope, UserControlOperationReceiptState.Applied);
+    }
+
+    private async Task TryActivateAdditionSyncPeersAsync(
+        UserControlOperation row,
+        DeviceAdditionPayload payload)
+    {
+        if (_pendingSyncActivation is null)
+            return;
+
+        try
+        {
+            var devicesToActivate = new List<Device>(2);
+            var addedDevice = await _devices.GetByIdAsync(payload.NewDeviceId, CancellationToken.None);
+            if (addedDevice is not null)
+                devicesToActivate.Add(addedDevice);
+
+            // A relayed addition can arrive before this installation knows the new device's
+            // network endpoint. Re-activate the authenticated relay peer as well. Its next
+            // anti-entropy exchange can supply an authorized endpoint hint for the newly
+            // learned device, avoiding a topology-dependent wait for unrelated outgoing work.
+            if (row.LastReceivedFromDeviceId is Guid relayDeviceId &&
+                relayDeviceId != Guid.Empty &&
+                relayDeviceId != _identity.LocalDeviceId &&
+                relayDeviceId != payload.NewDeviceId)
+            {
+                var relayLink = await _userDevices.GetAsync(payload.UserId, relayDeviceId, CancellationToken.None);
+                var relayLinkIsUsable = relayLink is { IsDeleted: false, IsSyncOn: true };
+                if (relayLinkIsUsable)
+                {
+                    try
+                    {
+                        relayLink!.VerifyIntegrity();
+                    }
+                    catch
+                    {
+                        relayLinkIsUsable = false;
+                    }
+                }
+
+                if (relayLinkIsUsable)
+                {
+                    var relayDevice = await _devices.GetByIdAsync(relayDeviceId, CancellationToken.None);
+                    if (relayDevice is not null)
+                        devicesToActivate.Add(relayDevice);
+                }
+            }
+
+            if (devicesToActivate.Count != 0)
+                _pendingSyncActivation.ActivateDevices(devicesToActivate.DistinctBy(device => device.Id).ToArray());
+        }
+        catch (Exception ex)
+        {
+            // Membership is already durable. Endpoint-hint reacquisition is best-effort and
+            // can be retried by discovery/runtime refresh without rolling back the addition.
+            PasswordManagerLocal.Common.Backend.Diagnostics.BackendDebugLog.Warning(
+                $"Membership addition committed; peer activation for endpoint-hint catch-up is pending. User={payload.UserId}, Failure={ex.GetType().Name}.",
+                category: "Synchronization");
+        }
     }
 
     private async Task<UserControlOperationReceiptResult> ApplyDeviceRemovalAsync(
@@ -900,18 +972,24 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         }
 
         var active = await _authorizationRows.ListActiveForDeviceAsync(user.UId, payload.RemovedDeviceId, ct);
-        if (active.Count == 0 || active.Any(auth => payload.Origins.All(origin => origin.AuthorizationId != auth.AuthorizationId)))
-            return await QuarantinePayloadMismatchAsync(row, envelope, state, transaction, "The removal does not exactly cover current installation authorizations.", ct);
+        try
+        {
+            DeviceRemovalEvidenceUtil.ValidateActiveAuthorizations(payload, active);
+        }
+        catch (InvalidDataException ex)
+        {
+            return await QuarantinePayloadMismatchAsync(row, envelope, state, transaction, ex.Message, ct);
+        }
         foreach (var authorization in active)
-            await _membershipAuthorization.EndAuthorizationAsync(authorization, payload, envelope.OperationId, envelope.OperationHash, ct);
+            await _membershipAuthorization.EndAuthorizationAsync(authorization, payload, envelope.OperationId, envelope.OperationHash, envelope.CreatedAtUtc, ct);
 
         var link = await _userDevices.GetAsync(user.UId, payload.RemovedDeviceId, ct);
         if (link is not null)
         {
-            link.IsDeleted = true; link.DeletedAt = DateTimeOffset.UtcNow; link.IsSyncOn = false; link.LastModifiedAt = DateTimeOffset.UtcNow;
+            link.IsDeleted = true; link.DeletedAt = envelope.CreatedAtUtc; link.IsSyncOn = false; link.LastModifiedAt = envelope.CreatedAtUtc;
             _userDevices.Update(link);
         }
-        var removesLocalInstallation = payload.RemovedDeviceId == _identity.LocalDeviceId && payload.Origins.Any(origin => origin.OriginInstanceId == _identity.OriginInstanceId);
+        var removesLocalInstallation = payload.RemovedDeviceId == _identity.LocalDeviceId;
         if (removesLocalInstallation)
         {
             user.SavedKey = null;
@@ -944,8 +1022,12 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         return Receipt(envelope, UserControlOperationReceiptState.Applied);
     }
 
-    private async Task ApplyCurrentAdditionAsync(DeviceAdditionPayload payload, CancellationToken ct)
+    private async Task ApplyCurrentAdditionAsync(DeviceAdditionPayload payload, DateTimeOffset addedAtUtc, CancellationToken ct)
     {
+        if (addedAtUtc == default)
+            throw new InvalidDataException("The authoritative device-addition timestamp is missing.");
+        addedAtUtc = UtcDateTimeUtil.ToUtc(addedAtUtc);
+
         var device = await _devices.GetByIdAsync(payload.NewDeviceId, ct);
         var isNew = device is null;
         if (device is not null &&
@@ -963,15 +1045,18 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         device.TlsCertFingerprint = SyncIdentityUtil.NormalizeFingerprint(payload.TlsCertFingerprint);
         device.DeviceType = payload.DeviceType;
         device.IsTrusted = true; device.IsBlocked = false; device.BlockedReason = null; device.BlockedAt = null;
-        device.LastSeen = DateTime.UtcNow; device.LastModifiedAt = DateTimeOffset.UtcNow; device.GenerateIntegrityHash();
+        // A relayed membership operation proves identity, not network presence. Do not stamp
+        // LastSeen with the receiver's catch-up time or the UI would imply this device was seen
+        // locally when another peer merely told us that it exists.
+        device.LastModifiedAt = addedAtUtc; device.GenerateIntegrityHash();
         if (isNew) await _devices.AddAsync(device, ct); else _devices.Update(device);
 
         var link = await _userDevices.GetAsync(payload.UserId, payload.NewDeviceId, ct);
         if (link is null)
-            await _userDevices.AddAsync(new UserDevice { UserId = payload.UserId, DeviceId = payload.NewDeviceId, IsSyncOn = true, IsDeleted = false, LastModifiedAt = DateTimeOffset.UtcNow }, ct);
+            await _userDevices.AddAsync(new UserDevice { UserId = payload.UserId, DeviceId = payload.NewDeviceId, IsSyncOn = true, IsDeleted = false, LastModifiedAt = addedAtUtc }, ct);
         else
         {
-            link.IsDeleted = false; link.DeletedAt = null; link.IsSyncOn = true; link.LastModifiedAt = DateTimeOffset.UtcNow;
+            link.IsDeleted = false; link.DeletedAt = null; link.IsSyncOn = true; link.LastModifiedAt = addedAtUtc;
             _userDevices.Update(link);
         }
     }
@@ -999,6 +1084,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         state.AppliedKeyEpoch = Math.Max(state.AppliedKeyEpoch, envelope.ResultingKeyEpoch);
         state.AppliedMembershipEpoch = Math.Max(state.AppliedMembershipEpoch, envelope.ResultingMembershipEpoch);
         state.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
+        _states.Update(state);
     }
 
     private async Task<UserControlState> GetOrCreateStateAsync(
@@ -1162,6 +1248,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         state.ConflictingOperationId = operationId;
         state.ConflictingOperationHash = operationHash.ToArray();
         state.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
+        _states.Update(state);
     }
 
 

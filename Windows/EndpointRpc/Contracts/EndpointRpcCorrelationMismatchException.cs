@@ -8,7 +8,5 @@ public sealed class EndpointRpcCorrelationMismatchException : Exception
     }
 
     public EndpointRpcErrorCode ErrorCode => EndpointRpcErrorCode.EndpointCorrelationMismatch;
-    public EndpointRpcErrorCategory ErrorCategory => EndpointRpcErrorCategory.Internal;
-    public bool IsRetryable => false;
     public bool RequiresProcessRestart => false;
 }

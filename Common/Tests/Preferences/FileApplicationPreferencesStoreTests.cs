@@ -33,7 +33,7 @@ public sealed class FileApplicationPreferencesStoreTests
         {
             SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
             Language = AppLanguage.Hungarian,
-            Theme = AppThemeMode.Light
+            Theme = AppThemeId.Light
         };
 
         await store.WriteAsync(expected);
@@ -44,7 +44,7 @@ public sealed class FileApplicationPreferencesStoreTests
         StringAssert.Contains(fileSystem.GetFile(PreferencesPath()), "\"theme\": \"Light\"");
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("")]
     [DataRow("   ")]
     [DataRow("{")]
@@ -81,17 +81,32 @@ public sealed class FileApplicationPreferencesStoreTests
         AssertValidCurrentSchema(fileSystem.GetFile(PreferencesPath()));
     }
 
-    [DataTestMethod]
+    [TestMethod]
+    public async Task CurrentSchemaRejectsUnknownThemeIdentifier()
+    {
+        var fileSystem = new FakeApplicationPreferencesFileSystem();
+        fileSystem.SetFile(
+            PreferencesPath(),
+            "{\"schemaVersion\":4,\"language\":\"English\",\"theme\":\"Ocean\",\"interfaceAnimationsEnabled\":true}");
+        var store = CreateStore(fileSystem);
+
+        var preferences = await store.ReadAsync();
+
+        Assert.AreEqual(ApplicationPreferencesDefaults.Create(), preferences);
+        AssertValidCurrentSchema(fileSystem.GetFile(PreferencesPath()));
+    }
+
+    [TestMethod]
     [DataRow("Klingon", "Dark")]
     [DataRow("99", "Dark")]
-    [DataRow("English", "FluentCustom")]
+    [DataRow("English", "Custom")]
     [DataRow("English", "99")]
     public async Task InvalidEnumValuesResetSafely(string language, string theme)
     {
         var fileSystem = new FakeApplicationPreferencesFileSystem();
         fileSystem.SetFile(
             PreferencesPath(),
-            $"{{\"schemaVersion\":1,\"language\":\"{language}\",\"theme\":\"{theme}\"}}");
+            $"{{\"schemaVersion\":4,\"language\":\"{language}\",\"theme\":\"{theme}\",\"interfaceAnimationsEnabled\":true}}");
         var store = CreateStore(fileSystem);
 
         var preferences = await store.ReadAsync();
@@ -124,7 +139,7 @@ public sealed class FileApplicationPreferencesStoreTests
         var fileSystem = new FakeApplicationPreferencesFileSystem();
         fileSystem.SetFile(
             PreferencesPath(),
-            "{\"schemaVersion\":1,\"language\":\"English\",\"theme\":\"Dark\",\"windowsFirewallConfigured\":true}");
+            "{\"schemaVersion\":4,\"language\":\"English\",\"theme\":\"Dark\",\"interfaceAnimationsEnabled\":true,\"windowsFirewallConfigured\":true}");
         var store = CreateStore(fileSystem);
 
         var preferences = await store.ReadAsync();
@@ -144,7 +159,7 @@ public sealed class FileApplicationPreferencesStoreTests
         {
             SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
             Language = AppLanguage.English,
-            Theme = AppThemeMode.Dark
+            Theme = AppThemeId.Dark
         };
 
         await store.WriteAsync(expected);
@@ -163,7 +178,7 @@ public sealed class FileApplicationPreferencesStoreTests
         {
             SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
             Language = AppLanguage.English,
-            Theme = AppThemeMode.Dark
+            Theme = AppThemeId.Dark
         };
         await store.WriteAsync(original);
         fileSystem.ReplaceFailure = new IOException("replacement failed");
@@ -172,7 +187,7 @@ public sealed class FileApplicationPreferencesStoreTests
             store.WriteAsync(original with
             {
                 Language = AppLanguage.Hungarian,
-                Theme = AppThemeMode.Light
+                Theme = AppThemeId.Light
             }));
         fileSystem.ReplaceFailure = null;
 
@@ -239,13 +254,13 @@ public sealed class FileApplicationPreferencesStoreTests
             {
                 SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
                 Language = AppLanguage.English,
-                Theme = AppThemeMode.Dark
+                Theme = AppThemeId.Dark
             };
             var second = new ApplicationPreferences
             {
                 SchemaVersion = ApplicationPreferences.CurrentSchemaVersion,
                 Language = AppLanguage.Hungarian,
-                Theme = AppThemeMode.Light
+                Theme = AppThemeId.Light
             };
 
             var writes = Enumerable.Range(0, 12)
@@ -291,5 +306,8 @@ public sealed class FileApplicationPreferencesStoreTests
             root.GetProperty("schemaVersion").GetInt32());
         Assert.AreEqual(JsonValueKind.String, root.GetProperty("language").ValueKind);
         Assert.AreEqual(JsonValueKind.String, root.GetProperty("theme").ValueKind);
+        Assert.IsTrue(root.GetProperty("theme").GetString() is "Dark" or "Light");
+        Assert.IsTrue(root.GetProperty("interfaceAnimationsEnabled").ValueKind is
+            JsonValueKind.True or JsonValueKind.False);
     }
 }

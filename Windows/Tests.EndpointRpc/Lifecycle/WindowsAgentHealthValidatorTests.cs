@@ -10,21 +10,12 @@ public sealed class WindowsAgentHealthValidatorTests
     private readonly WindowsAgentHealthValidator _validator = new();
 
     [TestMethod]
-    public void RunningOpenAgentWithUsableBackendIsEndpointHealthy()
+    [DataRow(BackendRuntimeStatusState.Ready)]
+    [DataRow(BackendRuntimeStatusState.Stopped)]
+    public void ReadyOrRestartableStoppedBackendAllowsRegistrationAndEndpointUse(BackendRuntimeStatusState state)
     {
         var agent = CreateAgentStatus();
-        var backend = CreateBackendStatus(BackendRuntimeStatusState.Ready);
-
-        Assert.IsTrue(_validator.CanRegisterUi(agent, backend));
-        Assert.IsTrue(_validator.IsHealthyForEndpoint(agent, backend));
-        Assert.IsFalse(_validator.RequiresProcessReplacement(agent, backend));
-    }
-
-    [TestMethod]
-    public void StoppedRestartableBackendIsEndpointHealthy()
-    {
-        var agent = CreateAgentStatus();
-        var backend = CreateBackendStatus(BackendRuntimeStatusState.Stopped);
+        var backend = CreateBackendStatus(state);
 
         Assert.IsTrue(_validator.CanRegisterUi(agent, backend));
         Assert.IsTrue(_validator.IsHealthyForEndpoint(agent, backend));
@@ -63,12 +54,16 @@ public sealed class WindowsAgentHealthValidatorTests
     }
 
     [TestMethod]
-    public void ResettableCompatibilityFailureAllowsControlRegistrationButNotEndpointReadiness()
+    [DataRow(BackendRuntimeFailureStatusKind.DatabaseCompatibility)]
+    [DataRow(BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid)]
+    [DataRow(BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable)]
+    [DataRow(BackendRuntimeFailureStatusKind.DatabaseUnreadable)]
+    public void ResettableDatabaseFailureAllowsControlRegistrationButNotEndpointReadiness(BackendRuntimeFailureStatusKind kind)
     {
         var agent = CreateAgentStatus();
         var backend = CreateBackendStatus(
             BackendRuntimeStatusState.Failed,
-            BackendRuntimeFailureStatusKind.DatabaseCompatibility);
+            kind);
 
         Assert.IsTrue(_validator.CanRegisterUi(agent, backend));
         Assert.IsFalse(_validator.IsHealthyForEndpoint(agent, backend));

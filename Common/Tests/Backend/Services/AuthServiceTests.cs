@@ -5,6 +5,7 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Contracts.Errors;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Tests.Fakes;
 using System.Text;
@@ -100,9 +101,10 @@ public sealed class AuthServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Unit")]
-    public async Task Login_WrongPassword_DoesNotCreateSessionState()
+    public async Task Login_UnknownUsernameAndWrongPassword_ShareFailureAndDoNotCreateSessionState()
     {
-        using var host = new BackendTestHost();
+        var timeProvider = new LoginDelayTimeProvider();
+        using var host = new BackendTestHost(timeProvider: timeProvider);
 
         var auth = host.Services.GetRequiredService<IAuthService>();
         var users = host.Services.GetRequiredService<IUserService>();
@@ -115,7 +117,15 @@ public sealed class AuthServiceTests
         var request = host.CreateValidLoginRequest("failed_login");
         request.Password = Encoding.UTF8.GetBytes("WrongPassword12345678");
 
-        await ExpectThrowsAsync<UnauthorizedAccessException>(() => auth.LoginAsync(request));
+        var wrongPassword = await MSTestAssert.ThrowsExactlyAsync<UnauthorizedAccessException>(() => auth.LoginAsync(request));
+        request.Username = "missing_user";
+        var unknownUsername = await MSTestAssert.ThrowsExactlyAsync<UnauthorizedAccessException>(() => auth.LoginAsync(request));
+
+        MSTestAssert.AreEqual("Authentication failed.", wrongPassword.Message);
+        MSTestAssert.AreEqual(wrongPassword.Message, unknownUsername.Message);
+        CollectionAssert.AreEqual(
+            new[] { TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(250) },
+            timeProvider.RequestedDelays);
 
         var tokensAfter = tokens.ListTokensByUid(uid).OrderBy(token => token).ToArray();
         CollectionAssert.AreEqual(tokensBefore, tokensAfter);
@@ -125,7 +135,7 @@ public sealed class AuthServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Unit")]
-    public async Task Register_DuplicateUsername_Throws()
+    public async Task Register_DuplicateUsername_ReportsUsernameUnavailable()
     {
         using var host = new BackendTestHost();
 
@@ -133,10 +143,67 @@ public sealed class AuthServiceTests
 
         await auth.RegisterAsync(host.CreateValidRegistrationRequest("bob"));
 
-        await ExpectThrowsAsync<InvalidInputException>(async () =>
-        {
-            await auth.RegisterAsync(host.CreateValidRegistrationRequest("bob"));
-        });
+        var exception = await MSTestAssert.ThrowsExactlyAsync<InvalidInputException>(() =>
+            auth.RegisterAsync(host.CreateValidRegistrationRequest("bob")));
+
+        CollectionAssert.Contains(exception.Errors, RegistrationValidationErrors.UsernameUnavailable);
+        CollectionAssert.DoesNotContain(exception.Errors, RegistrationValidationErrors.UsernameAvailabilityIndeterminate);
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Unit")]
+    public async Task Register_UnrelatedRepairableInvalidProjection_IsRepairedBeforeAvailabilityDecision()
+    {
+        using var host = new BackendTestHost();
+        var auth = host.Services.GetRequiredService<IAuthService>();
+        var users = host.Services.GetRequiredService<IUserRepository>();
+        var userService = host.Services.GetRequiredService<IUserService>();
+
+        var existingToken = await auth.RegisterAsync(host.CreateValidRegistrationRequest("existing_projection_user"));
+        var existingUserId = userService.GetUidFromToken(existingToken);
+        var projection = await users.GetLoginIdentityStateAsync(existingUserId)
+            ?? throw new AssertFailedException("The registered user must have a login-identity projection.");
+        projection.Status = UserLoginIdentityStatus.InvalidSource;
+        projection.StatusReason = "Injected stale projection for registration availability test.";
+        users.UpdateLoginIdentityState(projection);
+
+        var newToken = await auth.RegisterAsync(host.CreateValidRegistrationRequest("definitely_new_username"));
+
+        MSTestAssert.AreNotEqual(Guid.Empty, newToken);
+        var repairedProjection = await users.GetLoginIdentityStateAsync(existingUserId);
+        MSTestAssert.IsNotNull(repairedProjection);
+        MSTestAssert.AreEqual(UserLoginIdentityStatus.Active, repairedProjection.Status);
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Unit")]
+    public async Task Register_UnrelatedUnrepairableProjection_ReportsAvailabilityIndeterminate_NotTaken()
+    {
+        using var host = new BackendTestHost();
+        var auth = host.Services.GetRequiredService<IAuthService>();
+        var users = host.Services.GetRequiredService<IUserRepository>();
+        var userService = host.Services.GetRequiredService<IUserService>();
+
+        var existingToken = await auth.RegisterAsync(host.CreateValidRegistrationRequest("broken_projection_user"));
+        var existingUserId = userService.GetUidFromToken(existingToken);
+        var existingUser = await users.GetByIdAsync(existingUserId)
+            ?? throw new AssertFailedException("The registered user must exist.");
+        existingUser.UsernameHash = [];
+        users.Update(existingUser);
+
+        var projection = await users.GetLoginIdentityStateAsync(existingUserId)
+            ?? throw new AssertFailedException("The registered user must have a login-identity projection.");
+        projection.Status = UserLoginIdentityStatus.InvalidSource;
+        projection.StatusReason = "Injected unrepairable projection for registration availability test.";
+        users.UpdateLoginIdentityState(projection);
+
+        var exception = await MSTestAssert.ThrowsExactlyAsync<InvalidInputException>(() =>
+            auth.RegisterAsync(host.CreateValidRegistrationRequest("another_new_username")));
+
+        CollectionAssert.Contains(exception.Errors, RegistrationValidationErrors.UsernameAvailabilityIndeterminate);
+        CollectionAssert.DoesNotContain(exception.Errors, RegistrationValidationErrors.UsernameUnavailable);
     }
 
     [TestMethod]
@@ -286,7 +353,7 @@ public sealed class AuthServiceTests
             EnvelopePayload = [0x01],
             CreatedAtUtc = DateTimeOffset.UtcNow,
             ReceivedAtUtc = DateTimeOffset.UtcNow,
-            Status = UserSyncSnapshotStatus.Quarantined
+            Status = UserSyncSnapshotStatus.IsolatedFork
         });
 
         await ExpectThrowsAsync<InvalidOperationException>(() => auth.ChangeMasterPasswordAsync(new MasterPasswordChangeRequest
@@ -404,7 +471,10 @@ public sealed class AuthServiceTests
         MSTestAssert.IsTrue(tokens.Validate(newToken));
         MSTestAssert.IsTrue(keys.HasUserKey(newToken));
         MSTestAssert.IsTrue(cache.TryGetUserDataBundle(newToken, out var newUserData));
-        MSTestAssert.AreSame(oldUserData, newUserData);
+        MSTestAssert.AreNotSame(oldUserData, newUserData);
+        CollectionAssert.AreEqual(oldUserData!.CanonicalGeneration!, newUserData!.CanonicalGeneration!);
+        oldUserData.Dispose();
+        newUserData.Dispose();
         MSTestAssert.IsTrue(auth.GetSessionStatus(newToken).IsAuthenticated);
         MSTestAssert.IsFalse(auth.GetSessionStatus(oldToken).IsAuthenticated);
     }
@@ -418,6 +488,19 @@ public sealed class AuthServiceTests
         }
         catch (TException)
         {
+        }
+    }
+
+    private sealed class LoginDelayTimeProvider : TimeProvider
+    {
+        public List<TimeSpan> RequestedDelays { get; } = [];
+
+        public override long GetTimestamp() => 0;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            RequestedDelays.Add(dueTime);
+            return base.CreateTimer(callback, state, TimeSpan.Zero, period);
         }
     }
 

@@ -36,8 +36,7 @@ internal static class PackageFileClassifier
             return "frontend-asset";
         if (fileName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) ||
             fileName.Contains("sqlcipher", StringComparison.OrdinalIgnoreCase) ||
-            fileName.Contains("sodium", StringComparison.OrdinalIgnoreCase) ||
-            fileName.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.OrdinalIgnoreCase))
+            fileName.Contains("sodium", StringComparison.OrdinalIgnoreCase))
             return "agent-backend-asset";
         if (fileName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
             return "managed-or-native-library";

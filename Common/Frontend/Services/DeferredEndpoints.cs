@@ -18,13 +18,13 @@ public sealed class DeferredEndpoints : IEndpoints
     }
     public async Task<Guid> RegisterAsync(RegistrationRequest request, CancellationToken ct = default)
     {
-        return await InvokeAsync((endpoints, operationToken) => endpoints.RegisterAsync(FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.RegisterAsync(request, operationToken), ct);
     }
 
 
     public async Task<Guid> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
-        return await InvokeAsync((endpoints, operationToken) => endpoints.LoginAsync(FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
+        return await InvokeAsync((endpoints, operationToken) => endpoints.LoginAsync(request, operationToken), ct);
     }
 
 
@@ -48,7 +48,7 @@ public sealed class DeferredEndpoints : IEndpoints
 
     public async Task ChangeMasterPasswordAsync(MasterPasswordChangeRequest request, CancellationToken ct = default)
     {
-        await InvokeAsync((endpoints, operationToken) => endpoints.ChangeMasterPasswordAsync(FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.ChangeMasterPasswordAsync(request, operationToken), ct);
     }
 
 
@@ -72,7 +72,7 @@ public sealed class DeferredEndpoints : IEndpoints
 
     public async Task UpdateUserProfileInfoAsync(UpdateUserProfileRequest request, CancellationToken ct = default)
     {
-        await InvokeAsync((endpoints, operationToken) => endpoints.UpdateUserProfileInfoAsync(FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.UpdateUserProfileInfoAsync(request, operationToken), ct);
     }
 
 
@@ -104,6 +104,12 @@ public sealed class DeferredEndpoints : IEndpoints
     {
         return await InvokeAsync((endpoints, operationToken) => endpoints.GetUserDevicesAsync(token, operationToken), ct);
     }
+
+    public Task<SelfDiagnosticsResultResponse> RunSelfDiagnosticsAndRepairAsync(Guid token, CancellationToken ct = default) =>
+        InvokeAsync((endpoints, operationToken) => endpoints.RunSelfDiagnosticsAndRepairAsync(token, operationToken), ct);
+
+    public Task<SelfDiagnosticsResultResponse> ConfirmSelfDiagnosticsRepairAsync(Guid token, string planId, byte[] masterPassword, CancellationToken ct = default) =>
+        InvokeAsync((endpoints, operationToken) => endpoints.ConfirmSelfDiagnosticsRepairAsync(token, planId, masterPassword, operationToken), ct);
 
 
     public async Task SetUserDeviceNameAsync(Guid token, Guid deviceId, string name, CancellationToken ct = default)
@@ -180,7 +186,7 @@ public sealed class DeferredEndpoints : IEndpoints
 
     public async Task AddNewPasswordAsync(Guid token, NewPasswordRequest request, CancellationToken ct = default)
     {
-        await InvokeAsync((endpoints, operationToken) => endpoints.AddNewPasswordAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.AddNewPasswordAsync(token, request, operationToken), ct);
     }
 
 
@@ -201,12 +207,12 @@ public sealed class DeferredEndpoints : IEndpoints
 
     public async Task UpdatePasswordAsync(Guid token, UpdatePasswordRequest request, CancellationToken ct = default)
     {
-        await InvokeAsync((endpoints, operationToken) => endpoints.UpdatePasswordAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.UpdatePasswordAsync(token, request, operationToken), ct);
     }
 
     public async Task ExportPasswordsToUserAsync(Guid sourceToken, ExportPasswordsToUserRequest request, CancellationToken ct = default)
     {
-        await InvokeAsync((endpoints, operationToken) => endpoints.ExportPasswordsToUserAsync(sourceToken, FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.ExportPasswordsToUserAsync(sourceToken, request, operationToken), ct);
     }
 
 
@@ -215,7 +221,7 @@ public sealed class DeferredEndpoints : IEndpoints
         IReadOnlyList<NewCustomUserColorRequest> requests,
         CancellationToken ct = default)
     {
-        await InvokeAsync((endpoints, operationToken) => endpoints.AddCustomUserColorsAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(requests), operationToken), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.AddCustomUserColorsAsync(token, requests, operationToken), ct);
     }
 
 
@@ -233,19 +239,19 @@ public sealed class DeferredEndpoints : IEndpoints
         ExportCustomUserColorsToUserRequest request,
         CancellationToken ct = default)
     {
-        await InvokeAsync((endpoints, operationToken) => endpoints.ExportCustomUserColorsToUserAsync(sourceToken, FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.ExportCustomUserColorsToUserAsync(sourceToken, request, operationToken), ct);
     }
 
 
     public async Task UpdateCustomUserColorAsync(Guid token, UpdateCustomUserColorRequest request, CancellationToken ct = default)
     {
-        await InvokeAsync((endpoints, operationToken) => endpoints.UpdateCustomUserColorAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.UpdateCustomUserColorAsync(token, request, operationToken), ct);
     }
 
 
     public async Task AddPasswordTagAsync(Guid token, NewPasswordTagRequest request, CancellationToken ct = default)
     {
-        await InvokeAsync((endpoints, operationToken) => endpoints.AddPasswordTagAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.AddPasswordTagAsync(token, request, operationToken), ct);
     }
 
 
@@ -260,13 +266,13 @@ public sealed class DeferredEndpoints : IEndpoints
         ExportPasswordTagsToUserRequest request,
         CancellationToken ct = default)
     {
-        await InvokeAsync((endpoints, operationToken) => endpoints.ExportPasswordTagsToUserAsync(sourceToken, FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.ExportPasswordTagsToUserAsync(sourceToken, request, operationToken), ct);
     }
 
 
     public async Task UpdatePasswordTagAsync(Guid token, UpdatePasswordTagRequest request, CancellationToken ct = default)
     {
-        await InvokeAsync((endpoints, operationToken) => endpoints.UpdatePasswordTagAsync(token, FrontendDateTimeUtil.NormalizeRequestToUtc(request), operationToken), ct);
+        await InvokeAsync((endpoints, operationToken) => endpoints.UpdatePasswordTagAsync(token, request, operationToken), ct);
     }
 
 

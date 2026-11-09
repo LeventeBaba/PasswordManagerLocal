@@ -6,5 +6,6 @@ public enum IpcMessageKind
     HandshakeResponse = 2,
     Request = 3,
     Response = 4,
-    RequestCancellation = 5
+    RequestCancellation = 5,
+    Notification = 6
 }

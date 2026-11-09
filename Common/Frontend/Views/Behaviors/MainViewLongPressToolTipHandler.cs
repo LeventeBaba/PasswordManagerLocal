@@ -12,7 +12,6 @@ internal sealed class MainViewLongPressToolTipHandler
     private const int LongPressDelayMilliseconds = 650;
     private const double CancelDistance = 12;
 
-    private readonly MainView _view;
     private CancellationTokenSource? _longPressDelay;
     private Button? _pressedButton;
     private Button? _openToolTipButton;
@@ -20,30 +19,36 @@ internal sealed class MainViewLongPressToolTipHandler
     private Point _pressPosition;
     private bool _longPressActivated;
 
-    public MainViewLongPressToolTipHandler(MainView view)
-    {
-        _view = view;
-    }
-
     public void HandlePointerPressed(PointerPressedEventArgs e)
     {
+        var button = FindButtonWithToolTip(e.Source);
+        if (_trackedPointer is not null
+            && Equals(_trackedPointer, e.Pointer)
+            && ReferenceEquals(_pressedButton, button))
+        {
+            // A press may reach both the main input root and a popup button.
+            // Keep the first timer instead of restarting the same hold.
+            return;
+        }
+
         DismissOpenToolTip();
         CancelPendingLongPress();
         ResetTrackedPress();
 
-        if (!OperatingSystem.IsAndroid() || e.Handled || !IsPrimaryTouchOrPenPress(e))
+        if (!OperatingSystem.IsAndroid()
+            || e.Handled
+            || button is null
+            || !IsPrimaryTouchOrPenPress(e, button))
             return;
 
-        var button = FindButtonWithToolTip(e.Source);
-        if (button is null
-            || (!button.IsEffectivelyEnabled && !ToolTip.GetShowOnDisabled(button)))
+        if (!button.IsEffectivelyEnabled && !ToolTip.GetShowOnDisabled(button))
         {
             return;
         }
 
         _pressedButton = button;
         _trackedPointer = e.Pointer;
-        _pressPosition = e.GetPosition(_view);
+        _pressPosition = e.GetPosition(button);
 
         var delay = new CancellationTokenSource();
         _longPressDelay = delay;
@@ -52,12 +57,18 @@ internal sealed class MainViewLongPressToolTipHandler
 
     public void HandlePointerMoved(PointerEventArgs e)
     {
-        if (!IsTrackedPointer(e))
+        var button = _pressedButton;
+        if (!IsTrackedPointer(e) || button is null)
             return;
 
-        var movement = e.GetPosition(_view) - _pressPosition;
-        if (Math.Abs(movement.X) <= CancelDistance && Math.Abs(movement.Y) <= CancelDistance)
+        var movement = e.GetPosition(button) - _pressPosition;
+        // The page-swipe classifier locks after only 5 horizontal pixels. A hold
+        // needs its own tolerance so ordinary finger drift doesn't become a tap.
+        if (Math.Abs(movement.X) <= CancelDistance &&
+            Math.Abs(movement.Y) <= CancelDistance)
+        {
             return;
+        }
 
         CancelPendingLongPress();
 
@@ -104,6 +115,18 @@ internal sealed class MainViewLongPressToolTipHandler
             ToolTip.SetIsOpen(_openToolTipButton, false);
 
         _openToolTipButton = null;
+    }
+
+    public void HandleButtonDetached(Button button)
+    {
+        if (ReferenceEquals(_pressedButton, button))
+        {
+            CancelPendingLongPress();
+            ResetTrackedPress();
+        }
+
+        if (ReferenceEquals(_openToolTipButton, button))
+            DismissOpenToolTip();
     }
 
     public void Reset()
@@ -158,12 +181,12 @@ internal sealed class MainViewLongPressToolTipHandler
     private bool IsTrackedPointer(PointerEventArgs e) =>
         Equals(_trackedPointer, e.Pointer);
 
-    private bool IsPrimaryTouchOrPenPress(PointerPressedEventArgs e)
+    private static bool IsPrimaryTouchOrPenPress(PointerPressedEventArgs e, Button button)
     {
         if (e.Pointer.Type is not (PointerType.Touch or PointerType.Pen))
             return false;
 
-        return e.GetCurrentPoint(_view).Properties.IsLeftButtonPressed;
+        return e.GetCurrentPoint(button).Properties.IsLeftButtonPressed;
     }
 
     private static Button? FindButtonWithToolTip(object? source)

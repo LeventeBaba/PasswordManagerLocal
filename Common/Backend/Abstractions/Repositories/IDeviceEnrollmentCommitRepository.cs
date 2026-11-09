@@ -9,4 +9,5 @@ public interface IDeviceEnrollmentCommitRepository
     Task<IReadOnlyList<DeviceEnrollmentCommit>> ListForUserAsync(Guid userId, CancellationToken ct = default);
     Task AddAsync(DeviceEnrollmentCommit commit, CancellationToken ct = default);
     void Update(DeviceEnrollmentCommit commit);
+    void DeleteRange(IEnumerable<DeviceEnrollmentCommit> commits);
 }

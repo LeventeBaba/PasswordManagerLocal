@@ -1,0 +1,39 @@
+<Project>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Frontend' or
+                            '$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Installer' or
+                            ('$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Agent' and '$(PmlWindowsUnifiedNativeAot)' != 'true') or
+                            ('$(MSBuildProjectName)' == 'PasswordManagerLocal.Common.Frontend' and '$(PmlWindowsUnifiedNativeAot)' == 'true')">
+    <PmlWindowsIconSvg>$(RepositoryRoot)PasswordManagerLocal.svg</PmlWindowsIconSvg>
+    <PmlWindowsIconGenerator>$(RepositoryRoot)Tools/Windows/GenerateWindowsIcon.ps1</PmlWindowsIconGenerator>
+    <PmlIconPowerShell Condition="$([MSBuild]::IsOSPlatform('Windows'))">powershell.exe</PmlIconPowerShell>
+    <PmlIconPowerShell Condition="'$(PmlIconPowerShell)' == ''">pwsh</PmlIconPowerShell>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(PmlWindowsIconSvg)' != ''">
+    <UpToDateCheckInput Include="$(PmlWindowsIconSvg);$(PmlWindowsIconGenerator)" Set="PmlWindowsIcon" />
+    <UpToDateCheckOutput Include="$(PmlWindowsIconFile)" Set="PmlWindowsIcon" />
+    <UpToDateCheckInput Include="$(PmlWindowsIconFile)" />
+  </ItemGroup>
+  <Target Name="GeneratePmlWindowsIcon"
+          BeforeTargets="PrepareForBuild;CoreCompile;GetCopyToOutputDirectoryItems"
+          Condition="'$(PmlWindowsIconSvg)' != '' and '$(DesignTimeBuild)' != 'true'"
+          Inputs="$(PmlWindowsIconSvg);$(PmlWindowsIconGenerator)"
+          Outputs="$(PmlWindowsIconFile)">
+    <Exec Command="$(PmlIconPowerShell) -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(PmlWindowsIconGenerator)&quot; -SvgPath &quot;$(PmlWindowsIconSvg)&quot; -IconPath &quot;$(PmlWindowsIconFile)&quot;" />
+  </Target>
+
+  <!-- Keep C# trace calls out of Release. WiX uses DefineConstants for its own
+       semicolon-delimited preprocessor inputs. -->
+  <Target Name="DisableReleaseTraceLogging" BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectExtension)' == '.csproj' and '$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <DefineConstants>$([System.Text.RegularExpressions.Regex]::Replace('$(DefineConstants)', '(^|[;,\s])TRACE(?=$|[;,\s])', '$1'))</DefineConstants>
+    </PropertyGroup>
+  </Target>
+
+  <!-- Windows releases must go through the product publisher for layout verification and packaging. -->
+  <Target Name="RequireWindowsProductPublisher"
+          BeforeTargets="Publish"
+          Condition="('$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Frontend' or '$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Agent') and '$(PmlWindowsProductStaging)' != 'true'">
+    <Error Text="Publish Windows through publish.cmd -W or Tools\Windows\PublishWindowsProduct.ps1. The product publisher assembles the final DLLs and executables, with optional signing; standalone project publishing is not a release artifact." />
+  </Target>
+</Project>

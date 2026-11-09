@@ -1,0 +1,119 @@
+# Adatvédelmi tájékoztató — Password Manager Local
+
+Változat 1.1 · Hatályos ettől: 2026-11-07
+
+> Adatvédelmi kérdéseidet és kérelmeidet a levente.baba.dev@gmail.com címen küldheted el.
+
+A profilok és jelszavak a saját eszközeiden tárolódnak. A csatlakoztatott eszközök közvetlenül cserélnek adatot, bekapcsolt háttérműködés esetén a háttérben is. Az alkalmazásnak nincs fejlesztői jelszótárszervere, és nem küld automatikus telemetriát. Ha e-mailt küldesz a fejlesztőnek, az általad elküldött adatokat a jelszótártól elkülönítve kezeli.
+
+## 1. A tájékoztatóról és az adatvédelmi kapcsolattartásról
+
+A Password Manager Local fejlesztője Baba Levente (Magyarország). Ez a tájékoztató a telepített windowsos és androidos alkalmazásra, valamint a visszajelzések, hibajelentések és adatvédelmi megkeresések fogadására szolgáló fejlesztői e-mail-címre vonatkozik. A fejlesztőt a levente.baba.dev@gmail.com címen érheted el.
+
+E-mailben ne küldj mesterjelszót, tárolt jelszót, csatlakoztatási kódot, kulcsfájlt vagy jelszótár-adatbázist. Az alkalmazásboltok, az operációs rendszerek és a külső weboldalak saját adatvédelmi szabályokat alkalmaznak.
+
+## 2. Profiladatok és kötelező mezők
+
+A jelenlegi regisztrációs űrlapon kötelező a felhasználónév, a keresztnév, a vezetéknév, az e-mail-cím, a mesterjelszó és annak megerősítése. Az Emlékezz rám ezen az eszközön lehetőség választható. A kötelező mezők nélkül a regisztráció nem fejezhető be; a Beállítások és a tájékoztató oldalak regisztráció nélkül is elérhetők.
+
+A felhasználónév és a mesterjelszó a helyi bejelentkezést és a fiók védelmét szolgálja. Az alkalmazás a profil felhasználónevét, nevét, e-mail-címét, a regisztráció idejét és időzónáját, a regisztráló eszköz típusát, valamint a módosítási adatokat a saját eszközeiden tárolja. A keresztnév megjelenik a fiókmenüben. A keresztnév, a vezetéknév és az e-mail-cím a profiladatok között jelenik meg. Az alkalmazás nem küld regisztrációs vagy ellenőrző e-mailt, nem használja a címet marketingre, és nincs e-mailes mesterjelszó-visszaállítása. A mesterjelszó hitelesítési és kulcsadatok származtatására szolgál; nem egy fejlesztői fiókszolgáltatásnak küldött üzenet.
+
+Kezeld bizalmasan a felhasználónevedet. A kézi bejelentkezéshez a felhasználónév és a mesterjelszó is szükséges. Az alkalmazásban nincs lehetőség az elfelejtett mesterjelszó visszaállítására. A fejlesztő nem tudja megkeresni a felhasználónevedet, visszaállítani a mesterjelszavadat vagy helyreállítani a jelszótáradat. Ha valamelyik eszközödön még meg tudod nyitni a profilodat, a fiók áttekintésében megnézheted a felhasználónevedet.
+
+## 3. Jelszavak és más megadott tartalmak
+
+Az alkalmazás a jelszóbejegyzések nevét, leírását, jelszóértékét, címkéit, színeit, létrehozási és módosítási adatait tárolja, hogy megtekinthesd, szerkeszthesd és rendszerezhesd őket. A leírás az általad megadott személyes adatot is tartalmazhat. Az adatok a beviteledből, az alkalmazásban végzett műveletekből és az ugyanahhoz a profilhoz csatlakoztatott eszközökről származnak; az alkalmazás nem nyilvános adatkereskedőktől szerzi be őket.
+
+Az Exportálás nevű funkció a kiválasztott bejegyzéseket és kapcsolódó címkéket/színeket egy másik megfelelő helyi profilba másolja vagy helyezi át. Ez nem általános, titkosítatlan fájlexport. A célprofilba került másolat annak a profilnak az adatává válik, és annak eszközeivel is szinkronizálódhat. A forrás törlése nem törli a célprofil másolatát.
+
+## 4. Eszköz- és szinkronizálási adatok
+
+Az eszközök csatlakoztatásához, hitelesítéséhez és a módosítások egyeztetéséhez az alkalmazás saját fiók- és eszközazonosítókat, eszközneveket és -típusokat, nyilvános kulcsokat és tanúsítvány-ujjlenyomatokat, hálózati címeket és portokat, tagsági előzményeket, időbélyegeket, verzióadatokat, valamint bizalmi, tiltási és hibaállapotokat kezel. Függőben lévő titkosított módosításokat és törlési adatokat is tárol, hogy a változások ne vesszenek el és a törölt tartalom ne jelenjen meg újra. Az alkalmazás eszközönként rögzíti a profil két legutóbbi bejelentkezésének időpontját. Ezeket megjeleníti az eszköz adatainál, és titkosított eszközadatként szinkronizálhatja.
+
+Ezek szinkronizálási azonosítók, nem hirdetési profil adatai. Az alkalmazás nem kér hirdetési azonosítót, névjegyzéket, mikrofonfelvételt vagy GPS-helyadatot. A hálózati csatolók és helyi címek az eszközök felderítését és összekapcsolását szolgálják, nem helyzetkövetési funkciót.
+
+## 5. Helyi tárolás, titkosítás és megjegyzett bejelentkezés
+
+A profil- és jelszótáradatok helyi, titkosított adatbázisban találhatók, további titkosított fióktartalmakkal és kulcsadatokkal. Windows rendszeren a védett kulcsok védelme az aktuális Windows-felhasználóhoz kötődik; Androidon az Android Keystore szolgál erre. A nyelvhez, témához és animációkhoz hasonló beállítások helyben, a jelszótáron kívül tárolódnak. A jelszótár titkosítása nem terjed ki a külön tárolt beállításokra, az operációs rendszer diagnosztikai adataira vagy a hálózaton látható metaadatokra.
+
+A titkosított adatbázisfájl másolata önmagában nem nyitható meg. Az eredeti adatbáziskulcs is szükséges hozzá. Windowson a kulcsot a létrehozásakor használt Windows-fiók adatvédelme védi, Androidon pedig az eredeti alkalmazástelepítéshez tartozó Android Keystore. Az alkalmazásfájlok másolásával ez a védelem nem vihető át másik eszközre. Ha másik eszközön is használni szeretnéd a profilodat, csatlakoztasd azt az alkalmazásban, amíg még hozzáférsz a profilhoz.
+
+Az Emlékezz rám ezen az eszközön lehetőség védett helyi kulcsadatokat ment, hogy az alkalmazás a mesterjelszó ismételt megadása nélkül visszaállíthassa a hozzáférést. Aki használhatja a feloldott eszközödet vagy operációsrendszer-fiókodat, így hozzáférhet a jelszavaidhoz. Szükség esetén kapcsold ki ezt a lehetőséget és jelentkezz ki; az eszközt is védd. A használathoz az adatokat az adott művelet idejére vissza kell fejteni a memóriában. A titkosítás nem akadályoz meg minden adatvesztést, kártevőt, képernyőképet vagy feloldott eszközön történő hozzáférést.
+
+## 6. Kapcsolatok és az adatok címzettjei
+
+Az alkalmazás közvetlenül azokkal az eszközökkel cserél profil- és jelszótáradatokat, amelyek csatlakoztatását jóváhagytad. Nincs fejlesztői fiók-, jelszótár- vagy közvetítőszerver. Az alkalmazás nem küldi el automatikusan a profil- vagy jelszótáradataidat a fejlesztőnek vagy olyan eszközöknek, amelyek csatlakoztatását nem hagytad jóvá. A csatlakoztatott eszközök saját másolatot tárolnak, és hitelesített információt továbbíthatnak az ismert társeszközökről. Csak saját vagy általad felügyelt eszközöket csatlakoztass.
+
+A szinkronizálás TLS-kapcsolaton történik, és az alkalmazás ellenőrzi a társeszközt. A társeszközök megkereséséhez az alkalmazás aláírt vagy hitelesített UDP-felderítő üzeneteket küld a helyi hálózaton. A hálózat többi eszköze akkor is észlelheti a felderítés metaadatait, ha nincs csatlakoztatva a profilhoz. Ilyen adat például az IP-cím, az alkalmazás által létrehozott eszközazonosító, a csatlakoztatási munkamenet azonosítója és a forgalom időzítése. A felderítő üzenetek nem tartalmazzák a jelszótár adatait.
+
+## 7. Háttérműködés és rendszerengedélyek
+
+Ha a háttérműködés be van kapcsolva és elérhető, a Windows-ügynök vagy az Android-szolgáltatás a főablak bezárása után is folytathatja a felderítést, az eszközkapcsolatokat és a titkosított frissítések cseréjét. A titkosított frissítések helyben várakozhatnak, amíg egy jogosult munkamenet alkalmazni tudja őket. Ez eszközök közötti szinkronizálás, nem a kiadónak küldött telemetria. A háttérműködést a Beállításokban kezelheted; leállítása nem törli a korábban tárolt adatokat vagy a társeszközök másolatait.
+
+Androidon az alkalmazás internet-, hálózati/Wi-Fi-állapot- és multicastengedélyeket kér a kapcsolatokhoz és felderítéshez; kameraengedélyt a QR-beolvasáshoz; továbbá csatlakoztatott eszközökhöz tartozó előtérszolgáltatási, értesítési és rendszerindítási engedélyeket a háttérszolgáltatás működéséhez és újraindításához. A szolgáltatás értesítése jelezheti a háttértevékenységet. A kamerához futásidejű engedély kell. A kamera elutasítása mellett a kézi kódbevitel vagy a képkiválasztás továbbra is használható. Az operációs rendszer korlátozhatja a háttérműködést.
+
+Windowson a szükséges tűzfalszabályok hiányában az alkalmazás felajánlhatja azok beállítását. A módosításhoz az alkalmazásban megadott jóváhagyásod és a Windows rendszergazdai engedélye is szükséges. A beállítás a Password Manager Local ügynök szabályait hozza létre vagy cseréli le. A bejövő TCP 26688-as port az eszközök csatlakoztatására és szinkronizálására, az UDP 26689-es port a felderítésre szolgál. A bejövő szabályok a Windows hálózati profiljaira érvényesek, és nem szűrnek távoli IP-cím szerint. Kimenő szabály csak olyan engedélyezett tűzfalprofilhoz készül, amely alapértelmezésben blokkolja a kimenő forgalmat. Az alkalmazás csak a saját szabályait módosítja, a tűzfal be- vagy kikapcsolt állapotát nem változtatja meg. Ha elutasítod a beállítást, előfordulhat, hogy nem jön létre kapcsolat a társeszközökkel. A helyi jelszótár továbbra is használható.
+
+## 8. Kamera, QR-képek és kiválasztott fájlok
+
+Androidon a QR-beolvasás helyben olvassa a kamera előnézeti képkockáit a csatlakoztatási kód felismeréséhez. A beolvasó nem valósít meg felvételrögzítési vagy a fejlesztőhöz feltöltő szolgáltatást. A QR-kép kiválasztása művelet az eszközödön olvassa be a kiválasztott fájlt és ismeri fel a kódot. A kód kézzel is megadható. A csatlakoztatási kód biztonsági szempontból érzékeny kapcsolatot engedélyez; a kódot és az azt tartalmazó képet tartsd titokban.
+
+Ha képernyőképet készítesz a QR-kódról vagy az alkalmazáson kívül mented el a képet, az a jelszótártól külön tárolódik. A képre a mentési hely tárolási és biztonsági mentési szabályai vonatkoznak. A rendszer fájlválasztója vagy fájlszolgáltatója felhőalapú helyet is elérhet, ha ilyet választasz. Egy profil törlése nem távolítja el automatikusan a máshová mentett képeket.
+
+## 9. Vágólap és látható adatok
+
+Jelszó vagy más szöveg másolásakor olvasható tartalom kerül az operációs rendszer vágólapjára. Más alkalmazások, a vágólapelőzmények vagy a vágólap-szinkronizálás a rendszerbeállítások szerint megőrizhetik vagy hozzáférhetővé tehetik. A jelenlegi alkalmazás nem garantál időzített vágólaptörlést. Az érzékeny vágólaptartalmat töröld, és ellenőrizd a rendszer vágólapbeállításait.
+
+A képernyőn megjelenített információt a közeledben lévők láthatják, és rendszerszintű eszközök rögzíthetik. A jelszó elrejtése vagy a felhasználónév mellőzése a fő fejlécben nem rejti el a fiók összes adatát az alkalmazás minden részén.
+
+## 10. Megőrzés, törlés és másolatok
+
+A profil- és jelszótáradatok addig maradnak az eszközeiden, amíg módosítod vagy törlöd őket, illetve eltávolítod a megfelelő alkalmazástárhelyet. Az alkalmazásban nincs inaktivitás miatti fióklejárat. A kijelentkezés a munkamenetet zárja le, nem törli a profilt. Fióktörléshez jelentkezz be az adott profilba, nyisd meg a Profil → Biztonság → Fiók törlése lehetőséget, olvasd el a figyelmeztetést, add meg a mesterjelszót, majd erősítsd meg a törlést. Ez eltávolítja a helyi fiók módosítható profil-, jelszótár- és függő adatait, és aláírt törlési utasítást hoz létre a többi eszköz számára.
+
+A törlés nem azonnali távoli adattörlés. Az offline vagy elérhetetlen eszköz csak akkor alkalmazza, amikor megkapja és elfogadja a törlést. Egy eszköz leválasztása sem garantálja a meglévő másolatának törlését. A korábban másolt jelszavak, célprofilok, mentett képek, az operációs rendszer feljegyzései és a biztonsági másolatok külön figyelmet igényelnek.
+
+Az alkalmazás szándékosan megőrzi a fiók-/eszközazonosítókat, az aláírt törlési és vezérlési adatokat, valamint a korábbi tagság igazolásait a törlés ellenőrzéséhez és az adatok visszaállásának megelőzéséhez. A végleges fióktörlési védelmi rekordok a jelenlegi megvalósításban nem járnak le automatikusan. Más szinkronizálási törlésjelölők a protokoll visszaigazolási feltételeinek teljesülésekor törölhetők, nem meghatározott számú nap elteltével. Az adatbázis alaphelyzetbe állítása a helyi adatbázis- és kulcsfájlokat távolítja el; nem ígéri a rendszerfeljegyzések vagy külső másolatok törlését. A logikai törlés nem garantálja minden tárolóblokk forenzikus felülírását.
+
+## 11. Öndiagnosztika és hibainformációk
+
+Az alkalmazás helyben ellenőrizheti, és ahol lehetséges, javíthatja a fiók és a szinkronizálás állapotát. Az eredményt vagy a hibát megjelenítheti a képernyőn. Az alkalmazás nem vezet rendszeres diagnosztikai naplót, és nem küld automatikusan telemetriát, hibajelentést vagy összeomlási jelentést a fejlesztőnek. Az alkalmazás nem értesíti a fejlesztőt a hibákról. Az operációs rendszer vagy az alkalmazásbolt saját szabályai szerint kezelhet összeomlási vagy diagnosztikai adatokat.
+
+Ha hibát találsz, kérlek, jelezd a levente.baba.dev@gmail.com címen. Írd meg az alkalmazás verzióját, a használt platformot, hogy mit csináltál, és hogyan lehet előidézni a hibát. Ne küldj érzékeny adatokat, például felhasználónevet, jelszót, csatlakoztatási kódot, adatbázisfájlt vagy kulcsot. Ha képernyőképet csatolsz, előbb takard ki vagy távolítsd el az érzékeny részleteket. A fejlesztő kivizsgálja a bejelentéseket, és lehetőségei szerint javítja a hibákat.
+
+## 12. Rendszermentések és a hozzáférés elvesztése
+
+Az alkalmazás nem nyújt a fejlesztőnél tárolt felhőmentést vagy mesterjelszó-helyreállítási szolgáltatást. Az androidos változat letiltja az alkalmazásadatok automatikus felhőmentését, és kizárásokat állít be az automatikus eszközköltöztetéshez, mert adatbáziskulcsát az adott telepítéshez tartozó Android Keystore-kulcs védi. A szokásos teljes eltávolítás törli a privát helyi adatbázist és a Keystore-kulcsot; az újratelepítés új telepítést indít. Más platformokon az operációs rendszer vagy a mentőeszközök saját beállításaik szerint másolhatják az alkalmazás fájljait. A védett kulcsok másik telepítésben vagy rendszerfiókban használhatatlanok lehetnek.
+
+Az eltávolítás, az alkalmazásadatok törlése, az adatbázis alaphelyzetbe állítása vagy a kulcsok elvesztése végleg megszüntetheti a hozzáférést. Windowson az eltávolítás viselkedése a telepítőtől függ, és felhasználói adatok maradhatnak utána. Ezek a mentési kizárások nem törlik a korábban létrehozott mentéseket és a külön másolt fájlokat. A más eszközökön lévő másolatokat egy helyi eltávolítás nem törli automatikusan. Ezeket a másolatokat is tartsd ellenőrzés alatt, és ne tekints másik eszközt vagy mentést garantált helyreállítási lehetőségnek.
+
+## 13. Külső hivatkozások, e-mail és nemzetközi adattovábbítás
+
+Az alkalmazásban nincs beépített hirdetés, használatelemzés vagy automatikus fejlesztői telemetria. A tájékoztató és a beépített súgó olvasása nem nyit meg weboldalt. Hivatkozás megnyitásakor az alkalmazás átadja a címet a böngészőnek vagy a rendszer megnyitó szolgáltatásának. A céloldal megismerheti például az IP-címedet és a böngésződ adatait. Az alkalmazásboltok, a mentési szolgáltatók, a felhős fájlválasztók és a vágólap-szinkronizálási szolgáltatások saját adatvédelmi szabályokat alkalmaznak.
+
+Ha e-mailt küldesz a fejlesztőnek, a levelezőszolgáltatód és a fejlesztő Gmail-postafiókját biztosító Google kezeli a továbbítást és a tárolást. Az e-mail-adatok kezelése az EGT-n kívül is történhet. A Google a https://policies.google.com/privacy/frameworks oldalon ismerteti az adattovábbítási garanciáit, köztük az alkalmazandó megfelelőségi határozatokat és az általános szerződési feltételeket (SCC-ket). A levelezésedre vonatkozó garanciákról a fejlesztőtől kérhetsz tájékoztatást. A jelszótár közvetlenül az általad csatlakoztatott eszközök között szinkronizálódik.
+
+## 14. A fejlesztő e-mailes adatkezelése
+
+A fejlesztői postafiókba érkező személyes adatok kezeléséért Baba Levente felel. Ilyen adat lehet az e-mail-címed, a megjelenített neved, az üzeneted tartalma és időpontja, valamint az általad elküldött melléklet. A fejlesztő ezeket a megkeresések megválaszolására, a hibajelentések kivizsgálására és az adatvédelmi kérelmek kezelésére használja.
+
+Ahol a GDPR alkalmazandó, a támogatási megkeresések és visszajelzések kezelésének jogalapja a fejlesztő jogos érdeke a válaszadásban és az alkalmazás karbantartásában. Az adatvédelmi jogszabályban előírt kérelmeket a fejlesztő jogi kötelezettség teljesítése érdekében kezeli. A levelezést az ügy lezárásához és az esetleges utánkövetéshez szükséges ideig őrzi meg, vagy ennél tovább, ha erre jogszabály kötelezi. Támogatási e-mailt önként küldhetsz. A helyi profilodhoz megadott e-mail-címről az alkalmazás nem küld üzenetet a fejlesztőnek.
+
+## 15. Beállításaid, jogaid és a panasztétel
+
+Az alkalmazásban megtekintheted és módosíthatod a profil- és jelszóadatokat, bekapcsolhatod az Emlékezz rám ezen az eszközön lehetőséget, kezelheted a háttérműködést, csatlakoztathatsz vagy leválaszthatsz eszközöket, és törölheted a fiókot. A kamera- és értesítési engedélyek az Android beállításaiban kezelhetők. A jelenlegi profilok közötti Exportálás nem általános GDPR-adathordozhatósági export és nem fejlesztői igénybejelentő felület. A fejlesztő nem tudja központilag olvasni, helyreállítani vagy távolról törölni a kizárólag eszközeiden lévő másolatokat egy nem létező központi szolgáltatáson keresztül.
+
+Ha egy adatkezelő adatkezelésére a GDPR alkalmazandó, a jogszabályi feltételek szerint jogosult lehetsz hozzáférésre, helyesbítésre, törlésre, az adatkezelés korlátozására, adathordozhatóságra és tiltakozásra. Hozzájárulás esetén azt a korábbi jogszerű adatkezelés érintése nélkül visszavonhatod. Panaszt tehetsz felügyeleti hatóságnál, különösen a lakóhelyed, munkahelyed vagy a feltételezett jogsértés szerinti országban; Magyarországon ez a Nemzeti Adatvédelmi és Információszabadság Hatóság (NAIH), https://www.naih.hu/.
+
+Ha kérdésed van, vagy a fejlesztő által kezelt adatokkal kapcsolatban szeretnél élni a jogaiddal, írj a levente.baba.dev@gmail.com címre. Írd le, mire vonatkozik a megkeresés, és milyen intézkedést kérsz. A kizárólag az eszközeiden tárolt adatokat a fent ismertetett helyi lehetőségekkel kezelheted.
+
+## 16. Automatizált döntések és rendeltetésszerű használat
+
+Az alkalmazás saját belépési adataikat kezelő felhasználóknak készült. Nem kér születési dátumot és nem ellenőrzi az életkort.
+
+Az alkalmazás nem végez hirdetési profilalkotást, és nem hoz joghatással vagy hasonlóan jelentős hatással járó automatizált döntéseket. A helyi jelszóerősség-becslés, a szinkronizálási ütközések kezelése és az eszközbiztonsági ellenőrzések az alkalmazás működését szolgálják.
+
+## 17. A tájékoztató frissítése és elérhetősége
+
+A tájékoztató offline olvasható a Beállítások → Adatvédelmi tájékoztató útvonalon, valamint a regisztrációs képernyőről a profil létrehozása előtt.
+
+Az oldalon feltüntetett hatálybalépési dátum és változatszám azonosítja ezt a tájékoztatót. Ha az adatkezelés változik, a fejlesztő frissíti a tájékoztatót, és a vonatkozó előírások szerint jelzi a lényeges változásokat.

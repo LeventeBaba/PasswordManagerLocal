@@ -136,6 +136,30 @@
                   </ComboBox>
                 </StackPanel>
               </Border>
+
+              <Border Classes="toolbarGroup"
+                      IsVisible="{Binding IsInterfaceAnimationsControlVisible}">
+                <Grid ColumnDefinitions="*,Auto"
+                      ColumnSpacing="16">
+                  <StackPanel Spacing="4"
+                              VerticalAlignment="Center">
+                    <TextBlock Text="{Binding InterfaceAnimationsLabel}"
+                               FontWeight="SemiBold"
+                               FontSize="16"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding InterfaceAnimationsDescription}"
+                               Classes="subtleText"
+                               TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1"
+                                MinWidth="0"
+                                VerticalAlignment="Center"
+                                IsChecked="{Binding IsInterfaceAnimationsEnabled, Mode=TwoWay}"
+                                OnContent="{Binding OnLabel}"
+                                OffContent="{Binding OffLabel}"
+                                AutomationProperties.Name="{Binding InterfaceAnimationsLabel}" />
+                </Grid>
+              </Border>
             </StackPanel>
           </StackPanel>
         </Border>
@@ -230,6 +254,79 @@
               </Border>
             </StackPanel>
           </StackPanel>
+        </Border>
+
+        <TextBlock Text="{Binding InformationTitle}"
+                   Classes="sectionTitle"
+                   Margin="4,8,4,0"
+                   TextWrapping="Wrap" />
+
+        <Button Classes="secondary informationLink"
+                Command="{Binding NavigateToPrivacyCommand}"
+                AutomationProperties.Name="{Binding PrivacyTitle}"
+                AutomationProperties.HelpText="{Binding PrivacyDescription}">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" IsHitTestVisible="False">
+            <PathIcon Width="28" Height="28" Data="{StaticResource DocumentIconGeometry}"
+                      VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+              <TextBlock Text="{Binding PrivacyTitle}" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding PrivacyDescription}" Classes="subtleText" TextWrapping="Wrap" />
+            </StackPanel>
+            <PathIcon Grid.Column="2" Classes="mediumUiIcon"
+                      Data="{StaticResource ChevronRightIconGeometry}" VerticalAlignment="Center" />
+          </Grid>
+        </Button>
+
+        <Button Classes="secondary informationLink"
+                Command="{Binding NavigateToHelpCommand}"
+                AutomationProperties.Name="{Binding HelpTitle}"
+                AutomationProperties.HelpText="{Binding HelpDescription}">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" IsHitTestVisible="False">
+            <PathIcon Width="28" Height="28" Data="{StaticResource DocumentIconGeometry}"
+                      VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+              <TextBlock Text="{Binding HelpTitle}" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding HelpDescription}" Classes="subtleText" TextWrapping="Wrap" />
+            </StackPanel>
+            <PathIcon Grid.Column="2" Classes="mediumUiIcon"
+                      Data="{StaticResource ChevronRightIconGeometry}" VerticalAlignment="Center" />
+          </Grid>
+        </Button>
+
+        <Border Classes="card"
+                HorizontalAlignment="Stretch">
+          <Button Classes="ghost"
+                  Command="{Binding NavigateToAboutCommand}"
+                  Padding="0"
+                  HorizontalAlignment="Stretch"
+                  HorizontalContentAlignment="Stretch"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  AutomationProperties.Name="{Binding AboutTitle}">
+            <Grid ColumnDefinitions="Auto,*,Auto"
+                  ColumnSpacing="14"
+                  IsHitTestVisible="False">
+              <PathIcon Classes="informationIcon" Width="28"
+                        Height="28"
+                        Data="{StaticResource InformationIconGeometry}"
+                        VerticalAlignment="Center" />
+              <StackPanel Grid.Column="1"
+                          Spacing="4"
+                          VerticalAlignment="Center">
+                <TextBlock Text="{Binding AboutTitle}"
+                           FontWeight="SemiBold"
+                           FontSize="16"
+                           TextWrapping="Wrap" />
+                <TextBlock Text="{Binding AboutDescription}"
+                           Classes="subtleText"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+              <PathIcon Grid.Column="2"
+                        Classes="mediumUiIcon"
+                        Data="{StaticResource ChevronRightIconGeometry}"
+                        VerticalAlignment="Center" />
+            </Grid>
+          </Button>
         </Border>
       </StackPanel>
     </Grid>

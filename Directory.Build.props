@@ -1,12 +1,29 @@
 <Project>
   <PropertyGroup>
+    <!-- Shared product version for the About page, Windows binaries, and Android package. -->
+    <Version>1.0.0</Version>
     <RepositoryRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)'))</RepositoryRoot>
     <ArtifactsRoot>$(RepositoryRoot)artifacts\</ArtifactsRoot>
     <PublishArtifactsRoot>$(ArtifactsRoot)publish\</PublishArtifactsRoot>
+    <PmlWindowsIconDirectory>$(RepositoryRoot)artifacts/branding</PmlWindowsIconDirectory>
+    <PmlWindowsIconFile>$(PmlWindowsIconDirectory)/PasswordManagerLocal.ico</PmlWindowsIconFile>
+  </PropertyGroup>
+
+  <!-- The unified publisher sets ArtifactsPath through the CLI for both restore and build. -->
+  <PropertyGroup Condition="'$(ArtifactsPath)' != '' and '$(PmlWindowsUnifiedNativeAot)' == 'true'">
+    <NuGetLockFilePath>$(ArtifactsPath)\obj\$(MSBuildProjectName)\packages.lock.json</NuGetLockFilePath>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <DebugSymbols>false</DebugSymbols>
     <DebugType>None</DebugType>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(PmlWindowsUnifiedNativeAot)' != 'true' and ('$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Agent' or '$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Frontend')">
+    <Content Include="$(PmlWindowsIconFile)"
+             Link="PasswordManagerLocal.ico"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

@@ -7,6 +7,9 @@ internal static class WindowsNativeMethods
     internal const uint WmNull = 0x0000;
     internal const uint WmDestroy = 0x0002;
     internal const uint WmClose = 0x0010;
+    internal const uint WmQueryEndSession = 0x0011;
+    internal const uint WmEndSession = 0x0016;
+    internal const int EndSessionCloseApp = 0x00000001;
     internal const uint WmCommand = 0x0111;
     internal const uint WmContextMenu = 0x007B;
     internal const uint WmNcCreate = 0x0081;
@@ -195,6 +198,14 @@ internal static class WindowsNativeMethods
         int desiredWidth,
         int desiredHeight,
         uint loadFlags);
+
+    [DllImport("shell32.dll", EntryPoint = "ExtractIconExW", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    internal static extern uint ExtractIconEx(
+        string path,
+        int iconIndex,
+        nint largeIcons,
+        out nint smallIcon,
+        uint iconCount);
 
     [DllImport("user32.dll", EntryPoint = "DestroyIcon", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

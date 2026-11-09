@@ -1,8 +1,10 @@
+using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Sync;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
@@ -25,9 +27,13 @@ public sealed class NetworkDeltaService : INetworkDeltaService
     private readonly IUserRevisionKnowledgeRepository _revisionKnowledge;
     private readonly IInteractiveSessionStateService _interactiveSessions;
     private readonly IUserControlOperationInboxService _controlOperationInbox;
+    private readonly IServiceScopeFactory? _scopes;
     private readonly IDeviceIdentityService _identity;
     private readonly IUnitOfWork _uow;
     private readonly IUserTombstoneGarbageCollector? _garbageCollector;
+
+    private readonly IUserPostLoginWorkScheduler? _postLogin;
+    private readonly IUserLifecycleCoordinator? _userLifecycle;
 
     public NetworkDeltaService(
         IOutgoingDeltaBuilderService outgoingDeltaBuilder,
@@ -44,8 +50,14 @@ public sealed class NetworkDeltaService : INetworkDeltaService
         IUserRevisionKnowledgeRepository revisionKnowledge,
         IInteractiveSessionStateService interactiveSessions,
         IUserControlOperationInboxService controlOperationInbox,
-        IUserTombstoneGarbageCollector? garbageCollector = null)
+        IUserTombstoneGarbageCollector? garbageCollector = null,
+        IUserPostLoginWorkScheduler? postLogin = null,
+        IUserLifecycleCoordinator? userLifecycle = null,
+        IServiceScopeFactory? scopes = null)
     {
+        _scopes = scopes;
+        _postLogin = postLogin;
+        _userLifecycle = userLifecycle;
         _outgoingDeltaBuilder = outgoingDeltaBuilder;
         _protocol = protocol;
         _replay = replay;
@@ -66,7 +78,49 @@ public sealed class NetworkDeltaService : INetworkDeltaService
     public Task<NetworkDelta> BuildAsync(SyncItem item, Device device, CancellationToken ct = default) =>
         _outgoingDeltaBuilder.BuildAsync(item, device, ct);
 
-    public async Task<NetworkDeltaApplyResult> ApplyAsync(NetworkDelta delta, CancellationToken ct = default)
+    public Task<NetworkDeltaApplyResult> ApplyAsync(NetworkDelta delta, CancellationToken ct = default)
+    {
+        if (_scopes is null)
+            return ApplyCoreAsync(delta, ct);
+
+        // Entity is only a lock-routing hint. ApplyCoreAsync still verifies its
+        // exact agreement with the authenticated, decrypted payload before storage.
+        // Open the persistence scope after waiting, not before: a context retained
+        // by a multi-delta worker may otherwise contain an earlier canonical user,
+        // checkpoint or origin revision despite acquiring the correct lifecycle lock.
+        var parts = delta.Entity?.Split(':');
+        if (_userLifecycle is not null && parts is { Length: 3 } &&
+            parts[0] == nameof(SyncModelType.User) &&
+            Guid.TryParseExact(parts[2], "N", out var userId) && userId != Guid.Empty)
+            return _userLifecycle.ExecuteAsync(userId,
+                token => ApplyInFreshScopeAsync(delta, token), ct);
+
+        return ApplyInFreshScopeAsync(delta, ct);
+    }
+
+    private async Task<NetworkDeltaApplyResult> ApplyInFreshScopeAsync(NetworkDelta delta, CancellationToken ct)
+    {
+        const int maxAttempts = 3;
+        for (var attempt = 1; ; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            using var scope = _scopes!.CreateScope();
+            var service = (NetworkDeltaService)scope.ServiceProvider.GetRequiredService<INetworkDeltaService>();
+            try
+            {
+                return await service.ApplyCoreAsync(delta, ct);
+            }
+            catch (Exception ex) when (DeviceWriteConflict.IsStaleDevice(ex))
+            {
+                // Retry the authenticated delta with fresh device state. Durable inbox receipts
+                // and replay checks handle work already committed before the device write.
+                if (attempt == maxAttempts)
+                    throw new SyncStateUnavailableException("A device record changed during synchronization.", ex);
+            }
+        }
+    }
+
+    private async Task<NetworkDeltaApplyResult> ApplyCoreAsync(NetworkDelta delta, CancellationToken ct)
     {
         if (!_identity.IsSyncOn)
             throw new SyncRouteDisabledException("Local synchronization is disabled.");
@@ -77,6 +131,11 @@ public sealed class NetworkDeltaService : INetworkDeltaService
 
         await _protocol.ValidateSourceAuthorizationAsync(sourceDevice, payload, ct);
 
+        return await ApplyValidatedAsync(delta, sourceDevice, payload, ct);
+    }
+
+    private async Task<NetworkDeltaApplyResult> ApplyValidatedAsync(NetworkDelta delta, Device sourceDevice, SyncDeltaPayload payload, CancellationToken ct)
+    {
         if (payload.UserControlOperation is not null)
         {
             var receipt = await _controlOperationInbox.StoreAndApplyAsync(
@@ -127,10 +186,6 @@ public sealed class NetworkDeltaService : INetworkDeltaService
             ?? throw new InvalidDataException("User snapshot envelope is missing.");
 
         var inbox = _snapshotInbox;
-        var mergeCoordinator = _mergeCoordinator;
-        var keyResolver = _keyResolver;
-        var users = _users;
-
         var receipt = await inbox.StoreAsync(envelope, sourceDevice.Id, ct);
         await _lifecycle.TouchSourceDeviceAsync(sourceDevice, ct);
         await _uow.SaveChangesAsync(ct);
@@ -145,7 +200,33 @@ public sealed class NetworkDeltaService : INetworkDeltaService
         if (!durable)
             return new NetworkDeltaApplyResult(transportTimestamp, receipt);
 
-        var user = await users.GetByIdAsync(envelope.UserId, ct);
+        try
+        {
+            return _userLifecycle is null
+                ? await MergeStoredSnapshotAsync(envelope, receipt, transportTimestamp, ct)
+                : await _userLifecycle.ExecuteAsync(envelope.UserId,
+                    workCt => MergeStoredSnapshotAsync(envelope, receipt, transportTimestamp, workCt), ct);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or UnauthorizedAccessException or InvalidDataIntegrityException)
+        {
+            // The peer's signed envelope was already accepted and stored. A failure while
+            // merging or refreshing our own canonical state cannot be attributed to it.
+            throw new SyncStateUnavailableException("The verified snapshot is stored, but local merge is unavailable.", ex);
+        }
+    }
+    private async Task<NetworkDeltaApplyResult> MergeStoredSnapshotAsync(
+        UserSnapshotEnvelope envelope, UserSnapshotReceiptResult receipt, long transportTimestamp, CancellationToken ct)
+    {
+        var mergeCoordinator = _mergeCoordinator;
+        var keyResolver = _keyResolver;
+        var users = _users;
+        // This gate is checked under lifecycle ownership, after any concurrent login completed.
+        if (_postLogin?.IsInitialReadPending(envelope.UserId) == true)
+        {
+            _postLogin.Schedule(envelope.UserId);
+            return new NetworkDeltaApplyResult(transportTimestamp, receipt);
+        }
+        var user = await users.GetByIdAsNoTrackingAsync(envelope.UserId, ct);
         if (user is null || !keyResolver.TryResolve(user, out var key) || key is null)
             return new NetworkDeltaApplyResult(transportTimestamp, receipt);
 
@@ -170,6 +251,10 @@ public sealed class NetworkDeltaService : INetworkDeltaService
             }
         }
 
+        var refreshedUser = await users.GetByIdWithRelationsAsync(envelope.UserId, ct);
+        if (refreshedUser is not null)
+            await _interactiveSessions.RefreshSyncedUserSessionsAsync(refreshedUser, ct);
+
         // A batch merge can succeed because of a different origin while this exact candidate
         // was quarantined. Report MergedImmediately only when durable knowledge proves that the
         // acknowledged origin revision is actually covered by canonical state.
@@ -184,9 +269,6 @@ public sealed class NetworkDeltaService : INetworkDeltaService
                 return new NetworkDeltaApplyResult(transportTimestamp, receipt);
         }
 
-        var refreshedUser = await users.GetByIdWithRelationsAsync(envelope.UserId, ct);
-        if (refreshedUser is not null)
-            await _interactiveSessions.RefreshSyncedUserSessionsAsync(refreshedUser, ct);
 
         var mergedReceipt = receipt with
         {
@@ -195,4 +277,5 @@ public sealed class NetworkDeltaService : INetworkDeltaService
         };
         return new NetworkDeltaApplyResult(transportTimestamp, mergedReceipt);
     }
+
 }

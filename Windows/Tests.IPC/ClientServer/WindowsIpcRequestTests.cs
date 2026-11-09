@@ -21,17 +21,17 @@ public sealed class WindowsIpcRequestTests
             (context, cancellationToken) =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                observedCorrelationId = context.Request.CorrelationId;
+                observedCorrelationId = context.CorrelationId;
                 return Task.FromResult(context.Success(
                     new PingResponseDto(DateTimeOffset.UtcNow),
                     WindowsIpcJsonContext.Default.PingResponseDto));
             });
         await using var session = await IpcTestSession.CreateAsync(new[] { handler });
 
-        var response = await session.Client.SendAsync(IpcOperationId.Ping);
+        var response = await session.Client.SendWithTransmissionStateAsync(IpcOperationId.Ping);
 
         Assert.AreEqual(observedCorrelationId, response.CorrelationId);
-        Assert.IsTrue(response.IsSuccess);
+        Assert.IsTrue(response.Response.IsSuccess);
     }
 
     [TestMethod]
@@ -95,19 +95,18 @@ public sealed class WindowsIpcRequestTests
                 IpcCapabilities.Control));
         var serverTask = server.RunAsync();
         await CompleteRawHandshakeAsync(pair, serializer);
-        var request = new IpcRequestEnvelope(9, IpcOperationId.GetAgentStatus, null);
-        var requestPayload = serializer.Serialize(
-            request,
-            WindowsIpcJsonContext.Default.IpcRequestEnvelope);
+        var requestPayload = new IpcFramePayloadCodec(serializer).EncodeRequest(
+            new IpcRequestEnvelope(IpcOperationId.GetAgentStatus, null),
+            9);
         await pair.Client.WriteFrameAsync(CreateFrame(IpcMessageKind.Request, 9, requestPayload));
 
         var responseFrame = await pair.Client.ReadFrameAsync();
         Assert.IsNotNull(responseFrame);
-        var response = serializer.Deserialize(
-            responseFrame.Payload,
-            WindowsIpcJsonContext.Default.IpcResponseEnvelope);
+        var response = new IpcFramePayloadCodec(serializer).DecodeResponse(
+            responseFrame.Header.CorrelationId,
+            responseFrame.Payload);
 
-        Assert.AreEqual(9, response.CorrelationId);
+        Assert.AreEqual(9, responseFrame.Header.CorrelationId);
         Assert.AreEqual(IpcErrorCode.UnknownOperation, response.Error?.ErrorCode);
         await pair.Client.DisposeAsync();
         await serverTask;
@@ -127,6 +126,36 @@ public sealed class WindowsIpcRequestTests
         Assert.AreEqual(IpcErrorCode.HandlerFailed, exception.Error.ErrorCode);
         Assert.AreEqual("The IPC operation failed.", exception.Error.SafeMessage);
         Assert.IsFalse(exception.Error.SafeMessage.Contains("secret", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task EndpointOnlyResponseKindsAreRejectedForControlOperations()
+    {
+        var handler = new DelegateWindowsIpcRequestHandler(
+            IpcOperationId.Ping,
+            (_, _) => Task.FromResult(IpcResponseEnvelope.EndpointFailure(new byte[] { 1 })));
+        await using var session = await IpcTestSession.CreateAsync(new[] { handler });
+
+        var exception = await Assert.ThrowsAsync<IpcProtocolException>(async () =>
+            await session.Client.SendAsync(IpcOperationId.Ping));
+
+        Assert.AreEqual(IpcProtocolErrorCode.UnexpectedMessageKind, exception.ErrorCode);
+    }
+
+    [TestMethod]
+    public async Task ResponseBufferIsClearedAfterEncodingWhileReceivedCopyRemainsReadable()
+    {
+        var body = new byte[] { 11, 22, 33, 44 };
+        var expected = body.ToArray();
+        var handler = new DelegateWindowsIpcRequestHandler(
+            IpcOperationId.Ping,
+            (_, _) => Task.FromResult(IpcResponseEnvelope.Success(body)));
+        await using var session = await IpcTestSession.CreateAsync(new[] { handler });
+
+        var response = await session.Client.SendAsync(IpcOperationId.Ping);
+
+        CollectionAssert.AreEqual(expected, response.Result!);
+        CollectionAssert.AreEqual(new byte[body.Length], body);
     }
 
     [TestMethod]
@@ -162,10 +191,9 @@ public sealed class WindowsIpcRequestTests
         var resultPayload = session.Serializer.Serialize(
             new PingResponseDto(DateTimeOffset.UtcNow),
             WindowsIpcJsonContext.Default.PingResponseDto);
-        var envelope = IpcResponseEnvelope.Success(999, resultPayload);
-        var payload = session.Serializer.Serialize(
-            envelope,
-            WindowsIpcJsonContext.Default.IpcResponseEnvelope);
+        var payload = new IpcFramePayloadCodec(session.Serializer).EncodeResponse(
+            IpcResponseEnvelope.Success(resultPayload),
+            999);
         await session.Pair.Server.WriteFrameAsync(
             CreateFrame(IpcMessageKind.Response, 999, payload));
 
@@ -201,7 +229,6 @@ public sealed class WindowsIpcRequestTests
         WindowsIpcSerializer serializer)
     {
         var request = new IpcHandshakeRequest(
-            WindowsIpcProtocol.CurrentVersion,
             IpcPeerRole.TestClient,
             Environment.ProcessId,
             0,
@@ -224,7 +251,6 @@ public sealed class WindowsIpcRequestTests
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 kind,
-                IpcFrameFlags.None,
                 correlationId,
                 payload.Length),
             payload);

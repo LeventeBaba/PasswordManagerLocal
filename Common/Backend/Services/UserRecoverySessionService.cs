@@ -1,5 +1,7 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Contracts.Notifications;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
 
@@ -15,26 +17,33 @@ public sealed class UserRecoverySessionService : IUserRecoverySessionService
     private readonly ITokenService _tokens;
     private readonly IKeyVaultService _keys;
     private readonly IDataCachingService _cache;
+    private readonly IBackendChangePublisher? _changePublisher;
 
     public UserRecoverySessionService(
         ITokenService tokens,
         IKeyVaultService keys,
-        IDataCachingService cache)
+        IDataCachingService cache,
+        IBackendChangePublisher? changePublisher = null)
     {
         _tokens = tokens;
         _keys = keys;
         _cache = cache;
+        _changePublisher = changePublisher;
     }
 
     public Task RefreshOrInvalidateAsync(User user, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        var invalidatedAny = false;
         foreach (var token in _tokens.ListTokensByUid(user.UId))
         {
             _cache.InvalidateToken(token);
             _keys.InvalidateToken(token);
-            _tokens.Revoke(token, AuthSessionInvalidationReason.CanonicalRecovered);
+            invalidatedAny |= _tokens.Revoke(token, AuthSessionInvalidationReason.CanonicalRecovered);
         }
+
+        if (invalidatedAny)
+            _changePublisher?.Publish(FrontendChangeScope.AuthenticationSessions, user.UId);
 
         return Task.CompletedTask;
     }

@@ -7,8 +7,6 @@ namespace PasswordManagerLocal.Windows.Ipc.Serialization;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = false,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
-[JsonSerializable(typeof(IpcRequestEnvelope))]
-[JsonSerializable(typeof(IpcResponseEnvelope))]
 [JsonSerializable(typeof(IpcHandshakeRequest))]
 [JsonSerializable(typeof(IpcHandshakeResponse))]
 [JsonSerializable(typeof(WindowsUiIpcIdentity))]
@@ -29,6 +27,8 @@ namespace PasswordManagerLocal.Windows.Ipc.Serialization;
 [JsonSerializable(typeof(AgentExitRequestDto))]
 [JsonSerializable(typeof(RequestAcceptedDto))]
 [JsonSerializable(typeof(DatabaseResetResultDto))]
+[JsonSerializable(typeof(IpcChangeNotificationDto))]
+[JsonSerializable(typeof(SetChangeNotificationUserRequestDto))]
 public partial class WindowsIpcJsonContext : JsonSerializerContext
 {
 }

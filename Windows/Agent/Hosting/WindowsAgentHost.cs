@@ -582,7 +582,7 @@ public sealed class WindowsAgentHost : IWindowsAgentHost
         var snapshot = _backendOwner.Snapshot;
         var recoverableDatabaseFailure =
             snapshot.State == WindowsAgentBackendOwnerState.Failed &&
-            snapshot.Runtime.FailureKind == BackendRuntimeFailureKind.DatabaseCompatibility;
+            snapshot.Runtime.FailureKind.RequiresDatabaseReset();
         if ((snapshot.State != WindowsAgentBackendOwnerState.Ready && !recoverableDatabaseFailure) ||
             snapshot.IsResetting ||
             snapshot.RequiresProcessRestart)
@@ -628,7 +628,7 @@ public sealed class WindowsAgentHost : IWindowsAgentHost
 
         if (_stateStore.State == AgentState.Running &&
             snapshot.State == WindowsAgentBackendOwnerState.Failed &&
-            snapshot.Runtime.FailureKind != BackendRuntimeFailureKind.DatabaseCompatibility &&
+            !snapshot.Runtime.FailureKind.RequiresDatabaseReset() &&
             Volatile.Read(ref _shutdownStarted) == 0)
         {
             _admissionGate.ClosePermanently();

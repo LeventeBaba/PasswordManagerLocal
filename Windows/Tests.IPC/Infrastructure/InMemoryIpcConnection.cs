@@ -25,6 +25,7 @@ internal sealed class InMemoryIpcConnection : IWindowsIpcConnection
     public int? VerifiedPeerProcessId => null;
     public bool IsConnected => Volatile.Read(ref _disposeStarted) == 0;
     public Exception? DisposeException { get; set; }
+    public bool FailNotificationWrites { get; set; }
     public int DisposeCallCount => Volatile.Read(ref _disposeCallCount);
 
     public async ValueTask<IpcFrame?> ReadFrameAsync(
@@ -52,6 +53,7 @@ internal sealed class InMemoryIpcConnection : IWindowsIpcConnection
         {
             cancellationToken.ThrowIfCancellationRequested();
             ThrowIfDisposed();
+            ThrowIfNotificationWriteFails(frame);
             await _outgoing.WriteAsync(frame, cancellationToken);
         }
         finally
@@ -92,6 +94,7 @@ internal sealed class InMemoryIpcConnection : IWindowsIpcConnection
             if (!tryBeginWrite())
                 return IpcFrameWriteResult.SkippedBeforeTransmission;
 
+            ThrowIfNotificationWriteFails(frame);
             await _outgoing.WriteAsync(frame, shutdownCancellationToken);
             return IpcFrameWriteResult.Written;
         }
@@ -125,5 +128,11 @@ internal sealed class InMemoryIpcConnection : IWindowsIpcConnection
     {
         if (Volatile.Read(ref _disposeStarted) != 0)
             throw new ObjectDisposedException(nameof(InMemoryIpcConnection));
+    }
+
+    private void ThrowIfNotificationWriteFails(IpcFrame frame)
+    {
+        if (FailNotificationWrites && frame.Header.MessageKind == IpcMessageKind.Notification)
+            throw new IOException("The in-memory notification delivery failed.");
     }
 }

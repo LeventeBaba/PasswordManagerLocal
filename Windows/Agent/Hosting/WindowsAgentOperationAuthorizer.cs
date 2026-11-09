@@ -48,7 +48,7 @@ public sealed class WindowsAgentOperationAuthorizer : IWindowsIpcOperationAuthor
                 WindowsAgentBackendOwnerState.Stopping or
                 WindowsAgentBackendOwnerState.Stopped ||
             (backend.State == WindowsAgentBackendOwnerState.Failed &&
-                (backend.Runtime.FailureKind != BackendRuntimeFailureKind.DatabaseCompatibility ||
+                (!backend.Runtime.FailureKind.RequiresDatabaseReset() ||
                     !IsFailedBackendRecoveryOperation(context.Request.OperationId))))
         {
             return IpcAuthorizationDecision.Denied(

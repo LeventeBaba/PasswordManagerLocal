@@ -3,6 +3,7 @@ using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Backend.Hosting;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 
 namespace PasswordManagerLocal.Common.Tests.Fakes;
 
@@ -27,6 +28,7 @@ public sealed class FakeBackendRuntime : IBackendRuntime
         null,
         DateTimeOffset.UtcNow);
     public SyncRuntimeSnapshot SyncSnapshot { get; private set; } = new(SyncRuntimeState.Disabled, null);
+    public IBackendChangeSource? ChangeSource { get; set; }
     public int EnsureStartedCalls { get; private set; }
     public int WaitUntilReadyCalls { get; private set; }
     public int OpenInteractiveSessionCalls { get; private set; }
@@ -41,6 +43,7 @@ public sealed class FakeBackendRuntime : IBackendRuntime
     public Exception? StopFailure { get; set; }
     public Action? AfterStart { get; set; }
     public Action? BeforeReset { get; set; }
+    public Action? AfterReset { get; set; }
     public TaskCompletionSource? InteractiveSessionDisposeEntered { get; set; }
     public Task? InteractiveSessionDisposeRelease { get; set; }
     public TaskCompletionSource? ResetEntered { get; set; }
@@ -138,6 +141,7 @@ public sealed class FakeBackendRuntime : IBackendRuntime
             InteractiveSessionLifecycleState.None,
             null,
             DateTimeOffset.UtcNow);
+        AfterReset?.Invoke();
     }
 
     public Task StopAsync(CancellationToken cancellationToken = default)

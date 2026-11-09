@@ -69,6 +69,17 @@ public sealed class WindowsIpcControlClient
             WindowsIpcJsonContext.Default.UiConnectionRegistrationResponseDto,
             cancellationToken);
 
+    public Task<RequestAcceptedDto> SetChangeNotificationUserAsync(
+        Guid? userId,
+        bool enabled,
+        CancellationToken cancellationToken = default) =>
+        SendForResultAsync(
+            IpcOperationId.SetChangeNotificationUser,
+            new SetChangeNotificationUserRequestDto(userId, enabled),
+            WindowsIpcJsonContext.Default.SetChangeNotificationUserRequestDto,
+            WindowsIpcJsonContext.Default.RequestAcceptedDto,
+            cancellationToken);
+
     public Task<RequestAcceptedDto> RequestUiOpenAsync(
         UiOpenRequestDto request,
         CancellationToken cancellationToken = default) =>

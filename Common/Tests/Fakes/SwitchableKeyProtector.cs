@@ -10,6 +10,7 @@ public sealed class SwitchableKeyProtector : IKeyProtector
     private readonly TestKeyProtector _inner = new();
 
     public bool IsTemporarilyUnavailable { get; set; }
+    public bool IsPermanentlyUnavailable { get; set; }
 
     public byte[] Protect(ReadOnlySpan<byte> plaintext)
     {
@@ -20,6 +21,8 @@ public sealed class SwitchableKeyProtector : IKeyProtector
     public byte[] Unprotect(ReadOnlySpan<byte> protectedBlob)
     {
         ThrowIfUnavailable();
+        if (IsPermanentlyUnavailable)
+            throw new System.Security.Cryptography.CryptographicException("The original platform key is unavailable.");
         return _inner.Unprotect(protectedBlob);
     }
 

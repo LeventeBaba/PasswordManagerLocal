@@ -1,7 +1,7 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSec.Cryptography;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
@@ -25,18 +25,20 @@ public sealed class UserSnapshotPublisherServiceTests
     [TestCategory("Integration")]
     public async Task GetOrCreateAsync_AssignsDurableMonotonicRevisionsAndReusesUnchangedSnapshot()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var writes = database.OpenSession();
+        var users = new UserRepository(writes);
         var user = CreateUser();
-        await database.Users.AddAsync(user);
-        await database.UnitOfWork.SaveChangesAsync();
+        await users.AddAsync(user);
+        await writes.SaveChangesAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var identity = CreateIdentity(signingKey);
         var service = new UserSnapshotPublisherService(
-            database.UserSyncSnapshots,
-            database.UserSyncStates,
-            database.UserRevisionKnowledge,
+            new UserSyncSnapshotRepository(writes),
+            new UserSyncStateRepository(writes),
+            new UserRevisionKnowledgeRepository(writes),
             identity,
-            database.UnitOfWork,
+            writes,
             new UserLifecycleCoordinator());
 
         var first = await service.GetOrCreateAsync(user);
@@ -54,13 +56,10 @@ public sealed class UserSnapshotPublisherServiceTests
         user.UserDataLastModifiedAt = user.UserPasswordsDataLastModifiedAt;
         user.LastModifiedAt = user.UserPasswordsDataLastModifiedAt;
         user.GenerateIntegrityHash();
-        database.Users.Update(user);
+        users.Update(user);
         var second = await service.GetOrCreateAsync(user);
 
-        database.Db.ChangeTracker.Clear();
-        var snapshots = await database.Db.UserSyncSnapshots
-            .Where(snapshot => snapshot.UserId == user.UId)
-            .ToListAsync();
+        var snapshots = await database.UserSyncSnapshots.ListForUserAsync(user.UId);
         var state = await database.UserSyncStates.GetAsync(user.UId);
         var knowledge = await database.UserRevisionKnowledge.GetAsync(
             user.UId,
@@ -92,18 +91,20 @@ public sealed class UserSnapshotPublisherServiceTests
     [TestCategory("Integration")]
     public async Task GetOrCreateAsync_NewInstallationInstance_RestartsRevisionInSeparateOriginNamespace()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var writes = database.OpenSession();
+        var users = new UserRepository(writes);
         var user = CreateUser();
-        await database.Users.AddAsync(user);
-        await database.UnitOfWork.SaveChangesAsync();
+        await users.AddAsync(user);
+        await writes.SaveChangesAsync();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
         var identity = CreateIdentity(signingKey);
         var service = new UserSnapshotPublisherService(
-            database.UserSyncSnapshots,
-            database.UserSyncStates,
-            database.UserRevisionKnowledge,
+            new UserSyncSnapshotRepository(writes),
+            new UserSyncStateRepository(writes),
+            new UserRevisionKnowledgeRepository(writes),
             identity,
-            database.UnitOfWork,
+            writes,
             new UserLifecycleCoordinator());
 
         var first = await service.GetOrCreateAsync(user);
@@ -111,10 +112,7 @@ public sealed class UserSnapshotPublisherServiceTests
         identity.OriginInstanceId = Guid.NewGuid();
         var afterReset = await service.GetOrCreateAsync(user);
 
-        var snapshots = await database.Db.UserSyncSnapshots
-            .Where(snapshot => snapshot.UserId == user.UId)
-            .OrderBy(snapshot => snapshot.OriginInstanceId)
-            .ToListAsync();
+        var snapshots = await database.UserSyncSnapshots.ListForUserAsync(user.UId);
 
         MSTestAssert.AreEqual(1L, first.OriginRevision);
         MSTestAssert.AreEqual(1L, afterReset.OriginRevision);
@@ -129,7 +127,7 @@ public sealed class UserSnapshotPublisherServiceTests
     [TestCategory("Integration")]
     public async Task GetOrCreateAsync_UnhealthyCanonicalGateDoesNotCreateOrSignSnapshot()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var user = CreateUser();
         await database.Users.AddAsync(user);
         await database.UnitOfWork.SaveChangesAsync();
@@ -154,8 +152,8 @@ public sealed class UserSnapshotPublisherServiceTests
 
         await MSTestAssert.ThrowsAsync<InvalidDataException>(() => service.GetOrCreateAsync(user));
 
-        MSTestAssert.AreEqual(0, await database.Db.UserSyncSnapshots.CountAsync());
-        MSTestAssert.AreEqual(0, await database.Db.UserSyncStates.CountAsync());
+        MSTestAssert.IsEmpty(await database.UserSyncSnapshots.ListForUserAsync(user.UId));
+        MSTestAssert.IsNull(await database.UserSyncStates.GetAsync(user.UId));
     }
 
 
@@ -165,7 +163,7 @@ public sealed class UserSnapshotPublisherServiceTests
     [TestCategory("Recovery")]
     public async Task GetOrCreateAsync_HealthFailureRetainsPriorPublicationAsRecoveryEvidenceAndSchedulesRetry()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var user = CreateUser();
         await database.Users.AddAsync(user);
         await database.UnitOfWork.SaveChangesAsync();
@@ -197,7 +195,6 @@ public sealed class UserSnapshotPublisherServiceTests
 
         await MSTestAssert.ThrowsAsync<InvalidDataException>(() => blockedPublisher.GetOrCreateAsync(user));
 
-        database.Db.ChangeTracker.Clear();
         var retained = await database.UserSyncSnapshots.GetAsync(
             user.UId,
             identity.LocalDeviceId,
@@ -216,7 +213,7 @@ public sealed class UserSnapshotPublisherServiceTests
     [TestCategory("Integration")]
     public async Task GetOrCreateAsync_AfterHealthRecovery_ReusesIsolatedLocalOriginRowWithNewRevision()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var user = CreateUser();
         await database.Users.AddAsync(user);
         await database.UnitOfWork.SaveChangesAsync();
@@ -256,8 +253,7 @@ public sealed class UserSnapshotPublisherServiceTests
             }));
 
         var republished = await recoveredPublisher.GetOrCreateAsync(user);
-        database.Db.ChangeTracker.Clear();
-        var rows = await database.Db.UserSyncSnapshots.Where(row => row.UserId == user.UId).ToListAsync();
+        var rows = await database.UserSyncSnapshots.ListForUserAsync(user.UId);
 
         MSTestAssert.HasCount(1, rows);
         MSTestAssert.AreEqual(first.Id, republished.Id);

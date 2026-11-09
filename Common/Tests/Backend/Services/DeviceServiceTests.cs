@@ -5,6 +5,7 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Tests.Fakes;
@@ -31,7 +32,7 @@ public sealed class DeviceServiceTests
         var service = host.Services.GetRequiredService<IDeviceService>();
         var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
         var localUsers = (FakeLocalUserDeviceRepository)host.Services.GetRequiredService<ILocalUserDeviceRepository>();
-        var queue = (FakeSyncQueueService)host.Services.GetRequiredService<ISyncQueueService>();
+        var queue = host.Services.GetRequiredService<FakeSyncQueueService>();
         var runtime = (FakeSyncRuntimeService)host.Services.GetRequiredService<ISyncRuntimeService>();
         var identity = (FakeDeviceIdentityService)host.Services.GetRequiredService<IDeviceIdentityService>();
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("device_sync_toggle"));
@@ -62,7 +63,7 @@ public sealed class DeviceServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
-    public async Task GetUserDevices_AddsMissingEncryptedMetadata_AndReturnsLocalAndRemoteDevices()
+    public async Task GetUserDevices_PresentsMissingEncryptedMetadata_WithoutPersistingIt()
     {
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
@@ -77,6 +78,8 @@ public sealed class DeviceServiceTests
         devices.Seed(remote);
         await userDevices.AddAsync(CreateLink(userId, remote, true, false));
 
+        using var before = await users.GetLoadAndVerifyUserDataBundleAsync(token);
+        var generation = before.CanonicalGeneration?.ToArray();
         var result = await service.GetUserDevicesAsync(token);
 
         MSTestAssert.HasCount(2, result);
@@ -99,14 +102,15 @@ public sealed class DeviceServiceTests
         MSTestAssert.IsNull(localResponse.PreviousLoginDate);
         MSTestAssert.IsTrue(localResponse.IsOnline);
 
-        var bundle = await users.GetLoadAndVerifyUserDataBundleAsync(token);
-        MSTestAssert.IsTrue(bundle.UserDevicesData.Devices.Any(device => device.Id == remote.Id));
+        using var bundle = await users.GetLoadAndVerifyUserDataBundleAsync(token);
+        MSTestAssert.IsFalse(bundle.UserDevicesData.Devices.Any(device => device.Id == remote.Id));
+        CollectionAssert.AreEqual(generation!, bundle.CanonicalGeneration!);
     }
 
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
-    public async Task GetUserDevices_RequiresAuthenticatedProbeAndSyncEligibilityForRemoteOnline()
+    public async Task GetUserDevices_UsesCachedPresence_AndNeverStartsProbes()
     {
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
@@ -115,15 +119,13 @@ public sealed class DeviceServiceTests
         var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
         var devices = (FakeDeviceRepository)host.Services.GetRequiredService<IDeviceRepository>();
         var endpoints = host.Services.GetRequiredService<IDiscoveredDeviceEndpointRegistry>();
+        var presence = host.Services.GetRequiredService<PasswordManagerLocal.Common.Backend.Abstractions.Sync.Presence.IDevicePresenceRegistry>();
         var transport = host.Services.GetRequiredService<FakeSyncTransportClientService>();
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("device_online_status"));
         var userId = users.GetUidFromToken(token);
         var remote = CreateRemoteDevice();
         devices.Seed(remote);
         await userDevices.AddAsync(CreateLink(userId, remote, true, false));
-
-        var beforeDiscovery = await service.GetUserDevicesAsync(token);
-        MSTestAssert.IsFalse(beforeDiscovery.Single(item => item.DeviceId == remote.Id).IsOnline);
 
         endpoints.AddOrUpdate(new DiscoveredDeviceEndpoint
         {
@@ -132,19 +134,33 @@ public sealed class DeviceServiceTests
             TlsCertFingerprint = remote.TlsCertFingerprint
         });
 
-        transport.ProbeResult = PasswordManagerLocal.Common.Backend.Sync.Presence.DevicePresenceProbeResult.Failed(
-            PasswordManagerLocal.Common.Backend.Sync.Presence.DevicePresenceFailureKind.TlsOrFingerprintMismatch);
-        var discoveryOnly = await service.GetUserDevicesAsync(token);
-        MSTestAssert.IsFalse(discoveryOnly.Single(item => item.DeviceId == remote.Id).IsOnline);
+        var beforeProbe = await service.GetUserDevicesAsync(token);
+        MSTestAssert.IsFalse(beforeProbe.Single(item => item.DeviceId == remote.Id).IsOnline);
+        MSTestAssert.AreEqual(0, transport.ProbeCalls);
 
-        transport.ProbeResult = PasswordManagerLocal.Common.Backend.Sync.Presence.DevicePresenceProbeResult.Success;
-        var authenticated = await service.GetUserDevicesAsync(token);
-        MSTestAssert.IsTrue(authenticated.Single(item => item.DeviceId == remote.Id).IsOnline);
+        presence.RefreshAuthenticated(
+            remote.TlsCertFingerprint,
+            new DiscoveredDeviceEndpoint
+            {
+                Host = "192.168.1.25",
+                Port = 26688,
+                TlsCertFingerprint = remote.TlsCertFingerprint
+            },
+            PasswordManagerLocal.Common.Backend.Sync.Presence.DevicePresenceObservationSource.DirectProbe);
+        var cachedOnline = await service.GetUserDevicesAsync(token);
+        MSTestAssert.IsTrue(cachedOnline.Single(item => item.DeviceId == remote.Id).IsOnline);
+        MSTestAssert.AreEqual(0, transport.ProbeCalls);
+
+        presence.InvalidateAll("Arrange stale cached presence.");
+        var cachedOffline = await service.GetUserDevicesAsync(token);
+        MSTestAssert.IsFalse(cachedOffline.Single(item => item.DeviceId == remote.Id).IsOnline);
+        MSTestAssert.AreEqual(0, transport.ProbeCalls);
 
         await service.SetUserDeviceSyncOnAsync(token, remote.Id, false);
 
         var syncDisabled = await service.GetUserDevicesAsync(token);
         MSTestAssert.IsFalse(syncDisabled.Single(item => item.DeviceId == remote.Id).IsOnline);
+        MSTestAssert.AreEqual(0, transport.ProbeCalls);
     }
 
     [TestMethod]
@@ -178,6 +194,43 @@ public sealed class DeviceServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
+    public async Task DeviceName_CanReuseNameOwnedOnlyByDeletedStaleMetadata()
+    {
+        using var host = new BackendTestHost();
+        var auth = host.Services.GetRequiredService<IAuthService>();
+        var users = host.Services.GetRequiredService<IUserService>();
+        var service = host.Services.GetRequiredService<IDeviceService>();
+        var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
+        var versionClock = host.Services.GetRequiredService<ISyncVersionClockService>();
+        var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("device_reuse_deleted_name"));
+        var userId = users.GetUidFromToken(token);
+        var removedDevice = CreateRemoteDevice();
+        await userDevices.AddAsync(CreateLink(userId, removedDevice, false, true));
+
+        using (var bundle = await users.GetLoadAndVerifyUserDataBundleAsync(token))
+        {
+            var stale = new UserDeviceData
+            {
+                Id = removedDevice.Id,
+                Name = "Reusable device name",
+                LinkedAt = DateTimeOffset.UtcNow.AddDays(-2),
+                LastUpdatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+                Version = versionClock.Next()
+            };
+            stale.GenerateIntegrityHash();
+            bundle.UserDevicesData.Devices.Add(stale);
+            await users.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Devices, false);
+        }
+
+        await service.SetLocalDeviceNameAsync(token, "Reusable device name");
+
+        var result = await service.GetUserDevicesAsync(token);
+        MSTestAssert.AreEqual("Reusable device name", result.Single(item => item.IsCurrentDevice).Name);
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
     public async Task SetUserDeviceSyncOn_DisablingRemovesIdleCachedIdentity_EnablingQueuesCatchUp()
     {
         using var host = new BackendTestHost();
@@ -186,7 +239,7 @@ public sealed class DeviceServiceTests
         var service = host.Services.GetRequiredService<IDeviceService>();
         var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
         var devices = (FakeDeviceRepository)host.Services.GetRequiredService<IDeviceRepository>();
-        var queue = (FakeSyncQueueService)host.Services.GetRequiredService<ISyncQueueService>();
+        var queue = host.Services.GetRequiredService<FakeSyncQueueService>();
         var syncIdentities = (FakeSyncDeviceIdentityService)host.Services.GetRequiredService<ISyncDeviceIdentityService>();
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("remote_sync_toggle"));
         var userId = users.GetUidFromToken(token);
@@ -222,7 +275,7 @@ public sealed class DeviceServiceTests
         var service = host.Services.GetRequiredService<IDeviceService>();
         var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
         var devices = (FakeDeviceRepository)host.Services.GetRequiredService<IDeviceRepository>();
-        var queue = (FakeSyncQueueService)host.Services.GetRequiredService<ISyncQueueService>();
+        var queue = host.Services.GetRequiredService<FakeSyncQueueService>();
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("unblock_device"));
         var userId = users.GetUidFromToken(token);
         var remote = CreateRemoteDevice();
@@ -274,7 +327,7 @@ public sealed class DeviceServiceTests
         var addition = UserControlOperationEnvelopeUtil.CreateDeviceAdditionPayload(
             userId, canonical.KeyEpoch, canonical.MembershipEpoch, remote.Id, remoteOrigin,
             remote.SignPublicKey, remote.PublicKey, remote.TlsCertFingerprint, remote.DeviceType);
-        await membership.AuthorizeAdditionAsync(addition, Guid.NewGuid(), RandomNumberGenerator.GetBytes(32));
+        await membership.AuthorizeAdditionAsync(addition, Guid.NewGuid(), RandomNumberGenerator.GetBytes(32), DateTimeOffset.UtcNow);
         canonical.MembershipEpoch = addition.ResultingMembershipEpoch;
         canonical.GenerateIntegrityHash();
         userRepository.Update(canonical);

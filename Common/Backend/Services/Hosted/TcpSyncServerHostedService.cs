@@ -49,7 +49,12 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
 
 
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    internal IPEndPoint? BoundEndpoint => _listener?.LocalEndpoint as IPEndPoint;
+
+    public Task StartAsync(CancellationToken cancellationToken) =>
+        StartAsync(new IPEndPoint(IPAddress.Any, SyncConstants.SyncPort), cancellationToken);
+
+    internal async Task StartAsync(IPEndPoint bindEndpoint, CancellationToken cancellationToken)
     {
         await _lifecycleLock.WaitAsync(cancellationToken);
         try
@@ -63,7 +68,7 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
             if (_listener is not null)
                 return;
 
-            var listener = new TcpListener(IPAddress.Any, SyncConstants.SyncPort)
+            var listener = new TcpListener(bindEndpoint)
             {
                 ExclusiveAddressUse = true
             };
@@ -74,8 +79,8 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
                 listener.Start();
                 _listener = listener;
                 _cts = lifetime;
-                _acceptLoopTask = Task.Run(() => AcceptLoopAsync(listener, lifetime.Token), CancellationToken.None);
-                var localEndpoint = listener.LocalEndpoint?.ToString() ?? $"0.0.0.0:{SyncConstants.SyncPort}";
+                _acceptLoopTask = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => AcceptLoopAsync(listener, lifetime.Token), CancellationToken.None);
+                var localEndpoint = listener.LocalEndpoint;
                 BackendDebugLog.Info($"TCP sync server listening on {localEndpoint}. ProcessId={Environment.ProcessId}, ExclusiveAddressUse={listener.ExclusiveAddressUse}.");
                 if (_identity.IsSyncOn && _executionProfileProvider?.IsInteractive == false)
                 {
@@ -88,7 +93,7 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
             {
                 listener.Stop();
                 lifetime.Dispose();
-                BackendDebugLog.Error($"TCP sync server could not start on 0.0.0.0:{SyncConstants.SyncPort}: {ex.Message}", ex);
+                BackendDebugLog.Error($"TCP sync server could not start on {bindEndpoint}: {ex.Message}", ex);
                 throw;
             }
         }
@@ -170,7 +175,7 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
             }
 
             BackendDebugLog.Info($"TCP sync server accepted an incoming connection from {remoteIp}.");
-            _ = Task.Run(() => HandleClientAsync(client, remoteIp, ct), CancellationToken.None);
+            _ = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => HandleClientAsync(client, remoteIp, ct), CancellationToken.None);
         }
     }
 
@@ -422,9 +427,11 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
     {
         var totalBytes = 0L;
 
-        while (!ct.IsCancellationRequested)
+        using var receiveDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        receiveDeadline.CancelAfter(TimeSpan.FromSeconds(SyncConstants.DeviceEnrollmentTransferTimeoutSeconds));
+        while (true)
         {
-            var frame = await ReadFrameAsync(stream, ct) ?? throw new EndOfStreamException();
+            var frame = await ReadFrameAsync(stream, receiveDeadline.Token) ?? throw new EndOfStreamException();
             if (frame.Type == SyncTcpMessageType.CompleteDeviceEnrollmentEnd)
                 yield break;
 

@@ -20,7 +20,7 @@ public sealed class UserSnapshotAntiEntropyServiceTests
     [TestCategory("Integration")]
     public async Task BuildInventory_AdvertisesOnlyRetainedRelayableSnapshotsAndPreservesMergedAndForkKnowledge()
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
         var localDeviceId = Guid.NewGuid();
         var peerDeviceId = Guid.NewGuid();
         var retainedOriginId = Guid.NewGuid();
@@ -55,7 +55,7 @@ public sealed class UserSnapshotAntiEntropyServiceTests
             IsSyncOn = true
         };
         localIdentityModel.GenerateIntegrityHash();
-        database.Db.Add(localIdentityModel);
+        await database.DeviceIdentity.Create(localIdentityModel);
         var localLink = new LocalUserDevice
         {
             UserId = user.UId,
@@ -63,7 +63,7 @@ public sealed class UserSnapshotAntiEntropyServiceTests
             IsSyncOn = true
         };
         localLink.GenerateIntegrityHash();
-        database.Db.Add(localLink);
+        await database.LocalUserDevices.AddAsync(localLink);
 
         foreach (var deviceId in new[] { peerDeviceId, retainedOriginId, mergedOnlyOriginId, quarantinedOriginId })
         {
@@ -95,17 +95,15 @@ public sealed class UserSnapshotAntiEntropyServiceTests
         var quarantinedInstance = Guid.NewGuid();
         var historicalInstance = Guid.NewGuid();
         var olderReceiptInstance = Guid.NewGuid();
-        database.Db.AddRange(
-            Knowledge(user.UId, retainedOriginId, retainedInstance, stored: 16, merged: 10, marker: 0x16),
-            Knowledge(user.UId, mergedOnlyOriginId, mergedOnlyInstance, stored: 15, merged: 15, marker: 0x15),
-            Knowledge(user.UId, quarantinedOriginId, quarantinedInstance, stored: 9, merged: 8, marker: 0x31),
-            Knowledge(user.UId, historicalOriginId, historicalInstance, stored: 7, merged: 7, marker: 0x07),
-            Knowledge(user.UId, olderReceiptOriginId, olderReceiptInstance, stored: 20, merged: 20, marker: 0x20));
-        database.Db.AddRange(
-            Snapshot(user, retainedOriginId, retainedInstance, 16, UserSyncSnapshotStatus.MergedReceipt, 0x16),
-            Snapshot(user, quarantinedOriginId, quarantinedInstance, 9, UserSyncSnapshotStatus.Quarantined, 0x31, 0x32),
-            Snapshot(user, historicalOriginId, historicalInstance, 7, UserSyncSnapshotStatus.MergedReceipt, 0x07, membershipEpoch: 1),
-            Snapshot(user, olderReceiptOriginId, olderReceiptInstance, 15, UserSyncSnapshotStatus.MergedReceipt, 0x15));
+        await database.UserRevisionKnowledge.AddAsync(Knowledge(user.UId, retainedOriginId, retainedInstance, stored: 16, merged: 10, marker: 0x16));
+        await database.UserRevisionKnowledge.AddAsync(Knowledge(user.UId, mergedOnlyOriginId, mergedOnlyInstance, stored: 15, merged: 15, marker: 0x15));
+        await database.UserRevisionKnowledge.AddAsync(Knowledge(user.UId, quarantinedOriginId, quarantinedInstance, stored: 9, merged: 8, marker: 0x31));
+        await database.UserRevisionKnowledge.AddAsync(Knowledge(user.UId, historicalOriginId, historicalInstance, stored: 7, merged: 7, marker: 0x07));
+        await database.UserRevisionKnowledge.AddAsync(Knowledge(user.UId, olderReceiptOriginId, olderReceiptInstance, stored: 20, merged: 20, marker: 0x20));
+        await database.UserSyncSnapshots.AddAsync(Snapshot(user, retainedOriginId, retainedInstance, 16, UserSyncSnapshotStatus.MergedReceipt, 0x16));
+        await database.UserSyncSnapshots.AddAsync(Snapshot(user, quarantinedOriginId, quarantinedInstance, 9, UserSyncSnapshotStatus.IsolatedFork, 0x31, 0x32));
+        await database.UserSyncSnapshots.AddAsync(Snapshot(user, historicalOriginId, historicalInstance, 7, UserSyncSnapshotStatus.MergedReceipt, 0x07, membershipEpoch: 1));
+        await database.UserSyncSnapshots.AddAsync(Snapshot(user, olderReceiptOriginId, olderReceiptInstance, 15, UserSyncSnapshotStatus.MergedReceipt, 0x15));
         await database.UnitOfWork.SaveChangesAsync();
 
         var service = new UserSnapshotAntiEntropyService(
@@ -382,6 +380,38 @@ public sealed class UserSnapshotAntiEntropyServiceTests
         MSTestAssert.AreEqual(8L, requests[0].OriginRevision);
     }
 
+
+    [TestMethod]
+    [DataRow("matching", 0)]
+    [DataRow("different-hash", 1)]
+    [DataRow("missing-authored-envelope", 1)]
+    [DataRow("different-transport-peer", 1)]
+    [DataRow("fork", 1)]
+    [DataRow("receipt-only", 1)]
+    [TestCategory("Backend")]
+    public void FindMissingSnapshots_UsesEquivalenceOnlyForAnExactRetainedAuthoredSnapshot(string scenario, int requestCount)
+    {
+        var userId = Guid.NewGuid();
+        var identity = new FakeDeviceIdentityService();
+        var peerId = Guid.NewGuid();
+        var peerInstanceId = Guid.NewGuid();
+        var authored = scenario == "missing-authored-envelope"
+            ? Revision(identity.LocalDeviceId, identity.OriginInstanceId, stored: 0, merged: 5, marker: 0x00)
+            : Revision(identity.LocalDeviceId, identity.OriginInstanceId, stored: 5, merged: 5, marker: 0x05);
+        var advertised = Revision(peerId, peerInstanceId, stored: 10, merged: 10, marker: 0x10);
+        advertised.EquivalentPeerSnapshotHash = ByteString.CopyFrom(Hash(scenario == "different-hash" ? (byte)0x04 : (byte)0x05));
+
+        var local = Inventory(userId, 1, 1, authored);
+        if (scenario == "fork")
+            local.Users[0].Revisions.Add(Revision(peerId, peerInstanceId, stored: 10, merged: 9, marker: 0x11));
+        if (scenario == "receipt-only")
+            local.Users[0].Revisions.Add(Revision(peerId, peerInstanceId, stored: 0, merged: 10, marker: 0x00));
+
+        var remote = Inventory(userId, 1, 1, advertised);
+        var service = new UserSnapshotAntiEntropyService(null!, null!, null!, null!, null!, null!, null!, identity, null!);
+        var authenticatedPeer = scenario == "different-transport-peer" ? Guid.NewGuid() : peerId;
+        MSTestAssert.HasCount(requestCount, service.FindMissingSnapshots(local, remote.Users, authenticatedPeer));
+    }
 
     private static UserRevisionKnowledge Knowledge(
         Guid userId,

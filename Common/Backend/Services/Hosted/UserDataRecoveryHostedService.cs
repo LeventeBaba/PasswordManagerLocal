@@ -93,20 +93,28 @@ public sealed class UserDataRecoveryHostedService : IBackendHostedService
             try
             {
                 await using var scope = _scopeFactory.CreateAsyncScope();
-                var users = scope.ServiceProvider.GetRequiredService<IUserRepository>();
-                var user = await users.GetByIdAsync(item.UserId, ct);
-                if (user is null)
-                    continue;
-
-                var resolver = scope.ServiceProvider.GetRequiredService<IUserSyncKeyResolverService>();
-                if (!resolver.TryResolve(user, out var key, out var confidence) || key is null)
-                    continue;
-
-                using (key)
+                var lifecycle = scope.ServiceProvider.GetRequiredService<IUserLifecycleCoordinator>();
+                await lifecycle.ExecuteAsync(item.UserId, async workCt =>
                 {
-                    await scope.ServiceProvider.GetRequiredService<IUserDataRecoveryCoordinator>()
-                        .TryRecoverAsync(item.UserId, key, confidence, item.Trigger, ct);
-                }
+                    // Recheck after acquiring ownership: login may have established its initial-read
+                    // gate while this recovery trigger was waiting for the same user's lifecycle.
+                    var postLogin = scope.ServiceProvider.GetService<IUserPostLoginWorkScheduler>();
+                    if (postLogin?.IsInitialReadPending(item.UserId) == true)
+                    {
+                        postLogin.Schedule(item.UserId);
+                        return;
+                    }
+                    var users = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+                    var user = await users.GetByIdAsync(item.UserId, workCt);
+                    if (user is null) return;
+                    var resolver = scope.ServiceProvider.GetRequiredService<IUserSyncKeyResolverService>();
+                    if (!resolver.TryResolve(user, out var key, out var confidence) || key is null) return;
+                    using (key)
+                    {
+                        await scope.ServiceProvider.GetRequiredService<IUserDataRecoveryCoordinator>()
+                            .TryRecoverAsync(item.UserId, key, confidence, item.Trigger, workCt);
+                    }
+                }, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

@@ -9,6 +9,7 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Infrastructure;
 internal sealed class RecordingWindowsIpcConnection : IWindowsIpcConnection
 {
     private readonly WindowsIpcSerializer _serializer;
+    private readonly IpcFramePayloadCodec _framePayloadCodec;
     private readonly Channel<IpcFrame> _readFrames = Channel.CreateUnbounded<IpcFrame>();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly TaskCompletionSource _releaseRequestWrites = new(
@@ -38,6 +39,7 @@ internal sealed class RecordingWindowsIpcConnection : IWindowsIpcConnection
         bool blockRequestWriteReturns = false)
     {
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
+        _framePayloadCodec = new IpcFramePayloadCodec(_serializer);
         BlockRequestWrites = blockRequestWrites;
         BlockCancellationWrites = blockCancellationWrites;
         BlockRequestWriteReturns = blockRequestWriteReturns;
@@ -162,32 +164,25 @@ internal sealed class RecordingWindowsIpcConnection : IWindowsIpcConnection
 
     public void QueueSuccessResponse(long correlationId)
     {
-        var response = IpcResponseEnvelope.Success(correlationId);
-        var payload = _serializer.Serialize(
-            response,
-            WindowsIpcJsonContext.Default.IpcResponseEnvelope);
+        var payload = _framePayloadCodec.EncodeResponse(IpcResponseEnvelope.Success(), correlationId);
         _readFrames.Writer.TryWrite(new IpcFrame(
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 IpcMessageKind.Response,
-                IpcFrameFlags.None,
                 correlationId,
                 payload.Length),
             payload));
     }
 
-    public void QueueResponse(IpcResponseEnvelope response)
+    public void QueueResponse(long correlationId, IpcResponseEnvelope response)
     {
         ArgumentNullException.ThrowIfNull(response);
-        var payload = _serializer.Serialize(
-            response,
-            WindowsIpcJsonContext.Default.IpcResponseEnvelope);
+        var payload = _framePayloadCodec.EncodeResponse(response, correlationId);
         _readFrames.Writer.TryWrite(new IpcFrame(
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 IpcMessageKind.Response,
-                IpcFrameFlags.None,
-                response.CorrelationId,
+                correlationId,
                 payload.Length),
             payload));
     }
@@ -369,7 +364,6 @@ internal sealed class RecordingWindowsIpcConnection : IWindowsIpcConnection
     {
         var response = new IpcHandshakeResponse(
             Accepted: true,
-            WindowsIpcProtocol.CurrentVersion,
             IpcPeerRole.Agent,
             ConnectionId,
             IpcCapabilities.Control | IpcCapabilities.Status,
@@ -381,8 +375,7 @@ internal sealed class RecordingWindowsIpcConnection : IWindowsIpcConnection
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 IpcMessageKind.HandshakeResponse,
-                IpcFrameFlags.None,
-                1,
+                                1,
                 payload.Length),
             payload);
     }

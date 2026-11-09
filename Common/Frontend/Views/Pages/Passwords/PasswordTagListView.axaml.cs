@@ -86,10 +86,10 @@ public partial class PasswordTagListView : UserControl
             return;
         }
 
-        ICommand command = tag.EditCommand;
-        if (command.CanExecute(null))
+        ICommand command = tag.Owner.EditPasswordTagCommand;
+        if (command.CanExecute(tag))
         {
-            command.Execute(null);
+            command.Execute(tag);
         }
     }
 

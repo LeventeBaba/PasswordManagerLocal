@@ -190,7 +190,7 @@ public sealed class PasswordManagerBackgroundService : Service, IAndroidRuntimeC
     {
         var receiver = new AndroidDeferredUnlockReceiver(QueueBackgroundRestoration);
         var filter = new IntentFilter(Intent.ActionUserUnlocked);
-        if (Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu)
+        if (OperatingSystem.IsAndroidVersionAtLeast(33))
             RegisterReceiver(receiver, filter, ReceiverFlags.NotExported);
         else
             RegisterReceiver(receiver, filter);

@@ -46,12 +46,12 @@ public sealed class SyncRelationshipReconciliationService : ISyncRelationshipRec
         var ids = CreateIdSet(groupIds);
 
         foreach (var group in user.Groups.Where(g => !ids.Contains(g.Id)).ToList())
-            user.Groups.Remove(group);
+            _groups.SetMember(group, user, isMember: false);
 
         var missingIds = ids.Where(id => user.Groups.All(g => g.Id != id)).ToArray();
         var groups = await _groups.ListByIdsAsync(missingIds, ct);
         foreach (var group in groups)
-            user.Groups.Add(group);
+            _groups.SetMember(group, user, isMember: true);
     }
 
 
@@ -101,6 +101,7 @@ public sealed class SyncRelationshipReconciliationService : ISyncRelationshipRec
             };
             newLink.GenerateIntegrityHash();
             user.UserDevices.Add(newLink);
+            await _userDevices.AddAsync(newLink, ct);
         }
     }
 
@@ -110,12 +111,12 @@ public sealed class SyncRelationshipReconciliationService : ISyncRelationshipRec
         var ids = CreateIdSet(userIds);
 
         foreach (var user in group.Users.Where(u => !ids.Contains(u.UId)).ToList())
-            group.Users.Remove(user);
+            _groups.SetMember(group, user, isMember: false);
 
         var missingIds = ids.Where(id => group.Users.All(u => u.UId != id)).ToArray();
         var users = await _users.ListByIdsAsync(missingIds, ct);
         foreach (var user in users)
-            group.Users.Add(user);
+            _groups.SetMember(group, user, isMember: true);
     }
 
 

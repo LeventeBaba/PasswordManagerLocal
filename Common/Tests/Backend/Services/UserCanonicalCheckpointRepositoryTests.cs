@@ -1,6 +1,7 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Services;
@@ -9,11 +10,18 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 public sealed class UserCanonicalCheckpointRepositoryTests
 {
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
-    public async Task GetAsync_ReturnsAddedCheckpointBeforeSaveChanges()
+    public async Task GetAsync_ReturnsAddedCheckpointBeforeSaveChanges(bool separateWriter)
     {
-        await using var database = await SqliteIntegrationTestDatabase.CreateAsync();
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var session = database.OpenSession();
+        using var observer = database.OpenSession();
+        IUserCanonicalCheckpointRepository repository = separateWriter
+            ? new UserCanonicalCheckpointRepository(session)
+            : database.UserCanonicalCheckpoints;
         var checkpoint = new UserCanonicalCheckpoint
         {
             UserId = Guid.NewGuid(),
@@ -28,11 +36,12 @@ public sealed class UserCanonicalCheckpointRepositoryTests
             Signature = new byte[64]
         };
 
-        await database.UserCanonicalCheckpoints.AddAsync(checkpoint);
+        await repository.AddAsync(checkpoint);
 
-        var loaded = await database.UserCanonicalCheckpoints.GetAsync(checkpoint.UserId);
+        var loaded = await repository.GetAsync(checkpoint.UserId);
 
         Assert.AreSame(checkpoint, loaded);
-        Assert.AreEqual(0, await database.Db.UserCanonicalCheckpoints.CountAsync());
+        var persisted = new UserCanonicalCheckpointRepository(observer);
+        Assert.IsNull(await persisted.GetAsync(checkpoint.UserId));
     }
 }

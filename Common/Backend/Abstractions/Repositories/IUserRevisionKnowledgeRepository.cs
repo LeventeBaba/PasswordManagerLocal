@@ -10,4 +10,5 @@ public interface IUserRevisionKnowledgeRepository
     Task<IReadOnlyList<UserRevisionKnowledge>> ListForOriginAsync(Guid userId, Guid originDeviceId, Guid originInstanceId, CancellationToken ct = default);
     Task AddAsync(UserRevisionKnowledge knowledge, CancellationToken ct = default);
     void Update(UserRevisionKnowledge knowledge);
+    void DeleteRange(IEnumerable<UserRevisionKnowledge> knowledge);
 }

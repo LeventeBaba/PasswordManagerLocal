@@ -14,4 +14,5 @@ public interface IUserMembershipAuthorizationRepository
     Task<bool> HasHistoricalAuthorizationAsync(Guid userId, Guid deviceId, CancellationToken ct = default);
     Task AddAsync(UserMembershipAuthorization authorization, CancellationToken ct = default);
     void Update(UserMembershipAuthorization authorization);
+    void DeleteRange(IEnumerable<UserMembershipAuthorization> authorizations);
 }

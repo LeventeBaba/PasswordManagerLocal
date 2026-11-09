@@ -36,7 +36,7 @@ internal sealed class UdpLocalDiscoveryTransport : ILocalDiscoveryTransport, IDi
 
             _socket = socket;
             _lifetimeCancellation = cancellation;
-            _receiveLoopTask = Task.Run(() => ReceiveLoopAsync(socket, receiveHandler, cancellation.Token), CancellationToken.None);
+            _receiveLoopTask = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => ReceiveLoopAsync(socket, receiveHandler, cancellation.Token), CancellationToken.None);
         }
         finally
         {

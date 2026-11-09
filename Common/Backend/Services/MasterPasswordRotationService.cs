@@ -1,4 +1,5 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Exceptions;
@@ -7,6 +8,7 @@ using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Sync;
+using PasswordManagerLocal.Common.Contracts.Notifications;
 using System.Security.Cryptography;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
@@ -31,6 +33,7 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
     private readonly ISyncQueueWriterService _queueWriter;
     private readonly IPendingSyncActivationService _activation;
     private readonly ICredentialVerificationService _credentialVerification;
+    private readonly IBackendChangePublisher? _changePublisher;
 
     public MasterPasswordRotationService(
         IUserLookupService userLookup,
@@ -50,7 +53,8 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
         IUserSnapshotPublisherService snapshotPublisher,
         ISyncQueueWriterService queueWriter,
         IPendingSyncActivationService activation,
-        ICredentialVerificationService credentialVerification)
+        ICredentialVerificationService credentialVerification,
+        IBackendChangePublisher? changePublisher = null)
     {
         _userLookup = userLookup;
         _userDataReader = userDataReader;
@@ -70,6 +74,7 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
         _queueWriter = queueWriter;
         _activation = activation;
         _credentialVerification = credentialVerification;
+        _changePublisher = changePublisher;
     }
 
     public async Task ChangeMasterPasswordAsync(MasterPasswordChangeRequest request, CancellationToken ct = default)
@@ -97,7 +102,7 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
             await _snapshotMerge.TryMergePendingAsync(userId, currentKey, UserSyncKeyConfidence.AuthenticatedSession, ct);
 
         var user = await _userLookup.GetAndVerifyUserByUidAsync(userId, ct);
-        if (await _snapshots.HasQuarantinedAsync(user.UId, user.KeyEpoch, user.MembershipEpoch, ct))
+        if (await _snapshots.HasIsolatedForkAsync(user.UId, user.KeyEpoch, user.MembershipEpoch, ct))
         {
             throw new InvalidOperationException(
                 "The master password cannot be changed while a current-epoch snapshot origin is quarantined or unresolved.");
@@ -110,7 +115,7 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
         await _snapshotPublisher.GetOrCreateAsync(user, ct);
 
         _cache.InvalidateToken(request.Token);
-        var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(request.Token, ct, user);
+        using var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(request.Token, ct, user);
         var canonicalBackup = CanonicalUserState.Capture(user);
         var previousKeyEpoch = user.KeyEpoch;
         var rememberMeWasEnabled = user.SavedKey is not null;
@@ -136,7 +141,9 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
             await _controlWriter.CreateAppliedKeyEpochReplacementAsync(user, previousKeyEpoch, ct);
             var publishingUser = await _users.GetByIdWithRelationsAsync(user.UId, ct)
                 ?? throw new InvalidOperationException("The canonical user disappeared during password rotation.");
-            await _snapshotPublisher.GetOrCreateAsync(publishingUser, ct);
+            // The session still holds the old key until the transaction commits.
+            await _snapshotPublisher.GetOrCreateAfterRecoveryAsync(
+                publishingUser, newKey, UserSyncKeyConfidence.ExplicitlyTrusted, ct);
             await _queueWriter.EnqueueAsync(
                 new SyncItem
                 {
@@ -163,6 +170,7 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
         }
 
         Exception? postCommitFailure = null;
+        var invalidatedAnySession = false;
         try
         {
             // In-memory key/session state cannot move ahead of the committed canonical transition.
@@ -181,12 +189,12 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
         {
             // Canonical state is already committed. Fail closed instead of leaving the initiating
             // token associated with an old or partially refreshed in-memory key state. A failed
-            // local SavedKey write must also not remain pending in the scoped EF change tracker.
+            // local SavedKey write must also not remain pending in the scoped unit of work.
             if (user.SavedKey is not null)
                 CryptographicOperations.ZeroMemory(user.SavedKey);
             user.SavedKey = null;
             _uow.ClearTrackedChanges();
-            InvalidateToken(request.Token, AuthSessionInvalidationReason.ProfilePasswordChanged);
+            invalidatedAnySession |= InvalidateToken(request.Token, AuthSessionInvalidationReason.ProfilePasswordChanged);
             postCommitFailure = ex;
         }
         finally
@@ -194,7 +202,7 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
             foreach (var otherToken in _tokens.ListTokensByUid(user.UId))
             {
                 if (otherToken != request.Token)
-                    InvalidateToken(otherToken, AuthSessionInvalidationReason.ProfilePasswordChanged);
+                    invalidatedAnySession |= InvalidateToken(otherToken, AuthSessionInvalidationReason.ProfilePasswordChanged);
             }
 
             try
@@ -211,6 +219,9 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
             canonicalBackup.ZeroCopies();
         }
 
+        if (invalidatedAnySession)
+            _changePublisher?.Publish(FrontendChangeScope.AuthenticationSessions, user.UId);
+
         if (postCommitFailure is not null)
         {
             throw new MutationPartiallyCommittedException(
@@ -219,10 +230,10 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
         }
     }
 
-    private void InvalidateToken(Guid token, AuthSessionInvalidationReason reason)
+    private bool InvalidateToken(Guid token, AuthSessionInvalidationReason reason)
     {
         _cache.InvalidateToken(token);
         _keys.InvalidateToken(token);
-        _tokens.Revoke(token, reason);
+        return _tokens.Revoke(token, reason);
     }
 }

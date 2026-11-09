@@ -1,4 +1,3 @@
-using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Presence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Internal.Devices;
@@ -16,8 +15,8 @@ public sealed class UserDeviceQueryService : IUserDeviceQueryService
     private readonly IUserDataReaderService _userDataReader;
     private readonly IDeviceIdentityService _identity;
     private readonly IUserDeviceRepository _userDevices;
+    private readonly IUserMembershipAuthorizationRepository _membershipAuthorizations;
     private readonly DeviceOnlineStatusEvaluator _onlineStatusEvaluator;
-    private readonly IDevicePresenceProbeService _presenceProbeService;
     private readonly LocalUserDeviceLinkManager _localLinkManager;
     private readonly UserDeviceMetadataEditor _metadataEditor;
 
@@ -26,8 +25,8 @@ public sealed class UserDeviceQueryService : IUserDeviceQueryService
         IUserDataReaderService userDataReader,
         IDeviceIdentityService identity,
         IUserDeviceRepository userDevices,
+        IUserMembershipAuthorizationRepository membershipAuthorizations,
         DeviceOnlineStatusEvaluator onlineStatusEvaluator,
-        IDevicePresenceProbeService presenceProbeService,
         LocalUserDeviceLinkManager localLinkManager,
         UserDeviceMetadataEditor metadataEditor)
     {
@@ -35,48 +34,51 @@ public sealed class UserDeviceQueryService : IUserDeviceQueryService
         _userDataReader = userDataReader;
         _identity = identity;
         _userDevices = userDevices;
+        _membershipAuthorizations = membershipAuthorizations;
         _onlineStatusEvaluator = onlineStatusEvaluator;
-        _presenceProbeService = presenceProbeService;
         _localLinkManager = localLinkManager;
         _metadataEditor = metadataEditor;
     }
 
-    public async Task<IReadOnlyList<UserDeviceInfoResponse>> GetUserDevicesAsync(Guid token, CancellationToken ct = default)
+    public Task<IReadOnlyList<UserDeviceInfoResponse>> GetUserDevicesAsync(Guid token, CancellationToken ct = default) =>
+        GetUserDevicesCoreAsync(token, ct);
+
+    private async Task<IReadOnlyList<UserDeviceInfoResponse>> GetUserDevicesCoreAsync(
+        Guid token,
+        CancellationToken ct)
     {
         var user = await _userLookup.GetAndVerifyUserAsync(token, ct);
-        var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(token, ct, user);
+        using var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(token, ct, user);
         var userDevicesData = bundle.UserDevicesData;
-        var localLink = await _localLinkManager.GetOrCreateAsync(user.UId, ct);
+        var localLink = await _localLinkManager.GetForDisplayAsync(user.UId, ct);
         var links = await _userDevices.ListByUserWithDevicesAsync(user.UId, ct);
-
-        var changed = _metadataEditor.EnsureDeviceData(userDevicesData, _identity.LocalDeviceId, DateTimeOffset.UtcNow);
-        foreach (var link in links.Where(x => !x.IsDeleted))
-            changed |= _metadataEditor.EnsureDeviceData(userDevicesData, link.DeviceId, link.LastModifiedAt);
-        if (changed)
-            await _metadataEditor.PersistAsync(bundle, token, ct);
+        var membershipAuthorizations = await _membershipAuthorizations.ListForUserAsync(user.UId, ct);
+        var linkedAtByDevice = membershipAuthorizations
+            .GroupBy(row => row.DeviceId)
+            .ToDictionary(group => group.Key, group => group.Min(row => row.CreatedAtUtc));
 
         var encryptedDevices = userDevicesData.Devices.ToDictionary(d => d.Id);
+        foreach (var id in links.Where(x => !x.IsDeleted).Select(x => x.DeviceId).Append(_identity.LocalDeviceId))
+        {
+            if (!encryptedDevices.ContainsKey(id))
+                encryptedDevices[id] = new UserDeviceData
+                {
+                    Id = id, Name = DeviceNameUtil.BuildDefaultDeviceName(id),
+                    LinkedAt = linkedAtByDevice.TryGetValue(id, out var linkedAt)
+                        ? linkedAt
+                        : links.FirstOrDefault(x => x.DeviceId == id)?.LastModifiedAt ?? default
+                };
+        }
         var visibleDeviceIds = links
             .Where(link => !link.IsDeleted)
             .Select(link => link.DeviceId)
             .Append(_identity.LocalDeviceId)
             .ToHashSet();
         var presentationNames = UserDevicePresentationUtil.ResolveNames(
-            userDevicesData.Devices.Where(device => visibleDeviceIds.Contains(device.Id)));
+            userDevicesData.Devices.Where(device => visibleDeviceIds.Contains(device.Id)),
+            visibleDeviceIds.Except(userDevicesData.Devices.Select(device => device.Id)));
         var result = new List<UserDeviceInfoResponse>();
         var localCanSync = localLink.IsSyncOn && _identity.IsSyncOn;
-        if (localCanSync)
-        {
-            var probeTargets = links
-                .Where(link => IsEligibleRemoteDevice(link, link.Device))
-                .Select(link => link.Device!)
-                .GroupBy(device => device.Id)
-                .Select(group => group.First())
-                .ToArray();
-
-            await Task.WhenAll(probeTargets.Select(device =>
-                _presenceProbeService.ProbeAsync(device, force: true, cancellationToken: ct)));
-        }
         if (encryptedDevices.TryGetValue(_identity.LocalDeviceId, out var localDeviceData))
             result.Add(BuildLocalResponse(
                 localLink,
@@ -95,6 +97,7 @@ public sealed class UserDeviceQueryService : IUserDeviceQueryService
                     IsRemoteDeviceOnline(localCanSync, link, link.Device!)));
         }
 
+        ct.ThrowIfCancellationRequested();
         return result
             .OrderByDescending(d => d.IsCurrentDevice)
             .ThenByDescending(d => d.LastSync ?? d.LastSeen ?? DateTime.MinValue)

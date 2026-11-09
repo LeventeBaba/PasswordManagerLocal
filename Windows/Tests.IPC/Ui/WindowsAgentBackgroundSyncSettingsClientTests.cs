@@ -55,7 +55,6 @@ public sealed class WindowsAgentBackgroundSyncSettingsClientTests
         Assert.IsTrue(result.State.IsEnabled);
     }
 
-
     [TestMethod]
     public async Task CancellationBeforeTransmissionPropagatesWithoutReadBackOrReplay()
     {
@@ -78,7 +77,9 @@ public sealed class WindowsAgentBackgroundSyncSettingsClientTests
     }
 
     [TestMethod]
-    public async Task CancellationAfterTransmissionReadsBackAuthoritativeStateWithoutReplay()
+    [DataRow(WindowsAgentControlWriteTransmissionState.Sent)]
+    [DataRow(WindowsAgentControlWriteTransmissionState.TransmissionUnknown)]
+    public async Task CancellationAfterPossibleTransmissionReadsBackWithoutReplay(WindowsAgentControlWriteTransmissionState transmission)
     {
         using var cancellation = new CancellationTokenSource();
         var connection = new FakeWindowsAgentControlConnection
@@ -86,30 +87,7 @@ public sealed class WindowsAgentBackgroundSyncSettingsClientTests
             CancelDuringSet = cancellation,
             MutateBeforeSetFailure = true,
             SetBackgroundFailure = new WindowsAgentControlWriteException(
-                WindowsAgentControlWriteTransmissionState.Sent,
-                new OperationCanceledException(cancellation.Token))
-        };
-        var client = new WindowsAgentBackgroundSyncSettingsClient(connection);
-
-        var result = await client.SetEnabledAsync(true, cancellation.Token);
-
-        Assert.IsTrue(result.WasOutcomeUncertain);
-        Assert.IsTrue(result.State.IsEnabled);
-        Assert.AreEqual(1, connection.SetBackgroundCount);
-        Assert.AreEqual(1, connection.GetBackgroundCount);
-    }
-
-    [TestMethod]
-    public async Task CancellationWithUnknownTransmissionReadsBackWithoutReplay()
-    {
-        using var cancellation = new CancellationTokenSource();
-        var connection = new FakeWindowsAgentControlConnection
-        {
-            CancelDuringSet = cancellation,
-            MutateBeforeSetFailure = true,
-            SetBackgroundFailure = new WindowsAgentControlWriteException(
-                WindowsAgentControlWriteTransmissionState.TransmissionUnknown,
-                new OperationCanceledException(cancellation.Token))
+                transmission, new OperationCanceledException(cancellation.Token))
         };
         var client = new WindowsAgentBackgroundSyncSettingsClient(connection);
 

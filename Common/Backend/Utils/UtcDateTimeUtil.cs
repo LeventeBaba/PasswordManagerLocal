@@ -1,6 +1,6 @@
 using System.Collections;
-using System.Reflection;
-using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace PasswordManagerLocal.Common.Backend.Utils;
 
@@ -30,84 +30,54 @@ public static class UtcDateTimeUtil
     public static DateTimeOffset? ToUtc(DateTimeOffset? value) =>
         value.HasValue ? ToUtc(value.Value) : null;
 
-    public static void NormalizeDateTimeProperties(object? value)
+    // The persisted and wire models already have source-generated JSON contracts.
+    // Use their accessors so trimming does not affect which dates are normalized.
+    internal static T NormalizeObjectGraph<T>(T value, JsonTypeInfo<T> typeInfo) where T : class
     {
-        if (value is null)
-            return;
-
-        foreach (var property in value.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public))
-        {
-            if (!property.CanRead || !property.CanWrite || property.GetIndexParameters().Length != 0)
-                continue;
-
-            if (property.PropertyType == typeof(DateTime))
-            {
-                var raw = property.GetValue(value);
-                if (raw is DateTime dateTime)
-                    property.SetValue(value, ToUtc(dateTime));
-            }
-            else if (property.PropertyType == typeof(DateTime?))
-            {
-                var raw = property.GetValue(value);
-                property.SetValue(value, raw is DateTime dateTime ? ToUtc(dateTime) : null);
-            }
-            else if (property.PropertyType == typeof(DateTimeOffset))
-            {
-                var raw = property.GetValue(value);
-                if (raw is DateTimeOffset dateTimeOffset)
-                    property.SetValue(value, ToUtc(dateTimeOffset));
-            }
-            else if (property.PropertyType == typeof(DateTimeOffset?))
-            {
-                var raw = property.GetValue(value);
-                property.SetValue(value, raw is DateTimeOffset dateTimeOffset ? ToUtc(dateTimeOffset) : null);
-            }
-        }
-    }
-
-    public static T NormalizeObjectGraph<T>(T value) where T : class
-    {
-        NormalizeObjectGraph(value, new HashSet<object>(UtcDateTimeReferenceEqualityComparer.Instance));
+        NormalizeObjectGraph(value, typeInfo.Options, new HashSet<object>(ReferenceEqualityComparer.Instance));
         return value;
     }
 
-    private static void NormalizeObjectGraph(object? value, HashSet<object> visited)
+    private static void NormalizeObjectGraph(object? value, JsonSerializerOptions options, HashSet<object> visited)
     {
         if (value is null)
             return;
 
         var type = value.GetType();
-        if (IsSimpleType(type))
+        if (IsSimpleType(type) || !visited.Add(value))
             return;
 
-        if (!visited.Add(value))
-            return;
-
-        if (value is IEnumerable enumerable && value is not string)
+        if (value is IEnumerable enumerable)
         {
             foreach (var item in enumerable)
-                NormalizeObjectGraph(item, visited);
+                NormalizeObjectGraph(item, options, visited);
             return;
         }
 
-        NormalizeDateTimeProperties(value);
-
-        foreach (var property in type.GetProperties(BindingFlags.Instance | BindingFlags.Public))
+        foreach (var property in options.GetTypeInfo(type).Properties)
         {
-            if (!property.CanRead || property.GetIndexParameters().Length != 0)
+            if (property.Get is not { } get)
                 continue;
 
-            var propertyType = property.PropertyType;
-            if (IsSimpleType(propertyType) || propertyType == typeof(DateTime?) || propertyType == typeof(DateTimeOffset?))
+            var propertyType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
+            if (!IsSimpleType(propertyType))
+            {
+                NormalizeObjectGraph(get(value), options, visited);
+                continue;
+            }
+
+            if (property.Set is not { } set)
                 continue;
 
-            NormalizeObjectGraph(property.GetValue(value), visited);
+            if (propertyType == typeof(DateTime) && get(value) is DateTime dateTime)
+                set(value, ToUtc(dateTime));
+            else if (propertyType == typeof(DateTimeOffset) && get(value) is DateTimeOffset dateTimeOffset)
+                set(value, ToUtc(dateTimeOffset));
         }
     }
 
     private static bool IsSimpleType(Type type)
     {
-        type = Nullable.GetUnderlyingType(type) ?? type;
         return type.IsPrimitive ||
                type.IsEnum ||
                type == typeof(string) ||

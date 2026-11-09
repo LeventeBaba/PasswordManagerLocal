@@ -1,4 +1,5 @@
 using Google.Protobuf;
+using System.Collections.Concurrent;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Presence;
 using PasswordManagerLocal.Common.Backend.Constants;
@@ -14,28 +15,51 @@ using System.Security.Cryptography;
 namespace PasswordManagerLocal.Common.Tests.Fakes;
 
 /// <summary>
-/// Routes enrollment and regular synchronization transport calls directly into another backend's
-/// protocol handler. This keeps protocol authentication, encrypted deltas, receipts, anti-entropy,
-/// snapshot validation, and import/merge behavior inside the test boundary while deliberately
-/// excluding operating-system sockets and certificates.
+/// Routes enrollment and regular synchronization transport calls directly into connected backend
+/// protocol handlers by pinned certificate fingerprint. This keeps protocol authentication,
+/// encrypted deltas, receipts, anti-entropy, snapshot validation, and import/merge behavior inside
+/// the test boundary while deliberately excluding operating-system sockets and certificates.
 /// </summary>
 public sealed class InProcessEnrollmentTransportClientService : ISyncTransportClientService
 {
     private SyncPeerProtocolHandler? _localHandler;
     private IDeviceIdentityService? _localIdentity;
     private IDevicePresenceRegistry? _localPresenceRegistry;
-    private SyncPeerProtocolHandler? _remoteHandler;
-    private IDeviceIdentityService? _remoteIdentity;
+    private readonly ConcurrentDictionary<string, RemotePeer> _remotePeers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, string> _lastDeltaSendFailures = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, SnapshotInventoryTrace> _snapshotInventoryTraces = new(StringComparer.OrdinalIgnoreCase);
+    private int _snapshotInventoryExchangeCalls;
 
+    private sealed record SnapshotInventoryTrace(int Completed, string LastHints, string? LastFailure);
+
+    public string DescribeSnapshotInventoryExchanges(string fingerprint) =>
+        _snapshotInventoryTraces.TryGetValue(FingerprintUtil.NormalizeOrEmpty(fingerprint), out var trace)
+            ? $"Completed={trace.Completed}/LastHints=[{trace.LastHints}]/LastFailure={trace.LastFailure ?? "none"}"
+            : "NoCalls";
+
+    public string? GetLastDeltaSendFailure(string fingerprint) => _lastDeltaSendFailures.GetValueOrDefault(fingerprint);
+
+    private bool RecordDeltaSendFailure(string fingerprint, string reason)
+    {
+        _lastDeltaSendFailures[fingerprint] = reason;
+        return false;
+    }
+
+
+    public Func<IAsyncEnumerable<CompleteDeviceEnrollmentChunk>, CancellationToken, Task<CompleteDeviceEnrollmentReply>>?
+        EnrollmentCompletionOverride { get; set; }
     public bool ThrowAfterNextSuccessfulEnrollmentCompletion { get; set; }
     public bool TamperNextEnrollmentSnapshot { get; set; }
+    public Action<CompleteDeviceEnrollmentChunk>? MutateNextEnrollmentStart { get; set; }
+    public Func<IReadOnlyList<NetworkDelta>, CancellationToken, Task<bool>>? DeltaSendOverride { get; set; }
+    public Action<string, UserSnapshotInventoryExchangeReply>? MutateSnapshotInventoryReply { get; set; }
     public bool FailNextDeltaSend { get; set; }
     public string? ClientCertificateFingerprintOverride { get; set; }
     public string? PresentedServerCertificateFingerprintOverride { get; set; }
     public int EnrollmentInfoCalls { get; private set; }
     public int EnrollmentCompletionCalls { get; private set; }
     public int DeltaSendCalls { get; private set; }
-    public int SnapshotInventoryExchangeCalls { get; private set; }
+    public int SnapshotInventoryExchangeCalls => Volatile.Read(ref _snapshotInventoryExchangeCalls);
     public int SnapshotRequestCalls { get; private set; }
     public int ControlOperationInventoryExchangeCalls { get; private set; }
     public int ControlOperationRequestCalls { get; private set; }
@@ -53,14 +77,22 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
 
     public void ConnectTo(SyncPeerProtocolHandler remoteHandler, IDeviceIdentityService remoteIdentity)
     {
-        _remoteHandler = remoteHandler ?? throw new ArgumentNullException(nameof(remoteHandler));
-        _remoteIdentity = remoteIdentity ?? throw new ArgumentNullException(nameof(remoteIdentity));
+        ArgumentNullException.ThrowIfNull(remoteHandler);
+        ArgumentNullException.ThrowIfNull(remoteIdentity);
+
+        var fingerprint = FingerprintUtil.Normalize(remoteIdentity.FingerprintHex);
+        if (fingerprint.Length == 0)
+            throw new ArgumentException("The remote backend must have a valid TLS certificate fingerprint.", nameof(remoteIdentity));
+
+        _remotePeers[fingerprint] = new RemotePeer(remoteHandler, remoteIdentity);
     }
 
     public void Disconnect()
     {
-        _remoteHandler = null;
-        _remoteIdentity = null;
+        _remotePeers.Clear();
+        EnrollmentCompletionOverride = null;
+        DeltaSendOverride = null;
+        MutateSnapshotInventoryReply = null;
         ThrowAfterNextSuccessfulEnrollmentCompletion = false;
         TamperNextEnrollmentSnapshot = false;
         FailNextDeltaSend = false;
@@ -150,11 +182,19 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
 
         var localIdentity = GetLocalIdentity();
         var stream = chunks;
+        if (MutateNextEnrollmentStart is { } mutate)
+        {
+            MutateNextEnrollmentStart = null;
+            stream = MutateEnrollmentStartAsync(stream, mutate, ct);
+        }
         if (TamperNextEnrollmentSnapshot)
         {
             TamperNextEnrollmentSnapshot = false;
             stream = TamperFirstSnapshotByteAsync(chunks, ct);
         }
+
+        if (EnrollmentCompletionOverride is { } complete)
+            return await complete(stream, ct);
 
         var reply = await destinationHandler.CompleteDeviceEnrollmentStreamAsync(
             stream,
@@ -192,13 +232,16 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
         if (list.Length > SyncConstants.MaxIncomingDeltaCountPerCall ||
             list.Sum(delta => (long)delta.Payload.Length) > SyncConstants.MaxIncomingDeltaTotalBytesPerCall)
         {
-            return false;
+            return RecordDeltaSendFailure(serverFingerprintHex, "batch-limit");
         }
+
+        if (DeltaSendOverride is { } send)
+            return await send(list, ct);
 
         if (FailNextDeltaSend)
         {
             FailNextDeltaSend = false;
-            return false;
+            return RecordDeltaSendFailure(serverFingerprintHex, "injected-failure");
         }
 
         try
@@ -208,7 +251,7 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
             var ack = await destinationHandler.PushDeltaAsync(ToChunksAsync(list, ct), context, ct);
 
             if (ack.LastSyncedTs < list.Max(delta => delta.Ts))
-                return false;
+                return RecordDeltaSendFailure(serverFingerprintHex, "ack-timestamp");
 
             foreach (var expected in list.Where(delta => delta.SnapshotOriginRevision > 0))
             {
@@ -220,7 +263,8 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
                     CryptographicOperations.FixedTimeEquals(candidate.SnapshotHash.ToByteArray(), expected.SnapshotHash));
 
                 if (receipt is null || !IsDurableSnapshotReceipt(receipt.State))
-                    return false;
+                    return RecordDeltaSendFailure(serverFingerprintHex,
+                        receipt is null ? "snapshot-receipt-missing" : $"snapshot-receipt-{receipt.State}");
             }
 
             foreach (var expected in list.Where(delta => delta.ControlOperationOriginSequence > 0))
@@ -234,7 +278,8 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
                     CryptographicOperations.FixedTimeEquals(candidate.OperationHash.ToByteArray(), expected.ControlOperationHash));
 
                 if (receipt is null || !IsDurableControlOperationReceipt(receipt.State))
-                    return false;
+                    return RecordDeltaSendFailure(serverFingerprintHex,
+                        receipt is null ? "control-receipt-missing" : $"control-receipt-{receipt.State}");
             }
 
             return true;
@@ -249,7 +294,8 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
             OperationCanceledException or
             SyncProtocolException)
         {
-            return false;
+            return RecordDeltaSendFailure(serverFingerprintHex,
+                ex is SyncProtocolException protocol ? $"protocol-{protocol.StatusCode}" : ex.GetType().Name);
         }
     }
 
@@ -261,10 +307,28 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        SnapshotInventoryExchangeCalls++;
-        var destinationHandler = ResolveHandler(serverFingerprintHex);
-        var context = await CreateAuthenticatedSyncContextAsync(destinationHandler, ct);
-        return await destinationHandler.ExchangeUserSnapshotInventoryAsync(request, context, ct);
+        Interlocked.Increment(ref _snapshotInventoryExchangeCalls);
+        var fingerprint = FingerprintUtil.NormalizeOrEmpty(serverFingerprintHex);
+        try
+        {
+            var destinationHandler = ResolveHandler(serverFingerprintHex);
+            var context = await CreateAuthenticatedSyncContextAsync(destinationHandler, ct);
+            var reply = await destinationHandler.ExchangeUserSnapshotInventoryAsync(request, context, ct);
+            MutateSnapshotInventoryReply?.Invoke(fingerprint, reply);
+            var hints = string.Join(",", reply.EndpointHints.Select(hint => hint.DeviceId));
+            _snapshotInventoryTraces.AddOrUpdate(fingerprint, new SnapshotInventoryTrace(1, hints, null),
+                (_, prior) => prior with { Completed = prior.Completed + 1, LastHints = hints });
+            return reply;
+        }
+        catch (Exception ex)
+        {
+            var failure = ex is SyncProtocolException protocol
+                ? $"{protocol.StatusCode}:{protocol.Message}"
+                : ex.GetType().Name;
+            _snapshotInventoryTraces.AddOrUpdate(fingerprint, new SnapshotInventoryTrace(0, string.Empty, failure),
+                (_, prior) => prior with { LastFailure = failure });
+            throw;
+        }
     }
 
     public async Task<IReadOnlyList<NetworkDelta>> RequestUserSnapshotsAsync(
@@ -365,8 +429,12 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
     {
         if (ReferenceEquals(handler, _localHandler) && _localIdentity is not null)
             return _localIdentity;
-        if (ReferenceEquals(handler, _remoteHandler) && _remoteIdentity is not null)
-            return _remoteIdentity;
+
+        foreach (var remotePeer in _remotePeers.Values)
+        {
+            if (ReferenceEquals(handler, remotePeer.Handler))
+                return remotePeer.Identity;
+        }
 
         throw new InvalidOperationException("The in-process transport cannot resolve the destination identity.");
     }
@@ -394,17 +462,18 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
             return _localHandler;
         }
 
-        if (_remoteHandler is not null &&
-            _remoteIdentity is not null &&
-            FingerprintMatches(
-                expectedFingerprint,
-                _remoteIdentity.FingerprintHex,
-                allowEnrollmentFingerprintPrefix))
+        foreach (var remotePeer in _remotePeers.Values)
         {
-            return _remoteHandler;
+            if (FingerprintMatches(
+                    expectedFingerprint,
+                    remotePeer.Identity.FingerprintHex,
+                    allowEnrollmentFingerprintPrefix))
+            {
+                return remotePeer.Handler;
+            }
         }
 
-        if (_remoteHandler is null || _remoteIdentity is null)
+        if (_remotePeers.IsEmpty)
         {
             throw new InvalidOperationException(
                 "The in-process transport is not connected and the pinned fingerprint does not identify the local backend.");
@@ -413,6 +482,10 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
         throw new AuthenticationException(
             "The pinned TLS fingerprint does not match either in-process backend identity.");
     }
+
+    private sealed record RemotePeer(
+        SyncPeerProtocolHandler Handler,
+        IDeviceIdentityService Identity);
 
     private static bool FingerprintMatches(
         string expectedFingerprint,
@@ -456,6 +529,28 @@ public sealed class InProcessEnrollmentTransportClientService : ISyncTransportCl
             ct.ThrowIfCancellationRequested();
             yield return DeltaMapping.ToProto(delta);
             await Task.Yield();
+        }
+    }
+
+    private static async IAsyncEnumerable<CompleteDeviceEnrollmentChunk> MutateEnrollmentStartAsync(
+        IAsyncEnumerable<CompleteDeviceEnrollmentChunk> chunks,
+        Action<CompleteDeviceEnrollmentChunk> mutate,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var first = true;
+        await foreach (var chunk in chunks.WithCancellation(ct))
+        {
+            if (first)
+            {
+                first = false;
+                var replacement = chunk.Clone();
+                mutate(replacement);
+                yield return replacement;
+            }
+            else
+            {
+                yield return chunk;
+            }
         }
     }
 

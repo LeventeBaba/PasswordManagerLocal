@@ -13,7 +13,7 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 public sealed class UserLifecycleCoordinator : IUserLifecycleCoordinator
 {
     private readonly ConcurrentDictionary<Guid, UserLifecycleLockEntry> _entries = new();
-    private readonly AsyncLocal<IReadOnlyDictionary<Guid, int>?> _heldDepths = new();
+    private readonly AsyncLocal<IReadOnlyDictionary<Guid, Ownership>?> _heldDepths = new();
 
     public Task ExecuteAsync(
         Guid userId,
@@ -38,17 +38,9 @@ public sealed class UserLifecycleCoordinator : IUserLifecycleCoordinator
         ArgumentNullException.ThrowIfNull(action);
 
         var depths = _heldDepths.Value;
-        if (depths is not null && depths.TryGetValue(userId, out var currentDepth))
+        if (depths is not null && depths.TryGetValue(userId, out var ownership) && ownership.Active)
         {
-            SetDepth(userId, checked(currentDepth + 1));
-            try
-            {
-                return await action(ct).ConfigureAwait(false);
-            }
-            finally
-            {
-                SetDepth(userId, currentDepth);
-            }
+            return await action(ct).ConfigureAwait(false);
         }
 
         var entry = AcquireEntry(userId);
@@ -62,14 +54,16 @@ public sealed class UserLifecycleCoordinator : IUserLifecycleCoordinator
             throw;
         }
 
-        SetDepth(userId, 1);
+        var held = new Ownership();
+        SetOwnership(userId, held);
         try
         {
             return await action(ct).ConfigureAwait(false);
         }
         finally
         {
-            SetDepth(userId, 0);
+            held.Active = false;
+            SetOwnership(userId, null);
             entry.Semaphore.Release();
             ReleaseReference(userId, entry);
         }
@@ -94,19 +88,21 @@ public sealed class UserLifecycleCoordinator : IUserLifecycleCoordinator
         }
     }
 
-    private void SetDepth(Guid userId, int depth)
+    private void SetOwnership(Guid userId, Ownership? ownership)
     {
         var replacement = _heldDepths.Value is null
-            ? new Dictionary<Guid, int>()
+            ? new Dictionary<Guid, Ownership>()
             : _heldDepths.Value.ToDictionary(item => item.Key, item => item.Value);
 
-        if (depth <= 0)
+        if (ownership is null)
             replacement.Remove(userId);
         else
-            replacement[userId] = depth;
+            replacement[userId] = ownership;
 
         _heldDepths.Value = replacement.Count == 0 ? null : replacement;
     }
+
+    private sealed class Ownership { public volatile bool Active = true; }
 
     private void ReleaseReference(Guid userId, UserLifecycleLockEntry entry)
     {

@@ -94,7 +94,6 @@ public sealed class UserSnapshotPublisherService : IUserSnapshotPublisherService
                 NextOriginRevision = 1,
                 LastUpdatedAtUtc = DateTimeOffset.UtcNow
             };
-            await _states.AddAsync(state, ct);
         }
         else if (state.LocalOriginInstanceId != _identity.OriginInstanceId)
         {
@@ -102,7 +101,6 @@ public sealed class UserSnapshotPublisherService : IUserSnapshotPublisherService
             state.NextOriginRevision = 1;
             state.LastPublishedContentHash = [];
             state.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
-            _states.Update(state);
         }
 
         var remoteCoverage = (await _knowledge.ListForUserAsync(user.UId, ct))
@@ -203,7 +201,9 @@ public sealed class UserSnapshotPublisherService : IUserSnapshotPublisherService
         state.NextOriginRevision = checked(revision + 1);
         state.LastPublishedContentHash = contentHash;
         state.LastUpdatedAtUtc = createdAtUtc;
-        if (!isNewState)
+        if (isNewState)
+            await _states.AddAsync(state, ct);
+        else
             _states.Update(state);
 
         var localKnowledge = await _knowledge.GetAsync(
@@ -222,14 +222,15 @@ public sealed class UserSnapshotPublisherService : IUserSnapshotPublisherService
                 OriginInstanceId = _identity.OriginInstanceId,
                 UserKeyEpoch = user.KeyEpoch
             };
-            await _knowledge.AddAsync(localKnowledge, ct);
         }
 
         localKnowledge.HighestStoredRevision = revision;
         localKnowledge.HighestStoredSnapshotHash = envelope.SnapshotHash.ToArray();
         localKnowledge.HighestMergedRevision = revision;
         localKnowledge.LastUpdatedAtUtc = createdAtUtc;
-        if (!isNewKnowledge)
+        if (isNewKnowledge)
+            await _knowledge.AddAsync(localKnowledge, ct);
+        else
             _knowledge.Update(localKnowledge);
         if (_deletionBarriers is not null && await _deletionBarriers.ExistsAsync(user.UId, ct))
             throw new InvalidOperationException("Account deletion won the lifecycle race before snapshot publication committed.");

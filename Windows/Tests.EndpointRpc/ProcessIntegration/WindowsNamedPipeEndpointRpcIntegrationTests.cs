@@ -57,7 +57,7 @@ public sealed class WindowsNamedPipeEndpointRpcIntegrationTests
         await blocked.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.AreEqual(EndpointRpcTestData.ItemId, device.DeviceId);
-        Assert.AreEqual("phase9-real-pipe", device.TlsCertFingerprint);
+        Assert.AreEqual("endpoint-rpc-test-fingerprint", device.TlsCertFingerprint);
     }
 
     [TestMethod]
@@ -119,20 +119,22 @@ public sealed class WindowsNamedPipeEndpointRpcIntegrationTests
             new EndpointRpcContractValidator());
         resolver.RegistrationGeneration++;
 
-        var exception = await Assert.ThrowsAsync<EndpointRpcRemoteException>(() =>
+        var exception = await Assert.ThrowsAsync<EndpointFailureException>(() =>
             proxy.GetLocalDeviceInfoAsync());
 
-        Assert.AreEqual(EndpointRpcErrorCode.AuthorizationFailed, exception.Error.ErrorCode);
+        Assert.AreEqual(EndpointFailureKind.Generic, exception.FailureKind);
+        var remote = Assert.IsInstanceOfType<EndpointRpcRemoteException>(exception.InnerException);
+        Assert.AreEqual(EndpointRpcErrorCode.AuthorizationFailed, remote.Error.ErrorCode);
     }
 
-    private static PasswordManagerLocal.Windows.Ipc.Contracts.WindowsUiIpcIdentity CreateIdentity() =>
+    private static PasswordManagerLocal.Windows.Ipc.Contracts.Handshake.WindowsUiIpcIdentity CreateIdentity() =>
         new(
             Environment.ProcessId,
             Process.GetCurrentProcess().SessionId,
             Guid.NewGuid());
 
     private static FakeEndpointUiRegistrationResolver CreateResolver(
-        PasswordManagerLocal.Windows.Ipc.Contracts.WindowsUiIpcIdentity identity) =>
+        PasswordManagerLocal.Windows.Ipc.Contracts.Handshake.WindowsUiIpcIdentity identity) =>
         new()
         {
             ExpectedProcessId = identity.ProcessId,
@@ -149,7 +151,7 @@ public sealed class WindowsNamedPipeEndpointRpcIntegrationTests
     }
 
     private static string UniquePipeName() =>
-        $"PasswordManagerLocal.Phase9.Endpoint.{Guid.NewGuid():N}";
+        $"PasswordManagerLocal.Tests.EndpointRpc.Endpoint.{Guid.NewGuid():N}";
 
     private static void EnsureWindows()
     {

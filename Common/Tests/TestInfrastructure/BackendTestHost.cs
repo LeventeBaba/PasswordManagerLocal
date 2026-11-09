@@ -26,7 +26,9 @@ public sealed class BackendTestHost : IDisposable
 
     public BackendTestHost(
         bool useRealSnapshotMergeCoordinator = false,
-        IKeyProtector? keyProtector = null)
+        IKeyProtector? keyProtector = null,
+        bool enableDeferredLogin = false,
+        TimeProvider? timeProvider = null)
     {
         var sc = new ServiceCollection();
         _signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
@@ -66,14 +68,13 @@ public sealed class BackendTestHost : IDisposable
             SignHandler = bytes => SignatureAlgorithm.Ed25519.Sign(_signingKey, bytes)
         });
         sc.AddSingleton<FakeSyncQueueService>();
-        sc.AddSingleton<ISyncQueueService>(sp => sp.GetRequiredService<FakeSyncQueueService>());
         sc.AddSingleton<ISyncChangeQueueService>(sp => sp.GetRequiredService<FakeSyncQueueService>());
         sc.AddSingleton<IUserSyncCatchUpService>(sp => sp.GetRequiredService<FakeSyncQueueService>());
         sc.AddSingleton<IPendingSyncActivationService>(sp => sp.GetRequiredService<FakeSyncQueueService>());
         sc.AddSingleton<ISyncRuntimeService, FakeSyncRuntimeService>();
         sc.AddSingleton<ISyncDeviceIdentityService, FakeSyncDeviceIdentityService>();
         sc.AddSingleton<IDiscoveredDeviceEndpointRegistry, DiscoveredDeviceEndpointRegistry>();
-        sc.AddSingleton(TimeProvider.System);
+        sc.AddSingleton(timeProvider ?? TimeProvider.System);
         sc.AddSingleton<IDevicePresenceRegistry, DevicePresenceRegistry>();
         sc.AddSingleton<FakeSyncTransportClientService>();
         sc.AddSingleton<ISyncTransportClientService>(sp => sp.GetRequiredService<FakeSyncTransportClientService>());
@@ -103,6 +104,7 @@ public sealed class BackendTestHost : IDisposable
         sc.AddSingleton<IUserSyncKeyResolverService, UserSyncKeyResolverService>();
         sc.AddSingleton<IUserLifecycleCoordinator, UserLifecycleCoordinator>();
         sc.AddSingleton<IInteractiveSessionStateService, InteractiveSessionStateService>();
+        sc.AddSingleton<IInteractiveSessionLifetime>(sp => (IInteractiveSessionLifetime)sp.GetRequiredService<IInteractiveSessionStateService>());
         sc.AddSingleton<IInteractiveUserDataStateAccessor, InteractiveUserDataStateAccessor>();
         sc.AddSingleton<FakeUserDataRecoveryCoordinator>();
         sc.AddSingleton<IUserDataRecoveryCoordinator>(sp => sp.GetRequiredService<FakeUserDataRecoveryCoordinator>());
@@ -160,6 +162,20 @@ public sealed class BackendTestHost : IDisposable
         sc.AddSingleton<IUserDeviceSettingsService, UserDeviceSettingsService>();
         sc.AddSingleton<IUserDeviceDisconnectionService, UserDeviceDisconnectionService>();
         sc.AddSingleton<IDeviceService, DeviceService>();
+
+        if (enableDeferredLogin)
+        {
+            sc.AddSingleton<IUserCanonicalCheckpointRepository, FakeUserCanonicalCheckpointRepository>();
+            sc.AddSingleton<IUserSyncFaultRepository, FakeUserSyncFaultRepository>();
+            sc.AddSingleton<IUserSyncFaultService, UserSyncFaultService>();
+            sc.AddSingleton<IUserDataBundleVerificationService, UserDataBundleVerificationService>();
+            sc.AddSingleton<IUserCanonicalHealthService, UserCanonicalHealthService>();
+            sc.AddSingleton<FakeUserControlOperationInboxService>();
+            sc.AddSingleton<IUserControlOperationInboxService>(sp => sp.GetRequiredService<FakeUserControlOperationInboxService>());
+            sc.AddSingleton<IUserLoginPreparationService, UserLoginPreparationService>();
+            sc.AddSingleton<UserPostLoginWorkScheduler>();
+            sc.AddSingleton<IUserPostLoginWorkScheduler>(sp => sp.GetRequiredService<UserPostLoginWorkScheduler>());
+        }
 
         _sp = sc.BuildServiceProvider(new ServiceProviderOptions
         {

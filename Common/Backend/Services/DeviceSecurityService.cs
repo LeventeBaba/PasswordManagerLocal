@@ -3,6 +3,7 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Diagnostics;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
 
@@ -33,6 +34,9 @@ public sealed class DeviceSecurityService : IDeviceSecurityService
         var now = DateTimeOffset.UtcNow;
         device.InvalidSyncAttemptCount++;
         device.LastInvalidSyncAttemptAt = now;
+        BackendDebugLog.Warning(
+            $"Authenticated invalid synchronization attempt. PeerDeviceId={device.Id:N}, Count={device.InvalidSyncAttemptCount}, Reason={NormalizeReason(reason)}.",
+            category: "Synchronization");
 
         if (device.InvalidSyncAttemptCount >= SyncConstants.MaxInvalidIncomingSyncAttempts)
         {

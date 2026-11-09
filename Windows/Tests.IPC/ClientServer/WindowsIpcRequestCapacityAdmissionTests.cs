@@ -24,10 +24,10 @@ public sealed class WindowsIpcRequestCapacityAdmissionTests
             connection,
             serializer,
             maximumPendingRequests: 1,
-            requestEnvelopeSerializer: request =>
+            requestEnvelopeSerializer: (request, correlationId) =>
             {
                 Interlocked.Increment(ref serializationCount);
-                return SerializeRequest(serializer, request);
+                return SerializeRequest(serializer, request, correlationId);
             });
         await client.HandshakeAsync();
         var first = client.SendAsync(IpcOperationId.Ping);
@@ -66,10 +66,10 @@ public sealed class WindowsIpcRequestCapacityAdmissionTests
             connection,
             serializer,
             maximumPendingRequests: 1,
-            requestEnvelopeSerializer: request =>
+            requestEnvelopeSerializer: (request, correlationId) =>
             {
                 Interlocked.Increment(ref serializationCount);
-                return SerializeRequest(serializer, request);
+                return SerializeRequest(serializer, request, correlationId);
             });
         await client.HandshakeAsync();
         var first = client.SendAsync(IpcOperationId.Ping);
@@ -115,7 +115,7 @@ public sealed class WindowsIpcRequestCapacityAdmissionTests
             connection,
             serializer,
             maximumPendingRequests: 1,
-            requestEnvelopeSerializer: request =>
+            requestEnvelopeSerializer: (request, correlationId) =>
             {
                 if (Interlocked.Increment(ref serializationCount) == 1)
                 {
@@ -123,7 +123,7 @@ public sealed class WindowsIpcRequestCapacityAdmissionTests
                     releaseSerialization.Task.GetAwaiter().GetResult();
                 }
 
-                return SerializeRequest(serializer, request);
+                return SerializeRequest(serializer, request, correlationId);
             });
         await client.HandshakeAsync();
         using var cancellationSource = new CancellationTokenSource();
@@ -161,12 +161,12 @@ public sealed class WindowsIpcRequestCapacityAdmissionTests
             connection,
             serializer,
             maximumPendingRequests: 1,
-            requestEnvelopeSerializer: request =>
+            requestEnvelopeSerializer: (request, correlationId) =>
             {
                 if (Interlocked.Increment(ref serializationCount) == 1)
                     throw new IOException("serialization failed");
 
-                return SerializeRequest(serializer, request);
+                return SerializeRequest(serializer, request, correlationId);
             });
         await client.HandshakeAsync();
 
@@ -196,12 +196,12 @@ public sealed class WindowsIpcRequestCapacityAdmissionTests
             connection,
             serializer,
             maximumPendingRequests: 1,
-            requestEnvelopeSerializer: request =>
+            requestEnvelopeSerializer: (request, correlationId) =>
             {
                 if (Interlocked.Increment(ref serializationCount) == 1)
                     return new byte[WindowsIpcProtocol.MaximumPayloadSize + 1];
 
-                return SerializeRequest(serializer, request);
+                return SerializeRequest(serializer, request, correlationId);
             });
         await client.HandshakeAsync();
 
@@ -232,11 +232,11 @@ public sealed class WindowsIpcRequestCapacityAdmissionTests
             connection,
             serializer,
             maximumPendingRequests: 1,
-            requestEnvelopeSerializer: request =>
+            requestEnvelopeSerializer: (request, correlationId) =>
             {
                 serializationStarted.TrySetResult();
                 releaseSerialization.Task.GetAwaiter().GetResult();
-                return SerializeRequest(serializer, request);
+                return SerializeRequest(serializer, request, correlationId);
             });
         await client.HandshakeAsync();
         var sendTask = Task.Run(async () => await client.SendAsync(IpcOperationId.Ping));
@@ -286,7 +286,7 @@ public sealed class WindowsIpcRequestCapacityAdmissionTests
         RecordingWindowsIpcConnection connection,
         WindowsIpcSerializer serializer,
         int maximumPendingRequests,
-        Func<IpcRequestEnvelope, byte[]>? requestEnvelopeSerializer = null,
+        Func<IpcRequestEnvelope, long, byte[]>? requestEnvelopeSerializer = null,
         Func<long, PendingIpcRequest, bool>? pendingRequestRegistrationGuard = null) =>
         new(
             connection,
@@ -305,8 +305,9 @@ public sealed class WindowsIpcRequestCapacityAdmissionTests
 
     private static byte[] SerializeRequest(
         WindowsIpcSerializer serializer,
-        IpcRequestEnvelope request) =>
-        serializer.Serialize(request, WindowsIpcJsonContext.Default.IpcRequestEnvelope);
+        IpcRequestEnvelope request,
+        long correlationId) =>
+        new IpcFramePayloadCodec(serializer).EncodeRequest(request, correlationId);
 
     private static async Task WaitUntilAsync(Func<bool> condition)
     {

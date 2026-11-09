@@ -39,4 +39,10 @@ public sealed class FakeUserRevisionKnowledgeRepository : IUserRevisionKnowledge
     public void Update(UserRevisionKnowledge knowledge)
     {
     }
+
+    public void DeleteRange(IEnumerable<UserRevisionKnowledge> knowledge)
+    {
+        foreach (var item in knowledge.ToArray())
+            _items.Remove(item);
+    }
 }

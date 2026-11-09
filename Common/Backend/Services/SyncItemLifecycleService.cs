@@ -84,7 +84,7 @@ public sealed class SyncItemLifecycleService : ISyncItemLifecycleService
 
         if (item.ModelType == SyncModelType.User)
         {
-            var user = await _users.GetByIdWithRelationsAsync(item.ModelId, ct);
+            var user = await _users.GetByIdAsync(item.ModelId, ct);
             if (user is null)
                 return;
 
@@ -130,7 +130,7 @@ public sealed class SyncItemLifecycleService : ISyncItemLifecycleService
 
         if (item.ModelType == SyncModelType.Device)
         {
-            var device = await _devices.GetByIdWithUserDevicesAsync(item.ModelId, ct);
+            var device = await _devices.GetByIdAsync(item.ModelId, ct);
             if (device is null || _localDevices.IsLocalDevice(device))
                 return;
 

@@ -17,9 +17,14 @@ internal sealed class BackendStorageCleaner
     public void DeleteDatabaseFiles()
     {
         DeleteFileIfExists(_paths.DatabasePath);
+        DeleteFileIfExists(_paths.DatabaseMigrationTempPath);
+        DeleteFileIfExists(_paths.DatabaseMigrationBackupPath);
         DeleteFileIfExists(_paths.DatabaseWalPath);
         DeleteFileIfExists(_paths.DatabaseShmPath);
         DeleteFileIfExists(_paths.DatabaseJournalPath);
+        DeleteFileIfExists($"{_paths.DatabaseMigrationTempPath}-wal");
+        DeleteFileIfExists($"{_paths.DatabaseMigrationTempPath}-shm");
+        DeleteFileIfExists($"{_paths.DatabaseMigrationTempPath}-journal");
         DeleteFileIfExists(_paths.DatabaseConfigPath);
 
         foreach (var temporaryConfigPath in Directory.EnumerateFiles(

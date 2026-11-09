@@ -3,7 +3,6 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSec.Cryptography;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
-using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
@@ -26,12 +25,14 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 public sealed class ImmediateUsernameLoginProjectionIntegrationTests
 {
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
     [TestCategory("Security")]
-    public async Task PendingSignedUsernameChange_IsEffectiveWhileLocked_LoginMergesAndKeepsOldUsernameInvalid()
+    public async Task PendingSignedUsernameChange_IsEffectiveWhileLocked_LoginMergesAndKeepsOldUsernameInvalid(bool enableDeferredLogin)
     {
-        using var host = new BackendTestHost(useRealSnapshotMergeCoordinator: true);
+        using var host = new BackendTestHost(useRealSnapshotMergeCoordinator: true, enableDeferredLogin: enableDeferredLogin);
         var scenario = await StorePendingRenameAsync(
             host,
             oldUsername: "pending-old-username",
@@ -77,12 +78,14 @@ public sealed class ImmediateUsernameLoginProjectionIntegrationTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
     [TestCategory("Security")]
-    public async Task SignedProjectionThatDisagreesWithDecryptedUsername_IsQuarantinedAndCannotCompleteLogin()
+    public async Task SignedProjectionThatDisagreesWithDecryptedUsername_IsQuarantinedAndCannotCompleteLogin(bool enableDeferredLogin)
     {
-        using var host = new BackendTestHost(useRealSnapshotMergeCoordinator: true);
+        using var host = new BackendTestHost(useRealSnapshotMergeCoordinator: true, enableDeferredLogin: enableDeferredLogin);
         var scenario = await StorePendingRenameAsync(
             host,
             oldUsername: "mismatch-old-username",
@@ -98,7 +101,7 @@ public sealed class ImmediateUsernameLoginProjectionIntegrationTests
             scenario.UserId,
             (await lookup.GetUserByUsernameAsync(Encoding.UTF8.GetBytes(scenario.AdvertisedUsername)))?.UId);
 
-        await MSTestAssert.ThrowsExactlyAsync<UsernameChangedDuringLoginException>(() =>
+        await MSTestAssert.ThrowsExactlyAsync<UnauthorizedAccessException>(() =>
             auth.LoginAsync(host.CreateValidLoginRequest(scenario.AdvertisedUsername)));
 
         var canonicalAfter = await users.GetByIdAsync(scenario.UserId)

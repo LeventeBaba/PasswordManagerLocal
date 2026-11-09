@@ -46,6 +46,9 @@ public sealed class EnrollmentQrScannerActivity : Activity, TextureView.ISurface
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        // The system Back gesture closes this Activity with its default canceled
+        // result. Only a successfully decoded QR code sets Result.Ok.
+        SetResult(Result.Canceled);
         BuildLayout();
 
         if (HasCameraPermission())
@@ -157,13 +160,6 @@ public sealed class EnrollmentQrScannerActivity : Activity, TextureView.ISurface
     }
 
 
-    public override void OnBackPressed()
-    {
-        SetResult(Result.Canceled);
-        base.OnBackPressed();
-    }
-
-
     private void BuildLayout()
     {
         var root = CreateRootLayout();
@@ -174,7 +170,7 @@ public sealed class EnrollmentQrScannerActivity : Activity, TextureView.ISurface
             CreateHeaderText(
                 ResolveIntentText(
                     DescriptionExtra,
-                    "Point the camera at the QR code shown on the new device. Only PasswordManagerLocal enrollment QR codes are accepted."),
+                    $"Point the camera at the QR code shown on the new device. Only {ApplicationBranding.DisplayName} enrollment QR codes are accepted."),
                 14,
                 0,
                 18),
@@ -309,7 +305,17 @@ public sealed class EnrollmentQrScannerActivity : Activity, TextureView.ISurface
                 return;
             }
 
-            var parameters = ConfigureCameraParameters(_camera.GetParameters());
+            // Some camera drivers cannot supply parameters even after opening.
+            // In that case stop safely instead of failing on a null value.
+            var cameraParameters = _camera.GetParameters();
+            if (cameraParameters is null)
+            {
+                StopCamera();
+                SetStatus("The camera settings could not be read.");
+                return;
+            }
+
+            var parameters = ConfigureCameraParameters(cameraParameters);
             _camera.SetParameters(parameters);
             StartCameraPreview(surfaceTexture, parameters);
             SetStatus("Looking for an enrollment QR code...");
@@ -495,7 +501,7 @@ public sealed class EnrollmentQrScannerActivity : Activity, TextureView.ISurface
                 if (now - _lastForeignQrStatusAt > 1500)
                 {
                     _lastForeignQrStatusAt = now;
-                    RunOnUiThread(() => SetStatus("QR code found, but it is not a PasswordManagerLocal enrollment QR code."));
+                    RunOnUiThread(() => SetStatus($"QR code found, but it is not a {ApplicationBranding.DisplayName} enrollment QR code."));
                 }
 
                 return;

@@ -65,13 +65,11 @@ public sealed class EndpointRpcCancellationAndLifecycleTests
 
         transport.Disconnect();
         await transport.Completion;
-        for (var attempt = 0; attempt < 20 && client.Snapshot.State != BackendRuntimeState.Failed; attempt++)
-            await Task.Yield();
+        await WaitForFailureAsync(client);
         Assert.AreEqual(BackendRuntimeState.Failed, client.Snapshot.State);
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => client.GetEndpointsAsync());
         Assert.AreEqual(1, connector.ConnectCount);
     }
-
 
     [TestMethod]
     public async Task ExplicitReconnectDisposesStaleTransportWithoutAutomaticReplay()
@@ -84,8 +82,7 @@ public sealed class EndpointRpcCancellationAndLifecycleTests
         await client.ConnectAsync();
         firstTransport.Disconnect();
         await firstTransport.Completion;
-        for (var attempt = 0; attempt < 20 && client.Snapshot.State != BackendRuntimeState.Failed; attempt++)
-            await Task.Yield();
+        await WaitForFailureAsync(client);
 
         await client.ConnectAsync();
 
@@ -96,7 +93,7 @@ public sealed class EndpointRpcCancellationAndLifecycleTests
     }
 
     [TestMethod]
-    public async Task FrontendClientDisposalIsIdempotentAndNeverFallsBackToInProcessRuntime()
+    public async Task RepeatedFrontendClientDisposalRejectsFurtherEndpointAccess()
     {
         var transport = new ControllableEndpointRpcTransport();
         var client = new WindowsNamedPipeFrontendBackendClient(
@@ -107,5 +104,12 @@ public sealed class EndpointRpcCancellationAndLifecycleTests
         await client.DisposeAsync();
 
         await Assert.ThrowsExactlyAsync<ObjectDisposedException>(() => client.GetEndpointsAsync());
+    }
+
+    private static async Task WaitForFailureAsync(WindowsNamedPipeFrontendBackendClient client)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        while (client.Snapshot.State != BackendRuntimeState.Failed)
+            await Task.Delay(10, timeout.Token);
     }
 }

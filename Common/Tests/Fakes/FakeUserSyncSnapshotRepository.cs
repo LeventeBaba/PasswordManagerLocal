@@ -42,10 +42,10 @@ public sealed class FakeUserSyncSnapshotRepository : IUserSyncSnapshotRepository
             .ThenBy(item => Convert.ToHexString(item.SnapshotHash), StringComparer.Ordinal)
             .ToList());
 
-    public Task<bool> HasQuarantinedAsync(Guid userId, long userKeyEpoch, long membershipEpoch, CancellationToken ct = default) =>
+    public Task<bool> HasIsolatedForkAsync(Guid userId, long userKeyEpoch, long membershipEpoch, CancellationToken ct = default) =>
         Task.FromResult(_items.Any(item =>
             item.UserId == userId && item.UserKeyEpoch == userKeyEpoch &&
-            item.MembershipEpoch == membershipEpoch && item.Status == UserSyncSnapshotStatus.Quarantined));
+            item.MembershipEpoch == membershipEpoch && item.Status == UserSyncSnapshotStatus.IsolatedFork));
 
     public Task<UserSyncSnapshot?> GetLatestLocalAsync(Guid userId, Guid originDeviceId, Guid originInstanceId, long userKeyEpoch, CancellationToken ct = default) =>
         Task.FromResult(_items.Where(item =>

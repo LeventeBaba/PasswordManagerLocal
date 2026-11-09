@@ -4,9 +4,9 @@ using System.Linq;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Threading;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
-using Avalonia.Media;
 using Avalonia.VisualTree;
 using PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
 
@@ -18,19 +18,34 @@ public partial class DeviceListView : UserControl
     private const string InteractiveListItemClass = "interactiveListItem";
     private const double MaximumTapMovement = 10;
 
-    private static readonly IBrush NormalBackground = new SolidColorBrush(Color.FromArgb(0x08, 0x80, 0x80, 0x80));
-    private static readonly IBrush NormalBorderBrush = new SolidColorBrush(Color.FromArgb(0x33, 0x80, 0x80, 0x80));
-    private static readonly IBrush HoverBackground = new SolidColorBrush(Color.FromArgb(0x40, 0x80, 0x80, 0x80));
-    private static readonly IBrush HoverBorderBrush = new SolidColorBrush(Color.FromArgb(0xDD, 0x2D, 0x6A, 0xE3));
-
     private Border? _pressedItem;
+    private DeviceItemViewModel? _pressedViewModel;
     private IPointer? _pressedPointer;
     private Point _pressedPoint;
+
+    private ProfileViewModel? _observedViewModel;
 
     public DeviceListView()
     {
         InitializeComponent();
+        DataContextChanged += (_, _) => AttachViewModel(DataContext as ProfileViewModel);
+        DetachedFromVisualTree += (_, _) => AttachViewModel(null);
+        AttachViewModel(DataContext as ProfileViewModel);
     }
+
+    private void AttachViewModel(ProfileViewModel? viewModel)
+    {
+        if (ReferenceEquals(_observedViewModel, viewModel))
+            return;
+        if (_observedViewModel is not null)
+            _observedViewModel.DeviceListScrollToTopRequested -= HandleDeviceListScrollToTopRequested;
+        _observedViewModel = viewModel;
+        if (_observedViewModel is not null)
+            _observedViewModel.DeviceListScrollToTopRequested += HandleDeviceListScrollToTopRequested;
+    }
+
+    private void HandleDeviceListScrollToTopRequested(object? sender, EventArgs e) =>
+        Dispatcher.UIThread.Post(() => DeviceListScrollViewer.Offset = new Vector(DeviceListScrollViewer.Offset.X, 0), DispatcherPriority.Background);
 
     private void InteractiveListItem_PointerEntered(object? sender, PointerEventArgs e)
     {
@@ -59,6 +74,12 @@ public partial class DeviceListView : UserControl
         }
 
         _pressedItem = item;
+        _pressedViewModel = item.DataContext as DeviceItemViewModel;
+        if (_pressedViewModel is null)
+        {
+            ResetPressedItem();
+            return;
+        }
         _pressedPointer = e.Pointer;
         _pressedPoint = e.GetPosition(item);
     }
@@ -67,10 +88,11 @@ public partial class DeviceListView : UserControl
     {
         Border? pressedItem = _pressedItem;
         IPointer? pressedPointer = _pressedPointer;
+        DeviceItemViewModel? pressedViewModel = _pressedViewModel;
         Point pressedPoint = _pressedPoint;
         ResetPressedItem();
 
-        if (pressedItem is null || !Equals(pressedPointer, e.Pointer) || IsNestedActionSource(e.Source))
+        if (pressedItem is null || pressedViewModel is null || !ReferenceEquals(pressedItem.DataContext, pressedViewModel) || !Equals(pressedPointer, e.Pointer) || IsNestedActionSource(e.Source))
         {
             return;
         }
@@ -94,6 +116,7 @@ public partial class DeviceListView : UserControl
     private void ResetPressedItem()
     {
         _pressedItem = null;
+        _pressedViewModel = null;
         _pressedPointer = null;
         _pressedPoint = default;
     }
@@ -105,10 +128,10 @@ public partial class DeviceListView : UserControl
             return;
         }
 
-        ICommand command = device.ViewCommand;
-        if (command.CanExecute(null))
+        ICommand command = device.Owner.ViewDeviceCommand;
+        if (command.CanExecute(device))
         {
-            command.Execute(null);
+            command.Execute(device);
         }
     }
 
@@ -155,14 +178,10 @@ public partial class DeviceListView : UserControl
                 item.Classes.Add(HoveredClass);
             }
 
-            item.Background = HoverBackground;
-            item.BorderBrush = HoverBorderBrush;
             return;
         }
 
         item.Classes.Remove(HoveredClass);
-        item.Background = NormalBackground;
-        item.BorderBrush = NormalBorderBrush;
     }
 
     private static Border? FindInteractiveListItem(object? sender)

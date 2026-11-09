@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
@@ -10,15 +11,17 @@ using PasswordManagerLocal.Common.Contracts.Responses;
 using PasswordManagerLocal.Common.Backend.Sync.Enrollment;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 using System.Text;
+using System.Text.Json;
+using PasswordManagerLocal.Common.Backend.Utils;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 
 [TestClass]
 [DoNotParallelize]
-public sealed class DeviceEnrollmentEndToEndTests
+public sealed partial class DeviceEnrollmentEndToEndTests
 {
     private const int TestTimeoutMilliseconds = 60_000;
-    private static readonly TimeSpan EnrollmentPhaseTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan EnrollmentStepTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan CancellationDrainTimeout = TimeSpan.FromSeconds(2);
 
     public TestContext TestContext { get; set; } = null!;
@@ -70,11 +73,11 @@ public sealed class DeviceEnrollmentEndToEndTests
             TagIds = [sourceTag.Id]
         });
         await source.Endpoints.SetLocalUserSyncOnAsync(sourceToken, true);
-        var enrollmentCode = await RunPhaseAsync(
+        var enrollmentCode = await RunStepAsync(
             "target enrollment listener startup and authenticated self-test",
             ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
 
-        await RunPhaseAsync(
+        await RunStepAsync(
             "source authoritative enrollment, snapshot transfer, and target import",
             ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, enrollmentCode.Code, ct));
 
@@ -88,7 +91,7 @@ public sealed class DeviceEnrollmentEndToEndTests
         Assert.AreEqual(UserLoginIdentityStatus.Active, sourceIdentity.Status);
 
         await source.Endpoints.LogoutAsync(sourceToken);
-        var sourceReloginToken = await RunPhaseAsync(
+        var sourceReloginToken = await RunStepAsync(
             "original device login after authoritative enrollment membership transition",
             ct => source.Endpoints.LoginAsync(source.CreateLoginRequest(username), ct));
         Assert.AreNotEqual(Guid.Empty, sourceReloginToken);
@@ -99,7 +102,7 @@ public sealed class DeviceEnrollmentEndToEndTests
             await GetOnlyCanonicalCheckpointAsync(target),
             "Enrollment import must create the target installation's canonical checkpoint before first login.");
 
-        var targetToken = await RunPhaseAsync(
+        var targetToken = await RunStepAsync(
             "first login on the newly enrolled backend",
             ct => target.Endpoints.LoginAsync(target.CreateLoginRequest(username), ct));
         var profile = await target.Endpoints.GetUserProfileInfoAsync(targetToken);
@@ -154,14 +157,14 @@ public sealed class DeviceEnrollmentEndToEndTests
         await source.Endpoints.SetLocalUserSyncOnAsync(sourceToken, true);
         await SetEmptyDiagnosticsOnHealthySnapshotAsync(source);
 
-        var enrollmentCode = await RunPhaseAsync(
+        var enrollmentCode = await RunStepAsync(
             "target enrollment listener startup and authenticated self-test",
             ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
-        await RunPhaseAsync(
+        await RunStepAsync(
             "source authoritative enrollment, snapshot transfer, and target import",
             ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, enrollmentCode.Code, ct));
 
-        var targetToken = await RunPhaseAsync(
+        var targetToken = await RunStepAsync(
             "first login on the newly enrolled backend",
             ct => target.Endpoints.LoginAsync(target.CreateLoginRequest(username), ct));
         Assert.AreNotEqual(Guid.Empty, targetToken);
@@ -194,13 +197,13 @@ public sealed class DeviceEnrollmentEndToEndTests
         var username = $"enrollretry{Guid.NewGuid().ToString("N")[..16]}";
         var sourceToken = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest(username));
         await source.Endpoints.SetLocalUserSyncOnAsync(sourceToken, true);
-        var firstCode = await RunPhaseAsync(
+        var firstCode = await RunStepAsync(
             "first target enrollment listener startup and authenticated self-test",
             ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
         source.Transport.ThrowAfterNextSuccessfulEnrollmentCompletion = true;
 
         var firstFailure = await Assert.ThrowsExactlyAsync<DeviceEnrollmentPartiallyCommittedException>(() =>
-            RunPhaseAsync(
+            RunStepAsync(
                 "first enrollment transfer with simulated lost success reply",
                 ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, firstCode.Code, ct)));
 
@@ -212,16 +215,16 @@ public sealed class DeviceEnrollmentEndToEndTests
         Assert.AreEqual(DeviceEnrollmentCommitStatus.TransferFailed,
             (await GetOnlyEnrollmentCommitAsync(source)).Status);
 
-        var retryCode = await RunPhaseAsync(
+        var retryCode = await RunStepAsync(
             "retry target enrollment listener startup and authenticated self-test",
             ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
-        await RunPhaseAsync(
+        await RunStepAsync(
             "retry enrollment transfer and idempotent target import",
             ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, retryCode.Code, ct));
 
         var commits = await GetEnrollmentCommitsAsync(source);
         var targetUserIds = await GetUserIdsAsync(target);
-        var targetToken = await RunPhaseAsync(
+        var targetToken = await RunStepAsync(
             "first login on the newly enrolled backend",
             ct => target.Endpoints.LoginAsync(target.CreateLoginRequest(username), ct));
         var devices = await target.Endpoints.GetUserDevicesAsync(targetToken);
@@ -247,13 +250,13 @@ public sealed class DeviceEnrollmentEndToEndTests
         var username = $"enrolltamper{Guid.NewGuid().ToString("N")[..16]}";
         var sourceToken = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest(username));
         await source.Endpoints.SetLocalUserSyncOnAsync(sourceToken, true);
-        var enrollmentCode = await RunPhaseAsync(
+        var enrollmentCode = await RunStepAsync(
             "target enrollment listener startup and authenticated self-test",
             ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
         source.Transport.TamperNextEnrollmentSnapshot = true;
 
         var failure = await Assert.ThrowsExactlyAsync<DeviceEnrollmentPartiallyCommittedException>(() =>
-            RunPhaseAsync(
+            RunStepAsync(
                 "tampered snapshot rejection and recoverable commit recording",
                 ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, enrollmentCode.Code, ct)));
 
@@ -281,13 +284,13 @@ public sealed class DeviceEnrollmentEndToEndTests
         var username = $"enrollcert{Guid.NewGuid().ToString("N")[..16]}";
         var sourceToken = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest(username));
         await source.Endpoints.SetLocalUserSyncOnAsync(sourceToken, true);
-        var enrollmentCode = await RunPhaseAsync(
+        var enrollmentCode = await RunStepAsync(
             "target enrollment listener startup and authenticated self-test",
             ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
         source.Transport.ClientCertificateFingerprintOverride = new string('F', 64);
 
         var failure = await Assert.ThrowsExactlyAsync<DeviceEnrollmentPartiallyCommittedException>(() =>
-            RunPhaseAsync(
+            RunStepAsync(
                 "client-certificate mismatch rejection and recoverable commit recording",
                 ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, enrollmentCode.Code, ct)));
 
@@ -297,36 +300,201 @@ public sealed class DeviceEnrollmentEndToEndTests
             (await GetOnlyEnrollmentCommitAsync(source)).Status);
     }
 
-    private async Task<T> RunPhaseAsync<T>(
-        string phase,
+    [TestMethod]
+    [Timeout(TestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task EmptyOptionalMembershipHashes_SurviveSnapshotRoundTripAndIdempotentImport()
+    {
+        await using var source = await ProductionEnrollmentTestHost.CreateAsync();
+        await using var target = await ProductionEnrollmentTestHost.CreateAsync();
+        Connect(source, target);
+        var username = "enrollhash" + Guid.NewGuid().ToString("N")[..16];
+        var token = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest(username));
+        await source.Endpoints.SetLocalUserSyncOnAsync(token, true);
+        var code = await target.Endpoints.StartDeviceEnrollmentAsync();
+        await source.Endpoints.AddDeviceByCodeAsync(token, code.Code);
+        var commit = await GetOnlyEnrollmentCommitAsync(source);
+        var user = await GetOnlyUserAsync(source);
+        DeviceEnrollmentSnapshot snapshot;
+        using (var scope = source.Services.CreateScope())
+        {
+            snapshot = await scope.ServiceProvider.GetRequiredService<IDeviceEnrollmentSnapshotService>().BuildAsync(
+                scope.ServiceProvider, user.UId, new EnrollmentEndpoint
+                {
+                    DeviceId = target.Identity.LocalDeviceId,
+                    OriginInstanceId = target.Identity.OriginInstanceId,
+                    SignPublicKey = target.Identity.SignPublicKey,
+                    AgreementPublicKey = target.Identity.AgreementPublicKey,
+                    TlsCertFingerprint = target.Identity.FingerprintHex,
+                    DeviceType = target.Identity.DeviceType
+                }, commit.AdditionOperationId);
+        }
+        foreach (var authorization in snapshot.MembershipAuthorizations)
+        {
+            authorization.RemovalOperationHash = [];
+            if (authorization.IsGenesis)
+                authorization.AdditionOperationHash = [];
+        }
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(snapshot, BackendJsonSerializerContext.Default.DeviceEnrollmentSnapshot);
+        var roundTripped = JsonSerializer.Deserialize(bytes, BackendJsonSerializerContext.Default.DeviceEnrollmentSnapshot)!;
+        using (var scope = target.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IDeviceEnrollmentSnapshotImporterService>()
+                .ImportAsync(scope.ServiceProvider, roundTripped);
+            var rows = await scope.ServiceProvider.GetRequiredService<IUserMembershipAuthorizationRepository>()
+                .ListForUserAsync(user.UId);
+            Assert.AreEqual(2, rows.Count);
+            Assert.IsTrue(rows.All(row => row.RemovalOperationHash is null));
+            Assert.IsNull(rows.Single(row => row.IsGenesis).AdditionOperationHash);
+        }
+        var targetToken = await target.Endpoints.LoginAsync(target.CreateLoginRequest(username));
+        var diagnostics = await target.Endpoints.RunSelfDiagnosticsAndRepairAsync(targetToken);
+        Assert.IsTrue(diagnostics.Healthy, string.Join(", ", diagnostics.Findings));
+        Assert.AreEqual(0, diagnostics.RepairedCount);
+    }
+
+    [TestMethod]
+    [Timeout(TestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task RejectedMalformedControlEvidence_DoesNotPoisonAHealthyEnrollment()
+    {
+        await using var source = await ProductionEnrollmentTestHost.CreateAsync();
+        await using var target = await ProductionEnrollmentTestHost.CreateAsync();
+        Connect(source, target);
+        var username = "rejectedhistory" + Guid.NewGuid().ToString("N")[..12];
+        var token = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest(username));
+        var user = await GetOnlyUserAsync(source);
+        var rejectedId = Guid.NewGuid();
+        using (var scope = source.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IUserControlOperationRepository>().AddAsync(new UserControlOperation
+            {
+                OperationId = rejectedId, UserId = user.UId, OperationType = UserControlOperationType.DeviceRemoval,
+                OriginDeviceId = source.Identity.LocalDeviceId, OriginInstanceId = source.Identity.OriginInstanceId,
+                OriginSequence = 99, PreviousKeyEpoch = user.KeyEpoch, ResultingKeyEpoch = user.KeyEpoch,
+                PreviousMembershipEpoch = 1, ResultingMembershipEpoch = 2,
+                Status = UserControlOperationStatus.Rejected, EnvelopePayload = Encoding.UTF8.GetBytes("{rejected evidence")
+            });
+            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+        }
+        await source.Endpoints.SetLocalUserSyncOnAsync(token, true);
+        var code = await target.Endpoints.StartDeviceEnrollmentAsync();
+        await source.Endpoints.AddDeviceByCodeAsync(token, code.Code);
+        Assert.AreNotEqual(Guid.Empty, await target.Endpoints.LoginAsync(target.CreateLoginRequest(username)));
+        using var sourceScope = source.Services.CreateScope();
+        using var targetScope = target.Services.CreateScope();
+        Assert.IsNotNull(await sourceScope.ServiceProvider.GetRequiredService<IUserControlOperationRepository>().GetByIdAsync(rejectedId));
+        Assert.IsNull(await targetScope.ServiceProvider.GetRequiredService<IUserControlOperationRepository>().GetByIdAsync(rejectedId));
+    }
+
+    [TestMethod]
+    [Timeout(TestTimeoutMilliseconds)]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    [TestCategory("EndToEnd")]
+    public async Task EnrollmentRejectsWrongInstallationAndProofFromPreviousSession_BeforeImport()
+    {
+        await using var source = await ProductionEnrollmentTestHost.CreateAsync();
+        await using var target = await ProductionEnrollmentTestHost.CreateAsync();
+        Connect(source, target);
+
+        var username = "enrollproof" + Guid.NewGuid().ToString("N")[..16];
+        var token = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest(username));
+        await source.Endpoints.SetLocalUserSyncOnAsync(token, true);
+        var userId = (await GetOnlyUserAsync(source)).UId;
+
+        var firstCode = await RunStepAsync("start original enrollment", ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
+        ByteString? originalProof = null;
+        string? originalSession = null;
+        source.Transport.MutateNextEnrollmentStart = chunk =>
+        {
+            originalProof = chunk.CodeProof;
+            originalSession = chunk.SessionId;
+            chunk.TargetOriginInstanceId = Guid.NewGuid().ToString("N");
+        };
+
+        var wrongInstallation = await Assert.ThrowsExactlyAsync<DeviceEnrollmentPartiallyCommittedException>(() =>
+            RunStepAsync("send transfer for another installation", ct => source.Endpoints.AddDeviceByCodeAsync(token, firstCode.Code, ct)));
+        Assert.AreEqual(DeviceEnrollmentErrorCode.NewDeviceRejected, wrongInstallation.ErrorCode);
+        Assert.AreEqual(DeviceEnrollmentCommitStatus.TransferFailed, (await GetOnlyEnrollmentCommitAsync(source)).Status);
+        Assert.IsTrue(originalProof is { Length: > 0 });
+        Assert.IsFalse(string.IsNullOrEmpty(originalSession));
+        await AssertNoImportedProfileAsync(target, userId, source.Identity.LocalDeviceId);
+
+        var secondCode = await RunStepAsync("start replacement enrollment", ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
+        string? replacementSession = null;
+        source.Transport.MutateNextEnrollmentStart = chunk =>
+        {
+            replacementSession = chunk.SessionId;
+            // Keep the current session ID, ciphertext and TLS identity. Replay only the old proof.
+            chunk.CodeProof = originalProof!;
+        };
+
+        var oldProof = await Assert.ThrowsExactlyAsync<DeviceEnrollmentPartiallyCommittedException>(() =>
+            RunStepAsync("replay the previous session proof", ct => source.Endpoints.AddDeviceByCodeAsync(token, secondCode.Code, ct)));
+        Assert.AreEqual(DeviceEnrollmentErrorCode.CodeProofInvalid, oldProof.ErrorCode);
+        Assert.AreEqual(wrongInstallation.EnrollmentCommitId, oldProof.EnrollmentCommitId);
+        Assert.IsFalse(string.IsNullOrEmpty(replacementSession));
+        Assert.AreNotEqual(originalSession, replacementSession);
+        await AssertNoImportedProfileAsync(target, userId, source.Identity.LocalDeviceId);
+
+        var retryCode = await RunStepAsync("start unmodified enrollment", ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
+        await RunStepAsync("send an unmodified transfer", ct => source.Endpoints.AddDeviceByCodeAsync(token, retryCode.Code, ct));
+        var targetToken = await RunStepAsync("sign in after genuine enrollment",
+            ct => target.Endpoints.LoginAsync(target.CreateLoginRequest(username), ct));
+        Assert.AreNotEqual(Guid.Empty, targetToken);
+        CollectionAssert.AreEqual(new[] { userId }, (await GetUserIdsAsync(target)).ToArray());
+        var commit = await GetOnlyEnrollmentCommitAsync(source);
+        Assert.AreEqual(wrongInstallation.EnrollmentCommitId, commit.CommitId);
+        Assert.AreEqual(DeviceEnrollmentCommitStatus.Transferred, commit.Status);
+    }
+
+    private static async Task AssertNoImportedProfileAsync(
+        ProductionEnrollmentTestHost target, Guid userId, Guid sourceDeviceId,
+        DeviceEnrollmentState expectedState = DeviceEnrollmentState.Waiting)
+    {
+        Assert.AreEqual(0, (await GetUserIdsAsync(target)).Count);
+        Assert.AreEqual(expectedState, (await target.Endpoints.GetDeviceEnrollmentStatusAsync()).State);
+        using var scope = target.Services.CreateScope();
+        var services = scope.ServiceProvider;
+        Assert.IsNull(await services.GetRequiredService<IDeviceRepository>().GetByIdAsNoTrackingAsync(sourceDeviceId));
+        Assert.IsNull(await services.GetRequiredService<IUserCanonicalCheckpointRepository>().GetAsync(userId));
+        Assert.AreEqual(0, (await services.GetRequiredService<IUserControlOperationRepository>().ListForUserAsync(userId)).Count);
+        Assert.AreEqual(0, (await services.GetRequiredService<IUserMembershipAuthorizationRepository>().ListForUserAsync(userId)).Count);
+    }
+
+    private async Task<T> RunStepAsync<T>(
+        string step,
         Func<CancellationToken, Task<T>> operation)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(phase);
+        ArgumentException.ThrowIfNullOrWhiteSpace(step);
         ArgumentNullException.ThrowIfNull(operation);
 
-        TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] START: {phase}");
+        TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] START: {step}");
         using var cancellation = new CancellationTokenSource();
 
         // Execute the endpoint call on a worker so a synchronous SQLite wait cannot block the
         // MSTest control thread before the watchdog is installed. The cancellation token is passed
         // into the real backend operation; unlike Task.WaitAsync(timeout), timing out here also asks
-        // the underlying operation to unwind and release its enrollment/lifecycle/DbContext leases.
+        // the underlying operation to unwind and release its enrollment and lifecycle leases.
         var operationTask = Task.Run(() => operation(cancellation.Token));
-        var watchdog = Task.Delay(EnrollmentPhaseTimeout);
+        var watchdog = Task.Delay(EnrollmentStepTimeout);
         var completed = await Task.WhenAny(operationTask, watchdog);
         if (completed == operationTask || operationTask.IsCompleted)
         {
             var result = await operationTask;
-            TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] COMPLETE: {phase}");
+            TestContext.WriteLine($"[{DateTimeOffset.UtcNow:O}] COMPLETE: {step}");
             return result;
         }
 
         TestContext.WriteLine(
-            $"[{DateTimeOffset.UtcNow:O}] TIMEOUT: {phase}; requesting cancellation.");
+            $"[{DateTimeOffset.UtcNow:O}] TIMEOUT: {step}; requesting cancellation.");
 
         // Cancellation callbacks can themselves block, so request cancellation on a worker and do
         // not let that request consume the remaining test timeout. The operation gets a short drain
-        // window to release lifecycle leases and DbContexts.
+        // window to release lifecycle leases and database scopes.
         _ = Task.Run(() =>
         {
             try
@@ -345,7 +513,7 @@ public sealed class DeviceEnrollmentEndToEndTests
         catch
         {
             // The operation may finish by observing cancellation or may remain blocked. In either
-            // case report the phase that exceeded the deadline rather than allowing fixture cleanup
+            // case report the step that exceeded the deadline rather than allowing fixture cleanup
             // to replace it with the outer MSTest timeout.
         }
 
@@ -359,17 +527,17 @@ public sealed class DeviceEnrollmentEndToEndTests
         }
 
         throw new AssertFailedException(
-            $"Enrollment end-to-end phase '{phase}' did not complete within " +
-            $"{EnrollmentPhaseTimeout.TotalSeconds:0} seconds. Cancellation was requested and " +
+            $"Enrollment end-to-end step '{step}' did not complete within " +
+            $"{EnrollmentStepTimeout.TotalSeconds:0} seconds. Cancellation was requested and " +
             $"the operation was given {CancellationDrainTimeout.TotalSeconds:0} seconds to unwind.");
     }
 
-    private async Task RunPhaseAsync(
-        string phase,
+    private async Task RunStepAsync(
+        string step,
         Func<CancellationToken, Task> operation)
     {
-        await RunPhaseAsync<object?>(
-            phase,
+        await RunStepAsync<object?>(
+            step,
             async ct =>
             {
                 await operation(ct);

@@ -1,3 +1,4 @@
+using PasswordManagerLocal.Common.Backend.Utils;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Primitives;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
@@ -69,6 +70,8 @@ public sealed class DataCachingService : IDataCachingService
             if (!_tokens.Validate(token))
                 return false;
 
+            if (_currentByKey.TryGetValue(key, out var previous) && previous is UserDataBundle old && !ReferenceEquals(old, value))
+                old.Dispose();
             _currentByKey[key] = value;
             _cache.Set(key, value, EntryOptions(token, ttl));
             return true;
@@ -82,7 +85,8 @@ public sealed class DataCachingService : IDataCachingService
 
     private void RemoveCurrentWithoutDispose(string key)
     {
-        _currentByKey.TryRemove(key, out _);
+        if (_currentByKey.TryRemove(key, out var removed) && removed is UserDataBundle bundle)
+            bundle.Dispose();
         _removeWithoutDisposeKeys[key] = 0;
         _cache.Remove(key);
     }
@@ -133,9 +137,13 @@ public sealed class DataCachingService : IDataCachingService
                 return;
             }
 
-            if (self._currentByKey.TryGetValue(skey, out var cur) && ReferenceEquals(cur, value))
+            lock (self._stateLock)
             {
-                self._currentByKey.TryRemove(skey, out _);
+                if (self._currentByKey.TryGetValue(skey, out var cur) && ReferenceEquals(cur, value))
+                {
+                    self._currentByKey.TryRemove(skey, out _);
+                    if (value is UserDataBundle expired) expired.Dispose();
+                }
             }
         }, this);
 
@@ -151,8 +159,16 @@ public sealed class DataCachingService : IDataCachingService
         }
 
         var key = UserKey(token);
-        var result = await _cache.GetOrCreateAsync(key, loader, options, ct);
-        return TrackLoadedValue(token, key, result, clearVersion);
+        var result = await _cache.GetOrCreateAsync(key, async innerCt =>
+        {
+            using var loaded = await loader(innerCt);
+            return loaded is null ? null : UserDataBundleCopy.Clone(loaded);
+        }, options, ct);
+        lock (_stateLock)
+        {
+            if (TrackLoadedValue(token, key, result, clearVersion) is null) return null;
+            return TryGetUserDataBundle(token, out var copy) ? copy : null;
+        }
     }
 
     public Task<UserDataBundle?> GetOrLoadUserDataBundleAsync(Guid token, Func<Task<UserDataBundle?>> loader)
@@ -169,23 +185,23 @@ public sealed class DataCachingService : IDataCachingService
         }
 
         var key = UserKey(token);
-        if (!_cache.TryGet(key, out object? cached) || cached is null)
-            return false;
-
-        if (cached is UserDataBundle bundle)
+        lock (_stateLock)
         {
-            value = bundle;
-            _currentByKey[key] = bundle;
+            if (!_cache.TryGet(key, out object? current) || current is not UserDataBundle bundle)
+                return false;
+            value = UserDataBundleCopy.Clone(bundle);
             return true;
         }
-
-        return false;
     }
 
     public void SetUserDataBundle(Guid token, UserDataBundle value)
     {
-        if (!TryStoreValue(token, UserKey(token), value, _userTtl))
+        var copy = UserDataBundleCopy.Clone(value);
+        if (!TryStoreValue(token, UserKey(token), copy, _userTtl))
+        {
+            copy.Dispose();
             InvalidateToken(token);
+        }
     }
 
     public async Task<UserData?> GetOrLoadUserDataAsync(Guid token, Func<CancellationToken, Task<UserData?>> loader, CancellationToken ct = default)
@@ -217,13 +233,19 @@ public sealed class DataCachingService : IDataCachingService
             return false;
         }
 
+        lock (_stateLock)
+        {
         var key = UserKey(token);
         if (!_cache.TryGet(key, out object? cached) || cached is null)
             return false;
 
         if (cached is UserDataBundle bundle)
         {
-            value = bundle.UserData;
+            var copy = UserDataBundleCopy.Clone(bundle);
+            value = copy.UserData;
+            copy.GeneralUserData.Dispose();
+            copy.UserPasswordsData.Dispose();
+            copy.UserDevicesData.Dispose();
             _currentByKey[key] = bundle;
             return true;
         }
@@ -236,6 +258,7 @@ public sealed class DataCachingService : IDataCachingService
         }
 
         return false;
+        }
     }
 
     public void SetUserData(Guid token, UserData value)

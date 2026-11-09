@@ -8,6 +8,24 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Exceptions;
 public sealed class ExceptionRestartRequirementClassifierTests
 {
     [TestMethod]
+    public void PermanentDatabaseAccessFailuresRequireRestartButTemporaryKeyFailuresDoNot()
+    {
+        foreach (var failure in new DatabaseRecoveryRequiredException[]
+                 {
+                     new DatabaseConfigurationInvalidException(),
+                     new DatabaseKeyUnavailableException(),
+                     new DatabaseUnreadableException()
+                 })
+        {
+            Assert.IsTrue(ExceptionRestartRequirementClassifier.RequiresProcessRestart(
+                new AggregateException(new IOException("wrapper", failure))));
+        }
+
+        Assert.IsFalse(ExceptionRestartRequirementClassifier.RequiresProcessRestart(
+            new KeyProtectorUnavailableException(KeyProtectorUnavailableReason.DeviceLocked)));
+    }
+
+    [TestMethod]
     public void NestedAndAggregateRestartFailuresAreDetected()
     {
         var nested = new IOException(

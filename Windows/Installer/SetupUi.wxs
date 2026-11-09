@@ -1,0 +1,138 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <Binary Id="SetupLogo" SourceFile="!(bindpath.Branding)\PasswordManagerLocal.ico" />
+    <Property Id="PML_DESKTOP_SHORTCUT" Value="1" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <Property Id="WixUnelevatedShellExecTarget" Value="[#ApplicationExe]" />
+    <CustomAction Id="CheckLaunchAfterSetup" BinaryRef="PrepareIntegrationScript" JScriptCall="checkLaunch" Return="ignore" />
+    <CustomAction Id="OpenInstalledApplication" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+                  DllEntry="WixUnelevatedShellExec" Return="ignore" />
+
+    <UI Id="PasswordManagerLocalSetup">
+      <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+      <TextStyle Id="PmlBody" FaceName="Segoe UI" Size="10" />
+      <TextStyle Id="PmlHeading" FaceName="Segoe UI" Size="14" Bold="yes" />
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+
+      <DialogRef Id="BrowseDlg" />
+      <DialogRef Id="DiskCostDlg" />
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="LicenseAgreementDlg" />
+      <DialogRef Id="MaintenanceTypeDlg" />
+      <DialogRef Id="MaintenanceWelcomeDlg" />
+      <DialogRef Id="MsiRMFilesInUse" />
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="ResumeDlg" />
+      <DialogRef Id="UserExit" />
+      <DialogRef Id="VerifyReadyDlg" />
+
+      <Dialog Id="PmlWelcome" Width="370" Height="270" Title="!(loc.PmlSetupTitle)">
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)">
+          <Publish Event="NewDialog" Value="LicenseAgreementDlg" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+        <Control Id="Logo" Type="Icon" X="314" Y="14" Width="36" Height="36" Text="SetupLogo" />
+        <Control Id="Heading" Type="Text" X="20" Y="18" Width="282" Height="55" NoPrefix="yes"
+                 Text="{\PmlHeading}!(loc.PmlWelcomeHeading)" />
+        <Control Id="Introduction" Type="Text" X="20" Y="84" Width="330" Height="66" NoPrefix="yes"
+                 Text="{\PmlBody}!(loc.PmlWelcomeIntroduction)" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+      </Dialog>
+
+      <Dialog Id="PmlInstallOptions" Width="370" Height="270" Title="!(loc.PmlSetupTitle)">
+        <Control Id="FolderLabel" Type="Text" X="20" Y="58" Width="330" Height="16" TabSkip="no" Text="!(loc.PmlFolderLabel)" />
+        <Control Id="Folder" Type="PathEdit" X="20" Y="77" Width="330" Height="18" Property="WIXUI_INSTALLDIR"
+                 Indirect="yes" HideCondition="PML_PREVIOUS_INSTALLFOLDER" ShowCondition="NOT PML_PREVIOUS_INSTALLFOLDER" />
+        <Control Id="ExistingFolder" Type="Text" X="20" Y="77" Width="330" Height="31" NoPrefix="yes"
+                 Hidden="yes" ShowCondition="PML_PREVIOUS_INSTALLFOLDER" Text="[INSTALLFOLDER]" />
+        <Control Id="Browse" Type="PushButton" X="20" Y="105" Width="77" Height="17" Text="!(loc.PmlBrowse)"
+                 HideCondition="PML_PREVIOUS_INSTALLFOLDER" ShowCondition="NOT PML_PREVIOUS_INSTALLFOLDER">
+          <Publish Property="_BrowseProperty" Value="INSTALLFOLDER" Order="1" />
+          <Publish Event="SpawnDialog" Value="BrowseDlg" Order="2" />
+        </Control>
+        <Control Id="DesktopShortcut" Type="CheckBox" X="20" Y="172" Width="330" Height="23"
+                 Property="PML_DESKTOP_SHORTCUT" CheckBoxValue="1" Text="!(loc.PmlCreateDesktopShortcut)" />
+        <Control Id="Back" Type="PushButton" X="168" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
+          <Publish Event="NewDialog" Value="LicenseAgreementDlg" />
+        </Control>
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)">
+          <Publish Event="CheckTargetPath" Value="INSTALLFOLDER" Order="1" />
+          <Publish Event="SetTargetPath" Value="INSTALLFOLDER" Order="2" />
+          <Publish Property="ADDLOCAL" Value="Application,DesktopShortcut" Order="3" />
+          <Publish Property="REMOVE" Condition="PML_DESKTOP_SHORTCUT = 1" Order="4" />
+          <Publish Property="REMOVE" Value="DesktopShortcut" Condition="PML_DESKTOP_SHORTCUT &lt;&gt; 1" Order="5" />
+          <Publish Event="NewDialog" Value="VerifyReadyDlg" Order="6" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+        <Control Id="Logo" Type="Icon" X="314" Y="14" Width="36" Height="36" Text="SetupLogo" />
+        <Control Id="Heading" Type="Text" X="20" Y="18" Width="282" Height="32" NoPrefix="yes" Text="{\PmlHeading}!(loc.PmlOptionsHeading)" />
+        <Control Id="FolderHelp" Type="Text" X="20" Y="132" Width="330" Height="35" NoPrefix="yes"
+                 HideCondition="PML_PREVIOUS_INSTALLFOLDER" ShowCondition="NOT PML_PREVIOUS_INSTALLFOLDER"
+                 Text="!(loc.PmlFolderHelp)" />
+        <Control Id="UpgradeHelp" Type="Text" X="20" Y="132" Width="330" Height="35" NoPrefix="yes" Hidden="yes"
+                 ShowCondition="PML_PREVIOUS_INSTALLFOLDER" Text="!(loc.PmlUpgradeHelp)" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+      </Dialog>
+
+      <Dialog Id="PmlSetupFinished" Width="370" Height="270" Title="!(loc.PmlSetupTitle)">
+        <Control Id="OpenApplication" Type="CheckBox" X="20" Y="124" Width="330" Height="24"
+                 Property="PML_OPEN_AFTER_SETUP" CheckBoxValue="1" Text="!(loc.PmlLaunchAfterSetup)"
+                 Hidden="yes" ShowCondition="NOT Installed AND NOT MsiSystemRebootPending" />
+        <Control Id="Finish" Type="PushButton" X="304" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.WixUIFinish)">
+          <Publish Event="DoAction" Value="CheckLaunchAfterSetup" Order="1"
+                   Condition="PML_OPEN_AFTER_SETUP = 1 AND NOT Installed AND NOT MsiSystemRebootPending" />
+          <Publish Event="DoAction" Value="OpenInstalledApplication" Order="2" Condition="PmlCanLaunchApplication" />
+          <Publish Event="EndDialog" Value="Return" Order="3" />
+        </Control>
+        <Control Id="Logo" Type="Icon" X="314" Y="14" Width="36" Height="36" Text="SetupLogo" />
+        <Control Id="Heading" Type="Text" X="20" Y="18" Width="282" Height="32" NoPrefix="yes" Text="{\PmlHeading}!(loc.PmlSetupFinishedHeading)" />
+        <Control Id="Description" Type="Text" X="20" Y="68" Width="330" Height="45" NoPrefix="yes"
+                 Text="{\PmlBody}!(loc.PmlSetupFinishedDescription)" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+      </Dialog>
+
+      <Dialog Id="PmlAdminSetupFinished" Width="370" Height="270" Title="!(loc.PmlSetupTitle)">
+        <Control Id="Finish" Type="PushButton" X="304" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.WixUIFinish)">
+          <Publish Event="EndDialog" Value="Return" />
+        </Control>
+        <Control Id="Logo" Type="Icon" X="314" Y="14" Width="36" Height="36" Text="SetupLogo" />
+        <Control Id="Heading" Type="Text" X="20" Y="18" Width="282" Height="32" NoPrefix="yes"
+                 Text="{\PmlHeading}!(loc.PmlAdminSetupFinishedHeading)" />
+        <Control Id="Description" Type="Text" X="20" Y="68" Width="330" Height="45" NoPrefix="yes"
+                 Text="{\PmlBody}!(loc.PmlAdminSetupFinishedDescription)" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+      </Dialog>
+
+      <Publish Dialog="LicenseAgreementDlg" Control="Back" Event="NewDialog" Value="PmlWelcome" />
+      <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="PmlInstallOptions"
+               Condition="LicenseAccepted = 1" Order="2" />
+      <Publish Dialog="BrowseDlg" Control="OK" Event="CheckTargetPath" Value="INSTALLFOLDER" Order="1" />
+      <Publish Dialog="BrowseDlg" Control="OK" Event="SetTargetPath" Value="INSTALLFOLDER" Order="2" />
+      <Publish Dialog="BrowseDlg" Control="OK" Event="EndDialog" Value="Return" Order="3" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="PmlInstallOptions" Condition="NOT Installed" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Condition="Installed" />
+      <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
+
+      <InstallUISequence>
+        <Show Dialog="PmlWelcome" Before="ProgressDlg" Condition="NOT Installed" />
+        <Show Dialog="PmlSetupFinished" OnExit="success" />
+      </InstallUISequence>
+      <AdminUISequence>
+        <Show Dialog="PmlAdminSetupFinished" OnExit="success" />
+      </AdminUISequence>
+    </UI>
+    <UIRef Id="WixUI_Common" />
+  </Fragment>
+</Wix>

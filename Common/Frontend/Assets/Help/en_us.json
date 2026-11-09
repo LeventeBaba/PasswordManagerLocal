@@ -1,0 +1,1834 @@
+{
+  "schemaVersion": 1,
+  "categories": [
+    {
+      "id": "getting-started",
+      "title": "Getting Started",
+      "summary": "Set up a profile and save your first password."
+    },
+    {
+      "id": "user-guide",
+      "title": "User Guide",
+      "summary": "Passwords, profiles, and connected devices."
+    },
+    {
+      "id": "security-tips",
+      "title": "Security Tips",
+      "summary": "Safer sign-in, device access, clipboard use, and irreversible actions."
+    },
+    {
+      "id": "troubleshooting",
+      "title": "Troubleshooting & FAQ",
+      "summary": "Find safe next steps for sign-in, device, transfer, and data problems."
+    }
+  ],
+  "topics": [
+    {
+      "id": "getting-started/first-run",
+      "categoryId": "getting-started",
+      "title": "Start using Password Manager Local",
+      "summary": "Choose whether to create a profile or bring an existing one to this device.",
+      "keywords": [
+        "first run",
+        "setup",
+        "new phone",
+        "start",
+        "offline"
+      ],
+      "sections": [
+        {
+          "id": "choose",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Choose the right starting point",
+          "body": "On the sign-in screen, choose Create a new account if this is your first profile. If your profile already exists on another device, choose Bring an existing profile from another device instead."
+        },
+        {
+          "id": "password",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Save your first password",
+          "body": "After signing in, open Passwords and choose Add a new password. Give the entry a name, enter the password value, and save it."
+        },
+        {
+          "id": "devices",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Connect another device when needed",
+          "body": "You can use a local profile on one device. To use the same profile on another device, follow the two-device enrollment guide while both devices are on the same local network."
+        },
+        {
+          "id": "help",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Help is always available",
+          "body": "Open Settings → Help & Guide even before signing in. Reading this guide does not create a profile or change your passwords."
+        }
+      ],
+      "relatedTopicIds": [
+        "getting-started/create-account",
+        "passwords/manage",
+        "devices/enrollment-overview"
+      ]
+    },
+    {
+      "id": "getting-started/create-account",
+      "categoryId": "getting-started",
+      "title": "Create a local account",
+      "summary": "Create a new profile on this device; use device enrollment for a profile you already have.",
+      "keywords": [
+        "register",
+        "registration",
+        "create account",
+        "email",
+        "profile"
+      ],
+      "sections": [
+        {
+          "id": "details",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Enter your profile details",
+          "body": "From Sign in, choose Create a new account. Enter a username, email address, first name, and last name. Keep your username private. Save your username and master password securely before creating the profile."
+        },
+        {
+          "id": "master",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Choose and confirm a master password",
+          "body": "Enter the password that will unlock this profile, then repeat it. The password-strength information button explains how to choose a stronger password."
+        },
+        {
+          "id": "remember",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Review Remember me, then create the account",
+          "body": "Enable Remember me only on a device you trust. Choose Create account and wait for the result. If the app says the account was created but could not be opened, return to Sign in with these credentials instead of registering again."
+        },
+        {
+          "id": "existing",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "A matching username does not connect devices",
+          "body": "Creating another account cannot retrieve an existing vault. Use device enrollment to bring an existing profile to another device. Manual sign-in requires your username and master password. There is no forgotten-password reset."
+        }
+      ],
+      "relatedTopicIds": [
+        "security/master-password",
+        "login/sign-in",
+        "devices/enrollment-overview",
+        "security/remember-me"
+      ]
+    },
+    {
+      "id": "login/sign-in",
+      "categoryId": "user-guide",
+      "title": "Sign in to a profile",
+      "summary": "Use the username and master password of a profile available on this device.",
+      "keywords": [
+        "login",
+        "sign in",
+        "remember me",
+        "password",
+        "cannot sign in"
+      ],
+      "sections": [
+        {
+          "id": "credentials",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Enter your credentials",
+          "body": "Enter the profile username and master password, then choose Sign in. This is the profile password, not a password entry stored inside the vault."
+        },
+        {
+          "id": "remember",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Decide whether to remember this profile",
+          "body": "Remember me lets the app restore this profile on this device. You can also change it for the active profile using the account controls after signing in. Use it only if you trust the device and its screen lock."
+        },
+        {
+          "id": "failure",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Read the result before retrying",
+          "body": "Check the selected username, keyboard layout, and password. If you changed the master password on another device, use the new credentials. If the profile has never been on this device, enroll it first."
+        },
+        {
+          "id": "recovery",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Do not reset or delete data to fix a failed sign-in",
+          "body": "There is no forgotten-master-password reset. The developer cannot look up your username or unlock your vault. If you can still open the profile on a device, check Account overview for the username and preserve that access. Resetting the database deletes local profiles and data."
+        }
+      ],
+      "relatedTopicIds": [
+        "profiles/switch",
+        "profiles/login-another",
+        "devices/enrollment-overview",
+        "security/master-password",
+        "security/remember-me",
+        "troubleshooting/login"
+      ]
+    },
+    {
+      "id": "profiles/switch",
+      "categoryId": "user-guide",
+      "title": "Switch between profiles",
+      "summary": "Select another signed-in profile without copying data between accounts.",
+      "keywords": [
+        "switch profile",
+        "change account",
+        "remembered profiles"
+      ],
+      "sections": [
+        {
+          "id": "open",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Open the profile selector",
+          "body": "Use Change profile in the account controls. The selector shows available signed-in profiles. At startup, you may also be asked to choose among remembered profiles."
+        },
+        {
+          "id": "select",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Choose the profile you want to use",
+          "body": "Select its row and check the account name after switching. If it is not listed, use Sign in to another account. An expired session may require signing in again."
+        },
+        {
+          "id": "separate",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Each profile has its own vault",
+          "body": "Switching changes the active profile. It does not merge vaults, transfer passwords, or add another device. To copy selected items to a different profile, use the between-profile export flow."
+        }
+      ],
+      "relatedTopicIds": [
+        "profiles/login-another",
+        "passwords/transfer-between-profiles",
+        "devices/enrollment-overview",
+        "security/remember-me"
+      ]
+    },
+    {
+      "id": "profiles/login-another",
+      "categoryId": "user-guide",
+      "title": "Sign in to another account",
+      "summary": "Add another local profile to the signed-in list on this device.",
+      "keywords": [
+        "another account",
+        "second account",
+        "multiple profiles",
+        "add profile"
+      ],
+      "sections": [
+        {
+          "id": "selector",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Start from Change profile",
+          "body": "Open the profile selector and choose Sign in to another account. Enter the other profile’s username and master password."
+        },
+        {
+          "id": "available",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Bring the profile here if necessary",
+          "body": "If the other profile exists only on another device, use Bring an existing profile from another device on the sign-in screen. Creating a new account would create a separate vault."
+        },
+        {
+          "id": "return",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Choose the active account deliberately",
+          "body": "After signing in, use Change profile to choose which vault to work with. Check the active account before adding, moving, or deleting items."
+        }
+      ],
+      "relatedTopicIds": [
+        "profiles/switch",
+        "login/sign-in",
+        "devices/enrollment-overview"
+      ]
+    },
+    {
+      "id": "passwords/manage",
+      "categoryId": "user-guide",
+      "title": "Add and manage passwords",
+      "summary": "Create, find, edit, reveal, and delete entries in the active profile.",
+      "keywords": [
+        "passwords",
+        "add",
+        "edit",
+        "search",
+        "tags",
+        "colors",
+        "copy",
+        "delete"
+      ],
+      "sections": [
+        {
+          "id": "create",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Add an entry",
+          "body": "Open Passwords and choose Add a new password. Enter a name and the password value. Add a description, tags, or a color if useful, then choose Save. The editor can also generate a password."
+        },
+        {
+          "id": "find",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Find and edit an entry",
+          "body": "Use the search field, search-field choices, and sort order to find an entry. Open its details or choose Edit, change the values, and save. Manage tags and custom colors from the editor when needed."
+        },
+        {
+          "id": "reveal",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Reveal or copy only when needed",
+          "body": "Use the reveal or copy action for the selected entry. Copy puts the password on the device clipboard; other applications may be able to read clipboard contents. Avoid revealing secrets while sharing your screen."
+        },
+        {
+          "id": "delete",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Review deletion before confirming",
+          "body": "Deleting an entry has no undo action in the app and can synchronize to the profile’s other devices. Check the selected entries and the active profile before confirming."
+        }
+      ],
+      "relatedTopicIds": [
+        "passwords/transfer-between-profiles",
+        "devices/sync",
+        "profiles/switch",
+        "security/clipboard",
+        "security/everyday-passwords"
+      ]
+    },
+    {
+      "id": "devices/enrollment-overview",
+      "categoryId": "user-guide",
+      "title": "Bring your profile to a new device",
+      "summary": "The new device shows a code. The already signed-in device reads it and sends the profile.",
+      "keywords": [
+        "enrollment",
+        "pair",
+        "new phone",
+        "QR",
+        "connection code",
+        "profile transfer"
+      ],
+      "sections": [
+        {
+          "id": "network",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Prepare both devices",
+          "body": "Install and open the app on both devices. Connect them to the same local network. Keep the existing profile signed in on the device that already has it."
+        },
+        {
+          "id": "new",
+          "kind": "Step",
+          "platform": "All",
+          "title": "On the new device: show a connection code",
+          "body": "From Sign in, choose Bring an existing profile from another device, read the introduction, then choose Show connection code. Keep the QR/code screen open."
+        },
+        {
+          "id": "existing",
+          "kind": "Step",
+          "platform": "All",
+          "title": "On the existing device: choose Add device",
+          "body": "Open Devices → Add device. Scan the new device’s QR code, choose a QR image, or enter its connection code. This is where you approve sending this profile to the new device."
+        },
+        {
+          "id": "finish",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Wait for success, then sign in on the new device",
+          "body": "After the profile is copied successfully, choose OK on the new device and sign in with the existing username and master password. A connection code does not replace your master password."
+        },
+        {
+          "id": "temporary",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Use only a code from the device you intend to add",
+          "body": "The code is temporary. If it expires or enrollment fails, read the displayed result before starting a new attempt. Keep codes and QR images private."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/add-device",
+        "devices/enrollment-code-safety",
+        "devices/sync-problems",
+        "troubleshooting/enrollment"
+      ]
+    },
+    {
+      "id": "devices/add-device",
+      "categoryId": "user-guide",
+      "title": "Add a device from your signed-in profile",
+      "summary": "Read the connection code displayed by the new device.",
+      "keywords": [
+        "add device",
+        "scan",
+        "camera",
+        "photo",
+        "QR image",
+        "manual code"
+      ],
+      "sections": [
+        {
+          "id": "prepare",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Show the code on the new device",
+          "body": "On the new device, open the existing-profile transfer option from Sign in and show a connection code. Both devices must remain on the same local network."
+        },
+        {
+          "id": "open",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Open Add device on the existing device",
+          "body": "Sign in to the profile you want to send. Open Devices → Add device. If the app says synchronization is disabled for this profile on this device, enable it in the current device’s details first."
+        },
+        {
+          "id": "android",
+          "kind": "Explanation",
+          "platform": "Android",
+          "title": "Android: scan with the camera",
+          "body": "Choose Scan QR code and grant camera permission if requested. Point the camera at the QR code on the new device. You can also select a QR image from a file or enter the code manually."
+        },
+        {
+          "id": "windows",
+          "kind": "Explanation",
+          "platform": "Windows",
+          "title": "Windows: choose an image or type the code",
+          "body": "Use Choose QR image to select a readable QR picture, or enter the connection code and choose Add device. Camera scanning is not offered by the current Windows app. Approve the app’s Windows Firewall setup if prompted."
+        },
+        {
+          "id": "confirm",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Check the result on both devices",
+          "body": "Scanning or choosing a valid QR image starts the add-device attempt. For a typed code, choose Add device. Wait for completion and check that the intended profile is available on the new device."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/enrollment-overview",
+        "devices/enrollment-code-safety",
+        "devices/sync-problems",
+        "troubleshooting/qr",
+        "troubleshooting/enrollment"
+      ]
+    },
+    {
+      "id": "devices/sync",
+      "categoryId": "user-guide",
+      "title": "Understand synchronization",
+      "summary": "Connected devices exchange updates for the same profile when they can communicate.",
+      "keywords": [
+        "sync",
+        "synchronization",
+        "offline",
+        "background",
+        "device settings"
+      ],
+      "sections": [
+        {
+          "id": "profile",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "One profile across enrolled devices",
+          "body": "Enrollment connects a device to an existing profile. Changes can then reach the profile’s other connected devices. Separately created accounts do not synchronize just because they use similar names."
+        },
+        {
+          "id": "controls",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Review device-specific sync controls",
+          "body": "In Devices, open the current device’s details to check this profile’s local synchronization setting. Other devices also have individual synchronization controls. Read confirmation messages before changing them."
+        },
+        {
+          "id": "background",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Choose whether to allow background operation",
+          "body": "Settings → Background operation controls background synchronization and automatic startup. It is separate from the profile’s device synchronization switches. For an initial connection check, keep both app interfaces open."
+        },
+        {
+          "id": "offline",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Offline devices may have older data",
+          "body": "An offline device cannot immediately receive new passwords, deletions, or device changes. Reconnect and check the displayed last-successful-sync information before assuming that another device has the latest state."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/sync-problems",
+        "devices/blocked",
+        "devices/disconnect",
+        "troubleshooting/background-sync"
+      ]
+    },
+    {
+      "id": "devices/disconnect",
+      "categoryId": "user-guide",
+      "title": "Disconnect a device",
+      "summary": "Remove another device from the active profile after reviewing possible unsynchronized changes.",
+      "keywords": [
+        "disconnect",
+        "remove device",
+        "lost device",
+        "detach"
+      ],
+      "sections": [
+        {
+          "id": "before",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Check for changes you still need",
+          "body": "The removed device may contain changes that have never reached this device. If it is safe and possible, let the devices synchronize before removal. Disconnecting cannot retrieve unseen changes from an offline device."
+        },
+        {
+          "id": "select",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Select the correct remote device",
+          "body": "Open Devices, select the other device, and choose Disconnect device. This flow removes another device; it is not the sign-out action for the current device."
+        },
+        {
+          "id": "confirm",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Read the warning and confirm with your password",
+          "body": "Check the device name, read the warning, and enter the active profile’s master password. Confirm only when you intend to remove that device’s membership in this profile."
+        },
+        {
+          "id": "after",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Removal reaches other devices through communication",
+          "body": "The app records the removal and sends it to peers. The removed device’s profile is removed when that device receives and applies the removal. An offline or lost device cannot be wiped immediately by this action; do not continue editing the profile there."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/sync",
+        "devices/blocked",
+        "account/delete",
+        "security/lost-device"
+      ]
+    },
+    {
+      "id": "account/delete",
+      "categoryId": "user-guide",
+      "title": "Delete an account",
+      "summary": "Delete the active profile and propagate its deletion to connected devices.",
+      "keywords": [
+        "delete account",
+        "delete profile",
+        "erase",
+        "irreversible"
+      ],
+      "sections": [
+        {
+          "id": "scope",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Account deletion is irreversible and affects this profile",
+          "body": "This is not sign-out or removal of just one device. It deletes the profile’s local stored data and records an account-deletion instruction for its other devices. Other independent profiles are not selected for deletion."
+        },
+        {
+          "id": "preserve",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Keep anything you need before deleting",
+          "body": "Check the active profile and any data you need to retain. If appropriate, copy selected items to another signed-in profile and verify the copies first. That copy is not a full backup of the account."
+        },
+        {
+          "id": "confirm",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Open Delete account and review the confirmation",
+          "body": "In Profile, choose Delete account. Read the warning, enter this profile’s master password, and confirm only if you want to delete the account. The app clears its local sessions after deletion."
+        },
+        {
+          "id": "offline",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Other devices must receive the deletion",
+          "body": "An offline device can retain its old copy until it reconnects and accepts the deletion. Do not treat deletion as an immediate remote wipe. The app retains verification records needed to prevent the deleted account from being restored by old synchronized data."
+        }
+      ],
+      "relatedTopicIds": [
+        "passwords/transfer-between-profiles",
+        "devices/disconnect",
+        "profiles/switch",
+        "security/account-deletion"
+      ]
+    },
+    {
+      "id": "passwords/transfer-between-profiles",
+      "categoryId": "user-guide",
+      "title": "Copy or move items to another profile",
+      "summary": "Export here means transferring selected items between signed-in profiles on this device.",
+      "keywords": [
+        "export",
+        "transfer",
+        "copy",
+        "move",
+        "delete originals",
+        "tags",
+        "colors",
+        "backup"
+      ],
+      "sections": [
+        {
+          "id": "target",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Sign in to both profiles",
+          "body": "Use Change profile → Sign in to another account if needed. Return to the source profile. The destination must be a different, currently signed-in profile on this device."
+        },
+        {
+          "id": "select",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Select items and choose Export",
+          "body": "Select the passwords, tags, or custom colors in the appropriate list, choose Export, then select the destination account. This flow does not create a CSV or other external password file."
+        },
+        {
+          "id": "mode",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Choose copy or move deliberately",
+          "body": "With Delete originals after export off, the app copies the selected items. With it on, the app first writes them to the destination and then removes the originals from the source. Review the target and confirm Copy or Move."
+        },
+        {
+          "id": "partial",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "After an error, inspect both profiles before retrying",
+          "body": "A destination write can succeed even if source cleanup or the final response fails. Both profiles may contain the items. Check the destination and source before repeating a move or manually deleting anything."
+        }
+      ],
+      "relatedTopicIds": [
+        "profiles/login-another",
+        "profiles/switch",
+        "passwords/manage",
+        "security/move-vs-copy",
+        "troubleshooting/transfer"
+      ]
+    },
+    {
+      "id": "security/master-password",
+      "categoryId": "security-tips",
+      "title": "Protect your master password",
+      "summary": "Your master password unlocks the profile; keep it distinct from passwords stored in the vault.",
+      "keywords": [
+        "master password",
+        "forgot password",
+        "reset",
+        "recovery",
+        "strong password"
+      ],
+      "sections": [
+        {
+          "id": "choose",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Choose a long, unique password",
+          "body": "Choose a long, unique master password, such as a passphrase made from several randomly chosen unrelated words. Avoid quotes, personal details, predictable substitutions, and reuse from other accounts. The strength indicator is an estimate, not proof that a password is safe or has never leaked."
+        },
+        {
+          "id": "recovery",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "There is no forgotten-password reset flow",
+          "body": "You need both your username and master password for manual sign-in. Keep your username private and store both credentials securely outside this vault. There is no forgotten-password reset. The developer cannot retrieve your credentials or restore your vault. Remember me can preserve access on a device, but it cannot show you the master password."
+        },
+        {
+          "id": "change",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Changing the password affects other devices",
+          "body": "Use Profile → Change master password when you know the current password. Other devices may sign the profile out after receiving the change; sign in with the new credentials. Do not delete the profile to perform a password change."
+        }
+      ],
+      "relatedTopicIds": [
+        "getting-started/create-account",
+        "login/sign-in",
+        "security/recovery-backup",
+        "security/remember-me",
+        "security/everyday-passwords"
+      ]
+    },
+    {
+      "id": "devices/enrollment-code-safety",
+      "categoryId": "security-tips",
+      "title": "Handle connection codes safely",
+      "summary": "Treat the temporary code and its QR image as private connection information.",
+      "keywords": [
+        "QR safety",
+        "code expires",
+        "temporary code",
+        "pairing code",
+        "screenshot"
+      ],
+      "sections": [
+        {
+          "id": "direction",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "The new device displays the code",
+          "body": "Read the code only from the device you intend to add. On the trusted signed-in device, confirm that the active profile is the one you want to transfer before scanning or entering the code."
+        },
+        {
+          "id": "private",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Do not publish codes or QR images",
+          "body": "Do not include the code, QR image, or master password in a support message, public screenshot, or screen share. A QR image contains the same connection information as the code."
+        },
+        {
+          "id": "expiry",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Use the current code",
+          "body": "Keep the code screen open while connecting. If the app says the code has expired, start a new attempt on the new device and use the newly displayed code. Do not keep retrying an old screenshot."
+        },
+        {
+          "id": "exposure",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "If the code was shared or scanned from the wrong device",
+          "body": "Cancel the exposed attempt on the new device and generate a new code only when ready. If a profile may already have been sent, inspect Devices from a trusted device and disconnect any unintended device. Replacing a code does not undo a completed transfer."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/enrollment-overview",
+        "devices/add-device",
+        "troubleshooting/enrollment-code",
+        "security/screen-privacy"
+      ]
+    },
+    {
+      "id": "devices/blocked",
+      "categoryId": "troubleshooting",
+      "title": "Understand a blocked device",
+      "summary": "Read the reason before deciding whether a device should be unblocked.",
+      "keywords": [
+        "blocked device",
+        "unblock",
+        "invalid attempts",
+        "diagnostics",
+        "device status"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "What you see",
+          "body": "Device details shows Blocked, a block time or reason, or invalid sync attempts. Offline means unreachable; blocked means communication is restricted. Neither state says that the remote vault has been erased."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Why it can happen",
+          "body": "Invalid or unverifiable synchronization attempts can trigger protection. The displayed reason is the starting point; a block alone does not prove an attack or ordinary network failure. Do not dismiss repeated verification failures."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Confirm the device and review diagnostics",
+          "body": "Check that you recognize the device, then read its reason, time, attempt count, and last successful sync. On a working profile, use Self diagnostics and automatic safe repair where offered and read the result. For an unknown or lost device, use the lost-device guidance."
+        },
+        {
+          "id": "unblock",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Unblock only after resolving the concern",
+          "body": "Use Unblock device only when you understand the issue and still trust the device. Unblocking clears a restriction; it does not repair damaged data, restore a deleted profile, or guarantee successful sync. If the block returns, stop retrying and preserve the diagnostic details."
+        }
+      ],
+      "relatedTopicIds": [
+        "troubleshooting/diagnostics",
+        "security/lost-device",
+        "devices/sync-problems",
+        "security/safe-support"
+      ]
+    },
+    {
+      "id": "devices/sync-problems",
+      "categoryId": "troubleshooting",
+      "title": "Check device connection and sync problems",
+      "summary": "Start with the displayed status, local network, and synchronization switches.",
+      "keywords": [
+        "sync problem",
+        "offline",
+        "connection failed",
+        "Wi-Fi",
+        "firewall",
+        "enrollment failed",
+        "cannot connect"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "What you see",
+          "body": "A device is offline, synchronization is disabled, or recent items do not appear on another device. A last-successful-sync time shows a past success, not proof that every later edit has arrived."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Why it can happen",
+          "body": "The devices may not be reachable on the local network, sync may be disabled for this profile or peer, background operation may be restricted, or a protective block may prevent exchange. Internet access alone does not prove a local connection."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Compare the profile and device settings",
+          "body": "Check the intended profile on both devices. Keep both apps open on the same trusted network, review synchronization switches and blocked status, then compare a known recent entry and the displayed sync time. Follow the enrollment network guide for firewall or isolation problems."
+        },
+        {
+          "id": "preserve",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Preserve both copies while investigating",
+          "body": "Do not delete profiles, reset a database, or manually copy database files over another installation to force synchronization. A device may hold edits not present elsewhere. If verification fails or a device is blocked, read the relevant safety topic before changing trust settings."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/blocked",
+        "troubleshooting/enrollment",
+        "troubleshooting/background-sync",
+        "troubleshooting/diagnostics"
+      ]
+    },
+    {
+      "id": "security/remember-me",
+      "categoryId": "security-tips",
+      "title": "Stay signed in safely",
+      "summary": "Remember me is convenient, but makes access to your device more important.",
+      "keywords": [
+        "remember me",
+        "stay logged in",
+        "automatic login",
+        "sign out",
+        "shared device",
+        "session"
+      ],
+      "sections": [
+        {
+          "id": "access",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "An unlocked device can open your vault",
+          "body": "Remember me lets the app restore this profile without asking for your master password. Someone who can use your unlocked device may be able to open the vault. Closing the window or restarting the app does not cancel this choice."
+        },
+        {
+          "id": "choose",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Use it only on a device you control",
+          "body": "Leave it off on shared, borrowed, public, or untrusted devices. On your own device, use a strong screen lock, a short automatic lock delay, and a separate operating-system account. Lock the device whenever you step away."
+        },
+        {
+          "id": "disable",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Turn it off before signing out",
+          "body": "In the account menu, turn Remember Me off for the active profile and check that the change succeeds. Then sign out. Signing out alone ends that session but does not erase the saved Remember me choice. Review each remembered profile separately."
+        },
+        {
+          "id": "limits",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "It is not password recovery or immediate locking",
+          "body": "Turning the option off does not close an already open session. Keep your master password available securely outside this vault; remembered access may stop working after device changes or data problems. Switching profiles also leaves other signed-in profiles available."
+        }
+      ],
+      "relatedTopicIds": [
+        "login/sign-in",
+        "security/master-password",
+        "security/device-protection",
+        "troubleshooting/login"
+      ]
+    },
+    {
+      "id": "security/recovery-backup",
+      "categoryId": "security-tips",
+      "title": "Plan for loss of access",
+      "summary": "Prepare before a device fails or your only copy is lost.",
+      "keywords": [
+        "backup",
+        "recovery",
+        "forgot password",
+        "lost phone",
+        "reinstall",
+        "restore",
+        "sync"
+      ],
+      "sections": [
+        {
+          "id": "password",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Keep a secure record of both credentials",
+          "body": "Keep the username private and store both credentials securely somewhere you can access without opening this vault, such as an offline record kept in a locked place. Avoid unprotected notes, photos, email, or chat."
+        },
+        {
+          "id": "second",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Check another trusted enrolled device before replacing one",
+          "body": "If possible, enroll another device you control. Before retiring the old device, confirm that you can sign in on the replacement and that the entries you need are present. Keep the working device until you have verified the result."
+        },
+        {
+          "id": "not-backup",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Synchronization is not an independent backup",
+          "body": "Edits and deletions can sync to other devices. Copying a database file does not transfer the original OS-protected database key. Windows protects it under the Windows account that created it. Android uses the original installation’s Keystore. Use in-app device enrollment to bring your profile to another device while you still have access."
+        },
+        {
+          "id": "preserve",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Preserve your last working copy",
+          "body": "Do not uninstall, clear app data, reset the database, or delete the profile as a recovery experiment. There is no central vault copy or email reset. Recovery from another device depends on healthy available data and is not guaranteed. On Android, a normal full uninstall removes the local vault and its Keystore key. Automatic cloud backup and device transfer of app data are disabled; reinstalling starts fresh. Enroll and verify another device before uninstalling if you need to retain access."
+        }
+      ],
+      "relatedTopicIds": [
+        "security/master-password",
+        "devices/enrollment-overview",
+        "troubleshooting/login",
+        "troubleshooting/database"
+      ]
+    },
+    {
+      "id": "security/lost-device",
+      "categoryId": "security-tips",
+      "title": "A device is lost or no longer trusted",
+      "summary": "Remove its access and protect any passwords it may already hold.",
+      "keywords": [
+        "lost device",
+        "stolen",
+        "compromised",
+        "disconnect",
+        "remote wipe",
+        "revoke"
+      ],
+      "sections": [
+        {
+          "id": "remove",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Use a trusted remaining device",
+          "body": "Open the affected profile, go to Devices, identify the lost device, and choose Disconnect device. Check the name carefully and confirm with the master password. Do not wait to retrieve unseen changes from a device you no longer trust."
+        },
+        {
+          "id": "offline",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Disconnection cannot recall an offline copy",
+          "body": "Removal must reach a device before it can apply it. Disconnection is not an immediate remote wipe, and neither a master-password change nor account deletion can erase secrets someone has already read or copied."
+        },
+        {
+          "id": "rotate",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Change exposed service passwords from a safe device",
+          "body": "Prioritize email, financial, and other important accounts. Use each service’s own security settings to change its password and revoke unfamiliar sessions. If the master password may be known, change it too. Enable MFA on services that offer it."
+        },
+        {
+          "id": "os",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Use the device platform’s protection too",
+          "body": "If previously configured, use the operating system’s lost-device lock or erase service. Do this from a trusted account and device. Do not share enrollment codes or passwords with anyone claiming they need them to locate your device."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/disconnect",
+        "security/remember-me",
+        "security/everyday-passwords",
+        "security/account-deletion"
+      ]
+    },
+    {
+      "id": "security/account-deletion",
+      "categoryId": "security-tips",
+      "title": "Pause before deleting an account",
+      "summary": "Check the scope and preserve what you need before an irreversible action.",
+      "keywords": [
+        "delete account",
+        "irreversible",
+        "sign out",
+        "offline deletion",
+        "reset database"
+      ],
+      "sections": [
+        {
+          "id": "scope",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Choose the action that matches your intention",
+          "body": "Sign out ends a session. Disconnect removes another device from this profile. Delete account removes the local profile and sends an account-deletion instruction to its other devices. Database reset erases all local profiles. These actions have different consequences."
+        },
+        {
+          "id": "verify",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Verify the active profile and any copies first",
+          "body": "Check the account name. If you need selected items elsewhere, copy them to the intended profile and open that profile to verify them before deleting anything. Do not count an unverified transfer as a backup."
+        },
+        {
+          "id": "limits",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "There is no undo or immediate remote wipe",
+          "body": "An offline device may retain its copy until it receives and applies the deletion. A second synced device is not a way to undo account deletion. Deleting this vault also does not delete your accounts at websites whose passwords you stored here."
+        }
+      ],
+      "relatedTopicIds": [
+        "account/delete",
+        "devices/disconnect",
+        "security/recovery-backup",
+        "troubleshooting/database"
+      ]
+    },
+    {
+      "id": "security/move-vs-copy",
+      "categoryId": "security-tips",
+      "title": "Copy or move: check both profiles",
+      "summary": "A transfer gives the destination profile its own copy of the selected data.",
+      "keywords": [
+        "copy",
+        "move",
+        "export",
+        "delete originals",
+        "wrong account",
+        "duplicate",
+        "partial"
+      ],
+      "sections": [
+        {
+          "id": "target",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Read the destination account name",
+          "body": "Check the source profile, destination profile, and selection before confirming. Only copy secrets into a profile whose users and enrolled devices you trust. Its copy can synchronize to that profile’s devices."
+        },
+        {
+          "id": "mode",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Delete originals changes a copy into a move",
+          "body": "With Delete originals after export off, the source stays. With it on, the app writes the destination first, then deletes the source items. Those deletions can synchronize. A move is not a backup or a change to the password at the actual website."
+        },
+        {
+          "id": "partial",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Check both sides after an uncertain result",
+          "body": "If an error follows confirmation, inspect the destination and source before retrying or deleting anything manually. A completed destination write may coexist with originals. Copies in separate profiles do not stay linked; future edits in one do not update the other."
+        }
+      ],
+      "relatedTopicIds": [
+        "passwords/transfer-between-profiles",
+        "troubleshooting/transfer",
+        "security/account-deletion"
+      ]
+    },
+    {
+      "id": "security/clipboard",
+      "categoryId": "security-tips",
+      "title": "Copy passwords with care",
+      "summary": "Clipboard convenience can leave a secret outside the vault.",
+      "keywords": [
+        "clipboard",
+        "copy password",
+        "paste",
+        "history",
+        "cloud clipboard",
+        "keyboard"
+      ],
+      "sections": [
+        {
+          "id": "paste",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Check the destination before pasting",
+          "body": "Open the intended site or app and focus its password field first. Paste once, then check that you did not put the password in a chat, search field, username field, or shared document. Do not copy secrets on an untrusted device."
+        },
+        {
+          "id": "outside",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "The clipboard is outside the vault",
+          "body": "Clipboard managers, keyboards, history, or clipboard synchronization may retain or share copied text. The app does not provide a timed clipboard-clearing guarantee. Copying harmless text afterwards replaces the current clipboard, but does not erase saved history or copies already sent elsewhere."
+        },
+        {
+          "id": "windows",
+          "kind": "Tip",
+          "platform": "Windows",
+          "title": "Windows: review clipboard history and synchronization",
+          "body": "In Windows Settings → System → Clipboard, review history and cross-device synchronization. If a password appears in Win+V history, delete that item. Clear all does not remove pinned items; remove those individually too. Avoid pinning passwords."
+        },
+        {
+          "id": "android",
+          "kind": "Tip",
+          "platform": "Android",
+          "title": "Android: review your keyboard’s clipboard",
+          "body": "If your keyboard or clipboard app has saved or pinned entries, remove the password there too. Names and retention behavior vary by device and keyboard. Do not rely on an automatic expiry to remove every copy."
+        }
+      ],
+      "relatedTopicIds": [
+        "security/screen-privacy",
+        "security/everyday-passwords",
+        "security/device-protection"
+      ]
+    },
+    {
+      "id": "security/screen-privacy",
+      "categoryId": "security-tips",
+      "title": "Reveal secrets only when needed",
+      "summary": "Screen sharing, screenshots, and nearby viewers can expose visible information.",
+      "keywords": [
+        "reveal password",
+        "screen sharing",
+        "screenshot",
+        "recording",
+        "hide",
+        "QR"
+      ],
+      "sections": [
+        {
+          "id": "before",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Pause sharing before opening sensitive screens",
+          "body": "Check screen recording, remote support, mirroring, and nearby viewers before revealing a password or showing an enrollment code. Even masked-password screens can expose account names, descriptions, or other identifying details."
+        },
+        {
+          "id": "hide",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Hide the value again and lock the device",
+          "body": "After checking a password, use Hide and leave the sensitive screen. Lock the device before handing it over or stepping away. A hidden value is still accessible to someone who can use your signed-in profile."
+        },
+        {
+          "id": "captured",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Hiding does not erase an earlier capture",
+          "body": "Screenshots and recordings may be saved or synchronized by other apps. Never send a real password or live QR/code as an example. If a password was exposed, change it at the affected service; deleting the screenshot cannot recall copies."
+        }
+      ],
+      "relatedTopicIds": [
+        "security/clipboard",
+        "devices/enrollment-code-safety",
+        "security/safe-support"
+      ]
+    },
+    {
+      "id": "security/device-protection",
+      "categoryId": "security-tips",
+      "title": "Protect the device as well as the vault",
+      "summary": "Encrypted storage does not make an unlocked or compromised device safe.",
+      "keywords": [
+        "encryption",
+        "device lock",
+        "malware",
+        "updates",
+        "shared computer",
+        "background",
+        "offline"
+      ],
+      "sections": [
+        {
+          "id": "lock",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Use a strong device lock",
+          "body": "Set a strong device PIN or password and automatic screen locking. Keep operating-system accounts separate on a shared computer. Windows+L locks Windows quickly. Avoid using your vault on devices controlled by someone you do not trust."
+        },
+        {
+          "id": "update",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Install trusted updates",
+          "body": "Keep the operating system, app, browser, and keyboard updated through trusted sources. Be cautious with remote-control tools, unknown extensions, and apps requesting broad accessibility or screen-capture access. Such access may expose what you type or view."
+        },
+        {
+          "id": "limits",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Encryption has limits while you use the app",
+          "body": "The app uses encrypted local storage, but an open profile can display and copy secrets. Encryption does not protect a password after it reaches a screenshot, clipboard, malicious app, or another person. Offline use does not remove these risks."
+        },
+        {
+          "id": "background",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Closing the interface is not a security lock",
+          "body": "Background synchronization can continue when enabled, and Remember me can restore access. Use the device lock and review remembered profiles rather than assuming that closing a window, switching profiles, or disabling synchronization signs you out."
+        }
+      ],
+      "relatedTopicIds": [
+        "security/remember-me",
+        "security/clipboard",
+        "troubleshooting/background-sync",
+        "security/lost-device"
+      ]
+    },
+    {
+      "id": "security/everyday-passwords",
+      "categoryId": "security-tips",
+      "title": "Practical habits for everyday passwords",
+      "summary": "Use unique credentials and check where you enter them.",
+      "keywords": [
+        "generate",
+        "unique password",
+        "MFA",
+        "phishing",
+        "website",
+        "change password",
+        "breach"
+      ],
+      "sections": [
+        {
+          "id": "unique",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Generate a different long password for each service",
+          "body": "Use the password generator in the editor, within the service’s allowed length and character rules. Avoid predictable variations of one password. Your master password should be unique too; never use it as a website password."
+        },
+        {
+          "id": "change",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Editing an entry does not change the website password",
+          "body": "Change the password in the actual service’s account settings, update the vault entry, and verify that the new credential works before discarding the old one. If a password was reused or exposed, change it at every affected service from a trusted device."
+        },
+        {
+          "id": "site",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Open the known service yourself",
+          "body": "Use a trusted bookmark or type the known address before pasting a password. Check the address, not just the logo. Do not enter passwords or enrollment codes through urgent links in messages, and never approve an unexpected sign-in request."
+        },
+        {
+          "id": "mfa",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Enable extra protection at the services you use",
+          "body": "Where offered, enable multifactor authentication (MFA) in the service itself, especially for email and important accounts. Keep its recovery codes somewhere safe outside a single device. Storing a password here does not enable MFA at that service."
+        }
+      ],
+      "relatedTopicIds": [
+        "security/master-password",
+        "security/clipboard",
+        "security/lost-device"
+      ]
+    },
+    {
+      "id": "security/safe-support",
+      "categoryId": "security-tips",
+      "title": "Report a problem without sharing secrets",
+      "summary": "Share the symptom and app version, then review every attachment.",
+      "keywords": [
+        "support",
+        "bug report",
+        "logs",
+        "diagnostics",
+        "screenshot",
+        "technical details"
+      ],
+      "sections": [
+        {
+          "id": "describe",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Start with non-sensitive facts",
+          "body": "Note the app version from Settings → About, platform, action, and visible error or status. Explain whether one or both devices are affected. Replace personal names and account details with neutral labels in your description."
+        },
+        {
+          "id": "review",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Logs and screenshots are not automatically safe to share",
+          "body": "Review technical details and attachments for passwords, notes, QR images, enrollment codes, account identifiers, paths, and network addresses. Never send database files or protected keys as a routine support attachment. Do not assume a full log is anonymous."
+        },
+        {
+          "id": "example",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Use a harmless example when possible",
+          "body": "Describe steps using made-up entries or a separate test profile if it is safe to reproduce. A request for your master password or a live connection code is not needed to read an error message. Stop if someone asks you to reveal them."
+        }
+      ],
+      "relatedTopicIds": [
+        "troubleshooting/diagnostics",
+        "security/screen-privacy",
+        "devices/enrollment-code-safety"
+      ]
+    },
+    {
+      "id": "troubleshooting/login",
+      "categoryId": "troubleshooting",
+      "title": "Cannot sign in or restore a remembered profile",
+      "summary": "Check credentials and preserve any device that still has access.",
+      "keywords": [
+        "login failed",
+        "incorrect password",
+        "expired session",
+        "remembered sessions",
+        "verification failed"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "What you see",
+          "body": "The app reports incorrect credentials, an expired or invalid session, or that remembered sessions could not be restored. A local-data verification message is a different problem and may occur even when your password is unchanged."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Why it can happen",
+          "body": "The username, keyboard layout, or password may differ from what you intended. The profile may not exist on this device yet, a master password may have changed, or the device may no longer be able to restore saved access."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Try a deliberate manual sign-in",
+          "body": "Check the username and keyboard layout. Use the current master password, not a vault entry’s password. For an expired session or failed remembered restore, sign in manually. For local-data verification failure, signing in may attempt authenticated recovery; success is not guaranteed."
+        },
+        {
+          "id": "missing",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "If the profile has never been on this device",
+          "body": "Use Bring an existing profile from another device with a trusted device that has it. Registering the same name creates no connection to the old vault. If another session is already available, check Change profile first."
+        },
+        {
+          "id": "preserve",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "No email reset or guaranteed recovery",
+          "body": "If you forgot the master password, preserve any working session and read the recovery advice. Do not delete, reset, or reinstall to test a fix. If the error persists, record the safe details rather than repeatedly changing or erasing data."
+        }
+      ],
+      "relatedTopicIds": [
+        "login/sign-in",
+        "security/remember-me",
+        "security/recovery-backup",
+        "troubleshooting/diagnostics"
+      ]
+    },
+    {
+      "id": "troubleshooting/enrollment",
+      "categoryId": "troubleshooting",
+      "title": "The new device cannot be found or connected",
+      "summary": "Separate local-network problems from code and profile-data errors.",
+      "keywords": [
+        "new device not found",
+        "connection failed",
+        "local network unavailable",
+        "listener",
+        "Wi-Fi",
+        "firewall",
+        "Ethernet"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "What you see",
+          "body": "The message says the new device was not found, could not be connected, no usable local network was found, or the local enrollment service could not start. Finding device details does not always mean the transfer connection can reach it."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Why it can happen",
+          "body": "Guest Wi-Fi, client isolation, separate Wi-Fi and wired segments, firewall rules, or a closed code screen can prevent contact. Devices with internet access can still be unable to reach each other locally."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Keep both apps open on a trusted local network",
+          "body": "Connect both devices to the same trusted local network and keep the new device’s current code screen open. Check Wi-Fi or Ethernet on each. If a local service could not start, reconnect to that network and start a fresh attempt."
+        },
+        {
+          "id": "firewall",
+          "kind": "Tip",
+          "platform": "Windows",
+          "title": "Windows: check the app’s local-network permission",
+          "body": "Review the app’s firewall configuration prompt on your trusted network. If needed, ask the network administrator about local-subnet access and guest/client isolation. Do not disable the firewall, open router ports to the internet, or bypass network policy."
+        },
+        {
+          "id": "different",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Follow the message for a different failure",
+          "body": "If synchronization is disabled, enable it for the intended profile on the current device. For an invalid or expired code, use code help. For rejection, incompatible data, or a partial result, inspect both devices and use the profile-transfer error topic."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/enrollment-overview",
+        "troubleshooting/enrollment-code",
+        "troubleshooting/enrollment-data",
+        "devices/sync-problems"
+      ]
+    },
+    {
+      "id": "troubleshooting/enrollment-code",
+      "categoryId": "troubleshooting",
+      "title": "A connection code is invalid or expired",
+      "summary": "Use the current code from the new device, not an old image.",
+      "keywords": [
+        "invalid code",
+        "incomplete code",
+        "code expired",
+        "proof invalid",
+        "same device",
+        "QR"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "What you see",
+          "body": "The app reports an invalid, incomplete, expired, or unverifiable code. It may also reject a code belonging to the same device where you are trying to add it."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Why it can happen",
+          "body": "A character may be missing, the QR image may be old, or the temporary attempt may have ended. The new device displays the code; the already signed-in device reads it. Reversing these roles will not connect the profile."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Start a new attempt on the intended new device",
+          "body": "Show a fresh connection code there and keep the screen open. Read that code from Add device on your trusted signed-in device. For manual entry, include the whole code; the slash marks zero, not the letter O. Never post a code for someone else to check."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/enrollment-code-safety",
+        "troubleshooting/qr",
+        "troubleshooting/enrollment"
+      ]
+    },
+    {
+      "id": "troubleshooting/enrollment-data",
+      "categoryId": "troubleshooting",
+      "title": "Profile transfer was rejected or only partly completed",
+      "summary": "Keep both copies while you check the result and the specific error.",
+      "keywords": [
+        "profile data invalid",
+        "too large",
+        "identity conflict",
+        "unsupported database",
+        "rejected",
+        "partial enrollment",
+        "restart"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "What you see",
+          "body": "The new device rejects the transfer, the profile cannot be imported, its data is too large, an identity conflicts, or the app reports a partially completed operation. An error after starting a transfer does not prove that nothing changed."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Why it can happen",
+          "body": "The app may be protecting account consistency, detecting incompatible data, enforcing a size limit, or finding an existing device identity. These are not all fixed by generating codes repeatedly."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Inspect both devices before another attempt",
+          "body": "Check whether the intended profile is present on the new device and review Devices on the existing one. Follow any explicit restart instruction first. For an ordinary rejection with no partial-result warning, generate a fresh code and retry once; stop if it repeats."
+        },
+        {
+          "id": "specific",
+          "kind": "Tip",
+          "platform": "All",
+          "title": "Match the action to the error",
+          "body": "For incompatible versions, check trusted app updates on both devices. For invalid profile data, review self diagnostics on the working profile. For size limits or identity conflicts, preserve the existing data and report safe details; do not delete entries or edit identity files just to force enrollment."
+        },
+        {
+          "id": "preserve",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Do not reset the only working copy",
+          "body": "Keep the source profile and any healthy enrolled device. Do not remove device records, clear app data, or reset a database to make a partial-result message disappear. If the result remains uncertain, get the error reviewed before further changes."
+        }
+      ],
+      "relatedTopicIds": [
+        "troubleshooting/enrollment",
+        "troubleshooting/diagnostics",
+        "troubleshooting/database",
+        "security/safe-support"
+      ]
+    },
+    {
+      "id": "troubleshooting/qr",
+      "categoryId": "troubleshooting",
+      "title": "Cannot scan or read a QR image",
+      "summary": "Try a clearer current code or manual entry without weakening device security.",
+      "keywords": [
+        "QR scan",
+        "camera denied",
+        "permission",
+        "image decode",
+        "upload QR",
+        "manual code"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "What you see",
+          "body": "The camera will not start, the QR image cannot be read, or no usable code is returned. A readable image can still contain an expired code; that requires a new attempt rather than a better photo."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Why it can happen",
+          "body": "Permission may be denied, the code may be cropped, or glare and blur may prevent reading. An unrelated QR code is not an enrollment code. The current Windows app does not offer camera scanning."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Use the whole current code",
+          "body": "Keep the new device’s code screen open. Show the full QR with its border, avoid glare, and use a sharp image. Alternatively, enter the complete code manually on the existing device. Do not upload it to an online QR-decoding service."
+        },
+        {
+          "id": "android",
+          "kind": "Tip",
+          "platform": "Android",
+          "title": "Android: review camera permission",
+          "body": "If you want camera scanning, review this app’s camera permission in Android settings. If you prefer not to grant it, use image selection or manual entry. Only the scanning option needs the camera."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/add-device",
+        "troubleshooting/enrollment-code",
+        "devices/enrollment-code-safety"
+      ]
+    },
+    {
+      "id": "troubleshooting/diagnostics",
+      "categoryId": "troubleshooting",
+      "title": "Data verification or self diagnostics needs attention",
+      "summary": "Understand automatic repairs, exact blockers, and confirmed recovery using verified local data.",
+      "keywords": [
+        "data integrity",
+        "verification failed",
+        "self diagnostics",
+        "safe repair",
+        "membership",
+        "attention",
+        "recovery"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "What you see",
+          "body": "The app reports that data could not be verified, or self diagnostics reports healthy data, a safe local repair, or an issue that cannot be repaired automatically. Some findings concern device links or account history rather than a forgotten password."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Why it matters",
+          "body": "The app refuses to treat inconsistent or unverifiable data as trustworthy. Safe automatic repair is limited to supported cases. A healthy result is not a complete security audit and does not prove that another device has every recent edit."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Read the exact diagnostic result",
+          "body": "Where available in device details, run Self diagnostics and automatic safe repair, then read the outcome. For a sign-in verification warning, follow the sign-in advice. Keep any healthy device and record the non-sensitive finding and version if attention is still required."
+        },
+        {
+          "id": "stop",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Preserve recovery evidence",
+          "body": "Do not edit the database or manually delete history to hide an error. Keep the database and any recovery copies. The app will not reset history if profile data cannot be decrypted and verified, or if account-deletion evidence prevents recovery. If a hard blocker remains, preserve the current unlocked session and use supported copying or backup options rather than deleting data."
+        },
+        {
+          "id": "review-recovery",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Review recovery using this device",
+          "body": "Review the listed risks, enter the current master password and acknowledge using this device’s verified local copy. Recovery data is recorded only inside the encrypted, device-protected database. No separate recovery file is created. A failed reset rolls back its journal and history changes together."
+        },
+        {
+          "id": "after-recovery",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "After confirmed recovery",
+          "body": "After successful verification the temporary local profile copy is removed. Only unresolved received evidence remains, inside the protected database, until proven resolved or the profile is deleted. Interrupted verification is retried automatically when the profile key is available. Synchronization stays paused after confirmed recovery; enable it deliberately and pair other devices again. Other profiles remain unchanged."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/blocked",
+        "troubleshooting/login",
+        "security/recovery-backup",
+        "security/safe-support"
+      ]
+    },
+    {
+      "id": "troubleshooting/background-sync",
+      "categoryId": "troubleshooting",
+      "title": "Updates stop when the app is closed",
+      "summary": "Background operation and profile-specific synchronization are separate settings.",
+      "keywords": [
+        "background sync",
+        "startup failure",
+        "degraded",
+        "unavailable",
+        "battery",
+        "closed app",
+        "startup"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "What you see",
+          "body": "Updates arrive only while both interfaces are open, or Settings shows background operation as unavailable, degraded, or unable to configure startup or save the setting."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Why it can happen",
+          "body": "Background operation may be disabled, the operating system may restrict it, or a saved preference may not match the running state. A device can also be offline, blocked, or have synchronization disabled for this profile."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Check foreground sync first, then the displayed background state",
+          "body": "Keep both apps open on the same trusted local network and review device status. Then open Settings → Background operation, review the actual state and error, and retry after resolving the reported problem. Do not assume an enabled preference proves successful synchronization."
+        },
+        {
+          "id": "android",
+          "kind": "Tip",
+          "platform": "Android",
+          "title": "Android: review app-specific system restrictions",
+          "body": "Check battery and background restrictions for this app if synchronization stops while it is not visible. Device settings vary. After a restart, unlock the device before expecting protected local data to be available. Review permissions narrowly rather than disabling system protections globally."
+        },
+        {
+          "id": "windows",
+          "kind": "Tip",
+          "platform": "Windows",
+          "title": "Windows: follow the reported startup or save failure",
+          "body": "Automatic startup is configured for the current Windows user. If configuration or persistence fails, read the error and check normal access for that user. If the state cannot be read, retry when the app is ready. Do not run the app permanently as administrator as a workaround."
+        }
+      ],
+      "relatedTopicIds": [
+        "devices/sync-problems",
+        "devices/sync",
+        "security/remember-me"
+      ]
+    },
+    {
+      "id": "troubleshooting/transfer",
+      "categoryId": "troubleshooting",
+      "title": "Between-profile export failed or has no destination",
+      "summary": "Check signed-in profiles and inspect both sides after confirmation.",
+      "keywords": [
+        "export failed",
+        "no other account",
+        "partial move",
+        "duplicate name",
+        "limit reached",
+        "copy",
+        "destination"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "What you see",
+          "body": "No destination account is listed, an export action is disabled, or the operation reports an error. Duplicate names, profile limits, or an expired session may also prevent an operation."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Why it can happen",
+          "body": "The destination must be another currently signed-in profile on this device. An account on another device alone is not a destination. An error after confirmation may occur after items were already written to the destination."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Check the destination, then the source",
+          "body": "For no destination, sign in to another account and return to the source. For an error after confirmation, inspect the actual entries in both profiles before retrying. Follow specific name or limit messages without deleting unrelated data to make room."
+        },
+        {
+          "id": "partial",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Do not assume a failed move left the source untouched",
+          "body": "A destination write can succeed before source cleanup or a final response fails. Keep any surviving copies until verified. A new attempt can create conflicts or additional copies. This export transfers items between profiles; it is not an external file backup."
+        }
+      ],
+      "relatedTopicIds": [
+        "passwords/transfer-between-profiles",
+        "security/move-vs-copy",
+        "profiles/login-another"
+      ]
+    },
+    {
+      "id": "troubleshooting/database",
+      "categoryId": "troubleshooting",
+      "title": "The database cannot be opened or a reset is offered",
+      "summary": "Stop before erasing local data, especially if this is your only copy.",
+      "keywords": [
+        "database version",
+        "unsupported",
+        "damaged header",
+        "DbConfig",
+        "reset database",
+        "backend unavailable",
+        "startup failure"
+      ],
+      "sections": [
+        {
+          "id": "symptom",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "What you see",
+          "body": "The app distinguishes an unsupported database version, missing or damaged database configuration, an unavailable protected database key, and a database that cannot be read with its configured key. Each database recovery screen offers a reset with a separate permanent-erasure confirmation. A temporarily locked device or unavailable secure storage is a retry condition, not a reset condition."
+        },
+        {
+          "id": "reason",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Why it can happen",
+          "body": "An incompatible version, damaged configuration, a lost platform-protected key, a database/key mismatch or damaged encrypted data can prevent startup. Reinstalling on Android or copying files to another OS account can make protected keys unusable. This is different from an incorrect profile master password. Recreating a local database does not recover its old contents."
+        },
+        {
+          "id": "next",
+          "kind": "Step",
+          "platform": "All",
+          "title": "Preserve the data and check trusted version information",
+          "body": "If you need the local data, decline the reset and close the app. Check whether you started an older app version and whether a trusted compatible update is available. Preserve any other working device. Report the version and safe error details if the problem remains."
+        },
+        {
+          "id": "erase",
+          "kind": "Warning",
+          "platform": "All",
+          "title": "Reset deletes every local profile",
+          "body": "Reset permanently removes the local database, its protected key, profiles, passwords, and local synchronization data. Reinstallation or clearing app data can also destroy access. Do not use these as a routine troubleshooting step; rebuilding from another device is not guaranteed."
+        }
+      ],
+      "relatedTopicIds": [
+        "security/recovery-backup",
+        "troubleshooting/diagnostics",
+        "security/safe-support"
+      ]
+    },
+    {
+      "id": "troubleshooting/faq",
+      "categoryId": "troubleshooting",
+      "title": "Frequently asked questions",
+      "summary": "Short answers about offline access, recovery, profiles, and deletion.",
+      "keywords": [
+        "FAQ",
+        "offline",
+        "internet",
+        "central server",
+        "reset password",
+        "backup",
+        "sign out",
+        "export file"
+      ],
+      "sections": [
+        {
+          "id": "offline",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Can I use it without internet?",
+          "body": "You can work with a profile already available on this device without internet access. Enrollment and synchronization need the devices to communicate on a suitable local network. Offline devices do not immediately receive other devices’ edits or deletions."
+        },
+        {
+          "id": "reset",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Can an email or central server restore my password?",
+          "body": "No email-reset or central vault-recovery service is provided. A newly registered account with the same details does not retrieve your previous vault. Remembered access is convenient but is not a replacement for knowing your master password."
+        },
+        {
+          "id": "logout",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Does signing out turn off Remember me?",
+          "body": "No. Turn Remember Me off for that profile in the account menu and check success before signing out if you want to stop automatic restoration. Review other signed-in profiles too; switching profiles is not signing them out."
+        },
+        {
+          "id": "export",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Is Export a file backup?",
+          "body": "The current Export action copies or moves selected items to another signed-in profile on this device. It does not create a CSV or full backup file. Synchronization is not an independent backup because deletions can synchronize too."
+        },
+        {
+          "id": "website",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Does changing or deleting a vault entry change my website account?",
+          "body": "No. A vault entry stores information. Change the actual password or close the actual account using that service’s own settings. If a password leaked, deleting its vault entry does not revoke it."
+        },
+        {
+          "id": "wipe",
+          "kind": "Explanation",
+          "platform": "All",
+          "title": "Does disconnecting or deleting immediately erase an offline device?",
+          "body": "No. A remote device has to receive and apply the change. Do not rely on this as an immediate remote wipe, and do not treat a blocked status as proof that an existing copy was erased. Use the lost-device advice if access may have been exposed."
+        }
+      ],
+      "relatedTopicIds": [
+        "security/remember-me",
+        "security/recovery-backup",
+        "security/lost-device",
+        "security/everyday-passwords"
+      ]
+    }
+  ]
+}

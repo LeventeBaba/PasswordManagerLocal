@@ -118,7 +118,7 @@ public sealed class EndpointRpcClientAdmissionTests
     public async Task CancellationDuringSerializationIsDefinitelyNotSentAndReleasesCapacity()
     {
         var transport = new RecordingEndpointRpcTransport((_, _, _) =>
-            Task.FromResult("{}"u8.ToArray()));
+            Task.FromResult(Array.Empty<byte>()));
         var serializationStarted = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseSerialization = new TaskCompletionSource(
@@ -163,7 +163,7 @@ public sealed class EndpointRpcClientAdmissionTests
             }
         });
         var successTransport = new RecordingEndpointRpcTransport((_, _, _) =>
-            Task.FromResult("{}"u8.ToArray()));
+            Task.FromResult(Array.Empty<byte>()));
         await using (var proxy = CreateProxy(successTransport, serializer, 1))
         {
             await Assert.ThrowsExactlyAsync<IOException>(() =>
@@ -183,7 +183,7 @@ public sealed class EndpointRpcClientAdmissionTests
         {
             if (Interlocked.Increment(ref transportAttempt) == 1)
                 return Task.FromException<byte[]>(new IOException("transport failed"));
-            return Task.FromResult("{}"u8.ToArray());
+            return Task.FromResult(Array.Empty<byte>());
         }, EndpointRpcTransmissionState.DefinitelyNotSent);
         await using (var proxy = CreateProxy(transportFailure, new EndpointRpcSerializer(), 1))
         {
@@ -196,7 +196,7 @@ public sealed class EndpointRpcClientAdmissionTests
         var responseFailure = new RecordingEndpointRpcTransport((_, _, _) =>
             Task.FromResult(Interlocked.Increment(ref responseAttempt) == 1
                 ? "{"u8.ToArray()
-                : "{}"u8.ToArray()));
+                : Array.Empty<byte>()));
         await using (var proxy = CreateProxy(responseFailure, new EndpointRpcSerializer(), 1))
         {
             await Assert.ThrowsExactlyAsync<EndpointOperationOutcomeUnknownException>(() =>

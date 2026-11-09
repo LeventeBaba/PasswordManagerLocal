@@ -63,6 +63,11 @@ public sealed class SyncQueueWriterService : ISyncQueueWriterService
             effectiveExcludedDeviceIds,
             ct);
 
+        // Exclusions prevent new queue entries. An existing row may already belong to an
+        // in-flight sender in another scope, which still owns its acknowledgement/removal.
+        // Deleting that row here can make the sender's later SaveChanges fail and abort its
+        // anti-entropy/reconciliation pass. Preserve existing work even if one final return
+        // is redundant; a content match is not a claim on a transport worker's queue row.
         await EnqueueMissingTargetsAsync(syncItem, targetDevices, ct);
 
         await _uow.SaveChangesAsync(ct);
@@ -100,13 +105,11 @@ public sealed class SyncQueueWriterService : ISyncQueueWriterService
             return;
         }
 
-        var existing = await _syncQueue.ListQueuedDeviceIdsAsync(syncItem.Id, [targetDeviceId], ct);
-        if (existing.Count == 0)
-        {
-            await _syncQueue.EnqueueAsync(
-                [new SyncQueueItem { DeviceId = targetDeviceId, SyncItemId = syncItem.Id }],
-                ct);
-        }
+        // A queue row can already be owned by an in-flight sender. Refresh its generation
+        // so that sender cannot acknowledge newly coalesced state with an older payload.
+        await _syncQueue.EnqueueAsync(
+            [new SyncQueueItem { SyncItemId = syncItem.Id, DeviceId = targetDeviceId, EnqueuedAt = SyncQueueGeneration.Next() }],
+            ct);
 
         await _uow.SaveChangesAsync(ct);
 
@@ -138,18 +141,19 @@ public sealed class SyncQueueWriterService : ISyncQueueWriterService
         if (deviceIds.Count == 0)
             return;
 
-        var queuedDeviceIds = await _syncQueue.ListQueuedDeviceIdsAsync(syncItem.Id, deviceIds, ct);
-        var queuedDeviceIdSet = queuedDeviceIds.ToHashSet();
         var queueItems = deviceIds
-            .Where(id => !queuedDeviceIdSet.Contains(id))
             .Select(id => new SyncQueueItem
             {
                 DeviceId = id,
-                SyncItemId = syncItem.Id
+                SyncItemId = syncItem.Id,
+                EnqueuedAt = SyncQueueGeneration.Next()
             })
             .ToList();
 
-        if (queueItems.Count != 0)
-            await _syncQueue.EnqueueAsync(queueItems, ct);
+        // Refresh existing rows as well as inserting missing rows. EnqueuedAt is the queue
+        // generation observed by an outgoing sender. If canonical state changes while that
+        // sender is in flight, refreshing the generation prevents its older acknowledgement
+        // from deleting the newly coalesced work.
+        await _syncQueue.EnqueueAsync(queueItems, ct);
     }
 }

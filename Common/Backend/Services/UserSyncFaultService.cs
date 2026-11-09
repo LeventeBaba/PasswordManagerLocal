@@ -31,7 +31,6 @@ public sealed class UserSyncFaultService : IUserSyncFaultService
                 Scope = descriptor.Scope,
                 FirstDetectedAtUtc = now
             };
-            await _faults.AddAsync(fault, ct);
         }
         else
         {
@@ -58,7 +57,9 @@ public sealed class UserSyncFaultService : IUserSyncFaultService
         fault.LastDetectedAtUtc = now;
         fault.RecoveredAtUtc = null;
         fault.SupersedingRevision = null;
-        if (!isNew)
+        if (isNew)
+            await _faults.AddAsync(fault, ct);
+        else
             _faults.Update(fault);
         return fault;
     }

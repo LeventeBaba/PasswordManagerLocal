@@ -170,7 +170,7 @@ public sealed class WindowsNamedPipeControlIntegrationTests
     }
 
     private static string UniquePipeName() =>
-        $"PasswordManagerLocal.Phase9.Control.{Guid.NewGuid():N}";
+        $"PasswordManagerLocal.Tests.IPC.Control.{Guid.NewGuid():N}";
 
     private static void EnsureWindows()
     {

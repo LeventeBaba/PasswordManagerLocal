@@ -55,6 +55,7 @@ public sealed class DevicePresenceProbeService : IDevicePresenceProbeService, ID
         var fingerprint = FingerprintUtil.NormalizeOrEmpty(device.TlsCertFingerprint);
         if (!CanProbe(device, fingerprint))
         {
+            BackendDebugLog.Debug($"Presence ineligible. Device={device.Id}, Blocked={device.IsBlocked}, Trusted={device.IsTrusted}.", "Presence");
             if (fingerprint.Length != 0)
                 _presenceRegistry.RecordFailure(fingerprint, endpoint: null, DevicePresenceFailureKind.Unauthorized);
             return DevicePresenceProbeResult.Failed(DevicePresenceFailureKind.Unauthorized);
@@ -72,12 +73,15 @@ public sealed class DevicePresenceProbeService : IDevicePresenceProbeService, ID
 
         if (!await HasEligibleRouteAsync(device.Id, cancellationToken))
         {
+            BackendDebugLog.Debug($"Presence route disabled. Device={device.Id}.", "Presence");
             _presenceRegistry.RecordFailure(fingerprint, endpoint: null, DevicePresenceFailureKind.Unauthorized);
             return DevicePresenceProbeResult.Failed(DevicePresenceFailureKind.Unauthorized);
         }
 
         if (!_endpointRegistry.TryGetByFingerprint(fingerprint, out var endpoint) || endpoint is null)
         {
+            BackendDebugLog.DebugRateLimited($"presence-endpoint-missing:{device.Id}", TimeSpan.FromMinutes(1),
+                $"Known member has no authenticated discovery endpoint. Device={device.Id}.", "Presence");
             _presenceRegistry.RecordFailure(fingerprint, null, DevicePresenceFailureKind.EndpointUnavailable);
             return DevicePresenceProbeResult.Failed(DevicePresenceFailureKind.EndpointUnavailable);
         }
@@ -193,7 +197,7 @@ public sealed class DevicePresenceProbeService : IDevicePresenceProbeService, ID
             return;
         }
 
-        _ = Task.Run(async () =>
+        _ = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(async () =>
         {
             try
             {

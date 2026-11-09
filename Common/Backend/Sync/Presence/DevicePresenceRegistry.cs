@@ -1,5 +1,7 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Presence;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Diagnostics;
+using PasswordManagerLocal.Common.Contracts.Notifications;
 using PasswordManagerLocal.Common.Backend.Sync.Discovery;
 using PasswordManagerLocal.Common.Backend.Utils;
 
@@ -12,14 +14,22 @@ public sealed class DevicePresenceRegistry : IDevicePresenceRegistry
     private readonly object _gate = new();
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.OrdinalIgnoreCase);
     private readonly Func<DateTimeOffset> _utcNow;
+    private readonly IBackendChangePublisher? _changePublisher;
 
-    public DevicePresenceRegistry(TimeProvider timeProvider)
-        : this(() => (timeProvider ?? throw new ArgumentNullException(nameof(timeProvider))).GetUtcNow())
+    public DevicePresenceRegistry(TimeProvider timeProvider, IBackendChangePublisher? changePublisher = null)
+        : this(
+            () => (timeProvider ?? throw new ArgumentNullException(nameof(timeProvider))).GetUtcNow(),
+            changePublisher)
     {
     }
 
-    internal DevicePresenceRegistry(Func<DateTimeOffset> utcNow) =>
+    internal DevicePresenceRegistry(
+        Func<DateTimeOffset> utcNow,
+        IBackendChangePublisher? changePublisher = null)
+    {
         _utcNow = utcNow ?? throw new ArgumentNullException(nameof(utcNow));
+        _changePublisher = changePublisher;
+    }
 
     public void RefreshAuthenticated(
         string tlsCertificateFingerprint,
@@ -59,6 +69,7 @@ public sealed class DevicePresenceRegistry : IDevicePresenceRegistry
             BackendDebugLog.Debug(
                 $"Device presence changed to online. FingerprintPrefix={Prefix(fingerprint)}, Source={source}.",
                 "Presence");
+            _changePublisher?.Publish(FrontendChangeScope.DevicePresence);
         }
     }
 
@@ -114,6 +125,7 @@ public sealed class DevicePresenceRegistry : IDevicePresenceRegistry
             BackendDebugLog.Debug(
                 $"Device presence changed to offline because {reason}. FingerprintPrefix={Prefix(fingerprint)}, Failure={failureKind}.",
                 "Presence");
+            _changePublisher?.Publish(FrontendChangeScope.DevicePresence);
         }
     }
 
@@ -127,32 +139,30 @@ public sealed class DevicePresenceRegistry : IDevicePresenceRegistry
         if (fingerprint.Length == 0 || endpointKey is null)
             return;
 
-        bool invalidated = false;
-        string? previousEndpoint = null;
+        string? authenticatedEndpoint = null;
+        bool changedCandidate = false;
         lock (_gate)
         {
             if (!_entries.TryGetValue(fingerprint, out var entry))
                 return;
 
-            previousEndpoint = entry.EndpointKey;
-            if (previousEndpoint is null ||
-                string.Equals(previousEndpoint, endpointKey, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            invalidated = entry.IsOnline || entry.LastAuthenticatedAt.HasValue;
-            entry.IsOnline = false;
-            entry.LastAuthenticatedAt = null;
-            entry.LastObservationSource = null;
-            entry.ConsecutiveFailures = 0;
-            entry.EndpointKey = endpointKey;
+            authenticatedEndpoint = entry.EndpointKey;
+            changedCandidate = authenticatedEndpoint is not null &&
+                !string.Equals(authenticatedEndpoint, endpointKey, StringComparison.OrdinalIgnoreCase);
         }
 
-        if (invalidated)
+        if (changedCandidate)
         {
+            // Discovery and relayed endpoint hints are candidates, not authenticated
+            // availability evidence. Keep the last authenticated online state during
+            // the handover window. RefreshAuthenticated adopts the new endpoint only
+            // after a successful TLS/peer-identity probe. Failures against an
+            // unconfirmed candidate therefore do not penalize the still-valid previous
+            // observation, while normal presence expiry still makes a genuinely
+            // unreachable peer offline. This avoids online/offline UI flicker during
+            // harmless endpoint rediscovery.
             BackendDebugLog.Debug(
-                $"Device presence invalidated because the endpoint changed. FingerprintPrefix={Prefix(fingerprint)}, PreviousEndpoint={previousEndpoint}, NewEndpoint={endpointKey}.",
+                $"Device endpoint candidate changed while authenticated presence was retained. FingerprintPrefix={Prefix(fingerprint)}, AuthenticatedEndpoint={authenticatedEndpoint}, CandidateEndpoint={endpointKey}.",
                 "Presence");
         }
     }
@@ -189,6 +199,7 @@ public sealed class DevicePresenceRegistry : IDevicePresenceRegistry
             BackendDebugLog.Debug(
                 $"Authenticated device presence expired. FingerprintPrefix={Prefix(fingerprint)}, MaximumAgeSeconds={maximumAge.TotalSeconds:0.###}.",
                 "Presence");
+            _changePublisher?.Publish(FrontendChangeScope.DevicePresence);
         }
 
         return false;
@@ -225,16 +236,21 @@ public sealed class DevicePresenceRegistry : IDevicePresenceRegistry
                 "Presence");
         }
 
+        if (expired.Count != 0)
+            _changePublisher?.Publish(FrontendChangeScope.DevicePresence);
+
         return expired.Count;
     }
 
     public void InvalidateAll(string reason)
     {
         var changed = 0;
+        var changedOnline = false;
         lock (_gate)
         {
             foreach (var entry in _entries.Values)
             {
+                changedOnline |= entry.IsOnline;
                 if (entry.IsOnline || entry.LastAuthenticatedAt.HasValue)
                     changed++;
 
@@ -249,6 +265,9 @@ public sealed class DevicePresenceRegistry : IDevicePresenceRegistry
         BackendDebugLog.Debug(
             $"Authenticated device presence was invalidated. Reason={SanitizeReason(reason)}, AffectedEntries={changed}.",
             "Presence");
+
+        if (changedOnline)
+            _changePublisher?.Publish(FrontendChangeScope.DevicePresence);
     }
 
     public bool TryGetSnapshot(

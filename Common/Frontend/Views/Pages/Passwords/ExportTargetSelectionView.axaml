@@ -2,9 +2,13 @@
 <UserControl
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:info="clr-namespace:PasswordManagerLocal.Common.Frontend.Information"
+    xmlns:controls="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Controls"
     xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
     x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Passwords.ExportTargetSelectionView"
     x:DataType="vm:PasswordsViewModel">
+  <ScrollViewer Classes="comfortableListScroller"
+                Classes.androidComfortableListScroller="{Binding IsAndroidUi}">
   <Grid HorizontalAlignment="Center" MaxWidth="640" MinWidth="280">
     <StackPanel Spacing="16">
       <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
@@ -20,6 +24,16 @@
           <TextBlock Text="{Binding ExportTargetSubtitle}" Classes="subtleText" TextWrapping="Wrap" />
         </StackPanel>
       </Grid>
+
+      <controls:ContextHelpButton Classes="secondary" MinHeight="44"
+                                  HorizontalContentAlignment="Stretch"
+                                  TopicId="{x:Static info:HelpTopicIds.TransferBetweenProfiles}"
+                                  AutomationProperties.Name="{Binding TransferHelpLabel}">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
+          <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
+          <TextBlock Grid.Column="1" Text="{Binding TransferHelpLabel}" TextWrapping="Wrap" />
+        </Grid>
+      </controls:ContextHelpButton>
 
       <TextBlock Text="{Binding ExportTargetAccountsLabel}" Classes="sectionTitle" TextWrapping="Wrap" />
 
@@ -37,8 +51,8 @@
                   Padding="14"
                   CornerRadius="16"
                   BorderThickness="1"
-                  BorderBrush="#33808080"
-                  Background="#08808080">
+                  BorderBrush="{DynamicResource AppBrush.Border.Subtle}"
+                  Background="{DynamicResource AppBrush.Surface.Subtle}">
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                   <StackPanel Spacing="4">
                     <TextBlock Text="{Binding DisplayName}" Classes="sectionTitle" TextWrapping="Wrap" />
@@ -68,4 +82,5 @@
       </Border>
     </StackPanel>
   </Grid>
+  </ScrollViewer>
 </UserControl>

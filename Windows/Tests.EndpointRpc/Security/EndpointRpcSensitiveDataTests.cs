@@ -29,25 +29,49 @@ public sealed class EndpointRpcSensitiveDataTests
             return Task.FromException<byte[]>(new EndpointRpcRemoteException(
                 new EndpointRpcError(
                     EndpointRpcErrorCode.BackendFailure,
-                    EndpointRpcErrorCategory.Internal,
+                    EndpointFailureKind.Generic,
                     "The endpoint operation failed.",
-                    1,
-                    DateTimeOffset.UtcNow,
-                    false,
-                    false,
-                    EndpointMutationOutcome.NotCommitted,
-                    Recovery: null)));
+                    RequiresProcessRestart: false,
+                    EndpointMutationOutcome.NotCommitted)));
         });
         var proxy = new NamedPipeEndpointsProxy(
             transport,
             new EndpointRpcSerializer(),
             new EndpointRpcContractValidator());
 
-        await Assert.ThrowsExactlyAsync<EndpointRpcRemoteException>(() =>
+        await Assert.ThrowsExactlyAsync<EndpointFailureException>(() =>
             proxy.DeleteUserAccountAsync(EndpointRpcTestData.Token, EndpointRpcTestData.Password()));
 
         Assert.IsNotNull(observedPayload);
         Assert.IsTrue(observedPayload.All(value => value == 0));
+    }
+
+    [TestMethod]
+    public async Task RecoveryConfirmation_ClearsTemporaryPayloadWithoutClearingCallerPassword()
+    {
+        byte[]? observedPayload = null;
+        var password = EndpointRpcTestData.Password();
+        var original = password.ToArray();
+        var transport = new RecordingEndpointRpcTransport((_, payload, _) =>
+        {
+            observedPayload = payload;
+            return Task.FromException<byte[]>(new IOException("Injected transport failure."));
+        });
+        var proxy = new NamedPipeEndpointsProxy(transport, new EndpointRpcSerializer(), new EndpointRpcContractValidator());
+
+        await Assert.ThrowsExactlyAsync<EndpointOperationOutcomeUnknownException>(() => proxy.ConfirmSelfDiagnosticsRepairAsync(
+            EndpointRpcTestData.Token, new string('A', 64), password));
+
+        Assert.IsNotNull(observedPayload);
+        Assert.IsTrue(observedPayload.All(value => value == 0));
+        CollectionAssert.AreEqual(original, password, "The caller owns the original password buffer.");
+        var request = new ConfirmSelfDiagnosticsRepairEndpointRequest
+        {
+            Token = EndpointRpcTestData.Token, PlanId = new string('A', 64), MasterPassword = original
+        };
+        EndpointSensitiveData.ClearRequest(EndpointOperationId.ConfirmSelfDiagnosticsRepair, request);
+        Assert.IsTrue(original.All(value => value == 0), "Both dispatcher and proxy cleanup must recognize the confirmation request.");
+        Array.Clear(password);
     }
 
     [TestMethod]
@@ -91,7 +115,9 @@ public sealed class EndpointRpcSensitiveDataTests
 
         var response = await handler.HandleAsync(context, CancellationToken.None);
 
-        Assert.IsTrue(response.IsSuccess);
+        Assert.AreEqual(IpcResponsePayloadKind.EndpointFailure, response.PayloadKind);
+        var failure = codec.DecodeFailure(response.Result!);
+        Assert.AreEqual(EndpointRpcErrorCode.OperationOutcomeUnknown, failure.ErrorCode);
         Assert.IsTrue(endpointMessage.All(value => value == 0));
         Array.Clear(requestPayload);
         Array.Clear(response.Result!);
@@ -134,7 +160,6 @@ public sealed class EndpointRpcSensitiveDataTests
         Array.Clear(result.Result!);
     }
 
-
     [TestMethod]
     public async Task ServerClearsInvalidBackendPasswordBufferDuringResponseValidationFailure()
     {
@@ -174,41 +199,6 @@ public sealed class EndpointRpcSensitiveDataTests
         Array.Clear(request);
     }
 
-
-    [TestMethod]
-    public void PartialCommitRecoveryMetadataContainsOnlySafeIdentifiersAndFlags()
-    {
-        var serializer = new EndpointRpcSerializer();
-        var error = new EndpointRpcError(
-            EndpointRpcErrorCode.OperationPartiallyCommitted,
-            EndpointRpcErrorCategory.Recovery,
-            "The device addition was committed, but enrollment recovery is required.",
-            1,
-            DateTimeOffset.UtcNow,
-            IsRetryable: false,
-            RequiresProcessRestart: false,
-            EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
-            new EndpointRecoveryMetadata(
-                EndpointRecoveryKind.DeviceEnrollment,
-                Guid.Parse("22222222-2222-2222-2222-222222222222"),
-                Guid.Parse("33333333-3333-3333-3333-333333333333"),
-                Guid.Parse("11111111-1111-1111-1111-111111111111"),
-                RecoveryAvailable: true,
-                TransferPending: true,
-                RequiresSignedRemovalToUndo: true));
-
-        var payload = serializer.Serialize(error, EndpointRpcJsonContext.Default.EndpointRpcError);
-        var json = System.Text.Encoding.UTF8.GetString(payload);
-
-        Assert.IsFalse(json.Contains("password", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(json.Contains("token", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(json.Contains("secret", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(json.Contains("key", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(json.Contains("snapshot", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(json.Contains("path", StringComparison.OrdinalIgnoreCase));
-        Array.Clear(payload);
-    }
-
     private static IpcRequestContext CreateContext(byte[] endpointMessage) =>
         new(
             new IpcConnectionContext(
@@ -218,6 +208,7 @@ public sealed class EndpointRpcSensitiveDataTests
                 0,
                 Guid.NewGuid(),
                 IpcCapabilities.EndpointRpc),
-            new IpcRequestEnvelope(60, IpcOperationId.EndpointRpcRequest, endpointMessage),
+            1,
+            new IpcRequestEnvelope(IpcOperationId.EndpointRpcRequest, endpointMessage),
             new WindowsIpcSerializer());
 }

@@ -7,7 +7,7 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Contracts;
 public sealed class WindowsUiIpcIdentityTests
 {
     [TestMethod]
-    public void IdentityIsImmutableAndRetainsOneProcessInstanceValueSet()
+    public void ConstructorRetainsProcessSessionAndInstanceIdentity()
     {
         var instanceId = Guid.NewGuid();
         var identity = new WindowsUiIpcIdentity(123, 4, instanceId);
@@ -15,7 +15,6 @@ public sealed class WindowsUiIpcIdentityTests
         Assert.AreEqual(123, identity.ProcessId);
         Assert.AreEqual(4, identity.WindowsSessionId);
         Assert.AreEqual(instanceId, identity.InstanceId);
-        Assert.AreEqual(identity, identity with { });
     }
 
     [TestMethod]

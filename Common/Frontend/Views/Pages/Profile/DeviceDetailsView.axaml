@@ -2,9 +2,13 @@
 <UserControl
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:info="clr-namespace:PasswordManagerLocal.Common.Frontend.Information"
+    xmlns:controls="clr-namespace:PasswordManagerLocal.Common.Frontend.Views.Controls"
     xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Pages"
     x:Class="PasswordManagerLocal.Common.Frontend.Views.Pages.Profile.DeviceDetailsView"
     x:DataType="vm:ProfileViewModel">
+  <ScrollViewer Classes="comfortableListScroller"
+                Classes.androidComfortableListScroller="{Binding IsAndroidUi}">
   <StackPanel Spacing="12">
     <Border Classes="card" IsVisible="{Binding HasSelectedDevice}">
       <StackPanel Spacing="14">
@@ -22,14 +26,14 @@
               TextWrapping="Wrap" />
         </StackPanel>
         <WrapPanel>
-          <Border Padding="8,3" CornerRadius="10" Background="#22808080" Margin="0,0,6,6">
+          <Border Padding="8,3" CornerRadius="10" Background="{DynamicResource AppBrush.Surface.Badge}" Margin="0,0,6,6">
             <TextBlock Text="{Binding SelectedDevice.DeviceTypeText}" FontSize="12" FontWeight="SemiBold" />
           </Border>
           <Border
               Padding="10,4"
               CornerRadius="10"
-              Background="#332D6AE3"
-              BorderBrush="#FF2D6AE3"
+              Background="{DynamicResource AppBrush.Selection.Background}"
+              BorderBrush="{DynamicResource AppBrush.Action.Primary}"
               BorderThickness="1"
               IsVisible="{Binding SelectedDevice.IsCurrentDevice}"
               Margin="0,0,6,6">
@@ -37,23 +41,23 @@
                 Text="{Binding CurrentDeviceLabel}"
                 FontSize="12"
                 FontWeight="Bold"
-                Foreground="#FF68A9FF" />
+                Foreground="{DynamicResource AppBrush.Action.Secondary}" />
           </Border>
           <Border
               Padding="8,3"
               CornerRadius="10"
-              Background="#22D13438"
+              Background="{DynamicResource AppBrush.Device.Blocked.Surface}"
               IsVisible="{Binding SelectedDevice.IsBlocked}"
               Margin="0,0,6,6">
-            <TextBlock Text="{Binding BlockedLabel}" FontSize="12" FontWeight="SemiBold" Foreground="#FFD13438" />
+            <TextBlock Text="{Binding BlockedLabel}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource AppBrush.Device.Blocked}" />
           </Border>
-          <Border Padding="8,3" CornerRadius="10" Background="#22808080" Margin="0,0,6,6">
+          <Border Padding="8,3" CornerRadius="10" Background="{DynamicResource AppBrush.Surface.Badge}" Margin="0,0,6,6">
             <TextBlock Text="{Binding SelectedDevice.SyncStateText}" FontSize="12" />
           </Border>
           <Border
               Padding="8,3"
               CornerRadius="10"
-              Background="#22808080"
+              Background="{DynamicResource AppBrush.Surface.Badge}"
               IsVisible="{Binding SelectedDevice.IsRemoteDevice}"
               Margin="0,0,6,6">
             <TextBlock Text="{Binding SelectedDevice.TrustStateText}" FontSize="12" />
@@ -61,26 +65,26 @@
           <Border
               Padding="8,3"
               CornerRadius="10"
-              Background="#222E7D32"
+              Background="{DynamicResource AppBrush.Device.Online.Surface}"
               IsVisible="{Binding SelectedDevice.ShowOnlineStatus}"
               Margin="0,0,6,6">
             <TextBlock
                 Text="{Binding SelectedDevice.OnlineStateText}"
                 FontSize="12"
                 FontWeight="SemiBold"
-                Foreground="#FF2E7D32" />
+                Foreground="{DynamicResource AppBrush.Device.Online}" />
           </Border>
           <Border
               Padding="8,3"
               CornerRadius="10"
-              Background="#22F59E0B"
+              Background="{DynamicResource AppBrush.Device.Offline.Surface}"
               IsVisible="{Binding SelectedDevice.ShowOfflineStatus}"
               Margin="0,0,6,6">
             <TextBlock
                 Text="{Binding SelectedDevice.OnlineStateText}"
                 FontSize="12"
                 FontWeight="SemiBold"
-                Foreground="#FFF59E0B" />
+                Foreground="{DynamicResource AppBrush.Device.Offline}" />
           </Border>
         </WrapPanel>
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
@@ -89,7 +93,7 @@
             <TextBox Text="{Binding SelectedDevice.EditableName}"
                      TextInputOptions.ReturnKeyType="Done">
               <TextBox.KeyBindings>
-                <KeyBinding Gesture="Enter" Command="{Binding SelectedDevice.SaveNameCommand}" />
+                <KeyBinding Gesture="Enter" Command="{Binding SaveDeviceNameCommand}" CommandParameter="{Binding SelectedDevice}" />
               </TextBox.KeyBindings>
             </TextBox>
           </StackPanel>
@@ -97,7 +101,7 @@
               Grid.Column="1"
               Classes="primary"
               VerticalAlignment="Bottom"
-              Command="{Binding SelectedDevice.SaveNameCommand}"
+              Command="{Binding SaveDeviceNameCommand}" CommandParameter="{Binding SelectedDevice}"
               Content="{Binding SaveDeviceNameLabel}">
             <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
           </Button>
@@ -126,15 +130,27 @@
         </StackPanel>
         <StackPanel Spacing="4">
           <TextBlock Text="{Binding SyncEnabledLabel}" Classes="subtleText" />
-          <ToggleSwitch
-              IsChecked="{Binding SelectedDevice.IsSyncOn, Mode=OneWay}"
-              Command="{Binding SelectedDevice.ToggleSyncCommand}"
+          <controls:ConfirmedToggleSwitch
+              ConfirmedIsChecked="{Binding SelectedDevice.IsSyncOn, Mode=OneWay}"
+              IsEnabled="{Binding CanToggleDeviceSync}"
+              AutomationProperties.Name="{Binding SelectedDevice.Name}"
+              AutomationProperties.HelpText="{Binding SelectedDevice.SyncStateText}"
+              Command="{Binding ToggleDeviceSyncCommand}" CommandParameter="{Binding SelectedDevice}"
               OnContent="{Binding SelectedDevice.SyncToggleOnLabel}"
               OffContent="{Binding SelectedDevice.SyncToggleOffLabel}" />
         </StackPanel>
         <Border Classes="dangerZone" IsVisible="{Binding SelectedDevice.IsBlocked}">
           <StackPanel Spacing="8">
             <TextBlock Text="{Binding BlockedLabel}" FontWeight="SemiBold" />
+            <controls:ContextHelpButton Classes="secondary" MinHeight="44"
+                                        HorizontalContentAlignment="Stretch"
+                                        TopicId="{x:Static info:HelpTopicIds.Blocked}"
+                                        AutomationProperties.Name="{Binding BlockedDeviceHelpLabel}">
+              <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
+                <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
+                <TextBlock Grid.Column="1" Text="{Binding BlockedDeviceHelpLabel}" TextWrapping="Wrap" />
+              </Grid>
+            </controls:ContextHelpButton>
             <StackPanel Spacing="4" IsVisible="{Binding SelectedDevice.HasBlockedReason}">
               <TextBlock Text="{Binding DeviceBlockedReasonLabel}" Classes="subtleText" />
               <TextBlock Text="{Binding SelectedDevice.BlockedReason}" TextWrapping="Wrap" />
@@ -145,28 +161,62 @@
             </StackPanel>
             <Button
                 Classes="ghost"
-                Command="{Binding SelectedDevice.UnblockCommand}"
+                Command="{Binding UnblockDeviceCommand}" CommandParameter="{Binding SelectedDevice}"
                 Content="{Binding UnblockDeviceLabel}"
                 IsVisible="{Binding SelectedDevice.CanUnblock}">
               <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
             </Button>
           </StackPanel>
         </Border>
+        <controls:ContextHelpButton Classes="secondary" MinHeight="44"
+                                    HorizontalContentAlignment="Stretch"
+                                    TopicId="{x:Static info:HelpTopicIds.SyncProblems}"
+                                    IsVisible="{Binding SelectedDevice.ShowSyncHelp}"
+                                    AutomationProperties.Name="{Binding SyncHelpLabel}">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
+            <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
+            <TextBlock Grid.Column="1" Text="{Binding SyncHelpLabel}" TextWrapping="Wrap" />
+          </Grid>
+        </controls:ContextHelpButton>
         <StackPanel Spacing="4" IsVisible="{Binding SelectedDevice.HasInvalidSyncAttempts}">
           <TextBlock Text="{Binding DeviceInvalidAttemptsLabel}" Classes="subtleText" />
           <TextBlock Text="{Binding SelectedDevice.InvalidSyncAttemptCount}" />
         </StackPanel>
         <WrapPanel Orientation="Horizontal">
           <Button
+              Classes="primary"
+              Command="{Binding RunSelfDiagnosticsCommand}"
+              Content="{Binding SelfDiagnosticsLabel}"
+              IsEnabled="{Binding CanRunSelfDiagnostics}"
+              IsVisible="{Binding SelectedDevice.IsCurrentDevice}"
+              Margin="0,0,8,8" />
+          <Button
               Classes="danger"
-              Command="{Binding SelectedDevice.BeginDisconnectCommand}"
+              Command="{Binding DisconnectDeviceCommand}" CommandParameter="{Binding SelectedDevice}"
               Content="{Binding DisconnectDeviceLabel}"
               IsVisible="{Binding SelectedDevice.CanDisconnect}"
               Margin="0,0,8,8">
             <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
           </Button>
         </WrapPanel>
+        <controls:ContextHelpButton Classes="secondary" MinHeight="44"
+                                    HorizontalContentAlignment="Stretch"
+                                    TopicId="{x:Static info:HelpTopicIds.Diagnostics}"
+                                    IsVisible="{Binding HasSelfDiagnosticsResult}"
+                                    AutomationProperties.Name="{Binding DiagnosticsHelpLabel}">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsHitTestVisible="False">
+            <PathIcon Classes="informationIcon" Data="{StaticResource InformationIconGeometry}" />
+            <TextBlock Grid.Column="1" Text="{Binding DiagnosticsHelpLabel}" TextWrapping="Wrap" />
+          </Grid>
+        </controls:ContextHelpButton>
+        <Button Classes="secondary" Command="{Binding ReviewHistoryRecoveryCommand}"
+                Content="{Binding HistoryRecoveryReviewLabel}" IsVisible="{Binding HasHistoryRecoveryOffer}"
+                IsEnabled="{Binding CanRunSelfDiagnostics}" />
+        <TextBlock Text="{Binding SelfDiagnosticsSummary}"
+                   IsVisible="{Binding HasSelfDiagnosticsResult}"
+                   TextWrapping="Wrap" />
       </StackPanel>
     </Border>
   </StackPanel>
+  </ScrollViewer>
 </UserControl>

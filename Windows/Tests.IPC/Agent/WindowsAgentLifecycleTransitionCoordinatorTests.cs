@@ -52,15 +52,20 @@ public sealed class WindowsAgentLifecycleTransitionCoordinatorTests
     }
 
     [TestMethod]
-    public async Task LeaseDisposalIsIdempotent()
+    public async Task RepeatedLeaseDisposalCannotReleaseAFollowingTransition()
     {
         using var coordinator = new WindowsAgentLifecycleTransitionCoordinator();
-        var lease = await coordinator.EnterAsync(
-            WindowsAgentLifecycleTransitionState.ChangingBackgroundSync);
+        var first = await coordinator.EnterAsync(WindowsAgentLifecycleTransitionState.ChangingBackgroundSync);
+        await first.DisposeAsync();
+        await using var second = await coordinator.EnterAsync(WindowsAgentLifecycleTransitionState.ResettingDatabase);
 
-        await lease.DisposeAsync();
-        await lease.DisposeAsync();
+        await first.DisposeAsync();
 
-        Assert.AreEqual(WindowsAgentLifecycleTransitionState.Idle, coordinator.State);
+        Assert.AreEqual(WindowsAgentLifecycleTransitionState.ResettingDatabase, coordinator.State);
+        using var cancellation = new CancellationTokenSource();
+        var third = coordinator.EnterAsync(WindowsAgentLifecycleTransitionState.ShuttingDown, cancellation.Token);
+        Assert.IsFalse(third.IsCompleted);
+        cancellation.Cancel();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => third);
     }
 }

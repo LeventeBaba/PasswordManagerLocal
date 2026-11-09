@@ -64,6 +64,8 @@ public sealed class AuthSessionRegistry : IAuthSessionRegistry, IDisposable
         if (index < 0)
             return false;
 
+        var existing = _sessions[index];
+
         _sessions[index] = new AuthSessionProfile
         {
             Token = token,
@@ -72,7 +74,8 @@ public sealed class AuthSessionRegistry : IAuthSessionRegistry, IDisposable
             Subtitle = subtitle,
             Username = username,
             Email = email,
-            IsRememberMeEnabled = isRememberMeEnabled
+            IsRememberMeEnabled = isRememberMeEnabled,
+            ExpiresAtUtc = existing.ExpiresAtUtc
         };
 
         return true;
@@ -96,7 +99,33 @@ public sealed class AuthSessionRegistry : IAuthSessionRegistry, IDisposable
             Subtitle = session.Subtitle,
             Username = session.Username,
             Email = session.Email,
-            IsRememberMeEnabled = isRememberMeEnabled
+            IsRememberMeEnabled = isRememberMeEnabled,
+            ExpiresAtUtc = session.ExpiresAtUtc
+        };
+
+        return true;
+    }
+
+    public bool TrySetExpiresAtUtc(Guid token, DateTimeOffset? expiresAtUtc)
+    {
+        if (_disposed || token == Guid.Empty)
+            return false;
+
+        var index = _sessions.FindIndex(session => session.Token == token);
+        if (index < 0)
+            return false;
+
+        var session = _sessions[index];
+        _sessions[index] = new AuthSessionProfile
+        {
+            Token = session.Token,
+            UserId = session.UserId,
+            DisplayName = session.DisplayName,
+            Subtitle = session.Subtitle,
+            Username = session.Username,
+            Email = session.Email,
+            IsRememberMeEnabled = session.IsRememberMeEnabled,
+            ExpiresAtUtc = expiresAtUtc?.ToUniversalTime()
         };
 
         return true;
@@ -120,7 +149,8 @@ public sealed class AuthSessionRegistry : IAuthSessionRegistry, IDisposable
             Subtitle = oldSession.Subtitle,
             Username = oldSession.Username,
             Email = oldSession.Email,
-            IsRememberMeEnabled = oldSession.IsRememberMeEnabled
+            IsRememberMeEnabled = oldSession.IsRememberMeEnabled,
+            ExpiresAtUtc = null
         };
 
         if (_selection == oldToken)

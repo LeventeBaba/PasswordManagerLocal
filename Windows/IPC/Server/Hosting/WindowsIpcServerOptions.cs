@@ -1,0 +1,70 @@
+using PasswordManagerLocal.Windows.Ipc.Protocol;
+using PasswordManagerLocal.Windows.Ipc.Transport;
+
+namespace PasswordManagerLocal.Windows.Ipc.Server.Hosting;
+
+public sealed class WindowsIpcServerOptions
+{
+
+    public WindowsIpcServerOptions(
+        IpcPeerRole serverRole,
+        IEnumerable<IpcPeerRole> acceptedClientRoles,
+        IpcCapabilities capabilities,
+        int maximumActiveRequestsPerConnection = ServerConstants.WindowsIpcServerOptionsDefaultMaximumActiveRequestsPerConnection,
+        bool managesUiRegistration = true,
+        IpcCapabilities requiredClientCapabilities = IpcCapabilities.None,
+        int changeNotificationQueueCapacity = TransportConstants.IpcChangeNotificationQueueDefaultCapacity)
+    {
+        if (!Enum.IsDefined(serverRole) || serverRole == IpcPeerRole.TestClient)
+            throw new ArgumentOutOfRangeException(nameof(serverRole));
+        if (capabilities == IpcCapabilities.None || HasUnknownCapabilities(capabilities))
+            throw new ArgumentOutOfRangeException(nameof(capabilities));
+        if (requiredClientCapabilities != IpcCapabilities.None &&
+            HasUnknownCapabilities(requiredClientCapabilities))
+        {
+            throw new ArgumentOutOfRangeException(nameof(requiredClientCapabilities));
+        }
+        if (maximumActiveRequestsPerConnection <= 0 ||
+            maximumActiveRequestsPerConnection > ServerConstants.WindowsIpcServerOptionsMaximumConfigurableActiveRequestsPerConnection)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximumActiveRequestsPerConnection),
+                maximumActiveRequestsPerConnection,
+                $"The IPC active-request limit must be between 1 and {ServerConstants.WindowsIpcServerOptionsMaximumConfigurableActiveRequestsPerConnection}.");
+        }
+        if (changeNotificationQueueCapacity <= 0 || changeNotificationQueueCapacity > 4096)
+            throw new ArgumentOutOfRangeException(nameof(changeNotificationQueueCapacity));
+
+        ArgumentNullException.ThrowIfNull(acceptedClientRoles);
+        var roles = acceptedClientRoles.ToHashSet();
+        if (roles.Count == 0 || roles.Any(role => !Enum.IsDefined(role)))
+            throw new ArgumentException("At least one valid client role is required.", nameof(acceptedClientRoles));
+
+        ServerRole = serverRole;
+        AcceptedClientRoles = roles;
+        Capabilities = capabilities;
+        MaximumActiveRequestsPerConnection = maximumActiveRequestsPerConnection;
+        ManagesUiRegistration = managesUiRegistration;
+        RequiredClientCapabilities = requiredClientCapabilities;
+        ChangeNotificationQueueCapacity = changeNotificationQueueCapacity;
+    }
+
+    public IpcPeerRole ServerRole { get; }
+    public IReadOnlySet<IpcPeerRole> AcceptedClientRoles { get; }
+    public IpcCapabilities Capabilities { get; }
+    public int MaximumActiveRequestsPerConnection { get; }
+    public bool ManagesUiRegistration { get; }
+    public IpcCapabilities RequiredClientCapabilities { get; }
+    public int ChangeNotificationQueueCapacity { get; }
+
+    private static bool HasUnknownCapabilities(IpcCapabilities capabilities)
+    {
+        const IpcCapabilities known =
+            IpcCapabilities.Control |
+            IpcCapabilities.UiActivation |
+            IpcCapabilities.Status |
+            IpcCapabilities.EndpointRpc |
+            IpcCapabilities.ChangeNotifications;
+        return (capabilities & ~known) != 0;
+    }
+}

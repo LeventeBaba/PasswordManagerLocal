@@ -12,6 +12,7 @@ public sealed class AndroidRuntimeServiceHostFixture : IDisposable
         BackendTestHost backendTestHost,
         AndroidRuntimeServiceHost host,
         FakeBackendRuntime runtime,
+        FakeBackendChangeSource changeSource,
         BackendRuntimeLifetimeCoordinator coordinator,
         FakeAndroidRuntimeCompositionFactory factory,
         FakeBackgroundSyncSettingsStore settings,
@@ -22,6 +23,7 @@ public sealed class AndroidRuntimeServiceHostFixture : IDisposable
         BackendTestHost = backendTestHost;
         Host = host;
         Runtime = runtime;
+        ChangeSource = changeSource;
         Coordinator = coordinator;
         Factory = factory;
         Settings = settings;
@@ -33,6 +35,7 @@ public sealed class AndroidRuntimeServiceHostFixture : IDisposable
     public BackendTestHost BackendTestHost { get; }
     public AndroidRuntimeServiceHost Host { get; }
     public FakeBackendRuntime Runtime { get; }
+    public FakeBackendChangeSource ChangeSource { get; }
     public BackendRuntimeLifetimeCoordinator Coordinator { get; }
     public FakeAndroidRuntimeCompositionFactory Factory { get; }
     public FakeBackgroundSyncSettingsStore Settings { get; }

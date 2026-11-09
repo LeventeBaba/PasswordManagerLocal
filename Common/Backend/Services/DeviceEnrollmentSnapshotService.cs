@@ -83,7 +83,7 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
             if (snapshot.PayloadVersion != SyncConstants.DeviceEnrollmentPayloadVersion)
                 throw new InvalidDataException("The enrollment payload version is invalid.");
 
-            return UtcDateTimeUtil.NormalizeObjectGraph(snapshot);
+            return UtcDateTimeUtil.NormalizeObjectGraph(snapshot, BackendJsonSerializerContext.Default.DeviceEnrollmentSnapshot);
         }
         catch (JsonException ex)
         {
@@ -161,10 +161,14 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
         var authorizations = await authorizationsRepository.ListForUserAsync(userId, ct);
         var targetAuthorization = authorizations.SingleOrDefault(row => row.IsActive && row.DeviceId == target.DeviceId && row.OriginInstanceId == target.OriginInstanceId)
             ?? throw new InvalidDataException("The target installation is not authoritatively authorized.");
-        if (targetAuthorization.AdditionOperationId != authorizingAdditionOperationId || targetAuthorization.AdditionOperationHash is null)
+        if (targetAuthorization.AuthorizationId != authorizingAdditionOperationId ||
+            targetAuthorization.AdditionOperationId != authorizingAdditionOperationId || targetAuthorization.AdditionOperationHash is null)
             throw new InvalidDataException("The target authorization does not reference the committed addition operation.");
 
-        var operations = await operationsRepository.ListForUserAsync(userId, ct);
+        // Rejected records are local forensic evidence, not part of the canonical
+        // bootstrap. Relaying them can poison an otherwise healthy enrollment.
+        var operations = (await operationsRepository.ListForUserAsync(userId, ct))
+            .Where(operation => operation.Status != UserControlOperationStatus.Rejected).ToList();
         var addition = operations.SingleOrDefault(operation => operation.OperationId == authorizingAdditionOperationId)
             ?? throw new InvalidDataException("The committed device-addition operation is missing.");
         if (addition.Status != UserControlOperationStatus.Applied || addition.OperationType != UserControlOperationType.DeviceAddition ||
@@ -406,9 +410,13 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
         Guid token,
         Guid deviceId,
         SyncVersionStamp version,
+        DateTimeOffset linkedAtUtc,
         CancellationToken ct = default)
     {
         SyncVersionStampComparer.Validate(version);
+        if (linkedAtUtc == default)
+            throw new InvalidDataException("The authoritative enrollment timestamp is missing.");
+        linkedAtUtc = UtcDateTimeUtil.ToUtc(linkedAtUtc);
 
         using var bundle = await reader.GetAndVerifyUserDataBundleAsync(user, token, ct);
         if (bundle.UserDevicesData.Devices.Any(device => device.Id == deviceId))
@@ -420,8 +428,8 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
         {
             Id = deviceId,
             Name = name,
-            LinkedAt = DateTimeOffset.UtcNow,
-            LastUpdatedAt = DateTimeOffset.UtcNow,
+            LinkedAt = linkedAtUtc,
+            LastUpdatedAt = linkedAtUtc,
             Version = version
         };
         deviceData.GenerateIntegrityHash();

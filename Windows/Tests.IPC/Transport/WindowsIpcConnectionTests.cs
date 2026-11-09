@@ -116,8 +116,7 @@ public sealed class WindowsIpcConnectionTests
             new IpcFrameHeader(
                 WindowsIpcProtocol.CurrentVersion,
                 IpcMessageKind.Request,
-                IpcFrameFlags.None,
-                correlationId,
+                                correlationId,
                 payload.Length),
             payload);
 }

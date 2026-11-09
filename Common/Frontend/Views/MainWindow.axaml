@@ -11,8 +11,7 @@
         MinHeight="640"
         CanResize="True"
         WindowStartupLocation="CenterScreen"
-        Title="{Binding AppTitle}"
-        Icon="avares://PasswordManagerLocal.Common.Frontend/Assets/Icons/app_icon.ico">
+        Title="{Binding AppTitle}">
 
   <views:MainView />
 </Window>

@@ -74,6 +74,30 @@ public sealed class WindowsAgentRegisteredConnection : IWindowsAgentRegisteredCo
         return _controlClient.ReloadApplicationPreferencesAsync(cancellationToken);
     }
 
+    public async Task<RequestAcceptedDto> SetChangeNotificationUserAsync(
+        Guid? userId,
+        bool enabled,
+        CancellationToken cancellationToken = default)
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+            throw new ObjectDisposedException(nameof(WindowsAgentRegisteredConnection));
+        var response = await _controlClient.SetChangeNotificationUserAsync(
+            userId,
+            enabled,
+            cancellationToken);
+        if (!enabled)
+            _client.ClearPendingChangeNotifications();
+        return response;
+    }
+
+    public IAsyncEnumerable<IpcChangeNotificationDto> ReadChangeNotificationsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+            throw new ObjectDisposedException(nameof(WindowsAgentRegisteredConnection));
+        return _client.ReadChangeNotificationsAsync(cancellationToken);
+    }
+
     public Task<DatabaseResetResultDto> ResetDatabaseAsync(
         CancellationToken cancellationToken = default)
     {

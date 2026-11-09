@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Input;
 using Avalonia.Controls;
+using Avalonia.Threading;
+using Avalonia;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -18,6 +20,8 @@ public partial class PasswordListPaneView : UserControl
 
     private readonly MultiSelectionListItemPointerHandler<PasswordItemViewModel> _multiSelectionPointerHandler;
 
+    private PasswordsViewModel? _observedViewModel;
+
     public PasswordListPaneView()
     {
         InitializeComponent();
@@ -26,7 +30,25 @@ public partial class PasswordListPaneView : UserControl
             BeginMultiSelection);
 
         RegisterAndroidMultiSelectionInputHandlers();
+        DataContextChanged += (_, _) => AttachViewModel(DataContext as PasswordsViewModel);
+        DetachedFromVisualTree += (_, _) => AttachViewModel(null);
+        AttachViewModel(DataContext as PasswordsViewModel);
     }
+
+
+    private void AttachViewModel(PasswordsViewModel? viewModel)
+    {
+        if (ReferenceEquals(_observedViewModel, viewModel))
+            return;
+        if (_observedViewModel is not null)
+            _observedViewModel.ListScrollToTopRequested -= HandleListScrollToTopRequested;
+        _observedViewModel = viewModel;
+        if (_observedViewModel is not null)
+            _observedViewModel.ListScrollToTopRequested += HandleListScrollToTopRequested;
+    }
+
+    private void HandleListScrollToTopRequested(object? sender, EventArgs e) =>
+        Dispatcher.UIThread.Post(() => PasswordListScrollViewer.Offset = new Vector(PasswordListScrollViewer.Offset.X, 0), DispatcherPriority.Background);
 
     private void RegisterAndroidMultiSelectionInputHandlers()
     {
@@ -181,10 +203,10 @@ public partial class PasswordListPaneView : UserControl
             return;
         }
 
-        ICommand command = password.ViewCommand;
-        if (command.CanExecute(null))
+        ICommand command = password.Owner.ViewPasswordCommand;
+        if (command.CanExecute(password))
         {
-            command.Execute(null);
+            command.Execute(password);
         }
     }
 

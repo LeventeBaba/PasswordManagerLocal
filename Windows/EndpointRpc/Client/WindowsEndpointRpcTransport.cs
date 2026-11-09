@@ -27,16 +27,14 @@ public sealed class WindowsEndpointRpcTransport : IEndpointRpcTransport
     public Task<EndpointRpcTransportResponse> SendAsync(
         EndpointOperationId operationId,
         byte[] requestPayload,
-        EndpointOperationCancellationClassification cancellationClassification,
+        bool isMutatingOperation,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(requestPayload);
-        if (!Enum.IsDefined(cancellationClassification))
-            throw new ArgumentOutOfRangeException(nameof(cancellationClassification));
 
         return SendCoreAsync(
             () => _messageCodec.EncodeRequest(operationId, requestPayload),
-            cancellationClassification != EndpointOperationCancellationClassification.ReadOnlySafelyCancellable,
+            isMutatingOperation,
             cancellationToken);
     }
 
@@ -148,12 +146,14 @@ public sealed class WindowsEndpointRpcTransport : IEndpointRpcTransport
             }
             catch (IpcRemoteException exception)
             {
-                var mapped = EndpointRpcTransportErrorMapper.Map(exception.Error);
+                var mapped = EndpointRpcTransportErrorMapper.Map(
+                    exception.Error,
+                    isMutatingOperation: treatPostHandlerFailureAsUncertain);
                 if (treatPostHandlerFailureAsUncertain &&
                     IsPostHandlerFailure(exception.Error.ErrorCode))
                 {
                     throw new EndpointRpcTransportException(
-                        exception.Error.CorrelationId,
+                        exception.CorrelationId,
                         EndpointRpcTransmissionState.Sent,
                         mapped);
                 }
@@ -161,15 +161,26 @@ public sealed class WindowsEndpointRpcTransport : IEndpointRpcTransport
                 throw mapped;
             }
 
-            encodedResponse = response.Response.Result
-                ?? throw new EndpointRpcTransportException(
-                    correlationId,
-                    EndpointRpcTransmissionState.Sent,
-                    new EndpointRpcPayloadException("The endpoint RPC response payload is missing."));
             try
             {
-                return EndpointRpcClientResponseMapper.RequireSuccess(
-                    _messageCodec.DecodeResponse(encodedResponse, correlationId));
+                var responseEnvelope = response.Response;
+                encodedResponse = responseEnvelope.Result;
+                return responseEnvelope.PayloadKind switch
+                {
+                    IpcResponsePayloadKind.Success => EndpointRpcTransportResponse.Inline(
+                        encodedResponse is null
+                            ? Array.Empty<byte>()
+                            : encodedResponse.AsSpan().ToArray()),
+                    IpcResponsePayloadKind.EndpointFailure => EndpointRpcTransportResponse.Failure(
+                        _messageCodec.DecodeFailure(encodedResponse
+                            ?? throw new EndpointRpcPayloadException("The endpoint RPC error payload is missing."))),
+                    IpcResponsePayloadKind.LargeResult => EndpointRpcTransportResponse.Large(
+                        _messageCodec.DecodeLargeResult(
+                            encodedResponse
+                                ?? throw new EndpointRpcPayloadException("The large-result descriptor payload is missing."),
+                            correlationId)),
+                    _ => throw new EndpointRpcPayloadException("The endpoint RPC response form is invalid.")
+                };
             }
             catch (EndpointRpcRemoteException)
             {
@@ -210,7 +221,7 @@ public sealed class WindowsEndpointRpcTransport : IEndpointRpcTransport
 
     private static Exception MapTransportFailure(Exception exception) => exception switch
     {
-        PasswordManagerLocal.Windows.Ipc.Transport.IpcConnectionClosedException =>
+        PasswordManagerLocal.Windows.Ipc.Transport.Connections.IpcConnectionClosedException =>
             new EndpointRpcDisconnectedException(exception),
         _ => exception
     };

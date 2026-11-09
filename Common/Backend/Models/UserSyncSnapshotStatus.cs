@@ -13,9 +13,6 @@ public enum UserSyncSnapshotStatus : byte
     /// <summary>A terminal same-origin immutable fork. Later revisions do not clear it.</summary>
     IsolatedFork = 2,
 
-    // Kept as a source-compatible name for strict fork isolation. Database compatibility is
-    // intentionally not preserved; new code should use IsolatedFork.
-    Quarantined = IsolatedFork,
 
     MergedReceipt = 3,
 

@@ -13,6 +13,8 @@ public sealed class BackendStoragePaths
 
         RootDirectory = Directory.CreateDirectory(rootDirectory).FullName;
         DatabasePath = Path.Combine(RootDirectory, ApplicationFileNames.DbFileName);
+        DatabaseMigrationTempPath = $"{DatabasePath}.sqlite3mc-migration.tmp";
+        DatabaseMigrationBackupPath = $"{DatabasePath}.sqlcipher-migration.bak";
         DatabaseWalPath = $"{DatabasePath}-wal";
         DatabaseShmPath = $"{DatabasePath}-shm";
         DatabaseJournalPath = $"{DatabasePath}-journal";
@@ -22,6 +24,8 @@ public sealed class BackendStoragePaths
 
     public string RootDirectory { get; }
     public string DatabasePath { get; }
+    public string DatabaseMigrationTempPath { get; }
+    public string DatabaseMigrationBackupPath { get; }
     public string DatabaseWalPath { get; }
     public string DatabaseShmPath { get; }
     public string DatabaseJournalPath { get; }

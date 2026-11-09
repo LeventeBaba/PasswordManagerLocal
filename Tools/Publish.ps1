@@ -9,13 +9,23 @@ param(
     [Alias('f')]
     [switch]$Full,
 
+    [switch]$SignWindows,
+
+    [switch]$ReadyToRun,
+
+    [switch]$NativeAOT,
+
     [Parameter(Position = 0)]
     [string]$AndroidVersion
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Signing\ReleaseSigning.Common.ps1')
+$script:OriginalSigningSecrets = @{}
+$script:AndroidSigningSettings = $null
 $script:AndroidTargetFramework = 'net10.0-android36.0'
 $script:AndroidTargetApiLevel = 36
+$script:AndroidAbi = 'arm64-v8a'
 $script:DefaultAndroidVersion = 10
 $script:AndroidApiLevels = @{
     10 = 29
@@ -30,13 +40,72 @@ $script:AndroidApiLevels = @{
 function Write-Usage {
     Write-Host 'Usage:'
     Write-Host '  .\publish.cmd -W           Publish trimmed, self-contained Windows x64'
-    Write-Host '  .\publish.cmd -A           Publish Android APKs supporting Android 10 and later'
+    Write-Host '  .\publish.cmd -W -ReadyToRun   Publish the Windows frontend and Agent with ReadyToRun'
+    Write-Host '  .\publish.cmd -W -NativeAOT    Publish one native Windows executable for both roles'
+    Write-Host '  .\publish.cmd -W -SignWindows  Publish Windows with verified Authenticode signatures'
+    Write-Host '  .\publish.cmd -A           Publish an ARM64 APK supporting Android 10 and later'
     Write-Host '  .\publish.cmd -A 16        Publish an ARM64 APK requiring Android 16 or later'
     Write-Host '  .\publish.cmd -F [10-16]   Publish Windows x64 and Android'
     Write-Host ''
     Write-Host 'The Android number selects the minimum installable Android version.'
     Write-Host 'All Android builds compile and target Android 16 (API 36).'
-    Write-Host 'Android 10-15 builds produce ARM64 and ARM32 APKs; Android 16 produces ARM64.'
+    Write-Host 'Android publishing produces one ARM64 APK for the selected minimum version.'
+    Write-Host 'Android publishing requires PublishKeys\PasswordManagerLocal-release.jks and securely prompts for passwords.'
+    Write-Host 'Windows publishing creates a ZIP and an MSI. See Docs\WINDOWS_INSTALLER.md for WiX setup.'
+    Write-Host 'Windows publishing is unsigned for testing unless -SignWindows is supplied.'
+    Write-Host 'Signed Windows publishing requires a trusted code-signing certificate. See Docs\RELEASE_SIGNING.md.'
+}
+
+function Initialize-AndroidReleaseSigning {
+    $script:AndroidSigningSettings = Get-ReleaseSigningSettings
+    if (-not (Test-Path -LiteralPath $script:AndroidSigningSettings.AndroidKeyStore -PathType Leaf)) {
+        throw "Release keystore not found: $($script:AndroidSigningSettings.AndroidKeyStore)"
+    }
+    foreach ($name in @('PML_ANDROID_STORE_PASSWORD', 'PML_ANDROID_KEY_PASSWORD')) {
+        $script:OriginalSigningSecrets[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+    }
+    if ([string]::IsNullOrEmpty($env:PML_ANDROID_STORE_PASSWORD)) {
+        $secret = Read-Host 'Android release keystore password' -AsSecureString
+        try { $env:PML_ANDROID_STORE_PASSWORD = ConvertFrom-SigningSecureString $secret }
+        finally { $secret.Dispose() }
+    }
+    if ([string]::IsNullOrEmpty($env:PML_ANDROID_KEY_PASSWORD)) {
+        $secret = Read-Host 'Android key password (Enter = same as keystore password)' -AsSecureString
+        try {
+            if ($secret.Length -eq 0) { $env:PML_ANDROID_KEY_PASSWORD = $env:PML_ANDROID_STORE_PASSWORD }
+            else { $env:PML_ANDROID_KEY_PASSWORD = ConvertFrom-SigningSecureString $secret }
+        }
+        finally { $secret.Dispose() }
+    }
+    $null = Resolve-SigningPasswordReference 'env:PML_ANDROID_KEY_PASSWORD'
+
+    # Each invocation gets distinct native-tool references. A reused build
+    # process must never resolve a reference to a previous publish's password.
+    $secretSuffix = [Guid]::NewGuid().ToString('N')
+    $storeVariable = 'PML_PUBLISH_STORE_' + $secretSuffix
+    $keyVariable = 'PML_PUBLISH_KEY_' + $secretSuffix
+    $script:OriginalSigningSecrets[$storeVariable] = $null
+    $script:OriginalSigningSecrets[$keyVariable] = $null
+    [Environment]::SetEnvironmentVariable($storeVariable, $env:PML_ANDROID_STORE_PASSWORD, 'Process')
+    [Environment]::SetEnvironmentVariable($keyVariable, $env:PML_ANDROID_KEY_PASSWORD, 'Process')
+    $script:AndroidStorePassReference = 'env:' + $storeVariable
+    $script:AndroidKeyPassReference = 'env:' + $keyVariable
+    $script:AndroidSigningFingerprint = Get-AndroidReleaseCertificate `
+        -KeyStore $script:AndroidSigningSettings.AndroidKeyStore -KeyAlias $script:AndroidSigningSettings.AndroidKeyAlias `
+        -StorePassReference $script:AndroidStorePassReference `
+        -ExpectedCertificateSha256 $script:AndroidSigningSettings.AndroidCertificateSha256
+    $javaTool = Find-SigningJavaTool -Name 'java'
+    $javaBin = Split-Path -Parent $javaTool
+    $script:AndroidJavaSdkDirectory = Split-Path -Parent $javaBin
+    if ((Split-Path -Leaf $javaBin) -ine 'bin') { throw 'The JDK java executable must be inside its bin directory.' }
+    Assert-AndroidReleasePrivateKey -KeyStore $script:AndroidSigningSettings.AndroidKeyStore `
+        -KeyAlias $script:AndroidSigningSettings.AndroidKeyAlias `
+        -StorePassReference $script:AndroidStorePassReference -KeyPassReference $script:AndroidKeyPassReference `
+        -JavaSdkDirectory $script:AndroidJavaSdkDirectory
+    $script:AndroidApkSignerJar = Find-SigningApkSignerJar
+    Write-Host 'Validated Android private signing key access.'
+    Write-Host "Android release signer SHA-256: $script:AndroidSigningFingerprint"
+    Write-Host "APK signature verifier: $script:AndroidApkSignerJar"
 }
 
 function Resolve-AndroidPublishSettings {
@@ -159,10 +228,7 @@ function Test-AndroidPackage {
         [string]$ApkPath,
 
         [Parameter(Mandatory = $true)]
-        [int]$ExpectedMinimumApiLevel,
-
-        [Parameter(Mandatory = $true)]
-        [string]$ExpectedAbi
+        [int]$ExpectedMinimumApiLevel
     )
 
     $aapt2 = Find-AndroidBuildTool 'aapt2.exe'
@@ -202,22 +268,14 @@ function Test-AndroidPackage {
             throw "The APK does not report any packaged native CPU architectures: '$ApkPath'."
         }
 
-        $nativeCode = $nativeCodeMatch.Groups['value'].Value
-        $escapedExpectedAbi = [regex]::Escape($ExpectedAbi)
-        if ($nativeCode -notmatch "'$escapedExpectedAbi'") {
-            throw "APK CPU architecture validation failed. Expected '$ExpectedAbi'. Reported architectures: $nativeCode"
-        }
-
-        foreach ($unexpectedAbi in @('armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64') | Where-Object { $_ -ne $ExpectedAbi }) {
-            $escapedUnexpectedAbi = [regex]::Escape($unexpectedAbi)
-            if ($nativeCode -match "'$escapedUnexpectedAbi'") {
-                throw "APK CPU architecture validation failed. The architecture-specific APK unexpectedly also contains '$unexpectedAbi'. Reported architectures: $nativeCode"
-            }
+        $nativeCode = $nativeCodeMatch.Groups['value'].Value.Trim()
+        if ($nativeCode -cne "'$script:AndroidAbi'") {
+            throw "APK CPU architecture validation failed. Expected only '$script:AndroidAbi'. Reported architectures: $nativeCode"
         }
 
         Write-Host "Verified minimum SDK: API $actualMinimumApiLevel"
         Write-Host "Verified target SDK: API $actualTargetApiLevel"
-        Write-Host "Verified CPU architecture: $ExpectedAbi"
+        Write-Host "Verified CPU architecture: $script:AndroidAbi"
     }
 
     $zipalign = Find-AndroidBuildTool 'zipalign.exe'
@@ -237,53 +295,67 @@ function Test-AndroidPackage {
 function Publish-WindowsApp {
     $script = Join-Path $script:Root 'Tools\Windows\PublishWindowsProduct.ps1'
 
-    Invoke-CommandChecked 'Publishing minimal shared Windows x64 product' {
-        & $script -Configuration Release -RuntimeIdentifier win-x64
+    $description = if ($NativeAOT) {
+        'Publishing Windows x64 Native AOT product'
+    } else {
+        'Publishing minimal shared Windows x64 product'
+    }
+    Invoke-CommandChecked $description {
+        & $script -Configuration Release -RuntimeIdentifier win-x64 -Sign:$SignWindows -ReadyToRun:$ReadyToRun -NativeAOT:$NativeAOT
     }
 }
 
-function Publish-AndroidArchitecture {
+function Publish-AndroidApp {
     param(
         [Parameter(Mandatory = $true)]
-        [PSCustomObject]$Settings,
-
-        [Parameter(Mandatory = $true)]
-        [PSCustomObject]$Architecture,
-
-        [Parameter(Mandatory = $true)]
-        [string]$Project,
-
-        [Parameter(Mandatory = $true)]
-        [string]$OutputRoot
+        [PSCustomObject]$Settings
     )
 
+    $project = Join-Path $script:Root 'Android\Frontend\PasswordManagerLocal.Android.Frontend.csproj'
+    $outputRoot = Join-Path $script:Root "artifacts\publish\PasswordManagerLocal.Android.Frontend\android-$($Settings.Version)-plus"
+    $architectureOutput = Join-Path $outputRoot $script:AndroidAbi
     $targetBinRoot = Join-Path $script:Root "Android\Frontend\bin\Release\$($script:AndroidTargetFramework)"
-    $architectureOutput = Join-Path $OutputRoot $Architecture.Abi
+
+    if (Test-Path $outputRoot) {
+        Remove-Item -Path $outputRoot -Recurse -Force
+    }
 
     if (Test-Path $targetBinRoot) {
         Remove-Item -Path $targetBinRoot -Recurse -Force
     }
 
-    if (Test-Path $architectureOutput) {
-        Remove-Item -Path $architectureOutput -Recurse -Force
-    }
-
     New-Item -ItemType Directory -Path $architectureOutput -Force | Out-Null
+
+    Write-Host ''
+    Write-Host "Android compile/target version: Android 16 (API $($script:AndroidTargetApiLevel))"
+    Write-Host "Android minimum install version: Android $($Settings.Version) (API $($Settings.MinimumApiLevel))"
+    Write-Host "APK CPU architecture: $script:AndroidAbi"
 
     $buildArguments = @(
         'build',
-        $Project,
+        $project,
+        '--disable-build-servers',
+        '--verbosity', 'normal',
         '-c', 'Release',
         '-f', $script:AndroidTargetFramework,
-        '-r', $Architecture.RuntimeIdentifier,
+        '-r', 'android-arm64',
         '-t:SignAndroidPackage',
-        "-p:SupportedOSPlatformVersion=$($Settings.MinimumApiLevel)",
+        '-p:AndroidKeyStore=true',
+        '-p:AndroidUseApkSigner=true',
+        "-p:JavaSdkDirectory=$script:AndroidJavaSdkDirectory",
+        "-p:ApkSignerJar=$script:AndroidApkSignerJar",
+        "-p:AndroidSigningKeyStore=$($script:AndroidSigningSettings.AndroidKeyStore)",
+        "-p:AndroidSigningKeyAlias=$($script:AndroidSigningSettings.AndroidKeyAlias)",
+        "-p:AndroidSigningStorePass=$script:AndroidStorePassReference",
+        "-p:AndroidSigningKeyPass=$script:AndroidKeyPassReference",
+        "-p:PmlAndroidCertificateSha256=$script:AndroidSigningFingerprint",
+        "-p:SupportedOSPlatformVersion=$($Settings.MinimumApiLevel).0",
         "-p:AndroidMinimumVersion=$($Settings.Version)",
         "-p:AndroidArtifactsPublishDir=$architectureOutput",
         '-p:WarningsAsErrors=XA0141'
     )
 
-    Invoke-CommandChecked "Publishing Android $($Architecture.Abi) APK" {
+    Invoke-CommandChecked "Publishing Android $script:AndroidAbi APK" {
         dotnet @buildArguments
     }
 
@@ -300,64 +372,22 @@ function Publish-AndroidArchitecture {
     }
 
     if (-not $signedApk) {
-        throw "No newly built signed APK was found for $($Architecture.Abi)."
+        throw "No newly built signed APK was found for $script:AndroidAbi."
     }
 
-    $finalName = "PasswordManagerLocal-android-$($Settings.Version)-plus-$($Architecture.Abi)-signed.apk"
-    $finalPath = Join-Path $OutputRoot $finalName
-    Copy-Item -Path $signedApk.FullName -Destination $finalPath -Force
+    $finalName = "PasswordManagerLocal-android-$($Settings.Version)-plus-${script:AndroidAbi}-signed.apk"
+    $finalPath = Join-Path $outputRoot $finalName
 
     Write-Host ''
     Write-Host "Validating APK: $finalName"
-    Test-AndroidPackage -ApkPath $finalPath -ExpectedMinimumApiLevel $Settings.MinimumApiLevel -ExpectedAbi $Architecture.Abi
-
-    return $finalPath
-}
-
-function Publish-AndroidApp {
-    param(
-        [Parameter(Mandatory = $true)]
-        [PSCustomObject]$Settings
-    )
-
-    $project = Join-Path $script:Root 'Android\Frontend\PasswordManagerLocal.Android.Frontend.csproj'
-    $outputRoot = Join-Path $script:Root "artifacts\publish\PasswordManagerLocal.Android.Frontend\android-$($Settings.Version)-plus"
-
-    if (Test-Path $outputRoot) {
-        Remove-Item -Path $outputRoot -Recurse -Force
-    }
-
-    New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
-
-    $architectures = @(
-        [PSCustomObject]@{
-            RuntimeIdentifier = 'android-arm64'
-            Abi = 'arm64-v8a'
-        }
-    )
-
-    if ($Settings.Version -le 15) {
-        $architectures += [PSCustomObject]@{
-            RuntimeIdentifier = 'android-arm'
-            Abi = 'armeabi-v7a'
-        }
-    }
-
-    Write-Host ''
-    Write-Host "Android compile/target version: Android 16 (API $($script:AndroidTargetApiLevel))"
-    Write-Host "Android minimum install version: Android $($Settings.Version) (API $($Settings.MinimumApiLevel))"
-    Write-Host "APK CPU architectures: $(($architectures.Abi) -join ', ')"
-
-    $publishedApks = @()
-    foreach ($architecture in $architectures) {
-        $publishedApks += Publish-AndroidArchitecture -Settings $Settings -Architecture $architecture -Project $project -OutputRoot $outputRoot
-    }
+    Assert-AndroidReleaseApk -ApkPath $signedApk.FullName -ExpectedCertificateSha256 $script:AndroidSigningFingerprint `
+        -JavaSdkDirectory $script:AndroidJavaSdkDirectory -ApkSignerJar $script:AndroidApkSignerJar
+    Test-AndroidPackage -ApkPath $signedApk.FullName -ExpectedMinimumApiLevel $Settings.MinimumApiLevel
+    Copy-Item -LiteralPath $signedApk.FullName -Destination $finalPath -Force
 
     Write-Host ''
     Write-Host "Android publish output: $outputRoot"
-    foreach ($publishedApk in $publishedApks) {
-        Write-Host "Signed APK: $(Split-Path -Leaf $publishedApk)"
-    }
+    Write-Host "Signed APK: $finalName"
 }
 
 $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -385,6 +415,30 @@ if (-not [string]::IsNullOrWhiteSpace($AndroidVersion) -and -not ($Android.IsPre
     exit 2
 }
 
+if ($SignWindows.IsPresent -and -not ($Windows.IsPresent -or $Full.IsPresent)) {
+    Write-Host '-SignWindows can only be supplied with -W or -F.' -ForegroundColor Red
+    Write-Usage
+    exit 2
+}
+
+if ($ReadyToRun.IsPresent -and -not $Windows.IsPresent) {
+    Write-Host '-ReadyToRun can only be supplied with -W.' -ForegroundColor Red
+    Write-Usage
+    exit 2
+}
+
+if ($NativeAOT.IsPresent -and -not $Windows.IsPresent) {
+    Write-Host '-NativeAOT can only be supplied with -W.' -ForegroundColor Red
+    Write-Usage
+    exit 2
+}
+
+if ($NativeAOT -and $ReadyToRun) {
+    Write-Host 'Choose one Windows compilation mode: -NativeAOT or -ReadyToRun.' -ForegroundColor Red
+    Write-Usage
+    exit 2
+}
+
 $androidSettings = $null
 if ($Android.IsPresent -or $Full.IsPresent) {
     try {
@@ -401,6 +455,7 @@ if ($Android.IsPresent -or $Full.IsPresent) {
 }
 
 try {
+    if ($Android.IsPresent -or $Full.IsPresent) { Initialize-AndroidReleaseSigning }
     if ($Full.IsPresent) {
         Publish-WindowsApp
         Publish-AndroidApp -Settings $androidSettings
@@ -419,4 +474,9 @@ catch {
     Write-Host ''
     Write-Host $_.Exception.Message -ForegroundColor Red
     exit 1
+}
+finally {
+    foreach ($entry in $script:OriginalSigningSecrets.GetEnumerator()) {
+        [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
+    }
 }

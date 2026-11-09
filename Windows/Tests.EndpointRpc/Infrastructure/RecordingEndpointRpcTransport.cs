@@ -21,6 +21,7 @@ public sealed class RecordingEndpointRpcTransport : IEndpointRpcTransport
     }
 
     public List<EndpointOperationId> Operations { get; } = [];
+    public List<bool> MutationFlags { get; } = [];
     public List<byte[]> RequestPayloads { get; } = [];
     public bool IsConnected => !_disposed;
     public Task Completion { get; } = Task.Delay(Timeout.InfiniteTimeSpan);
@@ -28,7 +29,7 @@ public sealed class RecordingEndpointRpcTransport : IEndpointRpcTransport
     public async Task<EndpointRpcTransportResponse> SendAsync(
         EndpointOperationId operationId,
         byte[] requestPayload,
-        EndpointOperationCancellationClassification cancellationClassification,
+        bool isMutatingOperation,
         CancellationToken cancellationToken = default)
     {
         var correlationId = Interlocked.Increment(ref _correlationId);
@@ -41,6 +42,7 @@ public sealed class RecordingEndpointRpcTransport : IEndpointRpcTransport
         }
 
         Operations.Add(operationId);
+        MutationFlags.Add(isMutatingOperation);
         RequestPayloads.Add(requestPayload.ToArray());
         try
         {

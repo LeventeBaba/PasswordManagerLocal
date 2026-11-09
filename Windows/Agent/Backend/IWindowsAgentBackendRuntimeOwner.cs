@@ -1,10 +1,12 @@
 using PasswordManagerLocal.Common.Backend.Hosting;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 
 namespace PasswordManagerLocal.Windows.Agent.Backend;
 
 public interface IWindowsAgentBackendRuntimeOwner : IAsyncDisposable
 {
     WindowsAgentBackendOwnerSnapshot Snapshot { get; }
+    IBackendChangeSource? ChangeSource { get; }
     event EventHandler? StateChanged;
 
     Task StartAsync(CancellationToken cancellationToken = default);

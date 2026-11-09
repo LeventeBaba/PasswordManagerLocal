@@ -63,14 +63,14 @@ public sealed class WindowsAgentDatabaseResetCoordinator : IWindowsAgentDatabase
             var snapshot = _backendOwner.Snapshot;
             if (snapshot.RequiresProcessRestart || snapshot.IsResetting ||
                 snapshot.Runtime.State != BackendRuntimeState.Failed ||
-                snapshot.Runtime.FailureKind != BackendRuntimeFailureKind.DatabaseCompatibility)
+                !snapshot.Runtime.FailureKind.RequiresDatabaseReset())
             {
                 return new DatabaseResetResultDto(
                     Completed: false,
                     RequiresProcessRestart: snapshot.RequiresProcessRestart,
                     SafeMessage: snapshot.RequiresProcessRestart
                         ? _localizer.GetString(AgentLocalizationKeys.DatabaseRestartRequired)
-                        : _localizer.GetString(AgentLocalizationKeys.DatabaseCompatibilityRequired));
+                        : _localizer.GetString(AgentLocalizationKeys.DatabaseRecoveryRequired));
             }
 
             cancellationToken.ThrowIfCancellationRequested();

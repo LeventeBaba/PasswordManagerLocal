@@ -21,7 +21,7 @@ public sealed class AndroidBackgroundRestorationPolicyTests
         Assert.IsFalse(decision.ShouldRequestServiceStart);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(AndroidBackgroundRestorationTrigger.BootCompleted)]
     [DataRow(AndroidBackgroundRestorationTrigger.PackageReplaced)]
     public void LockedManifestTriggerWaitsForEligibleLaunchWithoutReadingSetting(

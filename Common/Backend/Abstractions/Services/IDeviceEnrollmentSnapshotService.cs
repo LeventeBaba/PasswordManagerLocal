@@ -15,6 +15,7 @@ public interface IDeviceEnrollmentSnapshotService
         Guid token,
         Guid deviceId,
         SyncVersionStamp version,
+        DateTimeOffset linkedAtUtc,
         CancellationToken ct = default);
     (byte[] Ciphertext, byte[] Nonce, byte[] Tag) Encrypt(
         string sessionId,

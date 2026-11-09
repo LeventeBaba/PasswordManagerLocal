@@ -2,11 +2,13 @@ using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Discovery;
 using PasswordManagerLocal.Common.Backend.Abstractions.Sync.Presence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Contracts.Responses;
+using PasswordManagerLocal.Common.Contracts.Notifications;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.State;
 using PasswordManagerLocal.Common.Backend.Sync;
@@ -40,7 +42,9 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
     private readonly IInteractiveUserDataStateAccessor _interactiveState;
     private readonly IDeviceEnrollmentAvailability _enrollmentAvailability;
     private readonly IDevicePresenceRegistry? _presenceRegistry;
+    private readonly IBackendChangePublisher? _changePublisher;
     private readonly object _lock = new();
+    private readonly SemaphoreSlim _enrollmentModeLock = new(1, 1);
     private EnrollmentSession? _currentSession;
     private CancellationTokenSource? _enrollmentExpirationCancellation;
     private TaskCompletionSource? _enrollmentOperationsDrained;
@@ -61,7 +65,8 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
         IDeviceEnrollmentSnapshotImporterService snapshotImporter,
         IInteractiveUserDataStateAccessor interactiveState,
         IDeviceEnrollmentAvailability enrollmentAvailability,
-        IDevicePresenceRegistry? presenceRegistry = null)
+        IDevicePresenceRegistry? presenceRegistry = null,
+        IBackendChangePublisher? changePublisher = null)
     {
         _scopeFactory = scopeFactory;
         _identity = identity;
@@ -77,6 +82,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
         _enrollmentAvailability = enrollmentAvailability
             ?? throw new ArgumentNullException(nameof(enrollmentAvailability));
         _presenceRegistry = presenceRegistry;
+        _changePublisher = changePublisher;
     }
 
     public void OpenInteractiveAdmission()
@@ -138,35 +144,72 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
             ct,
             enrollmentOperation.AdmissionCancellationToken);
         var operationToken = operationCancellation.Token;
-        await _syncRuntime.BeginEnrollmentOnlyAsync(operationToken);
         EnrollmentSession? session = null;
+        var enrollmentCode = string.Empty;
+        var enrollmentExpiresAt = DateTimeOffset.MinValue;
 
         try
         {
             DeviceEnrollmentDirectEndpointInfo directEndpointInfo;
 
-            lock (_lock)
+            await _enrollmentModeLock.WaitAsync(operationToken);
+            try
             {
-                CancelEnrollmentExpirationLocked();
-                DeactivateEnrollmentDiscoveryLocked();
-                _currentSession?.ClearSensitiveData();
-                directEndpointInfo = _endpointService.BuildDirectEndpointInfo();
-                var generated = DeviceEnrollmentCode.Create(directEndpointInfo);
-                session = new EnrollmentSession
+                await _syncRuntime.BeginEnrollmentOnlyAsync(operationToken);
+                operationToken.ThrowIfCancellationRequested();
+                lock (_lock)
                 {
-                    SessionId = generated.SessionId,
-                    Secret = generated.Secret,
-                    Code = generated.Code,
-                    ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
-                    State = DeviceEnrollmentState.Waiting
-                };
-                _currentSession = session;
-                _localDiscovery.ActivateEnrollmentSession(session.SessionId, session.Secret, session.ExpiresAt);
-                StartEnrollmentExpirationCountdownLocked(session);
+                    directEndpointInfo = _endpointService.BuildDirectEndpointInfo();
+                    var generated = DeviceEnrollmentCode.Create(directEndpointInfo);
+                    CancelEnrollmentExpirationLocked();
+                    DeactivateEnrollmentDiscoveryLocked();
+                    _currentSession?.ClearSensitiveData();
+                    session = new EnrollmentSession
+                    {
+                        SessionId = generated.SessionId,
+                        Secret = generated.Secret,
+                        Code = generated.Code,
+                        ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
+                        State = DeviceEnrollmentState.Waiting
+                    };
+                    enrollmentCode = session.Code;
+                    enrollmentExpiresAt = session.ExpiresAt;
+                    _currentSession = session;
+                    _localDiscovery.ActivateEnrollmentSession(session.SessionId, session.Secret, session.ExpiresAt);
+                    StartEnrollmentExpirationCountdownLocked(session);
+                }
+            }
+            finally
+            {
+                _enrollmentModeLock.Release();
             }
 
             await _endpointService.VerifyLocalEnrollmentListenerAsync(session.SessionId, session.Secret, directEndpointInfo, operationToken);
-            return new DeviceEnrollmentCodeResponse { Code = session.Code, ExpiresAt = session.ExpiresAt };
+            PublishEnrollmentChange();
+            DeviceEnrollmentStatusResponse initialStatus;
+            lock (_lock)
+            {
+                initialStatus = new DeviceEnrollmentStatusResponse
+                {
+                    State = ReferenceEquals(_currentSession, session)
+                        ? session.State
+                        : DeviceEnrollmentState.Cancelled,
+                    ErrorCode = ReferenceEquals(_currentSession, session)
+                        ? session.ErrorCode
+                        : DeviceEnrollmentErrorCode.Unknown,
+                    ErrorMessage = ReferenceEquals(_currentSession, session)
+                        ? session.ErrorMessage
+                        : null,
+                    ExpiresAt = enrollmentExpiresAt
+                };
+            }
+
+            return new DeviceEnrollmentCodeResponse
+            {
+                Code = enrollmentCode,
+                ExpiresAt = enrollmentExpiresAt,
+                InitialStatus = initialStatus
+            };
         }
         catch
         {
@@ -178,10 +221,11 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
                     DeactivateEnrollmentDiscoveryLocked();
                     session.ClearSensitiveData();
                     _currentSession = null;
+                    PublishEnrollmentChange();
                 }
             }
 
-            await _syncRuntime.EndEnrollmentOnlyAsync(CancellationToken.None);
+            await EndEnrollmentOnlyIfIdleAsync(CancellationToken.None);
             throw;
         }
     }
@@ -204,10 +248,10 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
                 ErrorCode = _currentSession.ErrorCode,
                 ExpiresAt = _currentSession.ExpiresAt
             };
-            endTemporaryMode = _currentSession.State is DeviceEnrollmentState.Expired or DeviceEnrollmentState.Failed or DeviceEnrollmentState.Completed;
+            endTemporaryMode = _currentSession.State is DeviceEnrollmentState.Expired or DeviceEnrollmentState.Failed or DeviceEnrollmentState.Completed or DeviceEnrollmentState.Cancelled;
         }
         if (endTemporaryMode)
-            await _syncRuntime.EndEnrollmentOnlyAsync(ct);
+            await EndEnrollmentOnlyIfIdleAsync(ct);
         return response;
     }
 
@@ -456,14 +500,14 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
                     var controlState = await controlStates.GetAsync(userId, lifecycleToken);
                     if (controlState?.HasConflict == true)
                         throw new DeviceEnrollmentException(DeviceEnrollmentErrorCode.NewDeviceRejected, controlState.ConflictReason ?? "The account control plane is quarantined.");
-                    if ((await snapshots.ListForUserAsync(userId, lifecycleToken)).Any(row => row.Status == UserSyncSnapshotStatus.Quarantined))
+                    if ((await snapshots.ListForUserAsync(userId, lifecycleToken)).Any(row => row.Status == UserSyncSnapshotStatus.IsolatedFork))
                         throw new DeviceEnrollmentException(DeviceEnrollmentErrorCode.NewDeviceRejected, "Enrollment is blocked by unresolved snapshot fork evidence.");
 
                     await snapshotMerge.TryMergePendingUnderLifecycleAsync(userId, mergeKey, UserSyncKeyConfidence.AuthenticatedSession, lifecycleToken);
                     canonicalUser = await users.GetAndVerifyUserAsync(token, lifecycleToken);
 
                     // Reserve the encrypted-device item version before opening the authoritative SQLite
-                    // transaction. The durable clock persists through a separate DbContext, so advancing it
+                    // transaction. The durable clock persists through a separate SQLite connection, so advancing it
                     // while this transaction owns the SQLite write lock would deadlock enrollment. Version
                     // stamps may have gaps, therefore reserving one for a recoverable enrollment is safe.
                     var encryptedDeviceVersion = scope.ServiceProvider
@@ -515,6 +559,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
                                 token,
                                 endpoint.DeviceId,
                                 encryptedDeviceVersion,
+                                envelope.CreatedAtUtc,
                                 lifecycleToken);
                             canonicalUser = await users.GetAndVerifyUserAsync(token, lifecycleToken);
                             await publisher.GetOrCreateAsync(canonicalUser, lifecycleToken);
@@ -757,7 +802,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
 
             if (session is null || session.State != DeviceEnrollmentState.Waiting)
             {
-                endTemporaryMode = session?.State is DeviceEnrollmentState.Expired or DeviceEnrollmentState.Failed or DeviceEnrollmentState.Completed;
+                endTemporaryMode = session?.State is DeviceEnrollmentState.Expired or DeviceEnrollmentState.Failed or DeviceEnrollmentState.Completed or DeviceEnrollmentState.Cancelled;
                 response = new DeviceEnrollmentInfoResponse
                 {
                     Ok = false,
@@ -767,16 +812,11 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
             }
             else if (!string.Equals(session.SessionId, sessionId, StringComparison.Ordinal))
             {
-                var failure = RegisterFailedEnrollmentValidationLocked(
-                    session,
-                    DeviceEnrollmentErrorCode.CodeProofInvalid,
-                    "The enrollment session does not match the displayed code.");
-                endTemporaryMode = failure.LimitReached;
                 response = new DeviceEnrollmentInfoResponse
                 {
                     Ok = false,
                     ErrorCode = DeviceEnrollmentErrorCode.CodeProofInvalid,
-                    Error = failure.Message
+                    Error = "The enrollment session does not match the displayed code."
                 };
             }
             else
@@ -784,6 +824,16 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
                 var expectedProof = DeviceEnrollmentCode.BuildEnrollmentInfoProof(sessionId, session.Secret);
                 if (!DeviceEnrollmentCode.FixedTimeEquals(expectedProof, codeProof))
                 {
+                    if (session.CompletionInProgress)
+                    {
+                        return new DeviceEnrollmentInfoResponse
+                        {
+                            Ok = false,
+                            ErrorCode = DeviceEnrollmentErrorCode.CodeProofInvalid,
+                            Error = "The enrollment code proof is invalid."
+                        };
+                    }
+
                     var failure = RegisterFailedEnrollmentValidationLocked(
                         session,
                         DeviceEnrollmentErrorCode.CodeProofInvalid,
@@ -813,51 +863,9 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
         }
 
         if (endTemporaryMode)
-            await _syncRuntime.EndEnrollmentOnlyAsync(CancellationToken.None);
+            await EndEnrollmentOnlyIfIdleAsync(CancellationToken.None);
 
         return response;
-    }
-
-
-    public async Task<string> RegisterIncomingEnrollmentValidationFailureAsync(
-        DeviceEnrollmentErrorCode errorCode,
-        string message,
-        CancellationToken ct = default)
-    {
-        using var enrollmentOperation = EnterEnrollmentOperation();
-        return await RegisterIncomingEnrollmentValidationFailureCoreAsync(errorCode, message, ct);
-    }
-
-
-    private async Task<string> RegisterIncomingEnrollmentValidationFailureCoreAsync(
-        DeviceEnrollmentErrorCode errorCode,
-        string message,
-        CancellationToken ct)
-    {
-        var endEnrollmentOnlyMode = false;
-        var responseMessage = message;
-
-        lock (_lock)
-        {
-            ExpireSessionIfNeededLocked();
-            var current = _currentSession;
-
-            if (current is not null && current.State == DeviceEnrollmentState.Waiting)
-            {
-                var failure = RegisterFailedEnrollmentValidationLocked(current, errorCode, message);
-                endEnrollmentOnlyMode = failure.LimitReached;
-                responseMessage = failure.Message;
-            }
-            else if (current?.ErrorMessage is not null)
-            {
-                responseMessage = current.ErrorMessage;
-            }
-        }
-
-        if (endEnrollmentOnlyMode)
-            await _syncRuntime.EndEnrollmentOnlyAsync(CancellationToken.None);
-
-        return responseMessage;
     }
 
 
@@ -885,74 +893,52 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
         var preCriticalToken = preCriticalCancellation.Token;
         preCriticalToken.ThrowIfCancellationRequested();
         EnrollmentSession? session;
-        (DeviceEnrollmentErrorCode Code, string Message)? earlyFailure = null;
-        var endTemporaryMode = false;
+        byte[]? secret = null;
+        (DeviceEnrollmentErrorCode Code, string Message)? rejection;
 
         lock (_lock)
         {
             ExpireSessionIfNeededLocked();
             session = _currentSession;
-
-            if (session is null || session.State != DeviceEnrollmentState.Waiting)
-            {
-                earlyFailure = (
-                    session?.ErrorCode ?? DeviceEnrollmentErrorCode.NewDeviceRejected,
-                    session?.ErrorMessage ?? "No active enrollment session was found.");
-                endTemporaryMode = session?.State is DeviceEnrollmentState.Expired or DeviceEnrollmentState.Failed or DeviceEnrollmentState.Completed;
-            }
-            else if (!string.Equals(session.SessionId, sessionId, StringComparison.Ordinal))
-            {
-                var failure = RegisterFailedEnrollmentValidationLocked(
-                    session,
-                    DeviceEnrollmentErrorCode.CodeProofInvalid,
-                    "The enrollment session does not match the displayed code.");
-                earlyFailure = (DeviceEnrollmentErrorCode.CodeProofInvalid, failure.Message);
-                endTemporaryMode = failure.LimitReached;
-            }
+            rejection = GetIncomingCompletionRejectionLocked(session, sessionId);
+            if (rejection is null)
+                secret = session!.Secret.ToArray();
         }
 
-        if (earlyFailure is not null)
-        {
-            if (endTemporaryMode)
-                await _syncRuntime.EndEnrollmentOnlyAsync(CancellationToken.None);
-            return (false, earlyFailure.Value.Code, earlyFailure.Value.Message);
-        }
+        if (rejection is { } earlyFailure)
+            return await RejectUnavailableSessionAsync(earlyFailure);
 
         var activeSession = session!;
-
-        if (targetDeviceId != _identity.LocalDeviceId || targetOriginInstanceId != _identity.OriginInstanceId)
-            return await RejectIncomingValidationAsync(DeviceEnrollmentErrorCode.NewDeviceRejected, "The enrollment transfer targets a different local installation.");
-
-        if (sourceOriginInstanceId == Guid.Empty)
-            return await RejectIncomingValidationAsync(DeviceEnrollmentErrorCode.ProfileDataInvalid, "The source installation origin is missing.");
-
-        if (!string.Equals(FingerprintUtil.Normalize(sourceTlsCertFingerprint), FingerprintUtil.Normalize(actualClientTlsCertFingerprint), StringComparison.OrdinalIgnoreCase))
-        {
-            BackendDebugLog.Error($"Incoming enrollment rejected because client TLS fingerprint did not match. Expected={FingerprintUtil.Normalize(sourceTlsCertFingerprint)}, Actual={FingerprintUtil.Normalize(actualClientTlsCertFingerprint)}.");
-            return await RejectIncomingValidationAsync(DeviceEnrollmentErrorCode.NewDeviceRejected, "The source device TLS certificate does not match the enrollment request.");
-        }
-
-        var expectedProof = DeviceEnrollmentCode.BuildCompletionProof(
-            sessionId,
-            activeSession.Secret,
-            sourceDeviceId,
-            sourceOriginInstanceId,
-            sourceSignPublicKey,
-            sourceTlsCertFingerprint,
-            targetDeviceId,
-            targetOriginInstanceId);
-
-        if (!DeviceEnrollmentCode.FixedTimeEquals(expectedProof, codeProof))
-            return await RejectIncomingValidationAsync(DeviceEnrollmentErrorCode.CodeProofInvalid, "The enrollment code proof is invalid.");
-
-        preCriticalToken.ThrowIfCancellationRequested();
-
+        var sessionSecret = secret!;
         DeviceEnrollmentSnapshot snapshot;
         try
         {
+            if (targetDeviceId != _identity.LocalDeviceId || targetOriginInstanceId != _identity.OriginInstanceId)
+                return await RejectIncomingValidationAsync(DeviceEnrollmentErrorCode.NewDeviceRejected, "The enrollment transfer targets a different local installation.");
+
+            if (sourceOriginInstanceId == Guid.Empty)
+                return await RejectIncomingValidationAsync(DeviceEnrollmentErrorCode.ProfileDataInvalid, "The source installation origin is missing.");
+
+            if (!string.Equals(FingerprintUtil.Normalize(sourceTlsCertFingerprint), FingerprintUtil.Normalize(actualClientTlsCertFingerprint), StringComparison.OrdinalIgnoreCase))
+                return await RejectIncomingValidationAsync(DeviceEnrollmentErrorCode.NewDeviceRejected, "The source device TLS certificate does not match the enrollment request.");
+
+            var expectedProof = DeviceEnrollmentCode.BuildCompletionProof(
+                sessionId,
+                sessionSecret,
+                sourceDeviceId,
+                sourceOriginInstanceId,
+                sourceSignPublicKey,
+                sourceTlsCertFingerprint,
+                targetDeviceId,
+                targetOriginInstanceId);
+
+            if (!DeviceEnrollmentCode.FixedTimeEquals(expectedProof, codeProof))
+                return await RejectIncomingValidationAsync(DeviceEnrollmentErrorCode.CodeProofInvalid, "The enrollment code proof is invalid.");
+
+            preCriticalToken.ThrowIfCancellationRequested();
             snapshot = _snapshotService.DecryptAndDeserialize(
                 sessionId,
-                activeSession.Secret,
+                sessionSecret,
                 snapshotBytes,
                 sourceDeviceId,
                 sourceOriginInstanceId,
@@ -972,57 +958,170 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
         {
             return await RejectIncomingValidationAsync(DeviceEnrollmentErrorCode.ProfileDataInvalid, ex.Message);
         }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(sessionSecret);
+        }
 
-        preCriticalToken.ThrowIfCancellationRequested();
-        enrollmentOperation.EnterCriticalSection();
+        lock (_lock)
+        {
+            preCriticalToken.ThrowIfCancellationRequested();
+            enrollmentOperation.EnterCriticalSection();
+            if (ReferenceEquals(_currentSession, activeSession))
+            {
+                ExpireSessionIfNeededLocked();
+                rejection = GetIncomingCompletionRejectionLocked(activeSession, sessionId);
+                if (rejection is null)
+                    activeSession.CompletionInProgress = true;
+            }
+            else
+            {
+                rejection = (DeviceEnrollmentErrorCode.CodeProofInvalid, "The enrollment session does not match the displayed code.");
+            }
+        }
+
+        if (rejection is { } claimFailure)
+            return await RejectUnavailableSessionAsync(claimFailure);
 
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            BackendDebugLog.Info($"Importing incoming enrollment snapshot. Users={snapshot.Users.Count}, Groups={snapshot.Groups.Count}, Devices={snapshot.Devices.Count}, UserDevices={snapshot.UserDevices.Count}.");
-            // The importer performs stale-barrier and exact-idempotence checks. A partially imported
-            // bootstrap must be retryable with the same immutable addition operation. Serialize the
-            // bootstrap with deletion, merge, publication, and lifecycle operations for this user id.
+            // Keep the import serialized with other writes to the same profile. The session
+            // reservation separately excludes concurrent imports for different profiles.
             var lifecycle = scope.ServiceProvider.GetRequiredService<IUserLifecycleCoordinator>();
             await lifecycle.ExecuteAsync(
                 snapshot.PrimaryUserId,
                 token => _snapshotImporter.ImportAsync(scope.ServiceProvider, snapshot, token),
                 ct);
-            await _syncRuntime.RefreshSyncEnabledAsync(ct);
-            await _registrationService.RegisterIncomingEnrollmentSourceEndpointAsync(scope.ServiceProvider, sourceDeviceId, sourceTlsCertFingerprint, sourceHost, ct);
-            BackendDebugLog.Info("Incoming enrollment snapshot import completed successfully.");
         }
         catch (DeviceEnrollmentException ex)
         {
             BackendDebugLog.Error($"Incoming enrollment snapshot import rejected: {ex.Message}", ex);
-            return await RejectIncomingValidationAsync(ex.ErrorCode, ex.Message);
+            return await RejectIncomingValidationAsync(ex.ErrorCode, ex.Message, releaseCompletion: true);
         }
         catch (Exception ex)
         {
             BackendDebugLog.Error($"Incoming enrollment snapshot import failed: {ex.Message}", ex);
-            return await RejectIncomingValidationAsync(DeviceEnrollmentErrorCode.ProfileDataInvalid, ex.Message);
+            return await RejectIncomingValidationAsync(DeviceEnrollmentErrorCode.ProfileDataInvalid, ex.Message, releaseCompletion: true);
         }
 
         lock (_lock)
         {
-            if (_currentSession is not null)
+            activeSession.CompletionInProgress = false;
+            if (ReferenceEquals(_currentSession, activeSession) && activeSession.State == DeviceEnrollmentState.Waiting)
             {
-                _currentSession.State = DeviceEnrollmentState.Completed;
-                _currentSession.ErrorCode = DeviceEnrollmentErrorCode.Unknown;
-                _currentSession.ErrorMessage = null;
+                activeSession.State = DeviceEnrollmentState.Completed;
+                activeSession.ErrorCode = DeviceEnrollmentErrorCode.Unknown;
+                activeSession.ErrorMessage = null;
                 CancelEnrollmentExpirationLocked();
                 DeactivateEnrollmentDiscoveryLocked();
-                _currentSession.ClearSensitiveData();
+                activeSession.ClearSensitiveData();
+                PublishEnrollmentChange();
             }
         }
 
-        await _syncRuntime.EndEnrollmentOnlyAsync(ct);
+        // Once the import commits, a runtime or discovery error must not make this code
+        // reusable or report the durable import as rejected.
+        try
+        {
+            await _syncRuntime.RefreshSyncEnabledAsync(CancellationToken.None);
+            using var scope = _scopeFactory.CreateScope();
+            await _registrationService.RegisterIncomingEnrollmentSourceEndpointAsync(
+                scope.ServiceProvider, sourceDeviceId, sourceTlsCertFingerprint, sourceHost, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            BackendDebugLog.Error($"Enrollment was imported but synchronization setup failed: {ex.Message}", ex);
+        }
+
+        try
+        {
+            await EndEnrollmentOnlyIfIdleAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            BackendDebugLog.Error($"Enrollment was imported but temporary synchronization cleanup failed: {ex.Message}", ex);
+        }
+
         return (true, DeviceEnrollmentErrorCode.Unknown, null);
 
-        async Task<(bool Ok, DeviceEnrollmentErrorCode ErrorCode, string? Error)> RejectIncomingValidationAsync(DeviceEnrollmentErrorCode errorCode, string message)
+        async Task<(bool Ok, DeviceEnrollmentErrorCode ErrorCode, string? Error)> RejectUnavailableSessionAsync(
+            (DeviceEnrollmentErrorCode Code, string Message) failure)
         {
-            var responseMessage = await RegisterIncomingEnrollmentValidationFailureCoreAsync(errorCode, message, CancellationToken.None);
-            return (false, errorCode, responseMessage);
+            if (failure.Code == DeviceEnrollmentErrorCode.CodeExpired)
+                await EndEnrollmentOnlyIfIdleAsync(CancellationToken.None);
+            return (false, failure.Code, failure.Message);
+        }
+
+        async Task<(bool Ok, DeviceEnrollmentErrorCode ErrorCode, string? Error)> RejectIncomingValidationAsync(
+            DeviceEnrollmentErrorCode errorCode, string message, bool releaseCompletion = false)
+        {
+            var endTemporaryMode = false;
+            lock (_lock)
+            {
+                if (releaseCompletion)
+                    activeSession.CompletionInProgress = false;
+
+                if (ReferenceEquals(_currentSession, activeSession))
+                {
+                    ExpireSessionIfNeededLocked();
+                    if (activeSession.State == DeviceEnrollmentState.Waiting && !activeSession.CompletionInProgress)
+                    {
+                        var failure = RegisterFailedEnrollmentValidationLocked(activeSession, errorCode, message);
+                        endTemporaryMode = failure.LimitReached;
+                        message = failure.Message;
+                    }
+                    else if (activeSession.State == DeviceEnrollmentState.Expired)
+                    {
+                        endTemporaryMode = true;
+                    }
+                }
+            }
+
+            if (endTemporaryMode)
+                await EndEnrollmentOnlyIfIdleAsync(CancellationToken.None);
+            return (false, errorCode, message);
+        }
+    }
+
+
+    private static (DeviceEnrollmentErrorCode Code, string Message)? GetIncomingCompletionRejectionLocked(
+        EnrollmentSession? session, string sessionId)
+    {
+        if (session is null || session.State != DeviceEnrollmentState.Waiting)
+        {
+            var code = session?.ErrorCode ?? DeviceEnrollmentErrorCode.Unknown;
+            return (
+                code == DeviceEnrollmentErrorCode.Unknown ? DeviceEnrollmentErrorCode.NewDeviceRejected : code,
+                session?.ErrorMessage ?? "No active enrollment session was found.");
+        }
+
+        if (!string.Equals(session.SessionId, sessionId, StringComparison.Ordinal))
+            return (DeviceEnrollmentErrorCode.CodeProofInvalid, "The enrollment session does not match the displayed code.");
+
+        if (session.CompletionInProgress)
+            return (DeviceEnrollmentErrorCode.NewDeviceRejected, "An enrollment transfer is already being imported for this code.");
+
+        return null;
+    }
+
+
+    private async Task EndEnrollmentOnlyIfIdleAsync(CancellationToken ct)
+    {
+        await _enrollmentModeLock.WaitAsync(ct);
+        try
+        {
+            lock (_lock)
+            {
+                if (_currentSession?.State == DeviceEnrollmentState.Waiting)
+                    return;
+            }
+
+            await _syncRuntime.EndEnrollmentOnlyAsync(ct);
+        }
+        finally
+        {
+            _enrollmentModeLock.Release();
         }
     }
 
@@ -1043,6 +1142,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
             CancelEnrollmentExpirationLocked();
             DeactivateEnrollmentDiscoveryLocked();
             session.ClearSensitiveData();
+            PublishEnrollmentChange();
             return (true, session.ErrorMessage);
         }
 
@@ -1112,13 +1212,25 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
     {
         lock (_lock)
         {
+            var session = _currentSession;
+            var changed = session is not null && session.State == DeviceEnrollmentState.Waiting;
             CancelEnrollmentExpirationLocked();
             DeactivateEnrollmentDiscoveryLocked();
-            _currentSession?.ClearSensitiveData();
-            _currentSession = null;
+            if (session is not null)
+            {
+                if (changed)
+                {
+                    session.State = DeviceEnrollmentState.Cancelled;
+                    session.ErrorCode = DeviceEnrollmentErrorCode.Unknown;
+                    session.ErrorMessage = null;
+                }
+                session.ClearSensitiveData();
+            }
+            if (changed)
+                PublishEnrollmentChange();
         }
 
-        await _syncRuntime.EndEnrollmentOnlyAsync(cancellationToken);
+        await EndEnrollmentOnlyIfIdleAsync(cancellationToken);
     }
 
 
@@ -1127,7 +1239,7 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
         CancelEnrollmentExpirationLocked();
         var cancellation = new CancellationTokenSource();
         _enrollmentExpirationCancellation = cancellation;
-        _ = ExpireEnrollmentSessionAsync(session.SessionId, session.ExpiresAt, cancellation);
+        _ = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => ExpireEnrollmentSessionAsync(session.SessionId, session.ExpiresAt, cancellation));
     }
 
 
@@ -1146,7 +1258,8 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
                 if (!ct.IsCancellationRequested &&
                     _currentSession is not null &&
                     string.Equals(_currentSession.SessionId, sessionId, StringComparison.Ordinal) &&
-                    _currentSession.State == DeviceEnrollmentState.Waiting)
+                    _currentSession.State == DeviceEnrollmentState.Waiting &&
+                    !_currentSession.CompletionInProgress)
                 {
                     _currentSession.State = DeviceEnrollmentState.Expired;
                     _currentSession.ErrorCode = DeviceEnrollmentErrorCode.CodeExpired;
@@ -1159,7 +1272,10 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
             }
 
             if (expired)
-                await _syncRuntime.EndEnrollmentOnlyAsync(CancellationToken.None);
+            {
+                PublishEnrollmentChange();
+                await EndEnrollmentOnlyIfIdleAsync(CancellationToken.None);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -1201,10 +1317,10 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
 
     private void ExpireSessionIfNeededLocked()
     {
-        if (_currentSession is null || _currentSession.State != DeviceEnrollmentState.Waiting)
+        if (_currentSession is null || _currentSession.State != DeviceEnrollmentState.Waiting || _currentSession.CompletionInProgress)
             return;
 
-        if (DateTimeOffset.UtcNow <= _currentSession.ExpiresAt)
+        if (DateTimeOffset.UtcNow < _currentSession.ExpiresAt)
             return;
 
         _currentSession.State = DeviceEnrollmentState.Expired;
@@ -1213,7 +1329,11 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
         CancelEnrollmentExpirationLocked();
         DeactivateEnrollmentDiscoveryLocked();
         _currentSession.ClearSensitiveData();
+        PublishEnrollmentChange();
     }
+
+    private void PublishEnrollmentChange() =>
+        _changePublisher?.Publish(FrontendChangeScope.Enrollment);
 
 
     public void Dispose()

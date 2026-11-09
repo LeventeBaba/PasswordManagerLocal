@@ -17,11 +17,12 @@ public sealed class DataCodecTests
     [TestCategory("Security")]
     public async Task LargePayload_RoundTripsAcrossPooledChannelSegmentsAndAesFrames()
     {
+        var createdAt = new DateTimeOffset(2026, 7, 1, 12, 30, 0, TimeSpan.FromHours(2));
         var payload = new CodecPayload
         {
             Name = "large streamed payload",
             Data = RandomNumberGenerator.GetBytes(512 * 1024 + 123),
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = createdAt
         };
         var associatedData = Encoding.UTF8.GetBytes("codec-associated-data");
         using var key = EncryptionKey.Create();
@@ -40,7 +41,9 @@ public sealed class DataCodecTests
 
         MSTestAssert.IsNotNull(decoded);
         MSTestAssert.AreEqual(payload.Name, decoded.Name);
-        MSTestAssert.AreEqual(payload.CreatedAt, decoded.CreatedAt);
+        MSTestAssert.AreEqual(TimeSpan.Zero, payload.CreatedAt.Offset);
+        MSTestAssert.AreEqual(createdAt, decoded.CreatedAt);
+        MSTestAssert.AreEqual(TimeSpan.Zero, decoded.CreatedAt.Offset);
         CollectionAssert.AreEqual(payload.Data, decoded.Data);
     }
 

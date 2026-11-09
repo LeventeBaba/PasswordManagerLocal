@@ -1,5 +1,7 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Security;
+using PasswordManagerLocal.Common.Backend.Utils;
 
 namespace PasswordManagerLocal.Common.Tests.Fakes;
 
@@ -17,15 +19,18 @@ public sealed class FakeDeviceRepository : IDeviceRepository
             _items[device.Id] = device;
     }
 
+    public Device? GetObservationWriteTarget(Device observed) => _items.GetValueOrDefault(observed.Id);
+
     public Task<IReadOnlyList<Device>> ListAllAsync(CancellationToken ct = default) =>
         Task.FromResult((IReadOnlyList<Device>)_items.Values.ToList());
 
     public Task<IReadOnlyList<Device>> ListByIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default) =>
         Task.FromResult((IReadOnlyList<Device>)_items.Values.Where(device => ids.Contains(device.Id)).ToList());
 
-    public Task<IReadOnlyList<Device>> ListDevicesNeedingSyncAsync(CancellationToken ct = default) =>
+    public Task<IReadOnlyList<Device>> ListTrustedUnblockedWithPendingQueueAsync(CancellationToken ct = default) =>
         Task.FromResult((IReadOnlyList<Device>)_items.Values
-            .Where(device => device.ItemsNeedingSync.Any(item => item.ProcessedAt is null))
+            .Where(device => device.IsTrusted && !device.IsBlocked && device.TlsCertFingerprint.Length != 0 &&
+                device.ItemsNeedingSync.Any(item => item.ProcessedAt is null))
             .ToList());
 
     public Task<Device?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
@@ -45,25 +50,26 @@ public sealed class FakeDeviceRepository : IDeviceRepository
             ? device.UserDevices.Where(link => !link.IsDeleted).Select(link => link.UserId).Distinct().ToList()
             : []));
 
-    public Task<Device?> GetBySignPublicKeyAsync(byte[] signPublicKey, CancellationToken ct = default) =>
-        Task.FromResult(_items.Values.FirstOrDefault(device => device.SignPublicKey.SequenceEqual(signPublicKey)));
+    public Task<IReadOnlyList<Device>> ListBySigningKeyHashAsync(byte[] hash, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<Device>>(_items.Values
+            .Where(device => Hashing.SHA256Hash(device.SignPublicKey).SequenceEqual(hash)).ToList());
 
-    public Task<Device?> GetByTlsCertFingerprintAsync(string tlsCertFingerprint, CancellationToken ct = default) =>
+    public Task<Device?> GetByNormalizedFingerprintAsync(string fingerprint, CancellationToken ct = default) =>
         Task.FromResult(_items.Values.FirstOrDefault(device =>
-            string.Equals(device.TlsCertFingerprint, tlsCertFingerprint, StringComparison.OrdinalIgnoreCase)));
+            FingerprintUtil.Normalize(device.TlsCertFingerprint) == fingerprint));
 
-    public Task<Device?> GetByTlsCertFingerprintWithUserDevicesAsync(string tlsCertFingerprint, CancellationToken ct = default) =>
-        GetByTlsCertFingerprintAsync(tlsCertFingerprint, ct);
+    public Task<Device?> GetByNormalizedFingerprintWithUserDevicesAsync(string fingerprint, CancellationToken ct = default) =>
+        GetByNormalizedFingerprintAsync(fingerprint, ct);
 
-    public Task<IReadOnlyList<Device>> ListLocalSelfDevicesAsync(
+    public Task<IReadOnlyList<Device>> ListLocalIdentityCandidatesAsync(
         Guid localDeviceId,
-        byte[] signPublicKey,
-        string tlsCertFingerprint,
+        byte[] signingKeyHash,
+        string fingerprint,
         CancellationToken ct = default) =>
-        Task.FromResult((IReadOnlyList<Device>)_items.Values.Where(device =>
+        Task.FromResult<IReadOnlyList<Device>>(_items.Values.Where(device =>
             device.Id == localDeviceId ||
-            device.SignPublicKey.SequenceEqual(signPublicKey) ||
-            string.Equals(device.TlsCertFingerprint, tlsCertFingerprint, StringComparison.OrdinalIgnoreCase)).ToList());
+            (signingKeyHash.Length != 0 && Hashing.SHA256Hash(device.SignPublicKey).SequenceEqual(signingKeyHash)) ||
+            (fingerprint.Length != 0 && FingerprintUtil.Normalize(device.TlsCertFingerprint) == fingerprint)).ToList());
 
     public Task<IReadOnlyList<Device>> ListByIdsWithUserDevicesAsNoTrackingAsync(
         IReadOnlyCollection<Guid> deviceIds,

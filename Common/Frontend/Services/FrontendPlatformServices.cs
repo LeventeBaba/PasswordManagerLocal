@@ -6,6 +6,7 @@ public sealed class FrontendPlatformServices : IDisposable
     private readonly CancellationTokenSource _lifetime = new();
     private int _deactivated;
     private int _disposed;
+    private Func<bool>? _animationsEnabledProvider;
 
     public FrontendPlatformServices()
     {
@@ -21,6 +22,24 @@ public sealed class FrontendPlatformServices : IDisposable
     public EnrollmentQrCodeCameraScannerService CameraScanner { get; } = new();
     public SensitiveDataVisibilityService SensitiveData { get; } = new();
 
+    public bool AreAnimationsEnabled
+    {
+        get
+        {
+            try
+            {
+                return _animationsEnabledProvider?.Invoke() ?? true;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+    }
+
+    public void SetPlatformAnimationsEnabledProvider(Func<bool>? provider) =>
+        _animationsEnabledProvider = provider;
+
     public void Deactivate()
     {
         if (Interlocked.Exchange(ref _deactivated, 1) != 0)
@@ -32,6 +51,7 @@ public sealed class FrontendPlatformServices : IDisposable
         Keyboard.SetPlatformHideAction(null);
         CameraScanner.SetPlatformScanner(null);
         SensitiveData.ClearSubscribers();
+        _animationsEnabledProvider = null;
     }
 
     public void Dispose()

@@ -1,4 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using PasswordManagerLocal.Common.Contracts.Endpoints;
+using PasswordManagerLocal.Common.Contracts.Errors;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Windows.EndpointRpc.Client;
 using PasswordManagerLocal.Windows.EndpointRpc.Contracts;
@@ -22,14 +24,10 @@ public sealed class NamedPipeEndpointsProxyMappingTests
                 : EndpointMutationOutcome.NotApplicable;
             var remoteError = new EndpointRpcError(
                 EndpointRpcErrorCode.BackendFailure,
-                EndpointRpcErrorCategory.Internal,
+                EndpointFailureKind.Generic,
                 "The endpoint operation failed.",
-                1,
-                DateTimeOffset.UtcNow,
-                false,
-                false,
-                mutationOutcome,
-                Recovery: null);
+                RequiresProcessRestart: false,
+                mutationOutcome);
             return Task.FromException<byte[]>(new EndpointRpcRemoteException(remoteError));
         });
         var proxy = new NamedPipeEndpointsProxy(
@@ -37,13 +35,42 @@ public sealed class NamedPipeEndpointsProxyMappingTests
             new EndpointRpcSerializer(),
             new EndpointRpcContractValidator());
 
-        foreach (var invocation in CreateInvocations(proxy))
-            await Assert.ThrowsExactlyAsync<EndpointRpcRemoteException>(invocation);
+        var invocations = CreateInvocations(proxy);
+        var endpointMethodNames = typeof(IEndpoints).GetMethods()
+            .Select(method => method.Name)
+            .ToArray();
+        var descriptors = EndpointOperationManifest.All;
+        var manifestMethodNames = descriptors.Select(descriptor => descriptor.MethodName).ToArray();
+        var operationIds = Enum.GetValues<EndpointOperationId>();
+
+        EndpointOperationTestAssertions.AreEquivalent(
+            endpointMethodNames,
+            manifestMethodNames,
+            "EndpointRpc manifest method mappings");
+        EndpointOperationTestAssertions.AreEquivalent(
+            endpointMethodNames,
+            invocations.Select(invocation => invocation.MethodName),
+            "Proxy behavior invocation mappings");
+        EndpointOperationTestAssertions.AreEquivalent(
+            operationIds.Select(operationId => (int)operationId),
+            descriptors.Select(descriptor => (int)descriptor.OperationId),
+            "Stable endpoint operation IDs in the manifest");
+
+        var descriptorsByMethod = descriptors.ToDictionary(
+            descriptor => descriptor.MethodName,
+            StringComparer.Ordinal);
+        var expectedOperationIds = invocations
+            .Select(invocation => descriptorsByMethod[invocation.MethodName])
+            .Select(descriptor => descriptor.OperationId)
+            .ToArray();
+
+        foreach (var invocation in invocations)
+            await Assert.ThrowsExactlyAsync<EndpointFailureException>(invocation.Invoke);
 
         CollectionAssert.AreEqual(
-            Enum.GetValues<EndpointOperationId>().Cast<object>().ToArray(),
-            transport.Operations.Cast<object>().ToArray());
-        Assert.HasCount(40, transport.RequestPayloads);
+            expectedOperationIds.Cast<object>().ToArray(),
+            transport.Operations.Cast<object>().ToArray(),
+            "Each named proxy invocation must send the operation ID assigned by the manifest.");
     }
 
     [TestMethod]
@@ -81,7 +108,6 @@ public sealed class NamedPipeEndpointsProxyMappingTests
         Assert.AreEqual(1, sends);
     }
 
-
     [TestMethod]
     public async Task SideEffectingMalformedResponseReportsUnknownOutcomeWithoutReplay()
     {
@@ -106,62 +132,26 @@ public sealed class NamedPipeEndpointsProxyMappingTests
         Assert.AreEqual(1, sends);
     }
 
-
     [TestMethod]
-    public async Task StructuredRemoteDisconnectRemainsConclusiveWithoutReplay()
+    [DataRow(EndpointRpcErrorCode.Disconnected, true)]
+    [DataRow(EndpointRpcErrorCode.ResponsePayloadTooLarge, false)]
+    public async Task ConclusiveRemoteFailureKeepsItsExceptionKindWithoutReplay(EndpointRpcErrorCode code, bool disconnected)
     {
         var sends = 0;
         var transport = new RecordingEndpointRpcTransport((_, _, _) =>
         {
             sends++;
-            return Task.FromException<byte[]>(new EndpointRpcRemoteException(
-                new EndpointRpcError(
-                    EndpointRpcErrorCode.Disconnected,
-                    EndpointRpcErrorCategory.Availability,
-                    "The endpoint connection is unavailable.",
-                    1,
-                    DateTimeOffset.UtcNow,
-                    true,
-                    false,
-                    EndpointMutationOutcome.NotCommitted,
-                    Recovery: null)));
+            return Task.FromException<byte[]>(new EndpointRpcRemoteException(new EndpointRpcError(
+                code, EndpointFailureKind.Generic, "The endpoint operation failed.",
+                RequiresProcessRestart: false, EndpointMutationOutcome.NotCommitted)));
         });
-        var proxy = new NamedPipeEndpointsProxy(
-            transport,
-            new EndpointRpcSerializer(),
-            new EndpointRpcContractValidator());
+        await using var proxy = new NamedPipeEndpointsProxy(transport, new EndpointRpcSerializer(), new EndpointRpcContractValidator());
 
-        await Assert.ThrowsExactlyAsync<EndpointRpcDisconnectedException>(() =>
-            proxy.LogoutAsync(EndpointRpcTestData.Token));
-        Assert.AreEqual(1, sends);
-    }
+        if (disconnected)
+            await Assert.ThrowsExactlyAsync<EndpointRpcDisconnectedException>(() => proxy.LogoutAsync(EndpointRpcTestData.Token));
+        else
+            await Assert.ThrowsExactlyAsync<EndpointFailureException>(() => proxy.LogoutAsync(EndpointRpcTestData.Token));
 
-    [TestMethod]
-    public async Task StructuredRemotePayloadFailureRemainsConclusiveWithoutReplay()
-    {
-        var sends = 0;
-        var transport = new RecordingEndpointRpcTransport((_, _, _) =>
-        {
-            sends++;
-            return Task.FromException<byte[]>(new EndpointRpcRemoteException(
-                new EndpointRpcError(
-                    EndpointRpcErrorCode.ResponsePayloadTooLarge,
-                    EndpointRpcErrorCategory.Validation,
-                    "The endpoint response payload exceeds the permitted size.",
-                    1,
-                    DateTimeOffset.UtcNow,
-                    false,
-                    false,
-                    EndpointMutationOutcome.NotCommitted,
-                    Recovery: null)));
-        });
-        var proxy = new NamedPipeEndpointsProxy(
-            transport,
-            new EndpointRpcSerializer(),
-            new EndpointRpcContractValidator());
-
-        await Assert.ThrowsExactlyAsync<EndpointRpcRemoteException>(() =>
-            proxy.LogoutAsync(EndpointRpcTestData.Token));
         Assert.AreEqual(1, sends);
     }
 
@@ -174,26 +164,62 @@ public sealed class NamedPipeEndpointsProxyMappingTests
             Task.FromException<byte[]>(new EndpointRpcRemoteException(
                 new EndpointRpcError(
                     EndpointRpcErrorCode.ValidationFailed,
-                    EndpointRpcErrorCategory.Validation,
+                    EndpointFailureKind.InvalidInput,
                     "The endpoint input is invalid.",
-                    1,
-                    DateTimeOffset.UtcNow,
-                    false,
-                    false,
-                    EndpointMutationOutcome.NotCommitted,
-                    Recovery: null))));
+                    RequiresProcessRestart: false,
+                    EndpointMutationOutcome.NotCommitted))));
         var proxy = new NamedPipeEndpointsProxy(
             transport,
             new EndpointRpcSerializer(),
             new EndpointRpcContractValidator());
 
-        var exception = await Assert.ThrowsExactlyAsync<EndpointRpcRemoteException>(() =>
+        var exception = await Assert.ThrowsExactlyAsync<EndpointFailureException>(() =>
             proxy.DeleteUserAccountAsync(EndpointRpcTestData.Token, password));
 
         CollectionAssert.AreEqual(expected, password);
+        Assert.AreEqual(EndpointFailureKind.InvalidInput, exception.FailureKind);
         Assert.IsFalse(exception.Message.Contains(Convert.ToBase64String(password), StringComparison.Ordinal));
     }
 
+    [TestMethod]
+    public async Task StableFailureKindsCrossTheProxyWithoutRecreatingBackendExceptions()
+    {
+        var cases = new (EndpointRpcErrorCode Code, EndpointFailureKind Kind, DeviceEnrollmentErrorCode? Enrollment)[]
+        {
+            (EndpointRpcErrorCode.AuthenticationFailed, EndpointFailureKind.InvalidCredentials, null),
+            (EndpointRpcErrorCode.AuthorizationFailed, EndpointFailureKind.InvalidSession, null),
+            (EndpointRpcErrorCode.NotFound, EndpointFailureKind.NotFound, null),
+            (EndpointRpcErrorCode.Conflict, EndpointFailureKind.DuplicatePasswordName, null),
+            (EndpointRpcErrorCode.OperationRejected, EndpointFailureKind.LimitReached, null),
+            (EndpointRpcErrorCode.OperationRejected, EndpointFailureKind.DeviceEnrollment,
+                DeviceEnrollmentErrorCode.InvalidCode),
+            (EndpointRpcErrorCode.BackendFailure, EndpointFailureKind.Generic, null)
+        };
+
+        foreach (var (code, kind, enrollment) in cases)
+        {
+            var remoteError = new EndpointRpcError(
+                code,
+                kind,
+                "A fixed safe endpoint message.",
+                RequiresProcessRestart: false,
+                EndpointMutationOutcome.NotApplicable,
+                enrollment);
+            var transport = new RecordingEndpointRpcTransport((_, _, _) =>
+                Task.FromException<byte[]>(new EndpointRpcRemoteException(remoteError)));
+            await using var proxy = new NamedPipeEndpointsProxy(
+                transport,
+                new EndpointRpcSerializer(),
+                new EndpointRpcContractValidator());
+
+            var exception = await Assert.ThrowsExactlyAsync<EndpointFailureException>(() =>
+                proxy.GetLocalDeviceInfoAsync());
+
+            Assert.AreEqual(kind, exception.FailureKind, code.ToString());
+            Assert.AreEqual(enrollment, exception.EnrollmentErrorCode, code.ToString());
+            Assert.IsInstanceOfType<EndpointRpcRemoteException>(exception.InnerException, code.ToString());
+        }
+    }
 
     [TestMethod]
     public async Task InvalidReadOnlyRemoteResponseIsRejectedBeforeFrontendUse()
@@ -229,29 +255,17 @@ public sealed class NamedPipeEndpointsProxyMappingTests
         Assert.AreEqual(0, sends);
     }
 
-
     [TestMethod]
     public async Task PartialCommitMapsToDedicatedClientExceptionWithoutReplay()
     {
         var sends = 0;
-        var recovery = new EndpointRecoveryMetadata(
-            EndpointRecoveryKind.DeviceEnrollment,
-            Guid.Parse("22222222-2222-2222-2222-222222222222"),
-            Guid.Parse("33333333-3333-3333-3333-333333333333"),
-            Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            RecoveryAvailable: true,
-            TransferPending: true,
-            RequiresSignedRemovalToUndo: true);
         var remoteError = new EndpointRpcError(
             EndpointRpcErrorCode.OperationPartiallyCommitted,
-            EndpointRpcErrorCategory.Recovery,
+            EndpointFailureKind.DeviceEnrollment,
             "The device addition was committed, but enrollment recovery is required.",
-            1,
-            DateTimeOffset.UtcNow,
-            IsRetryable: false,
             RequiresProcessRestart: true,
             EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
-            recovery);
+            DeviceEnrollmentErrorCode.NewDeviceConnectionFailed);
         var transport = new RecordingEndpointRpcTransport((_, _, _) =>
         {
             sends++;
@@ -271,25 +285,20 @@ public sealed class NamedPipeEndpointsProxyMappingTests
         Assert.IsTrue(exception.RequiresRecovery);
         Assert.IsTrue(exception.RequiresProcessRestart);
         Assert.IsFalse(exception.BlindRetryIsSafe);
-        Assert.AreEqual(recovery, exception.Recovery);
-        Assert.AreEqual(EndpointMutationReplaySafety.RecoveryForSameImmutableTargetOnly, exception.ReplaySafety);
-        Assert.AreEqual(EndpointMutationRecoveryAction.ResumeEnrollmentForSameImmutableTargetOrPerformSignedRemoval, exception.RecoveryAction);
-        Assert.AreEqual(EndpointOperationId.GetUserDevices, exception.AuthoritativeReadBackOperationId);
+        var inner = Assert.IsInstanceOfType<EndpointRpcRemoteException>(exception.InnerException);
+        Assert.AreEqual(EndpointFailureKind.DeviceEnrollment, inner.Error.FailureKind);
+        Assert.AreEqual(DeviceEnrollmentErrorCode.NewDeviceConnectionFailed, inner.Error.EnrollmentErrorCode);
     }
 
     [TestMethod]
-    public async Task GenericPartialCommitMapsWithoutEnrollmentRecoveryMetadata()
+    public async Task GenericPartialCommitMapsWithoutEnrollmentDetails()
     {
         var remoteError = new EndpointRpcError(
             EndpointRpcErrorCode.OperationPartiallyCommitted,
-            EndpointRpcErrorCategory.Recovery,
+            EndpointFailureKind.Generic,
             "The endpoint operation committed authoritative state, but required follow-up work did not complete.",
-            1,
-            DateTimeOffset.UtcNow,
-            IsRetryable: false,
             RequiresProcessRestart: false,
-            EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
-            Recovery: null);
+            EndpointMutationOutcome.PartiallyCommittedRecoveryRequired);
         var transport = new RecordingEndpointRpcTransport((_, _, _) =>
             Task.FromException<byte[]>(new EndpointRpcRemoteException(remoteError)));
         var proxy = new NamedPipeEndpointsProxy(transport, new EndpointRpcSerializer(), new EndpointRpcContractValidator());
@@ -300,25 +309,18 @@ public sealed class NamedPipeEndpointsProxyMappingTests
             proxy.ChangeMasterPasswordAsync(request.Request));
 
         Assert.AreEqual(EndpointOperationId.ChangeMasterPassword, exception.OperationId);
-        Assert.IsNull(exception.Recovery);
-        Assert.AreEqual(EndpointMutationReplaySafety.AuthoritativeReadBackRequired, exception.ReplaySafety);
-        Assert.AreEqual(EndpointOperationId.GetAuthSessionStatus, exception.AuthoritativeReadBackOperationId);
         Assert.IsFalse(exception.BlindRetryIsSafe);
     }
 
     [TestMethod]
-    public async Task MissingEnrollmentRecoveryMetadataMapsToOutcomeUnknown()
+    public async Task MissingEnrollmentErrorCodeMapsToOutcomeUnknown()
     {
         var remoteError = new EndpointRpcError(
             EndpointRpcErrorCode.OperationPartiallyCommitted,
-            EndpointRpcErrorCategory.Recovery,
+            EndpointFailureKind.DeviceEnrollment,
             "The device addition was committed, but enrollment recovery is required.",
-            1,
-            DateTimeOffset.UtcNow,
-            IsRetryable: false,
             RequiresProcessRestart: true,
-            EndpointMutationOutcome.PartiallyCommittedRecoveryRequired,
-            Recovery: null);
+            EndpointMutationOutcome.PartiallyCommittedRecoveryRequired);
         var transport = new RecordingEndpointRpcTransport((_, _, _) =>
             Task.FromException<byte[]>(new EndpointRpcRemoteException(remoteError)));
         var proxy = new NamedPipeEndpointsProxy(transport, new EndpointRpcSerializer(), new EndpointRpcContractValidator());
@@ -335,14 +337,10 @@ public sealed class NamedPipeEndpointsProxyMappingTests
     {
         var error = new EndpointRpcError(
             EndpointRpcErrorCode.Conflict,
-            EndpointRpcErrorCategory.Conflict,
+            EndpointFailureKind.Generic,
             "The endpoint operation conflicts with current state.",
-            1,
-            DateTimeOffset.UtcNow,
-            IsRetryable: false,
             RequiresProcessRestart: false,
-            EndpointMutationOutcome.NotCommitted,
-            Recovery: null);
+            EndpointMutationOutcome.NotCommitted);
         var transport = new RecordingEndpointRpcTransport((_, _, _) =>
             Task.FromException<byte[]>(new EndpointRpcRemoteException(error)));
         var proxy = new NamedPipeEndpointsProxy(
@@ -350,14 +348,16 @@ public sealed class NamedPipeEndpointsProxyMappingTests
             new EndpointRpcSerializer(),
             new EndpointRpcContractValidator());
 
-        var exception = await Assert.ThrowsExactlyAsync<EndpointRpcRemoteException>(() =>
+        var exception = await Assert.ThrowsExactlyAsync<EndpointFailureException>(() =>
             proxy.AddDeviceByCodeAsync(EndpointRpcTestData.Token, "ABCD2345"));
 
-        Assert.AreEqual(EndpointRpcErrorCode.Conflict, exception.Error.ErrorCode);
-        Assert.AreEqual(EndpointMutationOutcome.NotCommitted, exception.Error.MutationOutcome);
+        Assert.AreEqual(EndpointFailureKind.Generic, exception.FailureKind);
+        var inner = Assert.IsInstanceOfType<EndpointRpcRemoteException>(exception.InnerException);
+        Assert.AreEqual(EndpointRpcErrorCode.Conflict, inner.Error.ErrorCode);
+        Assert.AreEqual(EndpointMutationOutcome.NotCommitted, inner.Error.MutationOutcome);
     }
 
-    private static IReadOnlyList<Func<Task>> CreateInvocations(NamedPipeEndpointsProxy proxy)
+    private static IReadOnlyList<EndpointProxyInvocation> CreateInvocations(NamedPipeEndpointsProxy proxy)
     {
         Func<EndpointOperationId, object> request = EndpointRpcTestData.CreateRequest;
         var registration = ((PasswordManagerLocal.Windows.EndpointRpc.Contracts.Requests.RegisterEndpointRequest)request(EndpointOperationId.Register)).Request;
@@ -377,46 +377,50 @@ public sealed class NamedPipeEndpointsProxyMappingTests
 
         return
         [
-            async () => { await proxy.RegisterAsync(registration); },
-            async () => { await proxy.LoginAsync(login); },
-            async () => { await proxy.RenewAuthSessionAsync(EndpointRpcTestData.Token); },
-            async () => { await proxy.LogoutAsync(EndpointRpcTestData.Token); },
-            async () => { await proxy.GetAuthSessionStatusAsync(EndpointRpcTestData.Token); },
-            async () => { await proxy.ChangeMasterPasswordAsync(master); },
-            async () => { await proxy.GetUserProfileInfoAsync(EndpointRpcTestData.Token); },
-            async () => { await proxy.DeleteUserAccountAsync(EndpointRpcTestData.Token, password); },
-            async () => { await proxy.ChangeUsernameAsync(EndpointRpcTestData.Token, "ValidUser2"); },
-            async () => { await proxy.UpdateUserProfileInfoAsync(profile); },
-            async () => { await proxy.GetLocalDeviceInfoAsync(); },
-            async () => { await proxy.GetLocalUserSyncOnAsync(EndpointRpcTestData.Token); },
-            async () => { await proxy.SetLocalUserSyncOnAsync(EndpointRpcTestData.Token, true); },
-            async () => { await proxy.SetLocalDeviceNameAsync(EndpointRpcTestData.Token, "Desktop"); },
-            async () => { await proxy.GetUserDevicesAsync(EndpointRpcTestData.Token); },
-            async () => { await proxy.SetUserDeviceNameAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId, "Laptop"); },
-            async () => { await proxy.SetUserDeviceSyncOnAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId, true); },
-            async () => { await proxy.UnblockUserDeviceAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId); },
-            async () => { await proxy.DisconnectUserDeviceAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId, password); },
-            async () => { await proxy.StartDeviceEnrollmentAsync(); },
-            async () => { await proxy.GetDeviceEnrollmentStatusAsync(); },
-            async () => { await proxy.CancelDeviceEnrollmentAsync(); },
-            async () => { await proxy.AddDeviceByCodeAsync(EndpointRpcTestData.Token, "ABCD2345"); },
-            async () => { await proxy.RestoreRememberedSessionsAsync(); },
-            async () => { await proxy.InitializeRememberMeSessionAsync(EndpointRpcTestData.ItemId); },
-            async () => { await proxy.SetRememberMeAsync(EndpointRpcTestData.Token, true); },
-            async () => { await proxy.GetSavedPasswordsAsync(EndpointRpcTestData.Token); },
-            async () => { await proxy.AddNewPasswordAsync(EndpointRpcTestData.Token, newPassword); },
-            async () => { await proxy.RemovePasswordsAsync(EndpointRpcTestData.Token, [EndpointRpcTestData.ItemId]); },
-            async () => { await proxy.GetUnsecurePasswordAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId); },
-            async () => { await proxy.UpdatePasswordAsync(EndpointRpcTestData.Token, updatePassword); },
-            async () => { await proxy.ExportPasswordsToUserAsync(EndpointRpcTestData.Token, exportPasswords); },
-            async () => { await proxy.AddCustomUserColorsAsync(EndpointRpcTestData.Token, colors); },
-            async () => { await proxy.DeleteCustomUserColorsAsync(EndpointRpcTestData.Token, [EndpointRpcTestData.ItemId]); },
-            async () => { await proxy.ExportCustomUserColorsToUserAsync(EndpointRpcTestData.Token, exportColors); },
-            async () => { await proxy.UpdateCustomUserColorAsync(EndpointRpcTestData.Token, updateColor); },
-            async () => { await proxy.AddPasswordTagAsync(EndpointRpcTestData.Token, newTag); },
-            async () => { await proxy.DeletePasswordTagAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId); },
-            async () => { await proxy.ExportPasswordTagsToUserAsync(EndpointRpcTestData.Token, exportTags); },
-            async () => { await proxy.UpdatePasswordTagAsync(EndpointRpcTestData.Token, updateTag); }
+            new(nameof(IEndpoints.RegisterAsync), () => proxy.RegisterAsync(registration)),
+            new(nameof(IEndpoints.LoginAsync), () => proxy.LoginAsync(login)),
+            new(nameof(IEndpoints.RenewAuthSessionAsync), () => proxy.RenewAuthSessionAsync(EndpointRpcTestData.Token)),
+            new(nameof(IEndpoints.LogoutAsync), () => proxy.LogoutAsync(EndpointRpcTestData.Token)),
+            new(nameof(IEndpoints.GetAuthSessionStatusAsync), () => proxy.GetAuthSessionStatusAsync(EndpointRpcTestData.Token)),
+            new(nameof(IEndpoints.ChangeMasterPasswordAsync), () => proxy.ChangeMasterPasswordAsync(master)),
+            new(nameof(IEndpoints.GetUserProfileInfoAsync), () => proxy.GetUserProfileInfoAsync(EndpointRpcTestData.Token)),
+            new(nameof(IEndpoints.DeleteUserAccountAsync), () => proxy.DeleteUserAccountAsync(EndpointRpcTestData.Token, password)),
+            new(nameof(IEndpoints.ChangeUsernameAsync), () => proxy.ChangeUsernameAsync(EndpointRpcTestData.Token, "ValidUser2")),
+            new(nameof(IEndpoints.UpdateUserProfileInfoAsync), () => proxy.UpdateUserProfileInfoAsync(profile)),
+            new(nameof(IEndpoints.GetLocalDeviceInfoAsync), () => proxy.GetLocalDeviceInfoAsync()),
+            new(nameof(IEndpoints.GetLocalUserSyncOnAsync), () => proxy.GetLocalUserSyncOnAsync(EndpointRpcTestData.Token)),
+            new(nameof(IEndpoints.SetLocalUserSyncOnAsync), () => proxy.SetLocalUserSyncOnAsync(EndpointRpcTestData.Token, true)),
+            new(nameof(IEndpoints.SetLocalDeviceNameAsync), () => proxy.SetLocalDeviceNameAsync(EndpointRpcTestData.Token, "Desktop")),
+            new(nameof(IEndpoints.GetUserDevicesAsync), () => proxy.GetUserDevicesAsync(EndpointRpcTestData.Token)),
+            new(nameof(IEndpoints.SetUserDeviceNameAsync), () => proxy.SetUserDeviceNameAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId, "Laptop")),
+            new(nameof(IEndpoints.SetUserDeviceSyncOnAsync), () => proxy.SetUserDeviceSyncOnAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId, true)),
+            new(nameof(IEndpoints.UnblockUserDeviceAsync), () => proxy.UnblockUserDeviceAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId)),
+            new(nameof(IEndpoints.DisconnectUserDeviceAsync), () => proxy.DisconnectUserDeviceAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId, password)),
+            new(nameof(IEndpoints.StartDeviceEnrollmentAsync), () => proxy.StartDeviceEnrollmentAsync()),
+            new(nameof(IEndpoints.GetDeviceEnrollmentStatusAsync), () => proxy.GetDeviceEnrollmentStatusAsync()),
+            new(nameof(IEndpoints.CancelDeviceEnrollmentAsync), () => proxy.CancelDeviceEnrollmentAsync()),
+            new(nameof(IEndpoints.AddDeviceByCodeAsync), () => proxy.AddDeviceByCodeAsync(EndpointRpcTestData.Token, "ABCD2345")),
+            new(nameof(IEndpoints.RestoreRememberedSessionsAsync), () => proxy.RestoreRememberedSessionsAsync()),
+            new(nameof(IEndpoints.InitializeRememberMeSessionAsync), () => proxy.InitializeRememberMeSessionAsync(EndpointRpcTestData.ItemId)),
+            new(nameof(IEndpoints.SetRememberMeAsync), () => proxy.SetRememberMeAsync(EndpointRpcTestData.Token, true)),
+            new(nameof(IEndpoints.GetSavedPasswordsAsync), () => proxy.GetSavedPasswordsAsync(EndpointRpcTestData.Token)),
+            new(nameof(IEndpoints.AddNewPasswordAsync), () => proxy.AddNewPasswordAsync(EndpointRpcTestData.Token, newPassword)),
+            new(nameof(IEndpoints.RemovePasswordsAsync), () => proxy.RemovePasswordsAsync(EndpointRpcTestData.Token, [EndpointRpcTestData.ItemId])),
+            new(nameof(IEndpoints.GetUnsecurePasswordAsync), () => proxy.GetUnsecurePasswordAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId)),
+            new(nameof(IEndpoints.UpdatePasswordAsync), () => proxy.UpdatePasswordAsync(EndpointRpcTestData.Token, updatePassword)),
+            new(nameof(IEndpoints.ExportPasswordsToUserAsync), () => proxy.ExportPasswordsToUserAsync(EndpointRpcTestData.Token, exportPasswords)),
+            new(nameof(IEndpoints.AddCustomUserColorsAsync), () => proxy.AddCustomUserColorsAsync(EndpointRpcTestData.Token, colors)),
+            new(nameof(IEndpoints.DeleteCustomUserColorsAsync), () => proxy.DeleteCustomUserColorsAsync(EndpointRpcTestData.Token, [EndpointRpcTestData.ItemId])),
+            new(nameof(IEndpoints.ExportCustomUserColorsToUserAsync), () => proxy.ExportCustomUserColorsToUserAsync(EndpointRpcTestData.Token, exportColors)),
+            new(nameof(IEndpoints.UpdateCustomUserColorAsync), () => proxy.UpdateCustomUserColorAsync(EndpointRpcTestData.Token, updateColor)),
+            new(nameof(IEndpoints.AddPasswordTagAsync), () => proxy.AddPasswordTagAsync(EndpointRpcTestData.Token, newTag)),
+            new(nameof(IEndpoints.DeletePasswordTagAsync), () => proxy.DeletePasswordTagAsync(EndpointRpcTestData.Token, EndpointRpcTestData.ItemId)),
+            new(nameof(IEndpoints.ExportPasswordTagsToUserAsync), () => proxy.ExportPasswordTagsToUserAsync(EndpointRpcTestData.Token, exportTags)),
+            new(nameof(IEndpoints.UpdatePasswordTagAsync), () => proxy.UpdatePasswordTagAsync(EndpointRpcTestData.Token, updateTag)),
+            new(nameof(IEndpoints.ConfirmSelfDiagnosticsRepairAsync), () => proxy.ConfirmSelfDiagnosticsRepairAsync(EndpointRpcTestData.Token, new string('A', 64), password)),
+            new(nameof(IEndpoints.RunSelfDiagnosticsAndRepairAsync), () => proxy.RunSelfDiagnosticsAndRepairAsync(EndpointRpcTestData.Token))
         ];
     }
+
+    private sealed record EndpointProxyInvocation(string MethodName, Func<Task> Invoke);
 }

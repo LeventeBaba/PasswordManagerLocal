@@ -1,29 +1,46 @@
+using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
+using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
+using PasswordManagerLocal.Common.Backend.Diagnostics;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Contracts.Responses;
 using PasswordManagerLocal.Common.Backend.Security;
+using PasswordManagerLocal.Common.Contracts.Notifications;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
 
 public sealed class AuthSessionService : IAuthSessionService, IAuthenticatedSessionIssuer
 {
+    private readonly IUserRepository _users;
+    private readonly IUserLifecycleCoordinator _lifecycle;
     private readonly IUserDataReaderService _userDataReader;
     private readonly ITokenService _tokens;
     private readonly IDataCachingService _cache;
     private readonly IKeyVaultService _keys;
+    private readonly IBackendChangePublisher? _changePublisher;
+
+    private readonly IUserPostLoginWorkScheduler? _postLogin;
 
     public AuthSessionService(
         IUserDataReaderService userDataReader,
         ITokenService tokens,
         IDataCachingService cache,
-        IKeyVaultService keys)
+        IKeyVaultService keys,
+        IUserRepository users,
+        IUserLifecycleCoordinator lifecycle,
+        IBackendChangePublisher? changePublisher = null,
+        IUserPostLoginWorkScheduler? postLogin = null)
     {
+        _postLogin = postLogin;
         _userDataReader = userDataReader;
         _tokens = tokens;
         _cache = cache;
         _keys = keys;
+        _users = users;
+        _lifecycle = lifecycle;
+        _changePublisher = changePublisher;
     }
 
     public Guid IssueAuthenticatedSession(Guid userId, EncryptionKey key, UserDataBundle bundle)
@@ -32,6 +49,7 @@ public sealed class AuthSessionService : IAuthSessionService, IAuthenticatedSess
         _keys.SetUserKey(token, key);
         _keys.SetUserBlobKeys(token, bundle.UserData);
         _cache.SetUserDataBundle(token, bundle);
+        _changePublisher?.Publish(FrontendChangeScope.AuthenticationSessions, userId);
         return token;
     }
 
@@ -53,11 +71,16 @@ public sealed class AuthSessionService : IAuthSessionService, IAuthenticatedSess
 
             if (_cache.TryGetUserDataBundle(token, out var bundle) && bundle is not null)
             {
-                _keys.SetUserBlobKeys(newToken, bundle.UserData);
-                _cache.SetUserDataBundle(newToken, bundle);
+                using (bundle)
+                {
+                    _keys.SetUserBlobKeys(newToken, bundle.UserData);
+                    _cache.SetUserDataBundle(newToken, bundle);
+                }
             }
 
-            InvalidateToken(token, AuthSessionInvalidationReason.LoggedOut);
+            var invalidated = InvalidateToken(token, AuthSessionInvalidationReason.LoggedOut);
+            if (invalidated)
+                PublishSessionChange(uid);
             return Task.FromResult(newToken);
         }
         finally
@@ -69,10 +92,11 @@ public sealed class AuthSessionService : IAuthSessionService, IAuthenticatedSess
 
     public void Logout(Guid token)
     {
-        if (!_tokens.Validate(token))
+        if (!_tokens.TryGetUid(token, out var userId))
             throw new InvalidTokenException();
 
-        InvalidateToken(token, AuthSessionInvalidationReason.LoggedOut);
+        if (InvalidateToken(token, AuthSessionInvalidationReason.LoggedOut))
+            PublishSessionChange(userId);
     }
 
 
@@ -82,8 +106,12 @@ public sealed class AuthSessionService : IAuthSessionService, IAuthenticatedSess
 
     public void LogoutUser(Guid uid, AuthSessionInvalidationReason reason)
     {
+        var changed = false;
         foreach (var token in _tokens.ListTokensByUid(uid))
-            InvalidateToken(token, reason);
+            changed |= InvalidateToken(token, reason);
+
+        if (changed)
+            PublishSessionChange(uid);
     }
 
 
@@ -111,42 +139,74 @@ public sealed class AuthSessionService : IAuthSessionService, IAuthenticatedSess
     }
 
 
-    public async Task RefreshSyncedUserSessionsAsync(User user, CancellationToken ct = default)
-    {
-        foreach (var token in _tokens.ListTokensByUid(user.UId))
+    public Task RefreshSyncedUserSessionsAsync(User user, CancellationToken ct = default) =>
+        _lifecycle.ExecuteAsync(user.UId, async innerCt =>
         {
-            if (!_keys.TryGetEncryptionKey(token, out var key))
-            {
-                InvalidateToken(token, AuthSessionInvalidationReason.Expired);
-                continue;
-            }
+            // A delayed refresh must reload the latest committed generation, not install its
+            // caller's old tracked entity. Read/decrypt/install are serialized with mutations.
+            var current = await _users.GetByIdAsNoTrackingAsync(user.UId, innerCt);
+            if (current is not null) await RefreshCurrentSessionsAsync(current, innerCt);
+        }, ct);
 
-            try
+    private async Task RefreshCurrentSessionsAsync(User user, CancellationToken ct)
+    {
+        var invalidatedAny = false;
+        try
+        {
+            foreach (var token in _tokens.ListTokensByUid(user.UId))
             {
-                var bundle = await _userDataReader.GetAndVerifyUserDataBundleAsync(user, key, ct);
-                _keys.SetUserBlobKeys(token, bundle.UserData);
-                _cache.SetUserDataBundle(token, bundle);
+                if (!_keys.TryGetEncryptionKey(token, out var key))
+                {
+                    invalidatedAny |= InvalidateToken(token, AuthSessionInvalidationReason.Expired);
+                    continue;
+                }
+
+                try
+                {
+                    using var bundle = await _userDataReader.GetAndVerifyUserDataBundleAsync(user, key, ct);
+                    _keys.SetUserBlobKeys(token, bundle.UserData);
+                    _cache.SetUserDataBundle(token, bundle);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is PasswordManagerLocal.Common.Contracts.Errors.InvalidDataIntegrityException or
+                    InvalidDataException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException)
+                {
+                    BackendDebugLog.Warning($"Session verification failed. User={user.UId}, Failure={ex.GetType().Name}.", category: "Authentication");
+                    invalidatedAny |= InvalidateToken(token, AuthSessionInvalidationReason.LocalDataVerificationFailed);
+                }
+                catch (Exception ex)
+                {
+                    // A local I/O/service failure is not proof that the password or vault changed.
+                    _cache.InvalidateToken(token);
+                    BackendDebugLog.Warning($"Session refresh deferred. User={user.UId}, Failure={ex.GetType().Name}.", category: "Authentication");
+                }
+                finally
+                {
+                    key.Dispose();
+                }
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch
-            {
-                InvalidateToken(token, AuthSessionInvalidationReason.ProfilePasswordChanged);
-            }
-            finally
-            {
-                key.Dispose();
-            }
+        }
+        finally
+        {
+            if (invalidatedAny)
+                PublishSessionChange(user.UId);
         }
     }
 
 
-    private void InvalidateToken(Guid token, AuthSessionInvalidationReason reason)
+    private bool InvalidateToken(Guid token, AuthSessionInvalidationReason reason)
     {
+        var wasActive = _tokens.TryGetUid(token, out _);
+        _postLogin?.CancelToken(token);
         _cache.InvalidateToken(token);
         _keys.InvalidateToken(token);
         _tokens.Revoke(token, reason);
+        return wasActive;
     }
+
+    private void PublishSessionChange(Guid userId) =>
+        _changePublisher?.Publish(FrontendChangeScope.AuthenticationSessions, userId);
 }

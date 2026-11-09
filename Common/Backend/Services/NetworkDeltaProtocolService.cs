@@ -181,7 +181,8 @@ public sealed class NetworkDeltaProtocolService : INetworkDeltaProtocolService
     {
         if (payload.ModelType == SyncModelType.User)
         {
-            var isDeletionOperation = payload.UserControlOperation?.OperationType == UserControlOperationType.AccountDeletion;
+            var isDeletionOperation = payload.UserControlOperation?.OperationType is
+                UserControlOperationType.AccountDeletion or UserControlOperationType.DeviceRemoval;
             var isDeletedLocally = _deletionBarriers is not null && await _deletionBarriers.ExistsAsync(payload.ModelId, ct);
             if (isDeletionOperation || isDeletedLocally)
             {
@@ -196,11 +197,12 @@ public sealed class NetworkDeltaProtocolService : INetworkDeltaProtocolService
 
             if (payload.ChangeType != SyncChangeType.Deleted)
             {
-                var originDeviceId = payload.UserControlOperation?.OriginDeviceId
-                    ?? payload.UserSnapshot?.OriginDeviceId
-                    ?? throw new InvalidDataException("The immutable user payload origin is missing.");
-                if (!await _userDevices.HasActiveLinkAsync(payload.ModelId, originDeviceId, ct))
-                    throw new UnauthorizedAccessException("The immutable user payload origin device is not currently authorized for this user.");
+                // The transport peer must have an active route (checked above), but an
+                // immutable snapshot or control operation may have been signed at an older
+                // membership epoch. A current UserDevice link is a mutable projection and
+                // can lag membership propagation or disappear after signed removal. The
+                // signer is authorized by the signed epoch and removal cutoff instead.
+                await ValidateUserSnapshotOriginAsync(payload, ct);
             }
 
             return;
@@ -294,7 +296,7 @@ public sealed class NetworkDeltaProtocolService : INetworkDeltaProtocolService
         if (payload is null)
             throw new InvalidDataException("Network delta payload is invalid.");
 
-        return UtcDateTimeUtil.NormalizeObjectGraph(payload);
+        return UtcDateTimeUtil.NormalizeObjectGraph(payload, BackendJsonSerializerContext.Default.SyncDeltaPayload);
     }
 
 

@@ -1,3 +1,4 @@
+using PasswordManagerLocal.Common.Frontend.Views.Styling;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using PasswordManagerLocal.Common.Frontend.ViewModels.Pages;
@@ -10,6 +11,7 @@ public partial class PasswordTagEditorView : UserControl
 
     public PasswordTagEditorView()
     {
+        DeferredControlThemeResources.EnsureLoaded();
         InitializeComponent();
     }
 
