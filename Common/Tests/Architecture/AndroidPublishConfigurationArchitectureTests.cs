@@ -33,6 +33,18 @@ public sealed class AndroidPublishConfigurationArchitectureTests
         }
     }
 
+    [TestMethod]
+    public void AndroidReleasePublishGuardLeavesDebugPackageSigningAvailableForDeployment()
+    {
+        var projectFile = Path.Combine(GetRepositoryRoot(), "Android", "Frontend",
+            "PasswordManagerLocal.Android.Frontend.csproj");
+        var targets = XDocument.Load(projectFile).Descendants("Target");
+        var guard = targets.Single(target => (string?)target.Attribute("Name") == "RequireReleaseAndroidPublish");
+
+        Assert.AreEqual("Publish", (string?)guard.Attribute("BeforeTargets"));
+        Assert.AreEqual("'$(Configuration)' != 'Release'", (string?)guard.Element("Error")?.Attribute("Condition"));
+    }
+
     private static string GetRepositoryRoot([CallerFilePath] string sourcePath = "") =>
         Path.GetFullPath(Path.Combine(Path.GetDirectoryName(sourcePath)!, "..", "..", ".."));
 }

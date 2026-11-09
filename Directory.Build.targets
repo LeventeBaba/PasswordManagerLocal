@@ -1,24 +1,52 @@
 <Project>
+  <PropertyGroup>
+    <PmlIconSvg>$(RepositoryRoot)PasswordManagerLocal.svg</PmlIconSvg>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Frontend' or
                             '$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Installer' or
                             ('$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Agent' and '$(PmlWindowsUnifiedNativeAot)' != 'true') or
                             ('$(MSBuildProjectName)' == 'PasswordManagerLocal.Common.Frontend' and '$(PmlWindowsUnifiedNativeAot)' == 'true')">
-    <PmlWindowsIconSvg>$(RepositoryRoot)PasswordManagerLocal.svg</PmlWindowsIconSvg>
     <PmlWindowsIconGenerator>$(RepositoryRoot)Tools/Windows/GenerateWindowsIcon.ps1</PmlWindowsIconGenerator>
     <PmlIconPowerShell Condition="$([MSBuild]::IsOSPlatform('Windows'))">powershell.exe</PmlIconPowerShell>
     <PmlIconPowerShell Condition="'$(PmlIconPowerShell)' == ''">pwsh</PmlIconPowerShell>
   </PropertyGroup>
-  <ItemGroup Condition="'$(PmlWindowsIconSvg)' != ''">
-    <UpToDateCheckInput Include="$(PmlWindowsIconSvg);$(PmlWindowsIconGenerator)" Set="PmlWindowsIcon" />
+  <ItemGroup Condition="'$(PmlWindowsIconGenerator)' != ''">
+    <UpToDateCheckInput Include="$(PmlIconSvg);$(PmlWindowsIconGenerator)" Set="PmlWindowsIcon" />
     <UpToDateCheckOutput Include="$(PmlWindowsIconFile)" Set="PmlWindowsIcon" />
     <UpToDateCheckInput Include="$(PmlWindowsIconFile)" />
   </ItemGroup>
   <Target Name="GeneratePmlWindowsIcon"
           BeforeTargets="PrepareForBuild;CoreCompile;GetCopyToOutputDirectoryItems"
-          Condition="'$(PmlWindowsIconSvg)' != '' and '$(DesignTimeBuild)' != 'true'"
-          Inputs="$(PmlWindowsIconSvg);$(PmlWindowsIconGenerator)"
+          Condition="'$(PmlWindowsIconGenerator)' != '' and '$(DesignTimeBuild)' != 'true'"
+          Inputs="$(PmlIconSvg);$(PmlWindowsIconGenerator)"
           Outputs="$(PmlWindowsIconFile)">
-    <Exec Command="$(PmlIconPowerShell) -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(PmlWindowsIconGenerator)&quot; -SvgPath &quot;$(PmlWindowsIconSvg)&quot; -IconPath &quot;$(PmlWindowsIconFile)&quot;" />
+    <Exec Command="$(PmlIconPowerShell) -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(PmlWindowsIconGenerator)&quot; -SvgPath &quot;$(PmlIconSvg)&quot; -IconPath &quot;$(PmlWindowsIconFile)&quot;" />
+  </Target>
+
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PasswordManagerLocal.Android.Frontend'">
+    <PmlAndroidIconTransform>$(RepositoryRoot)Tools/Android/GenerateAdaptiveIcon.xslt</PmlAndroidIconTransform>
+    <PmlAndroidIconDirectory>$(IntermediateOutputPath)pml-branding/</PmlAndroidIconDirectory>
+    <PmlAndroidIconFile>$(PmlAndroidIconDirectory)ic_launcher.xml</PmlAndroidIconFile>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(PmlAndroidIconTransform)' != ''">
+    <AndroidResource Include="$(PmlAndroidIconFile)" LogicalName="mipmap-anydpi-v26/ic_launcher.xml" />
+    <UpToDateCheckInput Include="$(PmlIconSvg);$(PmlAndroidIconTransform)" Set="PmlAndroidIcon" />
+    <UpToDateCheckOutput Include="$(PmlAndroidIconFile)" Set="PmlAndroidIcon" />
+  </ItemGroup>
+  <Target Name="GeneratePmlAndroidIcon"
+          BeforeTargets="_ComputeAndroidResourcePaths"
+          Condition="'$(PmlAndroidIconTransform)' != ''"
+          Inputs="$(PmlIconSvg);$(PmlAndroidIconTransform)"
+          Outputs="$(PmlAndroidIconFile)">
+    <MakeDir Directories="$(PmlAndroidIconDirectory)" />
+    <XslTransformation XmlInputPaths="$(PmlIconSvg)"
+                       XslInputPath="$(PmlAndroidIconTransform)"
+                       OutputPaths="$(PmlAndroidIconFile).tmp" />
+    <Move SourceFiles="$(PmlAndroidIconFile).tmp" DestinationFiles="$(PmlAndroidIconFile)" />
+    <ItemGroup>
+      <FileWrites Include="$(PmlAndroidIconFile);$(PmlAndroidIconFile).tmp" />
+    </ItemGroup>
   </Target>
 
   <!-- Keep C# trace calls out of Release. WiX uses DefineConstants for its own
