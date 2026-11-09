@@ -7,6 +7,14 @@
     xmlns:vm="clr-namespace:PasswordManagerLocal.Common.Frontend.ViewModels.Information"
     x:DataType="vm:AboutViewModel">
 
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://PasswordManagerLocal.Common.Frontend/Assets/Icons/AppIcon.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </UserControl.Resources>
+
   <ScrollViewer x:Name="PageScrollViewer"
                 HorizontalScrollBarVisibility="Disabled"
                 HorizontalContentAlignment="Stretch">
@@ -36,19 +44,12 @@
 
         <Border Classes="card">
           <Grid ColumnDefinitions="Auto,*" ColumnSpacing="18">
-            <Border Width="72"
-                    Height="72"
-                    CornerRadius="18"
-                    Background="{DynamicResource AppBrush.Selection.Background}"
-                    BorderBrush="{DynamicResource AppBrush.Selection.Border}"
-                    BorderThickness="1"
-                    VerticalAlignment="Top">
-              <PathIcon Width="38"
-                        Height="38"
-                        Data="{StaticResource LockIconGeometry}"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center" />
-            </Border>
+            <Image Width="72"
+                   Height="72"
+                   Source="{StaticResource AppIcon}"
+                   Stretch="Uniform"
+                   IsHitTestVisible="False"
+                   VerticalAlignment="Top" />
             <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Center">
               <TextBlock Text="{Binding ApplicationName}"
                          Classes="sectionTitle"

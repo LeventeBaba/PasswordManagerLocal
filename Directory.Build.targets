@@ -1,6 +1,7 @@
 <Project>
   <PropertyGroup>
     <PmlIconSvg>$(RepositoryRoot)PasswordManagerLocal.svg</PmlIconSvg>
+    <PmlIconGeometryTransform>$(RepositoryRoot)Tools/Branding/SvgPathGeometry.xslt</PmlIconGeometryTransform>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Frontend' or
@@ -31,13 +32,13 @@
   </PropertyGroup>
   <ItemGroup Condition="'$(PmlAndroidIconTransform)' != ''">
     <AndroidResource Include="$(PmlAndroidIconFile)" LogicalName="mipmap-anydpi-v26/ic_launcher.xml" />
-    <UpToDateCheckInput Include="$(PmlIconSvg);$(PmlAndroidIconTransform)" Set="PmlAndroidIcon" />
+    <UpToDateCheckInput Include="$(PmlIconSvg);$(PmlAndroidIconTransform);$(PmlIconGeometryTransform)" Set="PmlAndroidIcon" />
     <UpToDateCheckOutput Include="$(PmlAndroidIconFile)" Set="PmlAndroidIcon" />
   </ItemGroup>
   <Target Name="GeneratePmlAndroidIcon"
           BeforeTargets="_ComputeAndroidResourcePaths"
           Condition="'$(PmlAndroidIconTransform)' != ''"
-          Inputs="$(PmlIconSvg);$(PmlAndroidIconTransform)"
+          Inputs="$(PmlIconSvg);$(PmlAndroidIconTransform);$(PmlIconGeometryTransform)"
           Outputs="$(PmlAndroidIconFile)">
     <MakeDir Directories="$(PmlAndroidIconDirectory)" />
     <XslTransformation XmlInputPaths="$(PmlIconSvg)"
@@ -46,6 +47,31 @@
     <Move SourceFiles="$(PmlAndroidIconFile).tmp" DestinationFiles="$(PmlAndroidIconFile)" />
     <ItemGroup>
       <FileWrites Include="$(PmlAndroidIconFile);$(PmlAndroidIconFile).tmp" />
+    </ItemGroup>
+  </Target>
+
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PasswordManagerLocal.Common.Frontend'">
+    <PmlAboutIconTransform>$(RepositoryRoot)Tools/Branding/GenerateAboutIcon.xslt</PmlAboutIconTransform>
+    <PmlAboutIconDirectory>$(IntermediateOutputPath)pml-branding/</PmlAboutIconDirectory>
+    <PmlAboutIconFile>$(PmlAboutIconDirectory)AppIcon.axaml</PmlAboutIconFile>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(PmlAboutIconTransform)' != ''">
+    <AvaloniaXaml Include="$(PmlAboutIconFile)" Link="Assets/Icons/AppIcon.axaml" />
+    <UpToDateCheckInput Include="$(PmlIconSvg);$(PmlAboutIconTransform);$(PmlIconGeometryTransform)" Set="PmlAboutIcon" />
+    <UpToDateCheckOutput Include="$(PmlAboutIconFile)" Set="PmlAboutIcon" />
+  </ItemGroup>
+  <Target Name="GeneratePmlAboutIcon"
+          BeforeTargets="GenerateAvaloniaResources"
+          Condition="'$(PmlAboutIconTransform)' != ''"
+          Inputs="$(PmlIconSvg);$(PmlAboutIconTransform);$(PmlIconGeometryTransform)"
+          Outputs="$(PmlAboutIconFile)">
+    <MakeDir Directories="$(PmlAboutIconDirectory)" />
+    <XslTransformation XmlInputPaths="$(PmlIconSvg)"
+                       XslInputPath="$(PmlAboutIconTransform)"
+                       OutputPaths="$(PmlAboutIconFile).tmp" />
+    <Move SourceFiles="$(PmlAboutIconFile).tmp" DestinationFiles="$(PmlAboutIconFile)" />
+    <ItemGroup>
+      <FileWrites Include="$(PmlAboutIconFile);$(PmlAboutIconFile).tmp" />
     </ItemGroup>
   </Target>
 

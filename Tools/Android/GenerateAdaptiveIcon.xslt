@@ -5,6 +5,7 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     exclude-result-prefixes="svg">
+  <xsl:import href="../Branding/SvgPathGeometry.xslt" />
   <xsl:output method="xml" encoding="utf-8" indent="yes" />
   <xsl:key name="gradient" match="svg:linearGradient" use="@id" />
 
@@ -64,28 +65,6 @@
         </xsl:when>
       </xsl:choose>
     </path>
-  </xsl:template>
-
-  <xsl:template match="svg:path" mode="geometry">
-    <xsl:value-of select="@d" />
-  </xsl:template>
-
-  <xsl:template match="svg:circle" mode="geometry">
-    <xsl:value-of select="concat('M', @cx - @r, ' ', @cy,
-      'a', @r, ' ', @r, ' 0 1 0 ', 2 * @r, ' 0',
-      'a', @r, ' ', @r, ' 0 1 0 ', -2 * @r, ' 0Z')" />
-  </xsl:template>
-
-  <xsl:template match="svg:rect" mode="geometry">
-    <xsl:variable name="radius" select="@rx" />
-    <xsl:variable name="width" select="@width - 2 * $radius" />
-    <xsl:variable name="height" select="@height - 2 * $radius" />
-    <xsl:variable name="arc" select="concat('a', $radius, ' ', $radius, ' 0 0 1 ')" />
-    <xsl:value-of select="concat('M', @x + $radius, ' ', @y,
-      'h', $width, $arc, $radius, ' ', $radius,
-      'v', $height, $arc, -$radius, ' ', $radius,
-      'h', -$width, $arc, -$radius, ' ', -$radius,
-      'v', -$height, $arc, $radius, ' ', -$radius, 'Z')" />
   </xsl:template>
 
   <xsl:template match="svg:g[@id = 'vault']/*" priority="-0.25">
