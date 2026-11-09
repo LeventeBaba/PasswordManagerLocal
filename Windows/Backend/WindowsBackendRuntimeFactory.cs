@@ -20,14 +20,9 @@ public static class WindowsBackendRuntimeFactory
 
         var storagePaths = new BackendStoragePaths(
             Path.Combine(localApplicationData, ApplicationFileNames.AppFolderName));
-        var runtime = BackendRuntimeFactory.Create(
+        return BackendRuntimeFactory.Create(
             storagePaths,
             static () => new DpapiKeyProtector(),
             static () => new WindowsLocalDiscoveryNetworkLease());
-
-        return new BackendRuntimeComposition(
-            runtime,
-            new BackendRuntimeLifetimeCoordinator(runtime),
-            storagePaths.RootDirectory);
     }
 }

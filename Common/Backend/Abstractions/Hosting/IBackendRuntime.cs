@@ -1,9 +1,8 @@
 using PasswordManagerLocal.Common.Contracts.Runtime;
-using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 
-namespace PasswordManagerLocal.Common.Backend.Hosting;
+namespace PasswordManagerLocal.Common.Backend.Abstractions.Hosting;
 
 public interface IBackendRuntime : IAsyncDisposable
 {

@@ -67,14 +67,6 @@
           "SQLite3MC.PCLRaw.bundle": "[2.6.1, )"
         }
       },
-      "passwordmanagerlocal.common.backend.hosting": {
-        "type": "Project",
-        "dependencies": {
-          "Microsoft.Extensions.DependencyInjection": "[10.0.13, )",
-          "PasswordManagerLocal.Common.Backend": "[1.0.0, )",
-          "PasswordManagerLocal.Common.Contracts": "[1.0.0, )"
-        }
-      },
       "passwordmanagerlocal.common.contracts": {
         "type": "Project"
       },

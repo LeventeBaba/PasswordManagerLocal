@@ -1,4 +1,4 @@
-namespace PasswordManagerLocal.Common.Backend.Hosting;
+namespace PasswordManagerLocal.Common.Backend.Models;
 
 public enum InteractiveSessionLifecycleState
 {

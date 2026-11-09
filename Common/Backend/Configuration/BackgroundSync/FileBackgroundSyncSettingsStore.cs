@@ -1,9 +1,7 @@
-using PasswordManagerLocal.Common.Backend.Constants;
-using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 using System.Text.Json;
 
-namespace PasswordManagerLocal.Common.Backend.Hosting;
+namespace PasswordManagerLocal.Common.Backend.Configuration.BackgroundSync;
 
 public sealed class FileBackgroundSyncSettingsStore : IBackgroundSyncSettingsStore
 {

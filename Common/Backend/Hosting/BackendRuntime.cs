@@ -1,7 +1,5 @@
 using PasswordManagerLocal.Common.Contracts.Runtime;
-using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 using Microsoft.Extensions.DependencyInjection;
-using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Backend.Abstractions.Security;
 using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
@@ -11,6 +9,8 @@ using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Diagnostics;
 using SQLitePCL;
+using PasswordManagerLocal.Common.Backend.Abstractions.Hosting;
+using PasswordManagerLocal.Common.Backend.Persistence;
 
 namespace PasswordManagerLocal.Common.Backend.Hosting;
 

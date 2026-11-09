@@ -3,7 +3,7 @@ using Android.Content;
 using Android.OS;
 using PasswordManagerLocal.Android.Runtime;
 using PasswordManagerLocal.Common.Backend.Constants;
-using PasswordManagerLocal.Common.Backend.Hosting;
+using PasswordManagerLocal.Common.Backend.Configuration.BackgroundSync;
 
 namespace PasswordManagerLocal.Android.Frontend;
 

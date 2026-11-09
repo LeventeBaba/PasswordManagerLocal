@@ -1,4 +1,4 @@
-using PasswordManagerLocal.Common.Backend.Hosting;
+using PasswordManagerLocal.Common.Backend.Configuration.BackgroundSync;
 
 namespace PasswordManagerLocal.Common.Tests.Fakes;
 

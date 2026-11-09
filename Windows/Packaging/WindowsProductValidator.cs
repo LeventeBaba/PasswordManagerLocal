@@ -6,6 +6,7 @@ namespace PasswordManagerLocal.Windows.Packaging;
 public sealed class WindowsProductValidator
 {
     private const string EntityFrameworkPrefix = "Microsoft.EntityFrameworkCore";
+    private const string RemovedHostingAssembly = "PasswordManagerLocal.Common.Backend.Hosting";
 
     private static readonly string[] FrontendRequiredFiles =
     [
@@ -31,7 +32,6 @@ public sealed class WindowsProductValidator
         "PasswordManagerLocal.Windows.Agent.deps.json",
         "PasswordManagerLocal.Windows.Agent.runtimeconfig.json",
         "PasswordManagerLocal.Common.Backend.dll",
-        "PasswordManagerLocal.Common.Backend.Hosting.dll",
         "PasswordManagerLocal.Common.Contracts.dll",
         "PasswordManagerLocal.Common.Preferences.dll",
         "PasswordManagerLocal.Windows.Backend.dll",
@@ -52,7 +52,6 @@ public sealed class WindowsProductValidator
     private static readonly string[] FrontendForbiddenDependencies =
     [
         "PasswordManagerLocal.Common.Backend",
-        "PasswordManagerLocal.Common.Backend.Hosting",
         "PasswordManagerLocal.Windows.Backend",
         "PasswordManagerLocal.Windows.EndpointRpc.Server",
         EntityFrameworkPrefix,
@@ -71,6 +70,7 @@ public sealed class WindowsProductValidator
 
     private static readonly string[] AgentForbiddenDependencies =
     [
+        RemovedHostingAssembly,
         EntityFrameworkPrefix,
         "PasswordManagerLocal.Common.Frontend",
         "Avalonia",
@@ -138,8 +138,9 @@ public sealed class WindowsProductValidator
         var agentAssembly = Path.Combine(root, "PasswordManagerLocal.Windows.Agent.dll");
         AssertBinaryContains(agentAssembly, "Localization.en_us.json");
         AssertBinaryContains(agentAssembly, "Localization.hu.json");
-        AssertBinaryContains(Path.Combine(root, "PasswordManagerLocal.Common.Backend.dll"), "BackendJsonSerializerContext");
-        AssertBinaryContains(Path.Combine(root, "PasswordManagerLocal.Common.Backend.Hosting.dll"), "BackgroundSyncSettingsJsonContext");
+        var backendAssembly = Path.Combine(root, "PasswordManagerLocal.Common.Backend.dll");
+        AssertBinaryContains(backendAssembly, "BackendJsonSerializerContext");
+        AssertBinaryContains(backendAssembly, "BackgroundSyncSettingsJsonContext");
         AssertBinaryContains(Path.Combine(root, "PasswordManagerLocal.Common.Preferences.dll"), "ApplicationPreferencesJsonContext");
         AssertBinaryContains(Path.Combine(root, "PasswordManagerLocal.Windows.Ipc.dll"), "WindowsIpcJsonContext");
         AssertBinaryContains(Path.Combine(root, "PasswordManagerLocal.Windows.EndpointRpc.Contracts.dll"), "EndpointRpcJsonContext");
@@ -240,7 +241,8 @@ public sealed class WindowsProductValidator
             .Where(path =>
             {
                 var name = Path.GetFileName(path);
-                return name.StartsWith(EntityFrameworkPrefix, StringComparison.OrdinalIgnoreCase) ||
+                return name.Equals(RemovedHostingAssembly + ".dll", StringComparison.OrdinalIgnoreCase) ||
+                       name.StartsWith(EntityFrameworkPrefix, StringComparison.OrdinalIgnoreCase) ||
                        name.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase) ||
                        name.EndsWith(".bat", StringComparison.OrdinalIgnoreCase) ||
                        name.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) ||

@@ -1,10 +1,10 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Constants;
-using PasswordManagerLocal.Common.Backend.Hosting;
+using PasswordManagerLocal.Common.Backend.Configuration.BackgroundSync;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 using PasswordManagerLocal.Common.Tests.Fakes;
 
-namespace PasswordManagerLocal.Common.Tests.Backend.Hosting;
+namespace PasswordManagerLocal.Common.Tests.Backend.Configuration;
 
 [TestClass]
 public sealed class FileBackgroundSyncSettingsStoreTests

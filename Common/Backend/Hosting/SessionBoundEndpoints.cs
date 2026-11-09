@@ -1,7 +1,3 @@
-using PasswordManagerLocal.Common.Contracts.Endpoints;
-using PasswordManagerLocal.Common.Contracts.Requests;
-using PasswordManagerLocal.Common.Contracts.Responses;
-
 namespace PasswordManagerLocal.Common.Backend.Hosting;
 
 internal sealed class SessionBoundEndpoints : IEndpoints

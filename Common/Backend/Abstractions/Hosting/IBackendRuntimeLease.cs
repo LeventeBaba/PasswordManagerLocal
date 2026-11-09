@@ -1,7 +1,6 @@
 using PasswordManagerLocal.Common.Contracts.Runtime;
-using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 
-namespace PasswordManagerLocal.Common.Backend.Hosting;
+namespace PasswordManagerLocal.Common.Backend.Abstractions.Hosting;
 
 public interface IBackendRuntimeLease : IAsyncDisposable
 {

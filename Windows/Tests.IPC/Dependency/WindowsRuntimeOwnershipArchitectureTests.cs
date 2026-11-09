@@ -16,7 +16,7 @@ public sealed class WindowsRuntimeOwnershipArchitectureTests
             .Select(reference => reference.Name ?? string.Empty).ToArray();
         foreach (var required in new[]
         {
-            "PasswordManagerLocal.Common.Backend", "PasswordManagerLocal.Common.Backend.Hosting",
+            "PasswordManagerLocal.Common.Backend",
             "PasswordManagerLocal.Windows.Backend", "PasswordManagerLocal.Windows.EndpointRpc.Server"
         })
             CollectionAssert.Contains(references, required);
@@ -208,12 +208,14 @@ public sealed class WindowsRuntimeOwnershipArchitectureTests
         var runtime = File.ReadAllText(Path.Combine(
             root,
             "Common",
-            "Backend.Hosting",
+            "Backend",
+            "Hosting",
             "BackendRuntime.cs"));
         var cleaner = File.ReadAllText(Path.Combine(
             root,
             "Common",
-            "Backend.Hosting",
+            "Backend",
+            "Persistence",
             "BackendStorageCleaner.cs"));
 
         Assert.AreEqual(2, CountOccurrences(runtime, "_storageCleaner.ClearSqlitePools()"));
@@ -267,7 +269,6 @@ public sealed class WindowsRuntimeOwnershipArchitectureTests
         Assert.IsTrue(references.Contains("PasswordManagerLocal.Windows.Ipc"));
         Assert.IsFalse(references.Contains("PasswordManagerLocal.Windows.EndpointRpc.Server"));
         Assert.IsFalse(references.Contains("PasswordManagerLocal.Common.Backend"));
-        Assert.IsFalse(references.Contains("PasswordManagerLocal.Common.Backend.Hosting"));
         Assert.IsFalse(references.Contains("PasswordManagerLocal.Windows.Backend"));
     }
 

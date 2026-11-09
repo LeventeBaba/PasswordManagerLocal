@@ -8,13 +8,16 @@ PasswordManagerLocal stores a vault on each installation. The shared backend own
 | --- | --- |
 | [Common/Contracts](../../Common/Contracts) | Endpoint contracts, DTOs, and other types shared across the frontend and backend boundary |
 | [Common/Frontend](../../Common/Frontend) | Avalonia views, view models, UI sessions, and refresh coordination |
-| [Common/Backend](../../Common/Backend) | Account and vault services, persistence, cryptography, and peer synchronization |
-| [Common/Backend.Hosting](../../Common/Backend.Hosting) | Backend composition, runtime lifecycle, and storage setup and reset coordination |
+| [Common/Backend](../../Common/Backend) | Account and vault services, persistence, cryptography, peer synchronization, and shared runtime hosting |
 | [Common/Preferences](../../Common/Preferences) | Shared application preference persistence |
 | [Windows](../../Windows) | Desktop frontend, Agent, IPC, Endpoint RPC, platform integration, and packaging |
 | [Android](../../Android) | Activity, bound service, Android runtime hosting, and platform integration |
 
 The [interactive project map](../SOLUTION_PROJECT_ARCHITECTURE.html) shows the default project-reference graph and the runtime process boundaries.
+
+## Shared backend runtime
+
+[Hosting](../../Common/Backend/Hosting) composes services and coordinates runtime leases, interactive session authority, and startup and shutdown. The Windows and Android runtime owners use [hosting abstractions](../../Common/Backend/Abstractions/Hosting). [Persistence](../../Common/Backend/Persistence) owns vault file operations, including reset cleanup, while [background sync configuration](../../Common/Backend/Configuration/BackgroundSync) can be read before the vault opens.
 
 ## Windows runtime
 

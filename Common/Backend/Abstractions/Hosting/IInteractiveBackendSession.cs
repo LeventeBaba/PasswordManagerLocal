@@ -1,6 +1,4 @@
-using PasswordManagerLocal.Common.Contracts.Endpoints;
-
-namespace PasswordManagerLocal.Common.Backend.Hosting;
+namespace PasswordManagerLocal.Common.Backend.Abstractions.Hosting;
 
 public interface IInteractiveBackendSession : IAsyncDisposable
 {

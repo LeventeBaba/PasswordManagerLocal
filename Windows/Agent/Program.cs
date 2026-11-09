@@ -5,7 +5,7 @@ using PasswordManagerLocal.Windows.Agent.Localization;
 using PasswordManagerLocal.Windows.Agent.Native;
 using PasswordManagerLocal.Windows.Agent.Notifications;
 using PasswordManagerLocal.Windows.Agent.Preferences;
-using PasswordManagerLocal.Common.Backend.Hosting;
+using PasswordManagerLocal.Common.Backend.Configuration.BackgroundSync;
 using PasswordManagerLocal.Common.Contracts.Preferences;
 using PasswordManagerLocal.Common.Preferences;
 using PasswordManagerLocal.Windows.Agent.DatabaseReset;

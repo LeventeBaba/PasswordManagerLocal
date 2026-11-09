@@ -1,5 +1,5 @@
 using PasswordManagerLocal.Common.Contracts.Endpoints;
-using PasswordManagerLocal.Common.Backend.Hosting;
+using PasswordManagerLocal.Common.Backend.Abstractions.Hosting;
 
 namespace PasswordManagerLocal.Common.Tests.Fakes;
 

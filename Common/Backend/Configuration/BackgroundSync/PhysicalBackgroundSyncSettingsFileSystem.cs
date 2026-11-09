@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace PasswordManagerLocal.Common.Backend.Hosting;
+namespace PasswordManagerLocal.Common.Backend.Configuration.BackgroundSync;
 
 public sealed class PhysicalBackgroundSyncSettingsFileSystem : IBackgroundSyncSettingsFileSystem
 {

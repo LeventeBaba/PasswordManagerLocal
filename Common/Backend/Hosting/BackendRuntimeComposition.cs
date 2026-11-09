@@ -1,3 +1,5 @@
+using PasswordManagerLocal.Common.Backend.Abstractions.Hosting;
+
 namespace PasswordManagerLocal.Common.Backend.Hosting;
 
 public sealed record BackendRuntimeComposition(

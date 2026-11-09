@@ -1,7 +1,7 @@
 using Microsoft.Data.Sqlite;
 using PasswordManagerLocal.Common.Backend.Configuration;
 
-namespace PasswordManagerLocal.Common.Backend.Hosting;
+namespace PasswordManagerLocal.Common.Backend.Persistence;
 
 internal sealed class BackendStorageCleaner
 {

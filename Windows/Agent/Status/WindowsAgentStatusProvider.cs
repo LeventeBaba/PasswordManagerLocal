@@ -1,6 +1,5 @@
 using PasswordManagerLocal.Windows.Agent.Localization;
 using PasswordManagerLocal.Common.Backend.Constants;
-using PasswordManagerLocal.Common.Backend.Hosting;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Contracts.Errors;
 using PasswordManagerLocal.Common.Contracts.Runtime;

@@ -106,7 +106,6 @@ $agentStageRequiredFiles = @(
     'PasswordManagerLocal.Windows.Agent.deps.json',
     'PasswordManagerLocal.Windows.Agent.runtimeconfig.json',
     'PasswordManagerLocal.Common.Backend.dll',
-    'PasswordManagerLocal.Common.Backend.Hosting.dll',
     'PasswordManagerLocal.Windows.Backend.dll',
     'PasswordManagerLocal.Windows.EndpointRpc.Server.dll'
 )

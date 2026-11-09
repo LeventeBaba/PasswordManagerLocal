@@ -6,6 +6,7 @@ using PasswordManagerLocal.Android.Runtime;
 using PasswordManagerLocal.Android.Backend;
 using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Hosting;
+using PasswordManagerLocal.Common.Backend.Configuration.BackgroundSync;
 
 namespace PasswordManagerLocal.Android.Frontend;
 

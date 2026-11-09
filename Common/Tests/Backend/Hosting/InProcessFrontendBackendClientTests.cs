@@ -6,6 +6,7 @@ using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 using PasswordManagerLocal.Common.Tests.Fakes;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
+using PasswordManagerLocal.Common.Backend.Models;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Hosting;
 
