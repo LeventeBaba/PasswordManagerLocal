@@ -2,13 +2,13 @@
 
 Változat 1.1 · Hatályos ettől: 2026-11-07
 
-> Adatvédelmi kérdéseidet és kérelmeidet a levente.baba.dev@gmail.com címen küldheted el.
+> Adatvédelmi kérdéseidet és kérelmeidet a leventebaba.dev@gmail.com címen küldheted el.
 
 A profilok és jelszavak a saját eszközeiden tárolódnak. A csatlakoztatott eszközök közvetlenül cserélnek adatot, bekapcsolt háttérműködés esetén a háttérben is. Az alkalmazásnak nincs fejlesztői jelszótárszervere, és nem küld automatikus telemetriát. Ha e-mailt küldesz a fejlesztőnek, az általad elküldött adatokat a jelszótártól elkülönítve kezeli.
 
 ## 1. A tájékoztatóról és az adatvédelmi kapcsolattartásról
 
-A Password Manager Local fejlesztője Baba Levente (Magyarország). Ez a tájékoztató a telepített windowsos és androidos alkalmazásra, valamint a visszajelzések, hibajelentések és adatvédelmi megkeresések fogadására szolgáló fejlesztői e-mail-címre vonatkozik. A fejlesztőt a levente.baba.dev@gmail.com címen érheted el.
+A Password Manager Local fejlesztője Baba Levente (Magyarország). Ez a tájékoztató a telepített windowsos és androidos alkalmazásra, valamint a visszajelzések, hibajelentések és adatvédelmi megkeresések fogadására szolgáló fejlesztői e-mail-címre vonatkozik. A fejlesztőt a leventebaba.dev@gmail.com címen érheted el.
 
 E-mailben ne küldj mesterjelszót, tárolt jelszót, csatlakoztatási kódot, kulcsfájlt vagy jelszótár-adatbázist. Az alkalmazásboltok, az operációs rendszerek és a külső weboldalak saját adatvédelmi szabályokat alkalmaznak.
 
@@ -78,7 +78,7 @@ Az alkalmazás szándékosan megőrzi a fiók-/eszközazonosítókat, az aláír
 
 Az alkalmazás helyben ellenőrizheti, és ahol lehetséges, javíthatja a fiók és a szinkronizálás állapotát. Az eredményt vagy a hibát megjelenítheti a képernyőn. Az alkalmazás nem vezet rendszeres diagnosztikai naplót, és nem küld automatikusan telemetriát, hibajelentést vagy összeomlási jelentést a fejlesztőnek. Az alkalmazás nem értesíti a fejlesztőt a hibákról. Az operációs rendszer vagy az alkalmazásbolt saját szabályai szerint kezelhet összeomlási vagy diagnosztikai adatokat.
 
-Ha hibát találsz, kérlek, jelezd a levente.baba.dev@gmail.com címen. Írd meg az alkalmazás verzióját, a használt platformot, hogy mit csináltál, és hogyan lehet előidézni a hibát. Ne küldj érzékeny adatokat, például felhasználónevet, jelszót, csatlakoztatási kódot, adatbázisfájlt vagy kulcsot. Ha képernyőképet csatolsz, előbb takard ki vagy távolítsd el az érzékeny részleteket. A fejlesztő kivizsgálja a bejelentéseket, és lehetőségei szerint javítja a hibákat.
+Ha hibát találsz, kérlek, jelezd a leventebaba.dev@gmail.com címen. Írd meg az alkalmazás verzióját, a használt platformot, hogy mit csináltál, és hogyan lehet előidézni a hibát. Ne küldj érzékeny adatokat, például felhasználónevet, jelszót, csatlakoztatási kódot, adatbázisfájlt vagy kulcsot. Ha képernyőképet csatolsz, előbb takard ki vagy távolítsd el az érzékeny részleteket. A fejlesztő kivizsgálja a bejelentéseket, és lehetőségei szerint javítja a hibákat.
 
 ## 12. Rendszermentések és a hozzáférés elvesztése
 
@@ -104,7 +104,7 @@ Az alkalmazásban megtekintheted és módosíthatod a profil- és jelszóadatoka
 
 Ha egy adatkezelő adatkezelésére a GDPR alkalmazandó, a jogszabályi feltételek szerint jogosult lehetsz hozzáférésre, helyesbítésre, törlésre, az adatkezelés korlátozására, adathordozhatóságra és tiltakozásra. Hozzájárulás esetén azt a korábbi jogszerű adatkezelés érintése nélkül visszavonhatod. Panaszt tehetsz felügyeleti hatóságnál, különösen a lakóhelyed, munkahelyed vagy a feltételezett jogsértés szerinti országban; Magyarországon ez a Nemzeti Adatvédelmi és Információszabadság Hatóság (NAIH), https://www.naih.hu/.
 
-Ha kérdésed van, vagy a fejlesztő által kezelt adatokkal kapcsolatban szeretnél élni a jogaiddal, írj a levente.baba.dev@gmail.com címre. Írd le, mire vonatkozik a megkeresés, és milyen intézkedést kérsz. A kizárólag az eszközeiden tárolt adatokat a fent ismertetett helyi lehetőségekkel kezelheted.
+Ha kérdésed van, vagy a fejlesztő által kezelt adatokkal kapcsolatban szeretnél élni a jogaiddal, írj a leventebaba.dev@gmail.com címre. Írd le, mire vonatkozik a megkeresés, és milyen intézkedést kérsz. A kizárólag az eszközeiden tárolt adatokat a fent ismertetett helyi lehetőségekkel kezelheted.
 
 ## 16. Automatizált döntések és rendeltetésszerű használat
 

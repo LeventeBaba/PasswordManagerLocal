@@ -80,7 +80,7 @@ def load_documents() -> dict:
 PUBLIC_LINKS = {
     "https://www.naih.hu/": "https://www.naih.hu/",
     "https://policies.google.com/privacy/frameworks": "https://policies.google.com/privacy/frameworks",
-    "levente.baba.dev@gmail.com": "mailto:levente.baba.dev@gmail.com",
+    "leventebaba.dev@gmail.com": "mailto:leventebaba.dev@gmail.com",
 }
 PUBLIC_LINK_PATTERN = re.compile("|".join(re.escape(text) for text in PUBLIC_LINKS))
 
