@@ -25,6 +25,7 @@ $script:OriginalSigningSecrets = @{}
 $script:AndroidSigningSettings = $null
 $script:AndroidTargetFramework = 'net10.0-android36.0'
 $script:AndroidTargetApiLevel = 36
+$script:AndroidAbi = 'arm64-v8a'
 $script:DefaultAndroidVersion = 10
 $script:AndroidApiLevels = @{
     10 = 29
@@ -42,13 +43,13 @@ function Write-Usage {
     Write-Host '  .\publish.cmd -W -ReadyToRun   Publish the Windows frontend and Agent with ReadyToRun'
     Write-Host '  .\publish.cmd -W -NativeAOT    Publish one native Windows executable for both roles'
     Write-Host '  .\publish.cmd -W -SignWindows  Publish Windows with verified Authenticode signatures'
-    Write-Host '  .\publish.cmd -A           Publish Android APKs supporting Android 10 and later'
+    Write-Host '  .\publish.cmd -A           Publish an ARM64 APK supporting Android 10 and later'
     Write-Host '  .\publish.cmd -A 16        Publish an ARM64 APK requiring Android 16 or later'
     Write-Host '  .\publish.cmd -F [10-16]   Publish Windows x64 and Android'
     Write-Host ''
     Write-Host 'The Android number selects the minimum installable Android version.'
     Write-Host 'All Android builds compile and target Android 16 (API 36).'
-    Write-Host 'Android 10-15 builds produce ARM64 and ARM32 APKs; Android 16 produces ARM64.'
+    Write-Host 'Android publishing produces one ARM64 APK for the selected minimum version.'
     Write-Host 'Android publishing requires PublishKeys\PasswordManagerLocal-release.jks and securely prompts for passwords.'
     Write-Host 'Windows publishing creates a ZIP and an MSI. See Docs\WINDOWS_INSTALLER.md for WiX setup.'
     Write-Host 'Windows publishing is unsigned for testing unless -SignWindows is supplied.'
@@ -227,10 +228,7 @@ function Test-AndroidPackage {
         [string]$ApkPath,
 
         [Parameter(Mandatory = $true)]
-        [int]$ExpectedMinimumApiLevel,
-
-        [Parameter(Mandatory = $true)]
-        [string]$ExpectedAbi
+        [int]$ExpectedMinimumApiLevel
     )
 
     $aapt2 = Find-AndroidBuildTool 'aapt2.exe'
@@ -270,22 +268,14 @@ function Test-AndroidPackage {
             throw "The APK does not report any packaged native CPU architectures: '$ApkPath'."
         }
 
-        $nativeCode = $nativeCodeMatch.Groups['value'].Value
-        $escapedExpectedAbi = [regex]::Escape($ExpectedAbi)
-        if ($nativeCode -notmatch "'$escapedExpectedAbi'") {
-            throw "APK CPU architecture validation failed. Expected '$ExpectedAbi'. Reported architectures: $nativeCode"
-        }
-
-        foreach ($unexpectedAbi in @('armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64') | Where-Object { $_ -ne $ExpectedAbi }) {
-            $escapedUnexpectedAbi = [regex]::Escape($unexpectedAbi)
-            if ($nativeCode -match "'$escapedUnexpectedAbi'") {
-                throw "APK CPU architecture validation failed. The architecture-specific APK unexpectedly also contains '$unexpectedAbi'. Reported architectures: $nativeCode"
-            }
+        $nativeCode = $nativeCodeMatch.Groups['value'].Value.Trim()
+        if ($nativeCode -cne "'$script:AndroidAbi'") {
+            throw "APK CPU architecture validation failed. Expected only '$script:AndroidAbi'. Reported architectures: $nativeCode"
         }
 
         Write-Host "Verified minimum SDK: API $actualMinimumApiLevel"
         Write-Host "Verified target SDK: API $actualTargetApiLevel"
-        Write-Host "Verified CPU architecture: $ExpectedAbi"
+        Write-Host "Verified CPU architecture: $script:AndroidAbi"
     }
 
     $zipalign = Find-AndroidBuildTool 'zipalign.exe'
@@ -315,42 +305,40 @@ function Publish-WindowsApp {
     }
 }
 
-function Publish-AndroidArchitecture {
+function Publish-AndroidApp {
     param(
         [Parameter(Mandatory = $true)]
-        [PSCustomObject]$Settings,
-
-        [Parameter(Mandatory = $true)]
-        [PSCustomObject]$Architecture,
-
-        [Parameter(Mandatory = $true)]
-        [string]$Project,
-
-        [Parameter(Mandatory = $true)]
-        [string]$OutputRoot
+        [PSCustomObject]$Settings
     )
 
+    $project = Join-Path $script:Root 'Android\Frontend\PasswordManagerLocal.Android.Frontend.csproj'
+    $outputRoot = Join-Path $script:Root "artifacts\publish\PasswordManagerLocal.Android.Frontend\android-$($Settings.Version)-plus"
+    $architectureOutput = Join-Path $outputRoot $script:AndroidAbi
     $targetBinRoot = Join-Path $script:Root "Android\Frontend\bin\Release\$($script:AndroidTargetFramework)"
-    $architectureOutput = Join-Path $OutputRoot $Architecture.Abi
+
+    if (Test-Path $outputRoot) {
+        Remove-Item -Path $outputRoot -Recurse -Force
+    }
 
     if (Test-Path $targetBinRoot) {
         Remove-Item -Path $targetBinRoot -Recurse -Force
     }
 
-    if (Test-Path $architectureOutput) {
-        Remove-Item -Path $architectureOutput -Recurse -Force
-    }
-
     New-Item -ItemType Directory -Path $architectureOutput -Force | Out-Null
+
+    Write-Host ''
+    Write-Host "Android compile/target version: Android 16 (API $($script:AndroidTargetApiLevel))"
+    Write-Host "Android minimum install version: Android $($Settings.Version) (API $($Settings.MinimumApiLevel))"
+    Write-Host "APK CPU architecture: $script:AndroidAbi"
 
     $buildArguments = @(
         'build',
-        $Project,
+        $project,
         '--disable-build-servers',
         '--verbosity', 'normal',
         '-c', 'Release',
         '-f', $script:AndroidTargetFramework,
-        '-r', $Architecture.RuntimeIdentifier,
+        '-r', 'android-arm64',
         '-t:SignAndroidPackage',
         '-p:AndroidKeyStore=true',
         '-p:AndroidUseApkSigner=true',
@@ -367,7 +355,7 @@ function Publish-AndroidArchitecture {
         '-p:WarningsAsErrors=XA0141'
     )
 
-    Invoke-CommandChecked "Publishing Android $($Architecture.Abi) APK" {
+    Invoke-CommandChecked "Publishing Android $script:AndroidAbi APK" {
         dotnet @buildArguments
     }
 
@@ -384,66 +372,22 @@ function Publish-AndroidArchitecture {
     }
 
     if (-not $signedApk) {
-        throw "No newly built signed APK was found for $($Architecture.Abi)."
+        throw "No newly built signed APK was found for $script:AndroidAbi."
     }
 
-    $finalName = "PasswordManagerLocal-android-$($Settings.Version)-plus-$($Architecture.Abi)-signed.apk"
-    $finalPath = Join-Path $OutputRoot $finalName
+    $finalName = "PasswordManagerLocal-android-$($Settings.Version)-plus-${script:AndroidAbi}-signed.apk"
+    $finalPath = Join-Path $outputRoot $finalName
 
     Write-Host ''
     Write-Host "Validating APK: $finalName"
     Assert-AndroidReleaseApk -ApkPath $signedApk.FullName -ExpectedCertificateSha256 $script:AndroidSigningFingerprint `
         -JavaSdkDirectory $script:AndroidJavaSdkDirectory -ApkSignerJar $script:AndroidApkSignerJar
-    Test-AndroidPackage -ApkPath $signedApk.FullName -ExpectedMinimumApiLevel $Settings.MinimumApiLevel -ExpectedAbi $Architecture.Abi
+    Test-AndroidPackage -ApkPath $signedApk.FullName -ExpectedMinimumApiLevel $Settings.MinimumApiLevel
     Copy-Item -LiteralPath $signedApk.FullName -Destination $finalPath -Force
-
-    return $finalPath
-}
-
-function Publish-AndroidApp {
-    param(
-        [Parameter(Mandatory = $true)]
-        [PSCustomObject]$Settings
-    )
-
-    $project = Join-Path $script:Root 'Android\Frontend\PasswordManagerLocal.Android.Frontend.csproj'
-    $outputRoot = Join-Path $script:Root "artifacts\publish\PasswordManagerLocal.Android.Frontend\android-$($Settings.Version)-plus"
-
-    if (Test-Path $outputRoot) {
-        Remove-Item -Path $outputRoot -Recurse -Force
-    }
-
-    New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
-
-    $architectures = @(
-        [PSCustomObject]@{
-            RuntimeIdentifier = 'android-arm64'
-            Abi = 'arm64-v8a'
-        }
-    )
-
-    if ($Settings.Version -le 15) {
-        $architectures += [PSCustomObject]@{
-            RuntimeIdentifier = 'android-arm'
-            Abi = 'armeabi-v7a'
-        }
-    }
-
-    Write-Host ''
-    Write-Host "Android compile/target version: Android 16 (API $($script:AndroidTargetApiLevel))"
-    Write-Host "Android minimum install version: Android $($Settings.Version) (API $($Settings.MinimumApiLevel))"
-    Write-Host "APK CPU architectures: $(($architectures.Abi) -join ', ')"
-
-    $publishedApks = @()
-    foreach ($architecture in $architectures) {
-        $publishedApks += Publish-AndroidArchitecture -Settings $Settings -Architecture $architecture -Project $project -OutputRoot $outputRoot
-    }
 
     Write-Host ''
     Write-Host "Android publish output: $outputRoot"
-    foreach ($publishedApk in $publishedApks) {
-        Write-Host "Signed APK: $(Split-Path -Leaf $publishedApk)"
-    }
+    Write-Host "Signed APK: $finalName"
 }
 
 $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
