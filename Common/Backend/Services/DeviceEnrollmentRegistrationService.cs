@@ -184,16 +184,11 @@ public sealed class DeviceEnrollmentRegistrationService : IDeviceEnrollmentRegis
         if (await services.GetRequiredService<IDeletedUserBarrierRepository>().ExistsAsync(userId, ct))
             throw new DeviceEnrollmentException(DeviceEnrollmentErrorCode.ProfileDataInvalid, "The account identity was permanently deleted.");
 
-        var groups = services.GetRequiredService<IGroupRepository>();
         var syncQueue = services.GetRequiredService<ISyncChangeQueueService>();
-        var groupIds = await groups.ListIdsByUserAsync(userId, ct);
 
         // These rows are written inside the enrollment transaction. Starting workers here would let
         // their SQLite sessions run before commit and incorrectly observe an empty queue.
         await syncQueue.EnqueueDeferredAsync(new SyncItem { ModelId = userId, ModelType = SyncModelType.User, ChangeType = SyncChangeType.Updated }, ct);
-
-        foreach (var groupId in groupIds)
-            await syncQueue.EnqueueDeferredAsync(new SyncItem { ModelId = groupId, ModelType = SyncModelType.Group, ChangeType = SyncChangeType.Updated }, ct);
 
         await syncQueue.EnqueueDeferredAsync(new SyncItem { ModelId = newDeviceId, ModelType = SyncModelType.Device, ChangeType = SyncChangeType.Created }, ct);
         await syncQueue.EnqueueDeferredAsync(new SyncItem { ModelId = SyncIdentityUtil.BuildUserDeviceModelId(userId, newDeviceId), ModelType = SyncModelType.UserDevice, ChangeType = SyncChangeType.Created }, ct);

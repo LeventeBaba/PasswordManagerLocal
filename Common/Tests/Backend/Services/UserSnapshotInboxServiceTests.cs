@@ -1125,7 +1125,6 @@ public sealed class UserSnapshotInboxServiceTests
             GeneralUserDataLastModifiedAt = createdAt,
             UserPasswordsDataLastModifiedAt = createdAt,
             UserDevicesDataLastModifiedAt = createdAt,
-            GroupIds = [],
             DeviceIds = [originDeviceId]
         };
         payload.IntegrityHash = SyncCryptoUtil.CalculateUserHash(payload, createdAt.ToUnixTimeMilliseconds());

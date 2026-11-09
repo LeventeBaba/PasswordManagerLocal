@@ -28,7 +28,6 @@ public sealed class User : IntegrityCheckableBase
     public DateTimeOffset UserDevicesDataLastModifiedAt { get; set; } = DateTimeOffset.UtcNow;
 
 
-    public ICollection<Group> Groups { get; set; } = [];
     public ICollection<UserDevice> UserDevices { get; set; } = [];
     public ICollection<LocalUserDevice> LocalUserDevices { get; set; } = [];
 

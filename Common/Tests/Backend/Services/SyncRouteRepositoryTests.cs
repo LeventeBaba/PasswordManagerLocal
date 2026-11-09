@@ -98,36 +98,6 @@ public sealed class SyncRouteRepositoryTests
     }
 
 
-    [TestMethod]
-    [TestCategory("Backend")]
-    [TestCategory("Integration")]
-    public async Task GroupMembershipProjection_ReturnsExactIdsAndGroupPayload()
-    {
-        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
-        var user = CreateUser();
-        user.EncryptedPayload = new byte[128 * 1024];
-        user.EncryptedGeneralUserDataPayload = new byte[128 * 1024];
-        user.EncryptedUserPasswordsDataPayload = new byte[128 * 1024];
-        user.EncryptedUserDevicesDataPayload = new byte[128 * 1024];
-        user.GenerateIntegrityHash();
-        var group = new Group
-        {
-            EncryptedPayload = [9, 8, 7]
-        };
-
-        await database.Users.AddAsync(user);
-        group.GenerateIntegrityHash();
-        await database.Groups.AddAsync(group);
-        database.Groups.SetMember(group, user, isMember: true);
-        await database.UnitOfWork.SaveChangesAsync();
-
-        var projected = await database.Groups.GetWithUserIdsAsNoTrackingAsync(group.Id);
-
-        MSTestAssert.IsNotNull(projected);
-        CollectionAssert.AreEqual(new[] { user.UId }, projected.UserIds);
-        CollectionAssert.AreEqual(group.EncryptedPayload, projected.EncryptedPayload);
-    }
-
     private static User CreateUser() => new()
     {
         UsernameHash = [1],

@@ -146,11 +146,6 @@ internal sealed class UserRepository(SqliteSession session) : IUserRepository
             if (user is null)
                 return null;
 
-            user.Groups = await session.ReadAsync($"""
-                SELECT {GroupRepository.Projection}
-                FROM "GroupMembers" gm JOIN "Groups" g ON g."Id" = gm."GroupsId"
-                WHERE gm."UsersUId" = $id;
-                """, GroupRepository.ReadRow, ct, ("$id", id));
             user.UserDevices = await session.ReadAsync($"""
                 SELECT {UserDeviceRepository.Projection} FROM "UserDevices" ud WHERE ud."UserId" = $id;
                 """, row => UserDeviceRepository.ReadRow(row, 0), ct, ("$id", id));
@@ -158,8 +153,6 @@ internal sealed class UserRepository(SqliteSession session) : IUserRepository
                 SELECT {LocalUserDeviceRepository.Projection} FROM "LocalUserDevices" lu WHERE lu."UserId" = $id;
                 """, LocalUserDeviceRepository.ReadRow, ct, ("$id", id));
 
-            foreach (var group in user.Groups)
-                group.Users.Add(user);
             foreach (var link in user.UserDevices)
                 link.User = user;
             foreach (var link in user.LocalUserDevices)

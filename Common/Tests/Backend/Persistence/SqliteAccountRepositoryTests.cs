@@ -176,52 +176,6 @@ public sealed class SqliteAccountRepositoryTests
     }
 
     [TestMethod]
-    public async Task GroupMembership_StagesExactPairsAndRetainsUnrelatedSharedMembership()
-    {
-        await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();
-        using var session = baseline.OpenSession();
-        var users = new UserRepository(session);
-        var groups = new GroupRepository(session);
-        var relationships = new SyncRelationshipReconciliationService(
-            users, groups, new DeviceRepository(session), new UserDeviceRepository(session),
-            new FakeDeviceIdentityService(), new FakeUserMembershipAuthorizationRepository());
-
-        var first = CreateUser([4]);
-        var second = CreateUser([5]);
-        await users.AddAsync(first);
-        await users.AddAsync(second);
-        await session.SaveChangesAsync();
-        var shared = new Group { EncryptedPayload = [0x10] };
-        var unrelated = new Group { EncryptedPayload = [0x20] };
-        shared.GenerateIntegrityHash();
-        unrelated.GenerateIntegrityHash();
-
-        await using (var transaction = await session.BeginTransactionAsync())
-        {
-            await groups.AddAsync(shared);
-            await groups.AddAsync(unrelated);
-            await relationships.SyncGroupUsersAsync(shared, [first.UId, second.UId, first.UId], default);
-            groups.SetMember(unrelated, first, isMember: true);
-            groups.SetMember(unrelated, second, isMember: true);
-            groups.SetMember(unrelated, second, isMember: false);
-            Assert.AreEqual(5, await session.SaveChangesAsync());
-            await transaction.CommitAsync();
-        }
-
-        var loaded = (await users.GetByIdWithRelationsAsync(first.UId))!;
-        await relationships.SyncUserGroupsAsync(loaded, [unrelated.Id], default);
-        Assert.AreEqual(1, await session.SaveChangesAsync());
-        Assert.AreEqual(second.UId, (await groups.ListUserIdsAsync(shared.Id)).Single());
-        Assert.AreEqual(first.UId, (await groups.ListUserIdsAsync(unrelated.Id)).Single());
-        Assert.AreEqual(shared.Id, (await groups.ListByUserWithUserIdsAsNoTrackingAsync(second.UId)).Single().Id);
-        var persistedMembers = await baseline.UnitOfWork.ReadAsync("""
-            SELECT "UsersUId" FROM "GroupMembers" WHERE "GroupsId" = $group;
-            """, row => row.GetGuid(0), default, ("$group", shared.Id));
-        CollectionAssert.AreEquivalent(new[] { second.UId }, persistedMembers);
-        Assert.IsTrue((await groups.GetByIdWithUsersAsync(shared.Id))!.IsIntegrityValid());
-    }
-
-    [TestMethod]
     public async Task UserGraph_ReadsCommittedIdentityLinksAndRejectsTampering()
     {
         await using var baseline = await SqliteRepositoryTestDatabase.CreateAsync();

@@ -7,7 +7,7 @@ public static class SyncConstants
     public const string PFXPassword = "";
 
     public const int SyncPort = SyncProtocolDefaults.TcpPort;
-    public const int SyncProtocolVersion = 13;
+    public const int SyncProtocolVersion = 14;
     public const int MaxPeerEndpointHints = 32;
     public const string LocalDiscoveryMulticastAddress = "239.255.67.67";
     public const int LocalDiscoveryPort = SyncProtocolDefaults.DiscoveryUdpPort;
@@ -39,7 +39,7 @@ public static class SyncConstants
     public const int MaxConcurrentSnapshotVerifications = 2;
 
     public const int EncryptedUserDataFormatVersion = 2;
-    public const int DeviceEnrollmentPayloadVersion = 6;
+    public const int DeviceEnrollmentPayloadVersion = 7;
 
     public const int SyncDeltaEncryptionVersion = 1;
     public const int SyncDeltaNonceBytes = 12;

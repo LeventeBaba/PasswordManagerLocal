@@ -134,11 +134,11 @@ public sealed class SyncCryptoUtilTests
         };
 
         ExpectThrows<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(userUpdate));
-        userUpdate.Group = new GroupSyncPayload();
+        userUpdate.Device = new DeviceSyncPayload();
         ExpectThrows<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(userUpdate));
         userUpdate.UserSnapshot = new UserSnapshotEnvelope { UserId = userUpdate.ModelId };
         ExpectThrows<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(userUpdate));
-        userUpdate.Group = null;
+        userUpdate.Device = null;
         SyncCryptoUtil.ValidatePayloadShape(userUpdate);
     }
 
@@ -150,15 +150,15 @@ public sealed class SyncCryptoUtilTests
         var deletion = new SyncDeltaPayload
         {
             ModelId = Guid.NewGuid(),
-            ModelType = SyncModelType.Group,
+            ModelType = SyncModelType.Device,
             ChangeType = SyncChangeType.Deleted
         };
 
         SyncCryptoUtil.ValidatePayloadShape(deletion);
-        deletion.Group = new GroupSyncPayload { Id = deletion.ModelId };
+        deletion.Device = new DeviceSyncPayload { Id = deletion.ModelId };
         ExpectThrows<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(deletion));
 
-        deletion.Group = null;
+        deletion.Device = null;
         deletion.ModelType = SyncModelType.User;
         ExpectThrows<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(deletion));
     }
@@ -166,20 +166,31 @@ public sealed class SyncCryptoUtilTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Security")]
+    public void ValidatePayloadShape_RejectsRetiredModelTypeEvenForDeletion()
+    {
+        var payload = new SyncDeltaPayload
+        {
+            ModelId = Guid.NewGuid(),
+            ModelType = (SyncModelType)2,
+            ChangeType = SyncChangeType.Deleted
+        };
+
+        ExpectThrows<InvalidDataException>(() => SyncCryptoUtil.ValidatePayloadShape(payload));
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Security")]
     public void CalculateUserHash_CanonicalizesRelationshipOrderDuplicatesAndEmptyIds()
     {
-        var firstGroup = Guid.Parse("EB4A1964-2AF6-41C8-8A69-9BBFC07CF78E");
-        var secondGroup = Guid.Parse("45F7B740-0883-4996-83FD-7C1588142501");
         var firstDevice = Guid.Parse("7247AE19-FE13-44EA-9EA1-709EF8186B92");
         var secondDevice = Guid.Parse("71DA6738-120B-4030-A32D-FD044DE4B704");
         var timestamp = 1_750_000_000_000L;
 
         var first = CreateUserPayload();
-        first.GroupIds = [firstGroup, secondGroup, firstGroup, Guid.Empty];
         first.DeviceIds = [secondDevice, firstDevice, secondDevice, Guid.Empty];
 
         var second = CreateUserPayload();
-        second.GroupIds = [secondGroup, firstGroup];
         second.DeviceIds = [firstDevice, secondDevice];
 
         CollectionAssert.AreEqual(

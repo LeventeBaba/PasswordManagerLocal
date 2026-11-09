@@ -267,7 +267,6 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
                     !local.User.UsernameHash.AsSpan().SequenceEqual(peer.User.UsernameHash) ||
                     !local.User.UsernameSalt.AsSpan().SequenceEqual(peer.User.UsernameSalt) ||
                     !local.User.PasswordSalt.AsSpan().SequenceEqual(peer.User.PasswordSalt) ||
-                    !local.User.GroupIds.ToHashSet().SetEquals(peer.User.GroupIds) ||
                     !local.User.DeviceIds.ToHashSet().SetEquals(peer.User.DeviceIds))
                 {
                     return false;

@@ -14,7 +14,6 @@ public sealed class DataCachingService : IDataCachingService
     private readonly SafeMemoryCache _cache;
     private readonly ITokenService _tokens;
     private readonly TimeSpan _userTtl;
-    private readonly TimeSpan _groupTtl;
 
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _tokenCts = new();
     private readonly ConcurrentDictionary<string, object> _currentByKey = new();
@@ -23,20 +22,18 @@ public sealed class DataCachingService : IDataCachingService
     private long _clearVersion;
 
     public DataCachingService(SafeMemoryCache cache, ITokenService tokens)
-        : this(cache, tokens, UserDataCacheExpirationTime, GroupDataCacheExpirationTime)
+        : this(cache, tokens, UserDataCacheExpirationTime)
     {
     }
 
-    public DataCachingService(SafeMemoryCache cache, ITokenService tokens, TimeSpan userTtl, TimeSpan groupTtl)
+    public DataCachingService(SafeMemoryCache cache, ITokenService tokens, TimeSpan userTtl)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _tokens = tokens ?? throw new ArgumentNullException(nameof(tokens));
         _userTtl = userTtl;
-        _groupTtl = groupTtl;
     }
 
     private string UserKey(Guid token) => $"t:{token:N}:user";
-    private string GroupKey(Guid token, Guid groupId) => $"t:{token:N}:g:{groupId:N}";
 
     private bool TryPrepareCacheOperation(
         Guid token,
@@ -76,11 +73,6 @@ public sealed class DataCachingService : IDataCachingService
             _cache.Set(key, value, EntryOptions(token, ttl));
             return true;
         }
-    }
-
-    private void DisposeCurrentAndRemove(string key)
-    {
-        RemoveCurrentWithoutDispose(key);
     }
 
     private void RemoveCurrentWithoutDispose(string key)
@@ -267,46 +259,6 @@ public sealed class DataCachingService : IDataCachingService
             InvalidateToken(token);
     }
 
-    public async Task<GroupData?> GetOrLoadGroupDataAsync(Guid token, Guid groupId, Func<CancellationToken, Task<GroupData?>> loader, CancellationToken ct = default)
-    {
-        if (!TryPrepareCacheOperation(token, _groupTtl, out var options, out var clearVersion))
-        {
-            InvalidateToken(token);
-            return default;
-        }
-
-        var key = GroupKey(token, groupId);
-        var result = await _cache.GetOrCreateAsync(key, loader, options, ct);
-        return TrackLoadedValue(token, key, result, clearVersion);
-    }
-
-    public Task<GroupData?> GetOrLoadGroupDataAsync(Guid token, Guid groupId, Func<Task<GroupData?>> loader)
-        => GetOrLoadGroupDataAsync(token, groupId, _ => loader());
-
-    public bool TryGetGroupData(Guid token, Guid groupId, out GroupData? value)
-    {
-        if (!_tokens.Validate(token))
-        {
-            InvalidateToken(token);
-            value = default;
-            return false;
-        }
-
-        var key = GroupKey(token, groupId);
-        var ok = _cache.TryGet(key, out value);
-
-        if (ok && value != null)
-            _currentByKey[key] = value;
-
-        return ok;
-    }
-
-    public void SetGroupData(Guid token, Guid groupId, GroupData value)
-    {
-        if (!TryStoreValue(token, GroupKey(token, groupId), value, _groupTtl))
-            InvalidateToken(token);
-    }
-
     private T? TrackLoadedValue<T>(Guid token, string key, T? value, long clearVersion)
         where T : class
     {
@@ -331,11 +283,6 @@ public sealed class DataCachingService : IDataCachingService
             disposable.Dispose();
 
         return discard ? null : value;
-    }
-
-    public void InvalidateGroup(Guid token, Guid groupId)
-    {
-        DisposeCurrentAndRemove(GroupKey(token, groupId));
     }
 
     public void InvalidateToken(Guid token)

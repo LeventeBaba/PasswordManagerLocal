@@ -38,17 +38,6 @@ public sealed class UserSyncCatchUpService : IUserSyncCatchUpService
             ChangedAtTs = ToSyncTimestamp(user.LastModifiedAt)
         }, targetDeviceId, ct);
 
-        foreach (var group in user.Groups)
-        {
-            await _queue.EnqueueForDeviceAsync(new SyncItem
-            {
-                ModelId = group.Id,
-                ModelType = SyncModelType.Group,
-                ChangeType = SyncChangeType.Updated,
-                ChangedAtTs = ToSyncTimestamp(group.LastModifiedAt)
-            }, targetDeviceId, ct);
-        }
-
         var sourceDeviceIds = user.UserDevices
             .Where(link => !link.IsDeleted && link.DeviceId != targetDeviceId)
             .Select(link => link.DeviceId)

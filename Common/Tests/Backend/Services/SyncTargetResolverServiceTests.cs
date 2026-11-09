@@ -39,7 +39,6 @@ public sealed class SyncTargetResolverServiceTests
             IsSyncOn = true
         });
         var service = new SyncTargetResolverService(
-            new FakeGroupRepository(),
             new FakeDeviceRepository(),
             userDevices,
             localUsers,

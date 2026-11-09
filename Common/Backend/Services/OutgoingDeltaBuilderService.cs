@@ -3,7 +3,6 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Models;
-using PasswordManagerLocal.Common.Backend.Models.Projections;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Sync;
 using System.Text.Json;
@@ -15,7 +14,6 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 public sealed class OutgoingDeltaBuilderService : IOutgoingDeltaBuilderService
 {
     private readonly IUserRepository _users;
-    private readonly IGroupRepository _groups;
     private readonly IDeviceRepository _devices;
     private readonly IUserDeviceRepository _userDevices;
     private readonly ISyncRouteRepository _syncRoutes;
@@ -27,7 +25,6 @@ public sealed class OutgoingDeltaBuilderService : IOutgoingDeltaBuilderService
 
     public OutgoingDeltaBuilderService(
         IUserRepository users,
-        IGroupRepository groups,
         IDeviceRepository devices,
         IUserDeviceRepository userDevices,
         ISyncRouteRepository syncRoutes,
@@ -40,7 +37,6 @@ public sealed class OutgoingDeltaBuilderService : IOutgoingDeltaBuilderService
         _lifecycle = lifecycle;
         _scopes = scopes;
         _users = users;
-        _groups = groups;
         _devices = devices;
         _userDevices = userDevices;
         _syncRoutes = syncRoutes;
@@ -244,6 +240,9 @@ public sealed class OutgoingDeltaBuilderService : IOutgoingDeltaBuilderService
 
     private async Task<SyncDeltaPayload> BuildPayloadAsync(SyncItem item, Guid targetDeviceId, long timestamp, CancellationToken ct)
     {
+        if (!Enum.IsDefined(item.ModelType))
+            throw new InvalidOperationException("Synchronization model type is invalid.");
+
         if (item.ModelType == SyncModelType.User && item.ChangeType == SyncChangeType.Deleted)
             throw new InvalidOperationException("Generic user-deletion deltas are disabled; relay the signed AccountDeletion control operation.");
 
@@ -278,16 +277,6 @@ public sealed class OutgoingDeltaBuilderService : IOutgoingDeltaBuilderService
             return payload;
         }
 
-        if (item.ModelType == SyncModelType.Group)
-        {
-            var group = await _groups.GetWithUserIdsAsNoTrackingAsync(item.ModelId, ct);
-            if (group is null)
-                throw new InvalidOperationException("Group sync source was not found.");
-
-            payload.Group = CreateGroupPayload(group, timestamp);
-            return payload;
-        }
-
         if (item.ModelType == SyncModelType.Device)
         {
             var sourceDevice = await _devices.GetByIdAsNoTrackingWithUserDevicesAsync(item.ModelId, ct);
@@ -313,20 +302,6 @@ public sealed class OutgoingDeltaBuilderService : IOutgoingDeltaBuilderService
             ?? throw new InvalidDataException("Stored local user snapshot is invalid.");
         UserSnapshotEnvelopeUtil.ValidateStructureAndHash(envelope);
         return envelope;
-    }
-
-
-    private GroupSyncPayload CreateGroupPayload(GroupWithUserIdsData group, long timestamp)
-    {
-        var payload = new GroupSyncPayload
-        {
-            Id = group.Id,
-            EncryptedPayload = group.EncryptedPayload,
-            UserIds = group.UserIds
-        };
-
-        payload.IntegrityHash = SyncCryptoUtil.CalculateGroupHash(payload, timestamp);
-        return payload;
     }
 
 

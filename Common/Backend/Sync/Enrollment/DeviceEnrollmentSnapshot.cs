@@ -18,7 +18,6 @@ public sealed class DeviceEnrollmentSnapshot
     public Guid AuthorizingAdditionOperationId { get; set; }
     public byte[] AuthorizingAdditionOperationHash { get; set; } = [];
     public List<DeviceEnrollmentUserSnapshot> Users { get; set; } = [];
-    public List<DeviceEnrollmentGroupSnapshot> Groups { get; set; } = [];
     public List<DeviceEnrollmentDeviceSnapshot> Devices { get; set; } = [];
     public List<DeviceEnrollmentUserDeviceSnapshot> UserDevices { get; set; } = [];
     public List<DeviceEnrollmentMembershipAuthorizationSnapshot> MembershipAuthorizations { get; set; } = [];

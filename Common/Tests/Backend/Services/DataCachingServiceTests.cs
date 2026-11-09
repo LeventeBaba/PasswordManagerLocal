@@ -46,39 +46,6 @@ public sealed class DataCachingServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Unit")]
-    public void InvalidateGroup_RemovesGroupDataFromCache()
-    {
-        using var host = new BackendTestHost();
-        var tokens = host.Services.GetRequiredService<ITokenService>();
-        var cache = host.Services.GetRequiredService<IDataCachingService>();
-        var token = tokens.Issue(Guid.NewGuid());
-        var groupId = Guid.NewGuid();
-        var group = new GroupData
-        {
-            Id = groupId,
-            Name = "g",
-            Description = "desc",
-            CreatedAt = DateTime.UtcNow,
-            LastUpdatedAt = DateTime.UtcNow
-        };
-        group.Passwords.GenerateIntegrityHash();
-        group.GenerateIntegrityHash();
-
-        cache.SetGroupData(token, groupId, group);
-        MSTestAssert.IsTrue(cache.TryGetGroupData(token, groupId, out var before));
-        MSTestAssert.AreSame(group, before);
-
-        cache.InvalidateGroup(token, groupId);
-
-        MSTestAssert.IsFalse(cache.TryGetGroupData(token, groupId, out var after));
-        MSTestAssert.IsNull(after);
-        MSTestAssert.AreEqual(groupId, group.Id);
-        MSTestAssert.AreEqual("g", group.Name);
-    }
-
-    [TestMethod]
-    [TestCategory("Backend")]
-    [TestCategory("Unit")]
     public async Task ConcurrentLoads_ForSameToken_InvokeLoaderOnlyOnce()
     {
         using var host = new BackendTestHost();

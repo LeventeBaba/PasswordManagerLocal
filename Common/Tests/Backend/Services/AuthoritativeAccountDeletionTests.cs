@@ -39,12 +39,8 @@ public sealed class AuthoritativeAccountDeletionTests
             LastModifiedAt = DateTimeOffset.UtcNow
         };
         userDevice.GenerateIntegrityHash();
-        var accountOnlyGroup = new Group { EncryptedPayload = [8], LastModifiedAt = DateTimeOffset.UtcNow };
-        accountOnlyGroup.GenerateIntegrityHash();
 
         var otherUser = CreateUser(Guid.NewGuid(), savedKey: null);
-        var sharedGroup = new Group { EncryptedPayload = [9], LastModifiedAt = DateTimeOffset.UtcNow };
-        sharedGroup.GenerateIntegrityHash();
         var sharedDevice = new Device { TlsCertFingerprint = new string('B', 64), DeviceType = DeviceType.WindowsPc };
         sharedDevice.GenerateIntegrityHash();
         var journal = new UserRecoveryJournal { Id = Guid.NewGuid(), UserId = user.UId, EncryptedPayload = [10] };
@@ -55,11 +51,6 @@ public sealed class AuthoritativeAccountDeletionTests
         };
         await database.Users.AddAsync(user);
         await database.Users.AddAsync(otherUser);
-        await database.Groups.AddAsync(accountOnlyGroup);
-        await database.Groups.AddAsync(sharedGroup);
-        database.Groups.SetMember(accountOnlyGroup, user, isMember: true);
-        database.Groups.SetMember(sharedGroup, user, isMember: true);
-        database.Groups.SetMember(sharedGroup, otherUser, isMember: true);
         await database.Devices.AddAsync(localDevice);
         await database.Devices.AddAsync(sharedDevice);
         await database.UserDevices.AddAsync(new UserDevice { UserId = user.UId, DeviceId = sharedDevice.Id });
@@ -123,20 +114,13 @@ public sealed class AuthoritativeAccountDeletionTests
         });
         await database.SyncItems.AddAsync(new SyncItem
         {
-            ModelId = accountOnlyGroup.Id,
-            ModelType = SyncModelType.Group,
-            ChangeType = SyncChangeType.Updated
-        });
-        await database.SyncItems.AddAsync(new SyncItem
-        {
             ModelId = localDevice.Id,
             ModelType = SyncModelType.Device,
             ChangeType = SyncChangeType.Updated
         });
-        await database.SyncItems.AddAsync(new SyncItem { ModelId = sharedGroup.Id, ModelType = SyncModelType.Group, ChangeType = SyncChangeType.Updated });
         await database.SyncItems.AddAsync(new SyncItem { ModelId = sharedDevice.Id, ModelType = SyncModelType.Device, ChangeType = SyncChangeType.Updated });
-        await database.Tombstones.UpsertAsync(accountOnlyGroup.Id, SyncModelType.Group, 1);
-        await database.Tombstones.UpsertAsync(sharedGroup.Id, SyncModelType.Group, 1);
+        await database.Tombstones.UpsertAsync(localDevice.Id, SyncModelType.Device, 1);
+        await database.Tombstones.UpsertAsync(sharedDevice.Id, SyncModelType.Device, 1);
         await database.UnitOfWork.SaveChangesAsync();
 
         // Keep seeding and readback independent from the deletion transaction.
@@ -150,7 +134,7 @@ public sealed class AuthoritativeAccountDeletionTests
         var links = new UserDeviceRepository(uow);
         var barriers = new DeletedUserBarrierRepository(uow);
         var cleanupStore = new UserAccountDeletionStore(
-            uow, users, new GroupRepository(uow), new DeviceEnrollmentCommitRepository(uow));
+            uow, users, new DeviceEnrollmentCommitRepository(uow));
         var cleanup = new UserAccountDeletionCleanupService(cleanupStore, users);
         var membership = new UserMembershipAuthorizationService(
             authorizations,
@@ -210,17 +194,13 @@ public sealed class AuthoritativeAccountDeletionTests
         MSTestAssert.IsNull(await database.UserSyncStates.GetAsync(user.UId));
         MSTestAssert.IsNull(await database.SyncItems.GetAsync(user.UId, SyncModelType.User));
         MSTestAssert.IsNull(await database.SyncItems.GetAsync(userDevice.ModelId, SyncModelType.UserDevice));
-        MSTestAssert.IsNull(await database.SyncItems.GetAsync(accountOnlyGroup.Id, SyncModelType.Group));
         MSTestAssert.IsNull(await database.SyncItems.GetAsync(localDevice.Id, SyncModelType.Device));
         MSTestAssert.IsNull(await database.UserDevices.GetAsync(user.UId, localDevice.Id));
-        MSTestAssert.IsNull(await database.Groups.GetByIdAsync(accountOnlyGroup.Id));
         MSTestAssert.IsNotNull(await database.Users.GetByIdAsync(otherUser.UId));
-        MSTestAssert.IsNotNull(await database.Groups.GetByIdAsync(sharedGroup.Id));
         MSTestAssert.IsNotNull(await database.UserDevices.GetAsync(otherUser.UId, sharedDevice.Id));
-        MSTestAssert.IsNotNull(await database.SyncItems.GetAsync(sharedGroup.Id, SyncModelType.Group));
         MSTestAssert.IsNotNull(await database.SyncItems.GetAsync(sharedDevice.Id, SyncModelType.Device));
-        MSTestAssert.IsNotNull(await database.Tombstones.GetAsync(sharedGroup.Id, SyncModelType.Group));
-        MSTestAssert.IsNull(await database.Tombstones.GetAsync(accountOnlyGroup.Id, SyncModelType.Group));
+        MSTestAssert.IsNull(await database.Tombstones.GetAsync(localDevice.Id, SyncModelType.Device));
+        MSTestAssert.IsNotNull(await database.Tombstones.GetAsync(sharedDevice.Id, SyncModelType.Device));
         MSTestAssert.IsNull(await database.DeviceEnrollmentCommits.GetByIdAsync(enrollmentCommit.CommitId));
         var retainedJournalIds = await journals.ListIdsAsync(default);
         CollectionAssert.AreEqual(new[] { otherJournal.Id }, retainedJournalIds.ToArray());
@@ -580,7 +560,7 @@ public sealed class AuthoritativeAccountDeletionTests
 
     private static UserAccountDeletionCleanupService CreateCleanup(SqliteRepositoryTestDatabase database) =>
         new(new UserAccountDeletionStore(
-            database.UnitOfWork, database.Users, database.Groups, database.DeviceEnrollmentCommits), database.Users);
+            database.UnitOfWork, database.Users, database.DeviceEnrollmentCommits), database.Users);
 
     private static UserControlOperationEnvelope CreateDeletionEnvelope(
         User user,

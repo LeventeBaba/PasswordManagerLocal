@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
@@ -9,16 +8,8 @@ namespace PasswordManagerLocal.Common.Backend.Repositories;
 internal sealed class UserAccountDeletionStore(
     SqliteSession session,
     IUserRepository users,
-    IGroupRepository groups,
     IDeviceEnrollmentCommitRepository enrollments) : IUserAccountDeletionStore
 {
-    private const string ExclusiveGroupIds = """
-        SELECT g."Id" FROM "Groups" g
-        JOIN "GroupMembers" gm ON gm."GroupsId" = g."Id" AND gm."UsersUId" = $user
-        WHERE NOT EXISTS (SELECT 1 FROM "GroupMembers" other
-                          WHERE other."GroupsId" = g."Id" AND other."UsersUId" <> $user)
-        """;
-
     private const string ExclusiveLinkedDeviceIds = """
         SELECT d."Id" FROM "Devices" d
         JOIN "UserDevices" ud ON ud."DeviceId" = d."Id" AND ud."UserId" = $user
@@ -28,7 +19,6 @@ internal sealed class UserAccountDeletionStore(
 
     private const string ObsoleteModelPairs = $"""
         ("ModelType" = $userType AND "ModelId" = $user)
-        OR ("ModelType" = $groupType AND "ModelId" IN ({ExclusiveGroupIds}))
         OR ("ModelType" = $deviceType AND "ModelId" IN ({ExclusiveLinkedDeviceIds}))
         """;
 
@@ -48,7 +38,6 @@ internal sealed class UserAccountDeletionStore(
         {
             command.Parameters.AddWithValue("$user", userId);
             command.Parameters.AddWithValue("$userType", (byte)SyncModelType.User);
-            command.Parameters.AddWithValue("$groupType", (byte)SyncModelType.Group);
             command.Parameters.AddWithValue("$deviceType", (byte)SyncModelType.Device);
             command.Parameters.AddWithValue("$linkType", (byte)SyncModelType.UserDevice);
             await command.ExecuteNonQueryAsync(ct);
@@ -69,15 +58,9 @@ internal sealed class UserAccountDeletionStore(
             await command.ExecuteNonQueryAsync(ct);
         }
 
-        // Use ordinary row writes for the groups and enrollment commits so their
+        // Use ordinary row writes for enrollment commits so their
         // notifications remain staged until the deletion commits.
         enrollments.DeleteRange(await enrollments.ListForUserAsync(userId, ct));
-        var groupIds = await session.ReadAsync(ExclusiveGroupIds, row => row.GetGuid(0), ct, ("$user", userId));
-        foreach (var group in await groups.ListByIdsAsync(groupIds, ct))
-        {
-            groups.Delete(group);
-            CryptographicOperations.ZeroMemory(group.EncryptedPayload);
-        }
     }
 
     public void StageUserDelete(User user) => users.Delete(user);

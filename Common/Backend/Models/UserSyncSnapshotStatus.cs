@@ -22,6 +22,6 @@ public enum UserSyncSnapshotStatus : byte
     /// <summary>An individual revision proven semantically corrupt by a trusted key.</summary>
     IsolatedCorrupt = 5,
 
-    /// <summary>Compact retained payload evidence that has been superseded by a healthy revision.</summary>
+    /// <summary>Retained payload evidence that is no longer eligible for sync or recovery.</summary>
     SupersededBadEvidence = 6
 }

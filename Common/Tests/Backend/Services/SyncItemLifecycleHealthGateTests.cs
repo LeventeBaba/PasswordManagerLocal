@@ -37,7 +37,6 @@ public sealed class SyncItemLifecycleHealthGateTests
             database.SyncItems,
             database.SyncQueue,
             database.Users,
-            database.Groups,
             database.Devices,
             database.UserDevices,
             database.Tombstones,

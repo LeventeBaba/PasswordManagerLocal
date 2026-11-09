@@ -14,11 +14,6 @@ public interface IDataCachingService
     bool TryGetUserData(Guid token, out UserData? value);
     void SetUserData(Guid token, UserData value);
 
-    Task<GroupData?> GetOrLoadGroupDataAsync(Guid token, Guid groupId, Func<CancellationToken, Task<GroupData?>> loader, CancellationToken ct = default);
-    Task<GroupData?> GetOrLoadGroupDataAsync(Guid token, Guid groupId, Func<Task<GroupData?>> loader);
-    bool TryGetGroupData(Guid token, Guid groupId, out GroupData? value);
-    void SetGroupData(Guid token, Guid groupId, GroupData value);
-    void InvalidateGroup(Guid token, Guid groupId);
     void InvalidateToken(Guid token);
     void ClearAll();
 }

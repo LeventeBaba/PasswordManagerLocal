@@ -19,6 +19,5 @@ public sealed class UserSyncPayload
     public DateTimeOffset UserPasswordsDataLastModifiedAt { get; set; }
     public DateTimeOffset UserDevicesDataLastModifiedAt { get; set; }
     public byte[] IntegrityHash { get; set; } = [];
-    public List<Guid> GroupIds { get; set; } = [];
     public List<Guid> DeviceIds { get; set; } = [];
 }

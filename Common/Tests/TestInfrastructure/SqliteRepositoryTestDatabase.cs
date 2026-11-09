@@ -16,7 +16,6 @@ internal sealed class SqliteRepositoryTestDatabase : IAsyncDisposable
         UnitOfWork = new SqliteSession(Connections, publisher);
         DeviceIdentity = new DeviceIdentityRepository(UnitOfWork);
         Users = new UserRepository(UnitOfWork);
-        Groups = new GroupRepository(UnitOfWork);
         Devices = new DeviceRepository(UnitOfWork);
         UserDevices = new UserDeviceRepository(UnitOfWork);
         LocalUserDevices = new LocalUserDeviceRepository(UnitOfWork);
@@ -41,7 +40,6 @@ internal sealed class SqliteRepositoryTestDatabase : IAsyncDisposable
     public SqliteSession UnitOfWork { get; }
     public DeviceIdentityRepository DeviceIdentity { get; }
     public UserRepository Users { get; }
-    public GroupRepository Groups { get; }
     public DeviceRepository Devices { get; }
     public UserDeviceRepository UserDevices { get; }
     public LocalUserDeviceRepository LocalUserDevices { get; }

@@ -247,7 +247,6 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
             // versions and tombstones. Ciphertext equality is invalid because merges reencrypt.
             // An origin may be skipped only if it already authored the complete resulting state;
             // concurrent local/other-origin changes must still travel back to it.
-            var canonicalGroups = existing.Groups.Select(group => group.Id).ToHashSet();
             var canonicalDevices = existing.UserDevices.Where(link => !link.IsDeleted)
                 .Select(link => link.DeviceId).Where(id => id != Guid.Empty).ToHashSet();
             if (_identity is not null)
@@ -267,7 +266,6 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
                     envelope.MembershipEpoch == existing.MembershipEpoch &&
                     envelope.User.UsernameHash.AsSpan().SequenceEqual(existing.UsernameHash) &&
                     envelope.User.UsernameSalt.AsSpan().SequenceEqual(existing.UsernameSalt) &&
-                    canonicalGroups.SetEquals(envelope.User.GroupIds) &&
                     canonicalDevices.SetEquals(envelope.User.DeviceIds) &&
                     generalHash.AsSpan()
                         .SequenceEqual(incoming.GeneralUserData.CalculateIntegrityHash()) &&

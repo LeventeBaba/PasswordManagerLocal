@@ -52,7 +52,6 @@ public sealed class BackendTestHost : IDisposable
         sc.AddSingleton<IEndpoints, Endpoints>();
 
         sc.AddSingleton<IUserRepository, InMemoryUserRepository>();
-        sc.AddSingleton<IGroupRepository, FakeGroupRepository>();
         sc.AddSingleton<FakeUserDeviceRepository>();
         sc.AddSingleton<IUserDeviceRepository>(sp => sp.GetRequiredService<FakeUserDeviceRepository>());
         sc.AddSingleton<IDeviceRepository, FakeDeviceRepository>();

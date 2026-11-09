@@ -25,14 +25,6 @@ CREATE TABLE "Users" (
     CONSTRAINT "PK_Users" PRIMARY KEY ("UId")
 );
 
-CREATE TABLE "Groups" (
-    "Id" TEXT NOT NULL,
-    "EncryptedPayload" BLOB NOT NULL,
-    "IntegrityHash" BLOB NOT NULL,
-    "LastModifiedAt" TEXT NOT NULL,
-    CONSTRAINT "PK_Groups" PRIMARY KEY ("Id")
-);
-
 CREATE TABLE "Devices" (
     "Id" TEXT NOT NULL,
     "BlockedAt" TEXT NULL,
@@ -76,14 +68,6 @@ CREATE TABLE "SyncItems" (
     "ModelId" TEXT NOT NULL,
     "ModelType" INTEGER NOT NULL,
     CONSTRAINT "PK_SyncItems" PRIMARY KEY ("Id")
-);
-
-CREATE TABLE "GroupMembers" (
-    "GroupsId" TEXT NOT NULL,
-    "UsersUId" TEXT NOT NULL,
-    CONSTRAINT "PK_GroupMembers" PRIMARY KEY ("GroupsId", "UsersUId"),
-    CONSTRAINT "FK_GroupMembers_Groups_GroupsId" FOREIGN KEY ("GroupsId") REFERENCES "Groups" ("Id") ON DELETE CASCADE,
-    CONSTRAINT "FK_GroupMembers_Users_UsersUId" FOREIGN KEY ("UsersUId") REFERENCES "Users" ("UId") ON DELETE CASCADE
 );
 
 CREATE TABLE "UserDevices" (
@@ -381,7 +365,6 @@ CREATE INDEX "IX_Devices_SignPublicKeyHash" ON "Devices" ("SignPublicKeyHash");
 
 CREATE UNIQUE INDEX "IX_Devices_TlsCertFingerprint" ON "Devices" ("TlsCertFingerprint");
 
-CREATE INDEX "IX_GroupMembers_UsersUId" ON "GroupMembers" ("UsersUId");
 
 CREATE UNIQUE INDEX "IX_LocalDeviceIdentity_SingletonKey" ON "LocalDeviceIdentity" ("SingletonKey");
 

@@ -47,7 +47,6 @@ public sealed class FakeUserSnapshotPublisherService : IUserSnapshotPublisherSer
             GeneralUserDataLastModifiedAt = user.GeneralUserDataLastModifiedAt,
             UserPasswordsDataLastModifiedAt = user.UserPasswordsDataLastModifiedAt,
             UserDevicesDataLastModifiedAt = user.UserDevicesDataLastModifiedAt,
-            GroupIds = user.Groups.Select(group => group.Id).Distinct().OrderBy(id => id).ToList(),
             DeviceIds = user.UserDevices.Where(link => !link.IsDeleted).Select(link => link.DeviceId)
                 .Append(_identity.LocalDeviceId).Distinct().OrderBy(id => id).ToList()
         };

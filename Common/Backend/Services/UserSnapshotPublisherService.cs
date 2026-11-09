@@ -320,7 +320,6 @@ public sealed class UserSnapshotPublisherService : IUserSnapshotPublisherService
             GeneralUserDataLastModifiedAt = user.GeneralUserDataLastModifiedAt,
             UserPasswordsDataLastModifiedAt = user.UserPasswordsDataLastModifiedAt,
             UserDevicesDataLastModifiedAt = user.UserDevicesDataLastModifiedAt,
-            GroupIds = user.Groups.Select(group => group.Id).Where(id => id != Guid.Empty).Distinct().OrderBy(id => id).ToList(),
             DeviceIds = user.UserDevices
                 .Where(link => !link.IsDeleted)
                 .Select(link => link.DeviceId)
@@ -354,8 +353,6 @@ public sealed class UserSnapshotPublisherService : IUserSnapshotPublisherService
             hash.Write(user.UserPasswordsDataLastModifiedAt);
             hash.Write(user.UserDevicesDataLastModifiedAt);
 
-            foreach (var groupId in user.Groups.Select(group => group.Id).Distinct().OrderBy(id => id))
-                hash.Write(groupId);
             foreach (var deviceId in user.UserDevices.Where(link => !link.IsDeleted).Select(link => link.DeviceId).Distinct().OrderBy(id => id))
                 hash.Write(deviceId);
             foreach (var item in coverage.OrderBy(item => item.OriginDeviceId).ThenBy(item => item.OriginInstanceId).ThenBy(item => item.UserKeyEpoch))

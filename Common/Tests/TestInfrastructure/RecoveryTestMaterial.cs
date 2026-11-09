@@ -171,7 +171,6 @@ internal sealed class RecoveryTestMaterial : IDisposable
             GeneralUserDataLastModifiedAt = user.GeneralUserDataLastModifiedAt,
             UserPasswordsDataLastModifiedAt = user.UserPasswordsDataLastModifiedAt,
             UserDevicesDataLastModifiedAt = user.UserDevicesDataLastModifiedAt,
-            GroupIds = [],
             DeviceIds = []
         };
         payload.IntegrityHash = SyncCryptoUtil.CalculateUserHash(payload, createdAt.ToUnixTimeMilliseconds());

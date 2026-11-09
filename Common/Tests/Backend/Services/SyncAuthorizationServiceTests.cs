@@ -89,60 +89,6 @@ public sealed class SyncAuthorizationServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Unit")]
-    public async Task CanReceiveGroup_AllowsWhenAnyPayloadUserHasEnabledRoute()
-    {
-        var setup = CreateSetup();
-        var disabledUser = Guid.NewGuid();
-        var enabledUser = Guid.NewGuid();
-        var sourceId = Guid.NewGuid();
-        await AddLocalLinkAsync(setup.LocalUsers, disabledUser, false, setup.Identity.LocalDeviceId);
-        await AddLocalLinkAsync(setup.LocalUsers, enabledUser, true, setup.Identity.LocalDeviceId);
-        await AddRemoteLinkAsync(setup.UserDevices, enabledUser, sourceId, true, false);
-        var payload = new SyncDeltaPayload
-        {
-            ModelId = Guid.NewGuid(),
-            ModelType = SyncModelType.Group,
-            ChangeType = SyncChangeType.Updated,
-            Group = new GroupSyncPayload
-            {
-                Id = Guid.NewGuid(),
-                UserIds = [disabledUser, enabledUser]
-            }
-        };
-
-        MSTestAssert.IsTrue(await setup.Service.CanReceiveAsync(payload, sourceId));
-
-        await AddRemoteLinkAsync(setup.UserDevices, enabledUser, sourceId, false, false);
-        MSTestAssert.IsFalse(await setup.Service.CanReceiveAsync(payload, sourceId));
-    }
-
-    [TestMethod]
-    [TestCategory("Backend")]
-    [TestCategory("Unit")]
-    public async Task CanReceiveGroupWithoutPayloadUsers_FallsBackToPersistedMembership()
-    {
-        var setup = CreateSetup();
-        var userId = Guid.NewGuid();
-        var sourceId = Guid.NewGuid();
-        var group = new Group { Id = Guid.NewGuid() };
-        group.Users.Add(new User { UId = userId });
-        setup.Groups.Seed(group);
-        await AddLocalLinkAsync(setup.LocalUsers, userId, true, setup.Identity.LocalDeviceId);
-        await AddRemoteLinkAsync(setup.UserDevices, userId, sourceId, true, false);
-        var payload = new SyncDeltaPayload
-        {
-            ModelId = group.Id,
-            ModelType = SyncModelType.Group,
-            ChangeType = SyncChangeType.Updated,
-            Group = new GroupSyncPayload { Id = group.Id }
-        };
-
-        MSTestAssert.IsTrue(await setup.Service.CanReceiveAsync(payload, sourceId));
-    }
-
-    [TestMethod]
-    [TestCategory("Backend")]
-    [TestCategory("Unit")]
     public async Task HasEligibleUserForDevice_IgnoresDisabledAndDeletedLinks()
     {
         var setup = CreateSetup();
@@ -189,14 +135,13 @@ public sealed class SyncAuthorizationServiceTests
 
     private static SyncAuthorizationSetup CreateSetup()
     {
-        var groups = new FakeGroupRepository();
         var devices = new FakeDeviceRepository();
         var userDevices = new FakeUserDeviceRepository();
         var localUsers = new FakeLocalUserDeviceRepository();
         var syncRoutes = new FakeSyncRouteRepository(userDevices, localUsers);
         var identity = new FakeDeviceIdentityService { LocalDeviceId = Guid.NewGuid() };
-        var service = new SyncAuthorizationService(groups, devices, userDevices, localUsers, syncRoutes, identity);
-        return new SyncAuthorizationSetup(service, groups, userDevices, localUsers, identity);
+        var service = new SyncAuthorizationService(devices, userDevices, localUsers, syncRoutes, identity);
+        return new SyncAuthorizationSetup(service, userDevices, localUsers, identity);
     }
 
     private static Task AddLocalLinkAsync(FakeLocalUserDeviceRepository repository, Guid userId, bool isSyncOn, Guid localDeviceId) =>

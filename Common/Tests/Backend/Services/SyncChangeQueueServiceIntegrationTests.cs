@@ -304,34 +304,25 @@ public sealed class SyncChangeQueueServiceIntegrationTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
-    public async Task EnqueueDeletedGroup_CreatesTombstone_AndQueuesEligibleDevice()
+    public async Task EnqueueDeletedDevice_CreatesTombstone_AndQueuesEligibleDevice()
     {
         await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
-        var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 1, disabledRemoteCount: 0);
-        var group = new Group
-        {
-            Id = Guid.NewGuid(),
-            EncryptedPayload = [4, 5, 6],
-            LastModifiedAt = DateTimeOffset.UtcNow.AddMinutes(-2)
-        };
-        group.GenerateIntegrityHash();
-        await database.Groups.AddAsync(group);
-        database.Groups.SetMember(group, seeded.User, isMember: true);
-        await database.UnitOfWork.SaveChangesAsync();
+        var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 1, disabledRemoteCount: 1);
+        var source = seeded.DisabledRemotes.Single();
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
 
         await service.Queue.EnqueueAsync(new SyncItem
         {
-            ModelId = group.Id,
-            ModelType = SyncModelType.Group,
+            ModelId = source.Id,
+            ModelType = SyncModelType.Device,
             ChangeType = SyncChangeType.Deleted
         });
 
-        var tombstone = (await database.Tombstones.GetAsync(group.Id, SyncModelType.Group))!;
+        var tombstone = (await database.Tombstones.GetAsync(source.Id, SyncModelType.Device))!;
         var queueItem = (await database.ReadQueueRowsAsync()).Single();
         var syncItem = (await database.SyncItems.ListAllAsync()).Single();
-        MSTestAssert.AreEqual(group.Id, tombstone.ModelId);
-        MSTestAssert.AreEqual(SyncModelType.Group, tombstone.ModelType);
+        MSTestAssert.AreEqual(source.Id, tombstone.ModelId);
+        MSTestAssert.AreEqual(SyncModelType.Device, tombstone.ModelType);
         MSTestAssert.AreEqual(syncItem.ChangedAtTs, tombstone.DeletedAtTs);
         MSTestAssert.AreEqual(seeded.EnabledRemotes.Single().Id, queueItem.DeviceId);
         MSTestAssert.AreEqual(SyncChangeType.Deleted, syncItem.ChangeType);
@@ -364,29 +355,20 @@ public sealed class SyncChangeQueueServiceIntegrationTests
     public async Task EnqueuePendingItem_MergesCreatedThenUpdatedAsCreated_AndDeletionWins()
     {
         await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
-        var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 1, disabledRemoteCount: 0);
-        var group = new Group
-        {
-            Id = Guid.NewGuid(),
-            EncryptedPayload = [7, 8, 9],
-            LastModifiedAt = DateTimeOffset.UtcNow.AddMinutes(-1)
-        };
-        group.GenerateIntegrityHash();
-        await database.Groups.AddAsync(group);
-        database.Groups.SetMember(group, seeded.User, isMember: true);
-        await database.UnitOfWork.SaveChangesAsync();
+        var seeded = await SeedUserRoutesAsync(database, enabledRemoteCount: 1, disabledRemoteCount: 1);
+        var source = seeded.DisabledRemotes.Single();
         var service = CreateService(database, seeded.Identity, new FakeSyncAuthorizationService());
 
         await service.Queue.EnqueueAsync(new SyncItem
         {
-            ModelId = group.Id,
-            ModelType = SyncModelType.Group,
+            ModelId = source.Id,
+            ModelType = SyncModelType.Device,
             ChangeType = SyncChangeType.Created
         });
         await service.Queue.EnqueueAsync(new SyncItem
         {
-            ModelId = group.Id,
-            ModelType = SyncModelType.Group,
+            ModelId = source.Id,
+            ModelType = SyncModelType.Device,
             ChangeType = SyncChangeType.Updated
         });
 
@@ -395,8 +377,8 @@ public sealed class SyncChangeQueueServiceIntegrationTests
 
         await service.Queue.EnqueueAsync(new SyncItem
         {
-            ModelId = group.Id,
-            ModelType = SyncModelType.Group,
+            ModelId = source.Id,
+            ModelType = SyncModelType.Device,
             ChangeType = SyncChangeType.Deleted
         });
 
@@ -454,13 +436,11 @@ public sealed class SyncChangeQueueServiceIntegrationTests
             database.SyncItems,
             database.SyncQueue,
             database.Users,
-            database.Groups,
             database.Devices,
             database.UserDevices,
             database.Tombstones,
             localDevices);
         var targets = new SyncTargetResolverService(
-            database.Groups,
             database.Devices,
             database.UserDevices,
             database.LocalUserDevices,

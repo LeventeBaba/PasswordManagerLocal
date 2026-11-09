@@ -23,7 +23,6 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
     private readonly IUserDataWriterService _userDataWriter;
     private readonly ICredentialVerificationService _credentialVerification;
     private readonly IDeviceIdentityService _identity;
-    private readonly IGroupRepository _groups;
     private readonly IUserDeviceRepository _userDevices;
     private readonly ISyncRouteRepository _syncRoutes;
     private readonly ISyncQueueRepository _syncQueueItems;
@@ -50,7 +49,6 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
         IUserDataWriterService userDataWriter,
         ICredentialVerificationService credentialVerification,
         IDeviceIdentityService identity,
-        IGroupRepository groups,
         IUserDeviceRepository userDevices,
         ISyncRouteRepository syncRoutes,
         ISyncQueueRepository syncQueueItems,
@@ -76,7 +74,6 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
         _userDataWriter = userDataWriter;
         _credentialVerification = credentialVerification;
         _identity = identity;
-        _groups = groups;
         _userDevices = userDevices;
         _syncRoutes = syncRoutes;
         _syncQueueItems = syncQueueItems;
@@ -326,15 +323,6 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
         {
             var link = await _userDevices.GetByModelIdAsync(item.ModelId, ct);
             return link?.UserId == removedUserId;
-        }
-
-        if (item.ModelType == SyncModelType.Group)
-        {
-            var userIds = await _groups.ListUserIdsAsync(item.ModelId, ct);
-            if (!userIds.Contains(removedUserId))
-                return false;
-
-            return !await AnyOtherUserCanStillSyncToTargetAsync(userIds, removedUserId, targetDeviceId, ct);
         }
 
         if (item.ModelType == SyncModelType.Device)

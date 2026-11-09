@@ -80,10 +80,12 @@ public static class SyncCryptoUtil
 
     public static void ValidatePayloadShape(SyncDeltaPayload payload)
     {
+        if (!Enum.IsDefined(payload.ModelType))
+            throw new InvalidDataException("Network delta model type is invalid.");
+
         var payloadCount = 0;
         if (payload.UserSnapshot is not null) payloadCount++;
         if (payload.UserControlOperation is not null) payloadCount++;
-        if (payload.Group is not null) payloadCount++;
         if (payload.Device is not null) payloadCount++;
         if (payload.UserDevice is not null) payloadCount++;
 
@@ -108,9 +110,6 @@ public static class SyncCryptoUtil
             if (hasSnapshot == hasControlOperation)
                 throw new InvalidDataException("User synchronization requires exactly one immutable snapshot or authoritative control operation.");
         }
-
-        if (payload.ModelType == SyncModelType.Group && payload.Group is null)
-            throw new InvalidDataException("Group sync payload is missing.");
 
         if (payload.ModelType == SyncModelType.Device && payload.Device is null)
             throw new InvalidDataException("Device sync payload is missing.");
@@ -139,17 +138,6 @@ public static class SyncCryptoUtil
                 throw new InvalidDataException("User snapshot envelope is missing.");
 
             UserSnapshotEnvelopeUtil.ValidateStructureAndHash(payload.UserSnapshot);
-            return;
-        }
-
-        if (payload.ModelType == SyncModelType.Group)
-        {
-            if (payload.Group is null || payload.Group.IntegrityHash.Length != CryptographyConstants.Sha256HashSizeInBytes)
-                throw new InvalidDataException("Group sync hash is missing.");
-
-            if (!Hashing.Verify(payload.Group.IntegrityHash, CalculateGroupHash(payload.Group, timestamp)))
-                throw new InvalidDataException("Group sync hash is invalid.");
-
             return;
         }
 
@@ -193,24 +181,8 @@ public static class SyncCryptoUtil
             hash.Write(payload.UserDevicesDataLastModifiedAt);
             hash.Write(timestamp);
 
-            foreach (var groupId in payload.GroupIds.Where(id => id != Guid.Empty).Distinct().OrderBy(id => id))
-                hash.Write(groupId);
-
             foreach (var deviceId in payload.DeviceIds.Where(id => id != Guid.Empty).Distinct().OrderBy(id => id))
                 hash.Write(deviceId);
-        });
-
-
-
-    public static byte[] CalculateGroupHash(GroupSyncPayload payload, long timestamp) =>
-        Hashing.SHA256Hash(hash =>
-        {
-            hash.Write(payload.Id);
-            hash.WriteBytes(payload.EncryptedPayload);
-            hash.Write(timestamp);
-
-            foreach (var userId in payload.UserIds.Where(id => id != Guid.Empty).Distinct().OrderBy(id => id))
-                hash.Write(userId);
         });
 
 

@@ -13,7 +13,6 @@ public sealed class SyncItemLifecycleService : ISyncItemLifecycleService
     private readonly ISyncItemRepository _syncItems;
     private readonly ISyncQueueRepository _syncQueue;
     private readonly IUserRepository _users;
-    private readonly IGroupRepository _groups;
     private readonly IDeviceRepository _devices;
     private readonly IUserDeviceRepository _userDevices;
     private readonly ISyncTombstoneRepository _tombstones;
@@ -24,7 +23,6 @@ public sealed class SyncItemLifecycleService : ISyncItemLifecycleService
         ISyncItemRepository syncItems,
         ISyncQueueRepository syncQueue,
         IUserRepository users,
-        IGroupRepository groups,
         IDeviceRepository devices,
         IUserDeviceRepository userDevices,
         ISyncTombstoneRepository tombstones,
@@ -34,7 +32,6 @@ public sealed class SyncItemLifecycleService : ISyncItemLifecycleService
         _syncItems = syncItems;
         _syncQueue = syncQueue;
         _users = users;
-        _groups = groups;
         _devices = devices;
         _userDevices = userDevices;
         _tombstones = tombstones;
@@ -44,6 +41,9 @@ public sealed class SyncItemLifecycleService : ISyncItemLifecycleService
 
     public async Task<SyncItem> GetOrCreateAsync(SyncItem item, long changedAtTs, CancellationToken ct = default)
     {
+        if (!Enum.IsDefined(item.ModelType))
+            throw new InvalidOperationException("Synchronization model type is invalid.");
+
         if (item.ModelType == SyncModelType.User && item.ChangeType == SyncChangeType.Deleted)
             throw new InvalidOperationException("Generic user-deletion queue items are disabled; use the signed AccountDeletion control operation.");
 
@@ -74,7 +74,7 @@ public sealed class SyncItemLifecycleService : ISyncItemLifecycleService
             throw new InvalidOperationException("Generic user-deletion lifecycle updates are disabled; use the signed AccountDeletion control operation.");
 
         if (item.ChangeType == SyncChangeType.Deleted &&
-            item.ModelType is SyncModelType.Group or SyncModelType.Device)
+            item.ModelType == SyncModelType.Device)
         {
             await _tombstones.UpsertAsync(item.ModelId, item.ModelType, changedAtTs, ct);
             return;
@@ -111,19 +111,6 @@ public sealed class SyncItemLifecycleService : ISyncItemLifecycleService
             _users.Update(user);
             if (_canonicalHealth is not null)
                 await _canonicalHealth.UpdateCheckpointAsync(user, ct);
-            await RemoveTombstoneAsync(item, ct);
-            return;
-        }
-
-        if (item.ModelType == SyncModelType.Group)
-        {
-            var group = await _groups.GetByIdAsync(item.ModelId, ct);
-            if (group is null)
-                return;
-
-            group.LastModifiedAt = modifiedAt;
-            group.GenerateIntegrityHash();
-            _groups.Update(group);
             await RemoveTombstoneAsync(item, ct);
             return;
         }

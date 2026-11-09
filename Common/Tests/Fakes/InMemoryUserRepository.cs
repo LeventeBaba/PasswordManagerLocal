@@ -163,7 +163,6 @@ public sealed class InMemoryUserRepository : IUserRepository
             UserPasswordsDataLastModifiedAt = u.UserPasswordsDataLastModifiedAt,
             UserDevicesDataLastModifiedAt = u.UserDevicesDataLastModifiedAt,
             IntegrityHash = u.IntegrityHash.ToArray(),
-            Groups = u.Groups.ToList(),
             LocalUserDevices = u.LocalUserDevices.ToList(),
             UserDevices = u.UserDevices.ToList()
         };

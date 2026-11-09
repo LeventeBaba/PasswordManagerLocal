@@ -119,7 +119,6 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
     {
         var users = services.GetRequiredService<IUserRepository>();
         var userDevicesRepository = services.GetRequiredService<IUserDeviceRepository>();
-        var groupsRepository = services.GetRequiredService<IGroupRepository>();
         var devicesRepository = services.GetRequiredService<IDeviceRepository>();
         var authorizationsRepository = services.GetRequiredService<IUserMembershipAuthorizationRepository>();
         var cutoffsRepository = services.GetRequiredService<IUserOriginRemovalCutoffRepository>();
@@ -174,14 +173,6 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
         if (addition.Status != UserControlOperationStatus.Applied || addition.OperationType != UserControlOperationType.DeviceAddition ||
             !Hashing.Verify(addition.OperationHash, targetAuthorization.AdditionOperationHash))
             throw new InvalidDataException("The target device-addition operation is not applied or does not match authorization history.");
-
-        var groups = await groupsRepository.ListByUserWithUserIdsAsNoTrackingAsync(userId, ct);
-        foreach (var group in groups)
-        {
-            var integritySource = new Group { Id = group.Id, EncryptedPayload = group.EncryptedPayload, LastModifiedAt = group.LastModifiedAt };
-            integritySource.GenerateIntegrityHash();
-            group.IntegrityHash = integritySource.IntegrityHash;
-        }
 
         var currentDeviceIds = authorizations.Where(row => row.IsActive).Select(row => row.DeviceId).Distinct().ToArray();
         var currentDevices = await devicesRepository.ListByIdsAsync(currentDeviceIds.Where(id => id != _identity.LocalDeviceId).ToArray(), ct);
@@ -287,17 +278,8 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
                     UserPasswordsDataLastModifiedAt = UtcDateTimeUtil.ToUtc(user.UserPasswordsDataLastModifiedAt),
                     UserDevicesDataLastModifiedAt = UtcDateTimeUtil.ToUtc(user.UserDevicesDataLastModifiedAt),
                     IntegrityHash = user.IntegrityHash.ToArray(),
-                    GroupIds = user.Groups.Select(group => group.Id).Distinct().ToList()
                 }
             ],
-            Groups = groups.Select(group => new DeviceEnrollmentGroupSnapshot
-            {
-                Id = group.Id,
-                EncryptedPayload = group.EncryptedPayload.ToArray(),
-                LastModifiedAt = UtcDateTimeUtil.ToUtc(group.LastModifiedAt),
-                IntegrityHash = group.IntegrityHash.ToArray(),
-                UserIds = group.UserIds.ToList()
-            }).ToList(),
             Devices = deviceSnapshots,
             UserDevices = relationshipSnapshots,
             MembershipAuthorizations = authorizations.Select(row => new DeviceEnrollmentMembershipAuthorizationSnapshot
