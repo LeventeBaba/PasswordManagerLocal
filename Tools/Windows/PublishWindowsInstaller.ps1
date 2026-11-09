@@ -19,6 +19,8 @@ $stage = Join-Path $buildRoot 'package'
 $intermediateRoot = Join-Path $buildRoot 'obj'
 $binaryLog = Join-Path $ReportRoot 'installer-build.binlog'
 $installerName = 'PasswordManagerLocal.msi'
+# One fresh product identity per release, shared by both inputs to the transform.
+$productCode = [Guid]::NewGuid().ToString('B').ToUpperInvariant()
 
 # RTF uses signed 16-bit UTF-16 units for Unicode. Escape the exact supplied
 # license for the wizard and package the original text file separately.
@@ -52,11 +54,12 @@ $buildArguments = @(
     "-p:BaseIntermediateOutputPath=$intermediateRoot/",
     '--output', $stage,
     "-p:PmlProductDirectory=$ProductDirectory",
+    "-p:PmlProductCode=$productCode",
     "-p:PmlLicenseRtf=$licenseRtf",
     "-p:PmlWindowsInstallationScript=$installationScript",
     "-bl:$binaryLog"
 )
-Write-Host 'Building the Windows x64 MSI installer...'
+Write-Host 'Building the Windows x64 MSI with English and Hungarian setup text...'
 Write-Host "Installer build diagnostics: $binaryLog"
 Push-Location -LiteralPath $RepositoryRoot
 try {
@@ -69,11 +72,17 @@ finally {
     Pop-Location
 }
 
-$installers = @(Get-ChildItem -LiteralPath $stage -Filter $installerName -File -Recurse)
-if ($installers.Count -ne 1) {
-    throw "WiX must produce exactly one $installerName under '$stage'. Found $($installers.Count)."
+$stagedInstaller = Join-Path $stage "en-US\$installerName"
+$hungarianInstaller = Join-Path $stage "hu-HU\$installerName"
+foreach ($path in @($stagedInstaller, $hungarianInstaller)) {
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "WiX did not produce the expected installer input: $path"
+    }
 }
-$stagedInstaller = $installers[0].FullName
+
+# Embed the translation before signing or moving the single public MSI.
+& (Join-Path $PSScriptRoot 'EmbedWindowsInstallerHungarian.ps1') -EnglishMsi $stagedInstaller `
+    -HungarianMsi $hungarianInstaller -TransformPath (Join-Path $buildRoot 'installer-hu-HU.mst')
 if ($SigningContext) {
     Invoke-WindowsReleaseFileSigning -Path $stagedInstaller -Context $SigningContext
 }
@@ -81,3 +90,4 @@ if ($SigningContext) {
 $installer = Join-Path $OutputRoot $installerName
 Move-Item -LiteralPath $stagedInstaller -Destination $installer
 Write-Host "Windows installer: $installer"
+Write-Host 'Hungarian setup: msiexec /i "PasswordManagerLocal.msi" TRANSFORMS=:1038'

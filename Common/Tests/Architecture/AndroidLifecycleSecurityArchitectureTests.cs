@@ -351,14 +351,15 @@ public sealed class AndroidLifecycleSecurityArchitectureTests
     }
 
     [TestMethod]
-    public void AndroidVerificationToolsAndReportsArePermanentRepositoryInputs()
+    public void AndroidVerificationToolsAndGuideAreRepositoryInputs()
     {
         var root = GetRepositoryRoot();
         foreach (var relativePath in new[]
         {
             Path.Combine("Tools", "Android", "VerifyAndroidManifestAndResources.ps1"),
             Path.Combine("Tools", "Android", "VerifyAndroidPackage.ps1"),
-            Path.Combine("Tools", "Android", "InvokeAndroidIntegrationChecks.ps1")
+            Path.Combine("Tools", "Android", "InvokeAndroidIntegrationChecks.ps1"),
+            Path.Combine("Docs", "Architecture", "APPLICATION.md")
         })
         {
             Assert.IsTrue(File.Exists(Path.Combine(root, relativePath)), relativePath);
@@ -367,22 +368,7 @@ public sealed class AndroidLifecycleSecurityArchitectureTests
         var documentationVerifierPath = Path.Combine(root, "Tools", "VerifyDocumentationLayout.ps1");
         Assert.IsTrue(File.Exists(documentationVerifierPath), documentationVerifierPath);
         var documentationVerifier = File.ReadAllText(documentationVerifierPath);
-
-        foreach (var reportName in new[]
-        {
-            "ANDROID_INTEGRATION_PLATFORM_HARDENING_STATIC_VERIFICATION.md",
-            "ANDROID_INTEGRATION_IMPLEMENTATION_CHECKS.md",
-            "ANDROID_INTEGRATION_MODIFIED_FILES.md",
-            "ANDROID_INTEGRATION_AUTOMATED_TEST_MATRIX.md",
-            "ANDROID_INTEGRATION_EMULATOR_DEVICE_TEST_MATRIX.md",
-            "ANDROID_INTEGRATION_SECURITY_REVIEW.md",
-            "ANDROID_INTEGRATION_ARCHITECTURE_AND_ACCEPTANCE.md"
-        })
-        {
-            Assert.IsTrue(
-                documentationVerifier.Contains($"'{reportName}'", StringComparison.Ordinal),
-                reportName);
-        }
+        StringAssert.Contains(documentationVerifier, "'Architecture/APPLICATION.md'");
     }
 
     [TestMethod]

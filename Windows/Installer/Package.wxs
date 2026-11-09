@@ -3,20 +3,24 @@
   <Package Name="Password Manager Local"
            Manufacturer="Levente Baba"
            Version="$(var.ProductVersion)"
+           ProductCode="$(var.PmlProductCode)"
+           Language="!(loc.PmlProductLanguage)"
+           Codepage="1250"
            Scope="perMachine"
            UpgradeCode="9C319A9F-809B-471F-9EDC-48E32C6C23B4">
     <!-- Same-version builds share one installation. Early transactional removal also
          replaces files whose version has not changed when switching publish modes. -->
-    <MajorUpgrade AllowSameVersionUpgrades="yes" Schedule="afterInstallInitialize"
-                  DowngradeErrorMessage="A newer version of Password Manager Local is already installed." />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" IgnoreLanguage="yes" Schedule="afterInstallInitialize"
+                  DowngradeErrorMessage="!(loc.PmlNewerVersionInstalled)" />
     <MediaTemplate EmbedCab="yes" />
 
-    <Icon Id="PasswordManagerLocal.ico" SourceFile="!(bindpath.Repository)\PasswordManagerLocal.ico" />
+    <Icon Id="PasswordManagerLocal.ico" SourceFile="!(bindpath.Branding)\PasswordManagerLocal.ico" />
     <Property Id="ARPPRODUCTICON" Value="PasswordManagerLocal.ico" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/LeventeBaba/PasswordManagerLocal" />
     <Property Id="ARPNOMODIFY" Value="1" />
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
     <UIRef Id="PasswordManagerLocalSetup" />
+    <UIRef Id="WixUI_ErrorProgressText" />
 
     <Property Id="MSIDISABLERMRESTART" Value="1" />
     <util:RestartResource Path="[INSTALLFOLDER]PasswordManagerLocal.exe" />
@@ -60,7 +64,7 @@
     <Feature Id="Application" Title="Password Manager Local" AllowAbsent="no" Level="1">
       <ComponentGroupRef Id="ApplicationFiles" />
     </Feature>
-    <Feature Id="DesktopShortcut" Title="Desktop shortcut" Level="1">
+    <Feature Id="DesktopShortcut" Title="!(loc.PmlDesktopShortcutFeature)" Level="1">
       <ComponentRef Id="DesktopApplicationShortcut" />
     </Feature>
   </Package>
@@ -77,7 +81,7 @@
         <File Id="ApplicationExe" Source="!(bindpath.Product)\PasswordManagerLocal.exe" KeyPath="yes">
           <Shortcut Id="OpenApplication" Directory="AppProgramsFolder" Name="Password Manager Local"
                     Advertise="yes" WorkingDirectory="INSTALLFOLDER" />
-          <Shortcut Id="UninstallApplication" Directory="AppProgramsFolder" Name="Uninstall Password Manager Local"
+          <Shortcut Id="UninstallApplication" Directory="AppProgramsFolder" Name="!(loc.PmlUninstallShortcut)"
                     Advertise="yes" WorkingDirectory="INSTALLFOLDER" Arguments="--uninstall" />
         </File>
         <RemoveFolder Id="RemoveAppProgramsFolder" Directory="AppProgramsFolder" On="uninstall" />

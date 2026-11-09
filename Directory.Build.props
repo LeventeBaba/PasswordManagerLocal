@@ -5,6 +5,8 @@
     <RepositoryRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)'))</RepositoryRoot>
     <ArtifactsRoot>$(RepositoryRoot)artifacts\</ArtifactsRoot>
     <PublishArtifactsRoot>$(ArtifactsRoot)publish\</PublishArtifactsRoot>
+    <PmlWindowsIconDirectory>$(RepositoryRoot)artifacts/branding</PmlWindowsIconDirectory>
+    <PmlWindowsIconFile>$(PmlWindowsIconDirectory)/PasswordManagerLocal.ico</PmlWindowsIconFile>
   </PropertyGroup>
 
   <!-- The unified publisher sets ArtifactsPath through the CLI for both restore and build. -->
@@ -19,7 +21,7 @@
   </PropertyGroup>
 
   <ItemGroup Condition="'$(PmlWindowsUnifiedNativeAot)' != 'true' and ('$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Agent' or '$(MSBuildProjectName)' == 'PasswordManagerLocal.Windows.Frontend')">
-    <Content Include="$(RepositoryRoot)PasswordManagerLocal.ico"
+    <Content Include="$(PmlWindowsIconFile)"
              Link="PasswordManagerLocal.ico"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
