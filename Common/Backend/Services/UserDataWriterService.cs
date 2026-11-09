@@ -114,64 +114,6 @@ public sealed class UserDataWriterService : IUserDataWriterService
     public Task UpdateSavedKeyOnlyAsync(User user, CancellationToken ct = default) =>
         _users.UpdateSavedKeyAsync(user.UId, user.SavedKey, ct);
 
-    public Task UpdateUserDataAsync(UserData userData, User user, EncryptionKey key, CancellationToken ct = default) =>
-        UpdateUserDataAsync(userData, user, key, false, ct);
-
-    public async Task UpdateUserDataAsync(
-        UserData userData,
-        User user,
-        EncryptionKey key,
-        bool enqueueSync,
-        CancellationToken ct = default)
-    {
-        _validator.EnsureUserDataCanBePersisted(userData, user);
-        userData.GenerateIntegrityHash();
-        var newEncryptedPayload = await SerializeCompressEncryptAsync(
-            userData,
-            key,
-            BackendJsonSerializerContext.Default.UserData,
-            ct: ct);
-        var candidate = new User
-        {
-            UId = user.UId, KeyEpoch = user.KeyEpoch, MembershipEpoch = user.MembershipEpoch,
-            EncryptedPayload = newEncryptedPayload,
-            EncryptedGeneralUserDataPayload = user.EncryptedGeneralUserDataPayload,
-            EncryptedUserPasswordsDataPayload = user.EncryptedUserPasswordsDataPayload,
-            EncryptedUserDevicesDataPayload = user.EncryptedUserDevicesDataPayload
-        };
-        using (var verified = await _reader.GetAndVerifyUserDataBundleAsync(candidate, key, ct)) { }
-        user.EncryptedPayload = newEncryptedPayload;
-        user.UserDataLastModifiedAt = DateTimeOffset.UtcNow;
-        await UpdateUserAsync(user, enqueueSync, ct);
-    }
-
-    public Task UpdateUserDataAsync(UserData userData, Guid token, EncryptionKey key, CancellationToken ct = default) =>
-        UpdateUserDataAsync(userData, token, key, false, ct);
-
-    public async Task UpdateUserDataAsync(
-        UserData userData,
-        Guid token,
-        EncryptionKey key,
-        bool enqueueSync,
-        CancellationToken ct = default)
-    {
-        var user = await _lookup.GetAndVerifyUserAsync(token, ct);
-        await UpdateUserDataAsync(userData, user, key, enqueueSync, ct);
-    }
-
-    public Task UpdateUserDataAsync(UserData userData, Guid token, CancellationToken ct = default) =>
-        UpdateUserDataAsync(userData, token, false, ct);
-
-    public async Task UpdateUserDataAsync(
-        UserData userData,
-        Guid token,
-        bool enqueueSync,
-        CancellationToken ct = default)
-    {
-        using var key = _interactiveState.GetEncryptionKeyFromToken(token);
-        await UpdateUserDataAsync(userData, token, key, enqueueSync, ct);
-    }
-
     public Task UpdateUserDataBundleAsync(
         UserDataBundle bundle,
         User user,
@@ -235,12 +177,6 @@ public sealed class UserDataWriterService : IUserDataWriterService
         var user = await _lookup.GetAndVerifyUserAsync(token, ct);
         using var key = _interactiveState.GetEncryptionKeyFromToken(token);
         await UpdateUserDataBundleAsync(bundle, user, key, modifiedBlobs, enqueueSync, ct);
-        // The caller owns the working bundle. Never install it into a session cache.
-        try { _interactiveState.SetUserBlobKeys(token, bundle.UserData); }
-        catch (Exception ex) when (enqueueSync)
-        {
-            throw new MutationPartiallyCommittedException("The mutation was committed, but session key refresh failed.", innerException: ex);
-        }
     }
 
 

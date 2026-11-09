@@ -47,7 +47,6 @@ public sealed class AuthSessionService : IAuthSessionService, IAuthenticatedSess
     {
         var token = _tokens.Issue(userId);
         _keys.SetUserKey(token, key);
-        _keys.SetUserBlobKeys(token, bundle.UserData);
         _cache.SetUserDataBundle(token, bundle);
         _changePublisher?.Publish(FrontendChangeScope.AuthenticationSessions, userId);
         return token;
@@ -73,7 +72,6 @@ public sealed class AuthSessionService : IAuthSessionService, IAuthenticatedSess
             {
                 using (bundle)
                 {
-                    _keys.SetUserBlobKeys(newToken, bundle.UserData);
                     _cache.SetUserDataBundle(newToken, bundle);
                 }
             }
@@ -164,7 +162,6 @@ public sealed class AuthSessionService : IAuthSessionService, IAuthenticatedSess
                 try
                 {
                     using var bundle = await _userDataReader.GetAndVerifyUserDataBundleAsync(user, key, ct);
-                    _keys.SetUserBlobKeys(token, bundle.UserData);
                     _cache.SetUserDataBundle(token, bundle);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)

@@ -75,12 +75,6 @@ internal sealed class UserControlOperationRepository(SqliteSession session) : IU
         session.ExistsAsync($""" SELECT 1 FROM "UserControlOperations" WHERE {AppliedDeletion} """, ct,
             ("$deletion", (byte)UserControlOperationType.AccountDeletion), ("$applied", (byte)UserControlOperationStatus.Applied));
 
-    public async Task<IReadOnlyList<Guid>> ListAppliedAccountDeletionUserIdsAsync(CancellationToken ct = default) =>
-        await session.ReadAsync($"""
-            SELECT DISTINCT "UserId" FROM "UserControlOperations" WHERE {AppliedDeletion} ORDER BY "UserId";
-            """, row => row.GetGuid(0), ct, ("$deletion", (byte)UserControlOperationType.AccountDeletion),
-            ("$applied", (byte)UserControlOperationStatus.Applied));
-
     public Task<bool> HasAppliedRevocationAsync(CancellationToken ct = default) =>
         session.ExistsAsync($""" SELECT 1 FROM "UserControlOperations" WHERE {AppliedRevocation} """, ct,
             ("$removal", (byte)UserControlOperationType.DeviceRemoval), ("$deletion", (byte)UserControlOperationType.AccountDeletion),

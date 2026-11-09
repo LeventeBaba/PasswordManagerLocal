@@ -58,16 +58,6 @@ public sealed class UserLookupService : IUserLookupService
         return await GetUserByUidAsync(resolution.UserId.Value, ct);
     }
 
-    public async Task<User> GetAndVerifyUserByUsernameAsync(byte[] username, CancellationToken ct = default)
-    {
-        var user = await GetUserByUsernameAsync(username, ct);
-        if (user is null)
-            throw new UserNotFoundException();
-
-        user.VerifyIntegrity();
-        return user;
-    }
-
     public async Task<IReadOnlyList<User>> GetAndVerifyRememberMeEnabledUsersAsync(CancellationToken ct = default)
     {
         var users = await _users.GetAllRememberMeEnabledUsersAsync(ct);

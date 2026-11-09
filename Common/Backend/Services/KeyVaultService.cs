@@ -1,5 +1,4 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
-using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Utils;
 using System.Collections.Concurrent;
@@ -29,7 +28,6 @@ public sealed class KeyVaultService : IKeyVaultService
             {
                 if (_map.TryGetValue(token, out var old))
                 {
-                    CopyBlobKeys(old, replacement);
                     _map[token] = replacement;
                     old.Dispose();
                     return;
@@ -41,29 +39,6 @@ public sealed class KeyVaultService : IKeyVaultService
         finally
         {
             CryptographicOperations.ZeroMemory(raw);
-        }
-    }
-
-    public void SetUserBlobKeys(Guid token, UserData userData)
-    {
-        if (token == Guid.Empty)
-            return;
-
-        lock (_gate)
-        {
-            if (!_map.TryGetValue(token, out var entry))
-                return;
-
-            if (entry.ExpiresAt <= DateTimeOffset.UtcNow)
-            {
-                _map.TryRemove(token, out _);
-                entry.Dispose();
-                return;
-            }
-
-            ReplaceBlobKey(ref entry.GeneralUserDataKey, userData.GeneralUserDataKey);
-            ReplaceBlobKey(ref entry.UserPasswordsDataKey, userData.UserPasswordsDataKey);
-            ReplaceBlobKey(ref entry.UserDevicesDataKey, userData.UserDevicesDataKey);
         }
     }
 
@@ -83,7 +58,6 @@ public sealed class KeyVaultService : IKeyVaultService
                 var replacement = new KeyVaultEntry(
                     EncryptionKey.FromRaw(raw),
                     UtcDateTimeUtil.ToUtc(newExpiresAt ?? entry.ExpiresAt));
-                CopyBlobKeys(entry, replacement);
                 _map[token] = replacement;
                 entry.Dispose();
                 return true;
@@ -103,18 +77,6 @@ public sealed class KeyVaultService : IKeyVaultService
         lock (_gate)
             return _map.TryGetValue(token, out var entry) && entry.ExpiresAt > DateTimeOffset.UtcNow;
     }
-
-    public bool TryGetEncryptionKey(Guid token, out EncryptionKey key) =>
-        TryGetKey(token, entry => entry.Key, out key);
-
-    public bool TryGetGeneralUserDataKey(Guid token, out EncryptionKey key) =>
-        TryGetKey(token, entry => entry.GeneralUserDataKey, out key);
-
-    public bool TryGetUserPasswordsDataKey(Guid token, out EncryptionKey key) =>
-        TryGetKey(token, entry => entry.UserPasswordsDataKey, out key);
-
-    public bool TryGetUserDevicesDataKey(Guid token, out EncryptionKey key) =>
-        TryGetKey(token, entry => entry.UserDevicesDataKey, out key);
 
     public void InvalidateToken(Guid token)
     {
@@ -160,7 +122,7 @@ public sealed class KeyVaultService : IKeyVaultService
         }
     }
 
-    private bool TryGetKey(Guid token, Func<KeyVaultEntry, EncryptionKey?> selector, out EncryptionKey key)
+    public bool TryGetEncryptionKey(Guid token, out EncryptionKey key)
     {
         key = default!;
 
@@ -179,11 +141,7 @@ public sealed class KeyVaultService : IKeyVaultService
                 return false;
             }
 
-            var source = selector(entry);
-            if (source is null)
-                return false;
-
-            var raw = source.ExportCopy();
+            var raw = entry.Key.ExportCopy();
             try
             {
                 key = EncryptionKey.FromRaw(raw);
@@ -193,35 +151,6 @@ public sealed class KeyVaultService : IKeyVaultService
             {
                 CryptographicOperations.ZeroMemory(raw);
             }
-        }
-    }
-
-    private void ReplaceBlobKey(ref EncryptionKey? target, byte[] raw)
-    {
-        target?.Dispose();
-        target = raw.Length == 0 ? null : EncryptionKey.FromRaw(raw);
-    }
-
-    private void CopyBlobKeys(KeyVaultEntry source, KeyVaultEntry target)
-    {
-        CopyBlobKey(source.GeneralUserDataKey, ref target.GeneralUserDataKey);
-        CopyBlobKey(source.UserPasswordsDataKey, ref target.UserPasswordsDataKey);
-        CopyBlobKey(source.UserDevicesDataKey, ref target.UserDevicesDataKey);
-    }
-
-    private void CopyBlobKey(EncryptionKey? source, ref EncryptionKey? target)
-    {
-        if (source is null)
-            return;
-
-        var raw = source.ExportCopy();
-        try
-        {
-            target = EncryptionKey.FromRaw(raw);
-        }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(raw);
         }
     }
 }

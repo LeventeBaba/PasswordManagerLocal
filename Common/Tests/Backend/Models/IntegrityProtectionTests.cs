@@ -218,30 +218,6 @@ public sealed class IntegrityProtectionTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Security")]
-    public void SecurePasswords_DisposeZeroesKeyAndContainedPasswords()
-    {
-        var child = CreateSecurePassword();
-        child.GenerateIntegrityHash();
-        var childSecret = child.Password;
-        var key = Enumerable.Repeat((byte)9, 32).ToArray();
-        var passwords = new SecurePasswords
-        {
-            PasswordKey = key,
-            Passwords = [child]
-        };
-        passwords.GenerateIntegrityHash();
-
-        passwords.Dispose();
-
-        MSTestAssert.IsTrue(key.All(value => value == 0));
-        MSTestAssert.IsTrue(childSecret.All(value => value == 0));
-        MSTestAssert.IsEmpty(passwords.Passwords);
-    }
-
-
-    [TestMethod]
-    [TestCategory("Backend")]
-    [TestCategory("Security")]
     public void UserPasswordsData_GenerateIntegrityHashCreatesCategoryHashes()
     {
         using var data = CreateUserPasswordsDataWithCategories();

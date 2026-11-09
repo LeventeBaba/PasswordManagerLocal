@@ -136,7 +136,6 @@ public sealed class BackendTestHost : IDisposable
         sc.AddSingleton<IUserTombstoneGarbageCollector, UserTombstoneGarbageCollector>();
         sc.AddSingleton<IUserAccountDeletionCleanupService, FakeUserAccountDeletionCleanupService>();
         sc.AddSingleton<IUserDeletionService, UserDeletionService>();
-        sc.AddSingleton<IUserService, UserService>();
         sc.AddSingleton<IUserProfileService, UserProfileService>();
         sc.AddSingleton<IRememberMeService, RememberMeService>();
         sc.AddSingleton<IUserRegistrationService, UserRegistrationService>();

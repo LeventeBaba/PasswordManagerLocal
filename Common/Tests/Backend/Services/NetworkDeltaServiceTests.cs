@@ -71,7 +71,7 @@ public sealed class NetworkDeltaServiceTests
 
         var membership = new FakeUserMembershipAuthorizationService();
         var membershipRepository = new FakeUserMembershipAuthorizationRepository();
-        var relationships = new SyncRelationshipReconciliationService(users, devices, userDevices, identity, membershipRepository);
+        var relationships = new SyncRelationshipReconciliationService(users, userDevices, membershipRepository);
         var userDeltaApplier = new UserDeltaApplierService(users, tombstones, syncQueueService);
         var protocol = new NetworkDeltaProtocolService(devices, userDevices, authorization, identity, membership);
         var replay = new NetworkDeltaReplayService(devices, userDevices, tombstones);

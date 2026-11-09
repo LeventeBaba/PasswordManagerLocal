@@ -56,7 +56,6 @@ public sealed class AndroidServiceOwnershipArchitectureTests
 
         Assert.IsFalse(combined.Contains("AndroidBackendRuntimeFactory", StringComparison.Ordinal));
         Assert.IsFalse(combined.Contains("BackendRuntimeLifetimeCoordinator", StringComparison.Ordinal));
-        Assert.IsFalse(combined.Contains("new InProcessFrontendBackendClient", StringComparison.Ordinal));
         Assert.IsFalse(combined.Contains("IBackendRuntime ", StringComparison.Ordinal));
         Assert.IsFalse(combined.Contains("BackgroundSyncSettingsStore", StringComparison.Ordinal));
         StringAssert.Contains(activity, "AndroidActivityServiceAttachmentHandle");
@@ -263,8 +262,6 @@ public sealed class AndroidServiceOwnershipArchitectureTests
             .ToArray();
 
         StringAssert.Contains(project, "PasswordManagerLocal.Android.Runtime.csproj");
-        Assert.IsFalse(androidSources.Any(source =>
-            source.Contains("new InProcessFrontendBackendClient", StringComparison.Ordinal)));
         Assert.IsFalse(androidSources.Any(source =>
             source.Contains("StoreBackgroundSyncSettingsClient", StringComparison.Ordinal)));
     }

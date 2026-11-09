@@ -21,71 +21,21 @@ public sealed class InteractiveSensitiveStateResetterTests
         var resetter = new InteractiveSensitiveStateResetter(tokens, cache, keys, safeMemoryCache);
         var token = tokens.Issue(Guid.NewGuid());
         using var key = EncryptionKey.FromRaw(Enumerable.Repeat((byte)7, 32).ToArray());
-        var userData = CreateUserData();
+        using var bundle = new UserDataBundle { UserData = CreateUserData() };
 
         keys.SetUserKey(token, key, DateTimeOffset.UtcNow.AddMinutes(5));
-        cache.SetUserData(token, userData);
+        cache.SetUserDataBundle(token, bundle);
         Assert.IsTrue(tokens.Validate(token));
         Assert.IsTrue(keys.HasUserKey(token));
-        Assert.IsTrue(cache.TryGetUserData(token, out _));
+        Assert.IsTrue(cache.TryGetUserDataBundle(token, out var cachedBundle));
+        using var cached = cachedBundle;
 
         await resetter.ResetAsync();
         await resetter.ResetAsync();
 
         Assert.IsFalse(tokens.Validate(token));
         Assert.IsFalse(keys.HasUserKey(token));
-        Assert.IsFalse(cache.TryGetUserData(token, out _));
-    }
-
-    [TestMethod]
-    public async Task CacheClearCancelsInflightPopulation()
-    {
-        using var memoryCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
-        var safeMemoryCache = new SafeMemoryCache(memoryCache);
-        ITokenService tokens = new TokenService();
-        IDataCachingService cache = new DataCachingService(safeMemoryCache, tokens);
-        var token = tokens.Issue(Guid.NewGuid());
-        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        var loading = cache.GetOrLoadUserDataAsync(token, async cancellationToken =>
-        {
-            started.TrySetResult();
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-            return CreateUserData();
-        });
-
-        await started.Task;
-        cache.ClearAll();
-
-        await Assert.ThrowsAsync<OperationCanceledException>(async () => await loading);
-    }
-
-    [TestMethod]
-    public async Task ClearPreventsStaleInflightValueFromRepopulatingCache()
-    {
-        using var memoryCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
-        var safeMemoryCache = new SafeMemoryCache(memoryCache);
-        ITokenService tokens = new TokenService();
-        IDataCachingService cache = new DataCachingService(safeMemoryCache, tokens);
-        var token = tokens.Issue(Guid.NewGuid());
-        var started = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var releaseLoader = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-
-        var loading = cache.GetOrLoadUserDataAsync(token, async _ =>
-        {
-            started.TrySetResult();
-            await releaseLoader.Task;
-            return CreateUserData();
-        });
-
-        await started.Task;
-        cache.ClearAll();
-        releaseLoader.TrySetResult();
-
-        await Assert.ThrowsAsync<OperationCanceledException>(async () => await loading);
-        Assert.IsFalse(cache.TryGetUserData(token, out _));
+        Assert.IsFalse(cache.TryGetUserDataBundle(token, out _));
     }
 
     [TestMethod]

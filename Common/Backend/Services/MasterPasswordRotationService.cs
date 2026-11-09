@@ -176,7 +176,6 @@ public sealed class MasterPasswordRotationService : IMasterPasswordRotationServi
             // In-memory key/session state cannot move ahead of the committed canonical transition.
             if (!_keys.RotateUserKey(request.Token, newKey))
                 throw new InvalidOperationException("The initiating session is no longer active.");
-            _keys.SetUserBlobKeys(request.Token, bundle.UserData);
             _cache.SetUserDataBundle(request.Token, bundle);
 
             if (rememberMeWasEnabled)

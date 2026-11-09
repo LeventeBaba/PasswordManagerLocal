@@ -111,22 +111,6 @@ public sealed class DeviceEnrollmentRegistrationService : IDeviceEnrollmentRegis
     }
 
 
-    public async Task RejectIfPrimaryUserAlreadyLinkedToLocalDeviceAsync(IServiceProvider services, Guid userId, CancellationToken ct)
-    {
-        if (await services.GetRequiredService<IDeletedUserBarrierRepository>().ExistsAsync(userId, ct))
-            throw new DeviceEnrollmentException(DeviceEnrollmentErrorCode.ProfileDataInvalid, "The account identity was permanently deleted.");
-
-        var localUserDevices = services.GetRequiredService<ILocalUserDeviceRepository>();
-        var localLink = await localUserDevices.GetAsync(userId, ct);
-        if (localLink is null)
-            return;
-
-        localLink.VerifyIntegrity();
-        if (localLink.LocalDeviceIdentityId == _identity.LocalDeviceId)
-            throw new DeviceEnrollmentException(DeviceEnrollmentErrorCode.NewDeviceRejected, "This profile is already linked to the local device.");
-    }
-
-
     public async Task RegisterIncomingEnrollmentSourceEndpointAsync(
         IServiceProvider services,
         string sourceDeviceId,

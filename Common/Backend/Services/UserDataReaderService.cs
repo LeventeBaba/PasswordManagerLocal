@@ -30,27 +30,6 @@ public sealed class UserDataReaderService : IUserDataReaderService
         _versionClock = versionClock;
     }
 
-    public async Task<UserData> GetAndVerifyUserDataAsync(User user, EncryptionKey key, CancellationToken ct = default)
-    {
-        var userData = await DecryptUserDataAsync(user, key, ct);
-        try
-        {
-            _integrity.VerifyUserData(userData);
-            return userData;
-        }
-        catch
-        {
-            userData.Dispose();
-            throw;
-        }
-    }
-
-    public async Task<UserData> GetAndVerifyUserDataAsync(User user, Guid token, CancellationToken ct = default)
-    {
-        using var key = _interactiveState.GetEncryptionKeyFromToken(token);
-        return await GetAndVerifyUserDataAsync(user, key, ct);
-    }
-
     public async Task<UserDataBundle> GetAndVerifyUserDataBundleAsync(User user, EncryptionKey key, CancellationToken ct = default)
     {
         var userData = await DecryptUserDataAsync(user, key, ct);
@@ -102,19 +81,6 @@ public sealed class UserDataReaderService : IUserDataReaderService
         return bundle;
     }
 
-    public bool TryGetAndVerifyUserDataFromCache(Guid token, out UserData? userData)
-    {
-        if (_interactiveState.TryGetUserData(token, out var foundUserData) && foundUserData is not null)
-        {
-            _integrity.VerifyUserData(foundUserData);
-            userData = foundUserData;
-            return true;
-        }
-
-        userData = null;
-        return false;
-    }
-
     public bool TryGetAndVerifyUserDataBundleFromCache(Guid token, out UserDataBundle? bundle)
     {
         if (_interactiveState.TryGetUserDataBundle(token, out var foundBundle) && foundBundle is not null)
@@ -135,15 +101,6 @@ public sealed class UserDataReaderService : IUserDataReaderService
 
         bundle = null;
         return false;
-    }
-
-    public async Task<UserData> GetLoadAndVerifyUserDataAsync(Guid token, CancellationToken ct = default, User? user = null)
-    {
-        var bundle = await GetLoadAndVerifyUserDataBundleAsync(token, ct, user);
-        bundle.GeneralUserData.Dispose();
-        bundle.UserPasswordsData.Dispose();
-        bundle.UserDevicesData.Dispose();
-        return bundle.UserData;
     }
 
     public async Task<UserDataBundle> GetLoadAndVerifyUserDataBundleAsync(Guid token, CancellationToken ct = default, User? user = null)

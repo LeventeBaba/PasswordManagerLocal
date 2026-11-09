@@ -210,7 +210,8 @@ public sealed class InteractiveBackendSessionTests
         var memoryCache = host.Services.GetRequiredService<SafeMemoryCache>();
         var resetter = new InteractiveSensitiveStateResetter(tokens, cache, keys, memoryCache);
         var token = tokens.Issue(Guid.NewGuid());
-        cache.SetUserData(token, CreateUserData());
+        using var bundle = new UserDataBundle();
+        cache.SetUserDataBundle(token, bundle);
         await state.ActivateAsync();
         var operationStarted = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -233,8 +234,9 @@ public sealed class InteractiveBackendSessionTests
             operationStarted.TrySetResult();
             await continueOperation.Task;
             Assert.IsTrue(state.ExecuteRequired(() => tokens.Validate(token)));
-            Assert.IsTrue(state.ExecuteRequired(() =>
-                cache.TryGetUserData(token, out var cached) && cached is not null));
+            using var cached = state.ExecuteRequired(() =>
+                cache.TryGetUserDataBundle(token, out var value) ? value : null);
+            Assert.IsNotNull(cached);
         });
 
         await operationStarted.Task;
@@ -252,23 +254,7 @@ public sealed class InteractiveBackendSessionTests
         await operation;
         await disposal;
         Assert.IsFalse(tokens.Validate(token));
-        Assert.IsFalse(cache.TryGetUserData(token, out _));
-    }
-
-    private static UserData CreateUserData()
-    {
-        var data = new UserData
-        {
-            UId = Guid.NewGuid(),
-            GeneralUserDataKey = Enumerable.Repeat((byte)1, 32).ToArray(),
-            GeneralUserDataIntegrityHash = Enumerable.Repeat((byte)2, 32).ToArray(),
-            UserPasswordsDataKey = Enumerable.Repeat((byte)3, 32).ToArray(),
-            UserPasswordsDataIntegrityHash = Enumerable.Repeat((byte)4, 32).ToArray(),
-            UserDevicesDataKey = Enumerable.Repeat((byte)5, 32).ToArray(),
-            UserDevicesDataIntegrityHash = Enumerable.Repeat((byte)6, 32).ToArray()
-        };
-        data.GenerateIntegrityHash();
-        return data;
+        Assert.IsFalse(cache.TryGetUserDataBundle(token, out _));
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)

@@ -14,109 +14,37 @@ public sealed class DataCachingServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Unit")]
-    public async Task InvalidateToken_ForcesReload()
+    public void InvalidateToken_RemovesCachedBundle()
     {
         using var host = new BackendTestHost();
         var tokens = host.Services.GetRequiredService<ITokenService>();
         var cache = host.Services.GetRequiredService<IDataCachingService>();
         var token = tokens.Issue(Guid.NewGuid());
-        var calls = 0;
+        using var bundle = new UserDataBundle();
 
-        Task<UserData?> Loader()
-        {
-            calls++;
-            var data = CreateUserData("reload");
-            return Task.FromResult<UserData?>(data);
-        }
+        cache.SetUserDataBundle(token, bundle);
 
-        var first = await cache.GetOrLoadUserDataAsync(token, Loader);
-        var second = await cache.GetOrLoadUserDataAsync(token, Loader);
-
-        MSTestAssert.IsNotNull(first);
-        MSTestAssert.IsNotNull(second);
-        MSTestAssert.AreEqual(1, calls);
+        MSTestAssert.IsTrue(cache.TryGetUserDataBundle(token, out var cachedBundle));
+        using var cached = cachedBundle;
+        MSTestAssert.IsNotNull(cached);
+        MSTestAssert.AreNotSame(bundle, cached);
 
         cache.InvalidateToken(token);
-        var afterInvalidation = await cache.GetOrLoadUserDataAsync(token, Loader);
-
-        MSTestAssert.IsNotNull(afterInvalidation);
-        MSTestAssert.AreEqual(2, calls);
+        MSTestAssert.IsFalse(cache.TryGetUserDataBundle(token, out _));
     }
 
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Unit")]
-    public async Task ConcurrentLoads_ForSameToken_InvokeLoaderOnlyOnce()
-    {
-        using var host = new BackendTestHost();
-        var tokens = host.Services.GetRequiredService<ITokenService>();
-        var cache = host.Services.GetRequiredService<IDataCachingService>();
-        var token = tokens.Issue(Guid.NewGuid());
-        var gate = new TaskCompletionSource<UserData?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var calls = 0;
-        var expected = CreateUserData("concurrent");
-
-        Task<UserData?> Loader(CancellationToken _)
-        {
-            Interlocked.Increment(ref calls);
-            return gate.Task;
-        }
-
-        var loads = Enumerable.Range(0, 20)
-            .Select(_ => cache.GetOrLoadUserDataAsync(token, Loader))
-            .ToArray();
-        await WaitUntilAsync(() => Volatile.Read(ref calls) == 1);
-        gate.SetResult(expected);
-        var results = await Task.WhenAll(loads);
-
-        MSTestAssert.AreEqual(1, calls);
-        MSTestAssert.IsTrue(results.All(result => ReferenceEquals(expected, result)));
-    }
-
-    [TestMethod]
-    [TestCategory("Backend")]
-    [TestCategory("Unit")]
-    public async Task InvalidToken_DoesNotInvokeLoaderOrCacheData()
+    public void InvalidToken_DoesNotCacheBundle()
     {
         using var host = new BackendTestHost();
         var cache = host.Services.GetRequiredService<IDataCachingService>();
-        var calls = 0;
+        var token = Guid.NewGuid();
+        using var bundle = new UserDataBundle();
 
-        var result = await cache.GetOrLoadUserDataAsync(Guid.NewGuid(), _ =>
-        {
-            calls++;
-            return Task.FromResult<UserData?>(CreateUserData("invalid"));
-        });
+        cache.SetUserDataBundle(token, bundle);
 
-        MSTestAssert.IsNull(result);
-        MSTestAssert.AreEqual(0, calls);
-    }
-
-    private static UserData CreateUserData(string username)
-    {
-        var data = new UserData
-        {
-            UId = Guid.NewGuid(),
-            GeneralUserDataKey = Enumerable.Repeat((byte)1, 32).ToArray(),
-            GeneralUserDataIntegrityHash = Enumerable.Repeat((byte)2, 32).ToArray(),
-            UserPasswordsDataKey = Enumerable.Repeat((byte)3, 32).ToArray(),
-            UserPasswordsDataIntegrityHash = Enumerable.Repeat((byte)4, 32).ToArray(),
-            UserDevicesDataKey = Enumerable.Repeat((byte)5, 32).ToArray(),
-            UserDevicesDataIntegrityHash = Enumerable.Repeat((byte)6, 32).ToArray()
-        };
-        data.GenerateIntegrityHash();
-        return data;
-    }
-
-    private static async Task WaitUntilAsync(Func<bool> condition)
-    {
-        var timeoutAt = DateTime.UtcNow.AddSeconds(3);
-        while (!condition())
-        {
-            if (DateTime.UtcNow >= timeoutAt)
-                MSTestAssert.Fail("Timed out waiting for concurrent cache loading.");
-
-            await Task.Delay(10);
-        }
+        MSTestAssert.IsFalse(cache.TryGetUserDataBundle(token, out _));
     }
 }

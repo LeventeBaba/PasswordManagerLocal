@@ -16,10 +16,9 @@ public sealed class DataCachingService : IDataCachingService
     private readonly TimeSpan _userTtl;
 
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _tokenCts = new();
-    private readonly ConcurrentDictionary<string, object> _currentByKey = new();
+    private readonly ConcurrentDictionary<string, UserDataBundle> _currentByKey = new();
     private readonly ConcurrentDictionary<string, byte> _removeWithoutDisposeKeys = new();
     private readonly object _stateLock = new();
-    private long _clearVersion;
 
     public DataCachingService(SafeMemoryCache cache, ITokenService tokens)
         : this(cache, tokens, UserDataCacheExpirationTime)
@@ -35,31 +34,10 @@ public sealed class DataCachingService : IDataCachingService
 
     private string UserKey(Guid token) => $"t:{token:N}:user";
 
-    private bool TryPrepareCacheOperation(
-        Guid token,
-        TimeSpan ttl,
-        out MemoryCacheEntryOptions options,
-        out long clearVersion)
-    {
-        lock (_stateLock)
-        {
-            if (!_tokens.Validate(token))
-            {
-                options = null!;
-                clearVersion = 0;
-                return false;
-            }
-
-            options = EntryOptions(token, ttl);
-            clearVersion = _clearVersion;
-            return true;
-        }
-    }
-
     private bool TryStoreValue(
         Guid token,
         string key,
-        object value,
+        UserDataBundle value,
         TimeSpan ttl)
     {
         lock (_stateLock)
@@ -67,8 +45,8 @@ public sealed class DataCachingService : IDataCachingService
             if (!_tokens.Validate(token))
                 return false;
 
-            if (_currentByKey.TryGetValue(key, out var previous) && previous is UserDataBundle old && !ReferenceEquals(old, value))
-                old.Dispose();
+            if (_currentByKey.TryGetValue(key, out var previous) && !ReferenceEquals(previous, value))
+                previous.Dispose();
             _currentByKey[key] = value;
             _cache.Set(key, value, EntryOptions(token, ttl));
             return true;
@@ -77,8 +55,8 @@ public sealed class DataCachingService : IDataCachingService
 
     private void RemoveCurrentWithoutDispose(string key)
     {
-        if (_currentByKey.TryRemove(key, out var removed) && removed is UserDataBundle bundle)
-            bundle.Dispose();
+        if (_currentByKey.TryRemove(key, out var removed))
+            removed.Dispose();
         _removeWithoutDisposeKeys[key] = 0;
         _cache.Remove(key);
     }
@@ -134,37 +112,13 @@ public sealed class DataCachingService : IDataCachingService
                 if (self._currentByKey.TryGetValue(skey, out var cur) && ReferenceEquals(cur, value))
                 {
                     self._currentByKey.TryRemove(skey, out _);
-                    if (value is UserDataBundle expired) expired.Dispose();
+                    cur.Dispose();
                 }
             }
         }, this);
 
         return opts;
     }
-
-    public async Task<UserDataBundle?> GetOrLoadUserDataBundleAsync(Guid token, Func<CancellationToken, Task<UserDataBundle?>> loader, CancellationToken ct = default)
-    {
-        if (!TryPrepareCacheOperation(token, _userTtl, out var options, out var clearVersion))
-        {
-            InvalidateToken(token);
-            return default;
-        }
-
-        var key = UserKey(token);
-        var result = await _cache.GetOrCreateAsync(key, async innerCt =>
-        {
-            using var loaded = await loader(innerCt);
-            return loaded is null ? null : UserDataBundleCopy.Clone(loaded);
-        }, options, ct);
-        lock (_stateLock)
-        {
-            if (TrackLoadedValue(token, key, result, clearVersion) is null) return null;
-            return TryGetUserDataBundle(token, out var copy) ? copy : null;
-        }
-    }
-
-    public Task<UserDataBundle?> GetOrLoadUserDataBundleAsync(Guid token, Func<Task<UserDataBundle?>> loader)
-        => GetOrLoadUserDataBundleAsync(token, _ => loader());
 
     public bool TryGetUserDataBundle(Guid token, out UserDataBundle? value)
     {
@@ -194,95 +148,6 @@ public sealed class DataCachingService : IDataCachingService
             copy.Dispose();
             InvalidateToken(token);
         }
-    }
-
-    public async Task<UserData?> GetOrLoadUserDataAsync(Guid token, Func<CancellationToken, Task<UserData?>> loader, CancellationToken ct = default)
-    {
-        if (!TryPrepareCacheOperation(token, _userTtl, out var options, out var clearVersion))
-        {
-            InvalidateToken(token);
-            return default;
-        }
-
-        if (TryGetUserData(token, out var cached))
-            return cached;
-
-        var key = UserKey(token);
-        var result = await _cache.GetOrCreateAsync(key, loader, options, ct);
-        return TrackLoadedValue(token, key, result, clearVersion);
-    }
-
-    public Task<UserData?> GetOrLoadUserDataAsync(Guid token, Func<Task<UserData?>> loader)
-        => GetOrLoadUserDataAsync(token, _ => loader());
-
-    public bool TryGetUserData(Guid token, out UserData? value)
-    {
-        value = default;
-
-        if (!_tokens.Validate(token))
-        {
-            InvalidateToken(token);
-            return false;
-        }
-
-        lock (_stateLock)
-        {
-        var key = UserKey(token);
-        if (!_cache.TryGet(key, out object? cached) || cached is null)
-            return false;
-
-        if (cached is UserDataBundle bundle)
-        {
-            var copy = UserDataBundleCopy.Clone(bundle);
-            value = copy.UserData;
-            copy.GeneralUserData.Dispose();
-            copy.UserPasswordsData.Dispose();
-            copy.UserDevicesData.Dispose();
-            _currentByKey[key] = bundle;
-            return true;
-        }
-
-        if (cached is UserData userData)
-        {
-            value = userData;
-            _currentByKey[key] = userData;
-            return true;
-        }
-
-        return false;
-        }
-    }
-
-    public void SetUserData(Guid token, UserData value)
-    {
-        if (!TryStoreValue(token, UserKey(token), value, _userTtl))
-            InvalidateToken(token);
-    }
-
-    private T? TrackLoadedValue<T>(Guid token, string key, T? value, long clearVersion)
-        where T : class
-    {
-        if (value is null)
-            return null;
-
-        var discard = false;
-        lock (_stateLock)
-        {
-            if (clearVersion != _clearVersion || !_tokens.Validate(token))
-            {
-                _cache.Remove(key);
-                discard = true;
-            }
-            else
-            {
-                _currentByKey[key] = value;
-            }
-        }
-
-        if (discard && value is IDisposable disposable)
-            disposable.Dispose();
-
-        return discard ? null : value;
     }
 
     public void InvalidateToken(Guid token)
@@ -317,13 +182,11 @@ public sealed class DataCachingService : IDataCachingService
     public void ClearAll()
     {
         var cancellationSources = new List<CancellationTokenSource>();
-        var valuesToDispose = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        var valuesToDispose = new HashSet<UserDataBundle>(ReferenceEqualityComparer.Instance);
         var failures = new List<Exception>();
 
         lock (_stateLock)
         {
-            _clearVersion++;
-
             foreach (var token in _tokenCts.Keys)
             {
                 if (_tokenCts.TryRemove(token, out var cancellation))
@@ -364,12 +227,9 @@ public sealed class DataCachingService : IDataCachingService
 
         foreach (var value in valuesToDispose)
         {
-            if (value is not IDisposable disposable)
-                continue;
-
             try
             {
-                disposable.Dispose();
+                value.Dispose();
             }
             catch (Exception exception)
             {

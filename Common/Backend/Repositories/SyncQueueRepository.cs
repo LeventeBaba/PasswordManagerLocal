@@ -63,13 +63,6 @@ internal sealed class SyncQueueRepository(SqliteSession session) : ISyncQueueRep
         Guid deviceId, CancellationToken ct = default) =>
         await session.ReadAsync(PendingForDevice, ReadForWrite, ct, ("$device", deviceId));
 
-    public async Task<IReadOnlyList<Guid>> ListQueuedDeviceIdsAsync(
-        Guid syncItemId, IReadOnlyList<Guid> deviceIds, CancellationToken ct = default) =>
-        await session.ReadByIdsAsync(deviceIds, """
-            SELECT "DeviceId" FROM "SyncQueueItems"
-            WHERE "SyncItemId" = $item AND "ProcessedAt" IS NULL AND "DeviceId" IN ({ids});
-            """, row => row.GetGuid(0), ct, ("$item", syncItemId));
-
     public Task EnqueueAsync(Guid syncItemId, Guid deviceId, CancellationToken ct = default) =>
         EnqueueAsync([new SyncQueueItem
         {

@@ -18,75 +18,18 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 public sealed class SyncRelationshipReconciliationService : ISyncRelationshipReconciliationService
 {
     private readonly IUserRepository _users;
-    private readonly IDeviceRepository _devices;
     private readonly IUserDeviceRepository _userDevices;
-    private readonly IDeviceIdentityService _identity;
     private readonly IUserMembershipAuthorizationRepository _membershipAuthorizations;
 
     public SyncRelationshipReconciliationService(
         IUserRepository users,
-        IDeviceRepository devices,
         IUserDeviceRepository userDevices,
-        IDeviceIdentityService identity,
         IUserMembershipAuthorizationRepository membershipAuthorizations)
     {
         _users = users;
-        _devices = devices;
         _userDevices = userDevices;
-        _identity = identity;
         _membershipAuthorizations = membershipAuthorizations;
     }
-
-    public async Task SyncUserDevicesAsync(User user, IEnumerable<Guid> deviceIds, DateTimeOffset modifiedAt, CancellationToken ct)
-    {
-        var requestedIds = CreateIdSet(deviceIds);
-        requestedIds.Remove(_identity.LocalDeviceId);
-        var ids = new HashSet<Guid>();
-        foreach (var deviceId in requestedIds)
-        {
-            if ((await _membershipAuthorizations.ListActiveForDeviceAsync(user.UId, deviceId, ct)).Count != 0)
-                ids.Add(deviceId);
-        }
-
-        var devices = (await _devices.ListByIdsAsync(ids, ct)).ToDictionary(device => device.Id);
-        var knownLinks = user.UserDevices.ToDictionary(link => link.DeviceId);
-        foreach (var id in ids)
-        {
-            if (!devices.TryGetValue(id, out var remoteDevice))
-                continue;
-
-            if (knownLinks.TryGetValue(id, out var existingLink))
-            {
-                existingLink.Device = remoteDevice;
-                existingLink.VerifyIntegrity();
-                if (existingLink.IsDeleted)
-                {
-                    existingLink.IsDeleted = false;
-                    existingLink.DeletedAt = null;
-                    existingLink.IsSyncOn = false;
-                    existingLink.LastModifiedAt = modifiedAt;
-                    existingLink.GenerateIntegrityHash();
-                }
-                _userDevices.Update(existingLink);
-                continue;
-            }
-
-            var newLink = new UserDevice
-            {
-                UserId = user.UId,
-                DeviceId = id,
-                User = user,
-                Device = remoteDevice,
-                IsSyncOn = false,
-                IsDeleted = false,
-                LastModifiedAt = modifiedAt
-            };
-            newLink.GenerateIntegrityHash();
-            user.UserDevices.Add(newLink);
-            await _userDevices.AddAsync(newLink, ct);
-        }
-    }
-
 
     public async Task SyncDeviceUsersAsync(Device device, IEnumerable<Guid> userIds, DateTimeOffset modifiedAt, CancellationToken ct)
     {
