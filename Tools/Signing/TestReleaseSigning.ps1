@@ -70,6 +70,37 @@ try {
     Assert-SigningCheck ($unchangedIdentity -ceq $fingerprint) 'Accept distinct store/key passwords with the same signing identity'
     Assert-SigningFailure { Assert-AndroidReleasePrivateKey -KeyStore $release -KeyAlias 'release' -StorePassReference $reference -KeyPassReference $reference } 'private signing key could not be unlocked'
 
+    # Test the AAB signature path with a disposable key and a minimal archive.
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $unsignedBundle = Join-Path $temp 'unsigned.aab'
+    $signedBundle = Join-Path $temp 'signed.aab'
+    $archive = [IO.Compression.ZipFile]::Open($unsignedBundle, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($file in @('BundleConfig.pb', 'base/manifest/AndroidManifest.xml', 'base/lib/arm64-v8a/libfixture.so')) {
+            $entry = $archive.CreateEntry($file)
+            $stream = $entry.Open()
+            try { $stream.WriteByte(1) }
+            finally { $stream.Dispose() }
+        }
+    }
+    finally { $archive.Dispose() }
+    $bundleSigning = @{
+        KeyStore = $release
+        KeyAlias = 'release'
+        StorePassReference = $reference
+        ExpectedCertificateSha256 = $fingerprint
+    }
+    $jarsigner = Find-SigningJavaTool -Name 'jarsigner'
+    $result = Invoke-SigningToolCaptured -FilePath $jarsigner -Arguments @(
+        '-keystore', $release, '-storepass:env', $secretName, '-keypass:env', $keySecretName,
+        '-digestalg', 'SHA-256', '-sigalg', 'SHA256withRSA', '-signedjar', $signedBundle, $unsignedBundle, 'release'
+    )
+    Assert-SigningCheck ($result.ExitCode -eq 0) 'Sign an AAB with distinct passwords using the SDK signing arguments'
+    Assert-AndroidReleaseBundle @bundleSigning -BundlePath $signedBundle
+    Assert-SigningFailure { Assert-AndroidReleaseBundle @bundleSigning -BundlePath $unsignedBundle } 'App Bundle signature verification failed'
+    $bundleSigning.ExpectedCertificateSha256 = '0' * 64
+    Assert-SigningFailure { Assert-AndroidReleaseBundle @bundleSigning -BundlePath $signedBundle } 'matching the selected release certificate'
+
     $validOutput = "Verifies`r`nNumber of signers: 1`r`nSigner #1 certificate SHA-256 digest: $($fingerprint.ToLowerInvariant())`r`n"
     Assert-AndroidApkSignerOutput -Output $validOutput -ExpectedCertificateSha256 $fingerprint
     Assert-SigningCheck $true 'Accept expected APK signer'

@@ -1,6 +1,6 @@
 # Release signing
 
-Run `publish.cmd` from the solution root on Windows. `-A` publishes Android, `-W` publishes Windows, and `-F` publishes both. Android release APKs require a release keystore. Windows output is unsigned by default and uses Authenticode when requested with `-SignWindows`.
+Run `publish.cmd` from the solution root on Windows. `-A` publishes an Android APK, `-G` publishes an Android App Bundle for Google Play, `-W` publishes Windows, and `-F` publishes Windows and an Android APK. Both Android modes require a release keystore. Windows output is unsigned by default and uses Authenticode when requested with `-SignWindows`.
 
 ## Android APKs
 
@@ -18,6 +18,23 @@ The publisher prompts privately for the keystore password and key password. Pres
 The publisher checks private-key access before building. It rejects debug signing and uses the selected Android SDK `apksigner` to match the final APK's signer to the selected release certificate. `AndroidCertificateSha256` optionally pins the expected fingerprint.
 
 An installed package requires a matching signing identity for an in-place update. Switching from a debug-signed installation to a release-signed installation requires uninstalling the debug package, which deletes that installation's local vault and secure-storage keys.
+
+## Google Play App Bundle
+
+```powershell
+.\publish.cmd -G
+.\publish.cmd -G 16
+```
+
+The default minimum is Android 10. The optional number selects the minimum version from 10 through 16. The bundle targets Android 16 (API 36), contains ARM64 native libraries and requests 16 KB ZIP alignment for APKs generated from it.
+
+The publisher uses the same keystore settings and password prompts as `-A`. The JDK signs the bundle locally and the publisher checks the signature and certificate before writing the upload file. The default command produces this file under the solution root.
+
+```text
+artifacts\publish\PasswordManagerLocal.Android.Frontend\google-play\android-10-plus\PasswordManagerLocal-google-play-arm64-v8a-signed.aab
+```
+
+Upload the signed `.aab` to the release in Play Console. For later releases, increment `ApplicationVersion` in [the Android frontend project](../Android/Frontend/PasswordManagerLocal.Android.Frontend.csproj) to give the bundle a new Android version code.
 
 ## Windows Authenticode
 

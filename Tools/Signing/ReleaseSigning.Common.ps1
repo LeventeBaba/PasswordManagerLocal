@@ -236,3 +236,59 @@ function Assert-AndroidReleaseApk {
     }
     Write-Host "Verified release APK signer SHA-256: $ExpectedCertificateSha256"
 }
+
+function Assert-AndroidReleaseBundle {
+    param(
+        [Parameter(Mandatory = $true)][string]$BundlePath,
+        [Parameter(Mandatory = $true)][string]$KeyStore,
+        [Parameter(Mandatory = $true)][string]$KeyAlias,
+        [Parameter(Mandatory = $true)][string]$StorePassReference,
+        [Parameter(Mandatory = $true)][string]$ExpectedCertificateSha256,
+        [string]$JavaSdkDirectory
+    )
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [IO.Compression.ZipFile]::OpenRead($BundlePath)
+    try {
+        if (-not $archive.GetEntry('BundleConfig.pb') -or -not $archive.GetEntry('base/manifest/AndroidManifest.xml')) {
+            throw 'The package does not contain the required Android App Bundle files.'
+        }
+        $nativeAbis = @(
+            foreach ($entry in $archive.Entries) {
+                if ($entry.FullName -cmatch '^[^/]+/lib/([^/]+)/[^/]+\.so$') { $Matches[1] }
+            }
+        )
+        if ($nativeAbis.Count -eq 0 -or @($nativeAbis -cne 'arm64-v8a').Count -ne 0) {
+            throw 'The Android App Bundle must contain ARM64 native libraries only.'
+        }
+    }
+    finally { $archive.Dispose() }
+
+    $passwordSource, $passwordLocation = $StorePassReference -split ':', 2
+    if ($passwordSource -notin @('env', 'file') -or [string]::IsNullOrEmpty($passwordLocation)) {
+        throw 'The bundle verifier requires an env: or file: keystore password reference.'
+    }
+
+    $jarsigner = Find-SigningJavaTool -Name 'jarsigner' -JavaSdkDirectory $JavaSdkDirectory
+    $result = Invoke-SigningToolCaptured -FilePath $jarsigner -Arguments @(
+        '-J-Duser.language=en', '-J-Duser.country=US', '-verify', '-strict',
+        '-keystore', $KeyStore, "-storepass:$($passwordSource.ToLowerInvariant())", $passwordLocation, $BundlePath, $KeyAlias
+    )
+    # jarsigner can return zero even when no signature is present.
+    if ($result.ExitCode -ne 0 -or $result.Output -notmatch '(?m)^jar verified\.[\t \r]*$') {
+        throw "Android App Bundle signature verification failed (jarsigner exit $($result.ExitCode)).`n$($result.Output)"
+    }
+
+    $keytool = Find-SigningJavaTool -Name 'keytool' -JavaSdkDirectory $JavaSdkDirectory
+    $result = Invoke-SigningToolCaptured -FilePath $keytool -Arguments @(
+        '-J-Duser.language=en', '-J-Duser.country=US', '-printcert', '-jarfile', $BundlePath
+    )
+    $signers = [regex]::Matches($result.Output, '(?m)^Signer #\d+:[\t \r]*$')
+    $signerDigest = [regex]::Match($result.Output, '(?mi)^[\t ]*SHA256:[\t ]*([0-9a-f:]+)[\t \r]*$')
+    if ($result.ExitCode -ne 0 -or $signers.Count -ne 1 -or -not $signerDigest.Success -or
+        $signerDigest.Groups[1].Value.Replace(':', '') -ine $ExpectedCertificateSha256) {
+        throw 'The Android App Bundle must have exactly one signer matching the selected release certificate.'
+    }
+
+    Write-Host "Verified Google Play bundle signer SHA-256: $ExpectedCertificateSha256"
+}

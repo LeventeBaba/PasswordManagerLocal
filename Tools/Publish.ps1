@@ -6,6 +6,9 @@ param(
     [Alias('a')]
     [switch]$Android,
 
+    [Alias('g')]
+    [switch]$GooglePlay,
+
     [Alias('f')]
     [switch]$Full,
 
@@ -45,11 +48,11 @@ function Write-Usage {
     Write-Host '  .\publish.cmd -W -SignWindows  Publish Windows with verified Authenticode signatures'
     Write-Host '  .\publish.cmd -A           Publish an ARM64 APK supporting Android 10 and later'
     Write-Host '  .\publish.cmd -A 16        Publish an ARM64 APK requiring Android 16 or later'
-    Write-Host '  .\publish.cmd -F [10-16]   Publish Windows x64 and Android'
+    Write-Host '  .\publish.cmd -G [10-16]   Publish a signed ARM64 Android App Bundle for Google Play'
+    Write-Host '  .\publish.cmd -F [10-16]   Publish Windows x64 and an Android APK'
     Write-Host ''
     Write-Host 'The Android number selects the minimum installable Android version.'
     Write-Host 'All Android builds compile and target Android 16 (API 36).'
-    Write-Host 'Android publishing produces one ARM64 APK for the selected minimum version.'
     Write-Host 'Android publishing requires PublishKeys\PasswordManagerLocal-release.jks and securely prompts for passwords.'
     Write-Host 'Windows publishing creates a ZIP and an MSI. See Docs\WINDOWS_INSTALLER.md for WiX setup.'
     Write-Host 'Windows publishing is unsigned for testing unless -SignWindows is supplied.'
@@ -57,6 +60,8 @@ function Write-Usage {
 }
 
 function Initialize-AndroidReleaseSigning {
+    param([switch]$AppBundle)
+
     $script:AndroidSigningSettings = Get-ReleaseSigningSettings
     if (-not (Test-Path -LiteralPath $script:AndroidSigningSettings.AndroidKeyStore -PathType Leaf)) {
         throw "Release keystore not found: $($script:AndroidSigningSettings.AndroidKeyStore)"
@@ -102,10 +107,12 @@ function Initialize-AndroidReleaseSigning {
         -KeyAlias $script:AndroidSigningSettings.AndroidKeyAlias `
         -StorePassReference $script:AndroidStorePassReference -KeyPassReference $script:AndroidKeyPassReference `
         -JavaSdkDirectory $script:AndroidJavaSdkDirectory
-    $script:AndroidApkSignerJar = Find-SigningApkSignerJar
     Write-Host 'Validated Android private signing key access.'
     Write-Host "Android release signer SHA-256: $script:AndroidSigningFingerprint"
-    Write-Host "APK signature verifier: $script:AndroidApkSignerJar"
+    if (-not $AppBundle) {
+        $script:AndroidApkSignerJar = Find-SigningApkSignerJar
+        Write-Host "APK signature verifier: $script:AndroidApkSignerJar"
+    }
 }
 
 function Resolve-AndroidPublishSettings {
@@ -308,11 +315,47 @@ function Publish-WindowsApp {
 function Publish-AndroidApp {
     param(
         [Parameter(Mandatory = $true)]
-        [PSCustomObject]$Settings
+        [PSCustomObject]$Settings,
+
+        [switch]$AppBundle
     )
 
     $project = Join-Path $script:Root 'Android\Frontend\PasswordManagerLocal.Android.Frontend.csproj'
-    $outputRoot = Join-Path $script:Root "artifacts\publish\PasswordManagerLocal.Android.Frontend\android-$($Settings.Version)-plus"
+    $publishRoot = Join-Path $script:Root 'artifacts\publish\PasswordManagerLocal.Android.Frontend'
+    $versionDirectory = "android-$($Settings.Version)-plus"
+    $buildArguments = @(
+        'build',
+        $project,
+        '--disable-build-servers',
+        '--verbosity', 'normal',
+        '-c', 'Release',
+        '-f', $script:AndroidTargetFramework,
+        '-r', 'android-arm64',
+        '-t:SignAndroidPackage',
+        '-p:AndroidKeyStore=true',
+        "-p:JavaSdkDirectory=$script:AndroidJavaSdkDirectory",
+        "-p:AndroidSigningKeyStore=$($script:AndroidSigningSettings.AndroidKeyStore)",
+        "-p:AndroidSigningKeyAlias=$($script:AndroidSigningSettings.AndroidKeyAlias)",
+        "-p:AndroidSigningStorePass=$script:AndroidStorePassReference",
+        "-p:AndroidSigningKeyPass=$script:AndroidKeyPassReference",
+        "-p:PmlAndroidCertificateSha256=$script:AndroidSigningFingerprint",
+        "-p:SupportedOSPlatformVersion=$($Settings.MinimumApiLevel).0",
+        "-p:AndroidMinimumVersion=$($Settings.Version)",
+        '-p:WarningsAsErrors=XA0141'
+    )
+
+    Write-Host ''
+    Write-Host "Android compile/target version: Android 16 (API $($script:AndroidTargetApiLevel))"
+    Write-Host "Android minimum install version: Android $($Settings.Version) (API $($Settings.MinimumApiLevel))"
+    Write-Host "Android CPU architecture: $script:AndroidAbi"
+
+    if ($AppBundle) {
+        $bundleOutput = Join-Path (Join-Path $publishRoot 'google-play') $versionDirectory
+        Publish-GooglePlayBundle -BuildArguments $buildArguments -OutputRoot $bundleOutput
+        return
+    }
+
+    $outputRoot = Join-Path $publishRoot $versionDirectory
     $architectureOutput = Join-Path $outputRoot $script:AndroidAbi
     $targetBinRoot = Join-Path $script:Root "Android\Frontend\bin\Release\$($script:AndroidTargetFramework)"
 
@@ -326,33 +369,10 @@ function Publish-AndroidApp {
 
     New-Item -ItemType Directory -Path $architectureOutput -Force | Out-Null
 
-    Write-Host ''
-    Write-Host "Android compile/target version: Android 16 (API $($script:AndroidTargetApiLevel))"
-    Write-Host "Android minimum install version: Android $($Settings.Version) (API $($Settings.MinimumApiLevel))"
-    Write-Host "APK CPU architecture: $script:AndroidAbi"
-
-    $buildArguments = @(
-        'build',
-        $project,
-        '--disable-build-servers',
-        '--verbosity', 'normal',
-        '-c', 'Release',
-        '-f', $script:AndroidTargetFramework,
-        '-r', 'android-arm64',
-        '-t:SignAndroidPackage',
-        '-p:AndroidKeyStore=true',
+    $buildArguments += @(
         '-p:AndroidUseApkSigner=true',
-        "-p:JavaSdkDirectory=$script:AndroidJavaSdkDirectory",
         "-p:ApkSignerJar=$script:AndroidApkSignerJar",
-        "-p:AndroidSigningKeyStore=$($script:AndroidSigningSettings.AndroidKeyStore)",
-        "-p:AndroidSigningKeyAlias=$($script:AndroidSigningSettings.AndroidKeyAlias)",
-        "-p:AndroidSigningStorePass=$script:AndroidStorePassReference",
-        "-p:AndroidSigningKeyPass=$script:AndroidKeyPassReference",
-        "-p:PmlAndroidCertificateSha256=$script:AndroidSigningFingerprint",
-        "-p:SupportedOSPlatformVersion=$($Settings.MinimumApiLevel).0",
-        "-p:AndroidMinimumVersion=$($Settings.Version)",
-        "-p:AndroidArtifactsPublishDir=$architectureOutput",
-        '-p:WarningsAsErrors=XA0141'
+        "-p:AndroidArtifactsPublishDir=$architectureOutput"
     )
 
     Invoke-CommandChecked "Publishing Android $script:AndroidAbi APK" {
@@ -390,12 +410,58 @@ function Publish-AndroidApp {
     Write-Host "Signed APK: $finalName"
 }
 
+function Publish-GooglePlayBundle {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$BuildArguments,
+        [Parameter(Mandatory = $true)][string]$OutputRoot
+    )
+
+    $bundleConfig = Join-Path $PSScriptRoot 'Android\GooglePlayBundleConfig.json'
+    $staging = Join-Path $script:Root ('artifacts\g\' + [Guid]::NewGuid().ToString('N'))
+    $finalName = "PasswordManagerLocal-google-play-${script:AndroidAbi}-signed.aab"
+    $finalPath = Join-Path $OutputRoot $finalName
+
+    try {
+        New-Item -ItemType Directory -Path $staging -Force | Out-Null
+        $packageDirectory = Join-Path $staging 'package'
+        # The Android workload signs AABs with jarsigner. Give it password
+        # references and let the project verify the signed package before copying.
+        $bundleArguments = $BuildArguments + @(
+            '--artifacts-path', $staging,
+            "-p:AndroidArtifactsPublishDir=$packageDirectory",
+            '-p:AndroidPackageFormat=aab',
+            '-p:AndroidPackageFormats=aab',
+            '-p:AndroidUseApkSigner=false',
+            "-p:AndroidBundleConfigurationFile=$bundleConfig"
+        )
+        Invoke-CommandChecked 'Building the Google Play Android App Bundle' {
+            dotnet @bundleArguments
+        }
+
+        $bundles = @(Get-ChildItem -LiteralPath $packageDirectory -File -Filter '*-Signed.aab')
+        if ($bundles.Count -ne 1) {
+            throw 'The current build must produce exactly one signed Android App Bundle.'
+        }
+
+        New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null
+        Move-Item -LiteralPath $bundles[0].FullName -Destination $finalPath -Force
+        Write-Host ''
+        Write-Host "Google Play upload bundle: $finalPath"
+    }
+    finally {
+        if (Test-Path -LiteralPath $staging) {
+            Remove-Item -LiteralPath $staging -Recurse -Force
+        }
+    }
+}
+
 $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Set-Location $script:Root
 
 $selectedCount = 0
 if ($Windows.IsPresent) { $selectedCount++ }
 if ($Android.IsPresent) { $selectedCount++ }
+if ($GooglePlay.IsPresent) { $selectedCount++ }
 if ($Full.IsPresent) { $selectedCount++ }
 
 if ($selectedCount -eq 0) {
@@ -404,13 +470,13 @@ if ($selectedCount -eq 0) {
 }
 
 if ($selectedCount -gt 1) {
-    Write-Host 'Choose exactly one publish mode: -W, -A, or -F.' -ForegroundColor Red
+    Write-Host 'Choose exactly one publish mode: -W, -A, -G, or -F.' -ForegroundColor Red
     Write-Usage
     exit 2
 }
 
-if (-not [string]::IsNullOrWhiteSpace($AndroidVersion) -and -not ($Android.IsPresent -or $Full.IsPresent)) {
-    Write-Host 'An Android version can only be supplied with -A or -F.' -ForegroundColor Red
+if (-not [string]::IsNullOrWhiteSpace($AndroidVersion) -and -not ($Android.IsPresent -or $GooglePlay.IsPresent -or $Full.IsPresent)) {
+    Write-Host 'An Android version can only be supplied with -A, -G, or -F.' -ForegroundColor Red
     Write-Usage
     exit 2
 }
@@ -440,7 +506,8 @@ if ($NativeAOT -and $ReadyToRun) {
 }
 
 $androidSettings = $null
-if ($Android.IsPresent -or $Full.IsPresent) {
+$publishesAndroid = $Android.IsPresent -or $GooglePlay.IsPresent -or $Full.IsPresent
+if ($publishesAndroid) {
     try {
         $androidSettings = Resolve-AndroidPublishSettings -RequestedVersion $AndroidVersion
     }
@@ -455,7 +522,7 @@ if ($Android.IsPresent -or $Full.IsPresent) {
 }
 
 try {
-    if ($Android.IsPresent -or $Full.IsPresent) { Initialize-AndroidReleaseSigning }
+    if ($publishesAndroid) { Initialize-AndroidReleaseSigning -AppBundle:$GooglePlay }
     if ($Full.IsPresent) {
         Publish-WindowsApp
         Publish-AndroidApp -Settings $androidSettings
@@ -466,8 +533,8 @@ try {
         Publish-WindowsApp
     }
 
-    if ($Android.IsPresent) {
-        Publish-AndroidApp -Settings $androidSettings
+    if ($Android.IsPresent -or $GooglePlay.IsPresent) {
+        Publish-AndroidApp -Settings $androidSettings -AppBundle:$GooglePlay
     }
 }
 catch {
