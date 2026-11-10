@@ -62,7 +62,7 @@ internal sealed class Program
         var names = new WindowsInstanceNameProvider(
             "PasswordManagerLocal",
             applicationDataDirectory,
-            new WindowsUserIdentityProvider()).GetNames();
+            new WindowsUserIdentityProvider()).GetNames("PasswordManagerLocalDemo");
         using var uiProcessLock = new FileProcessInstanceLock(names.UiLockFilePath);
         var singleInstance = new WindowsUiSingleInstanceController(
             uiProcessLock,
@@ -74,7 +74,11 @@ internal sealed class Program
             .GetAwaiter()
             .GetResult();
         if (instanceRole != WindowsUiInstanceRole.Primary)
+        {
+            if (instanceRole == WindowsUiInstanceRole.SecondaryActivationUnavailable)
+                new WindowsStartupNotification().ShowExistingInstance();
             return;
+        }
 
         using var process = Process.GetCurrentProcess();
         var identity = new WindowsUiIpcIdentity(

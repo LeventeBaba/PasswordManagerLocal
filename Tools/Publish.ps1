@@ -321,7 +321,7 @@ function Publish-AndroidApp {
     )
 
     $project = Join-Path $script:Root 'Android\Frontend\PasswordManagerLocal.Android.Frontend.csproj'
-    $publishRoot = Join-Path $script:Root 'artifacts\publish\PasswordManagerLocal.Android.Frontend'
+    $publishRoot = Join-Path $script:Root 'artifacts\publish\PasswordManagerLocalDemo.Android'
     $versionDirectory = "android-$($Settings.Version)-plus"
     $buildArguments = @(
         'build',
@@ -395,7 +395,7 @@ function Publish-AndroidApp {
         throw "No newly built signed APK was found for $script:AndroidAbi."
     }
 
-    $finalName = "PasswordManagerLocal-android-$($Settings.Version)-plus-${script:AndroidAbi}-signed.apk"
+    $finalName = "PasswordManagerLocalDemo-android-$($Settings.Version)-plus-${script:AndroidAbi}-signed.apk"
     $finalPath = Join-Path $outputRoot $finalName
 
     Write-Host ''
@@ -418,7 +418,7 @@ function Publish-GooglePlayBundle {
 
     $bundleConfig = Join-Path $PSScriptRoot 'Android\GooglePlayBundleConfig.json'
     $staging = Join-Path $script:Root ('artifacts\g\' + [Guid]::NewGuid().ToString('N'))
-    $finalName = "PasswordManagerLocal-google-play-${script:AndroidAbi}-signed.aab"
+    $finalName = "PasswordManagerLocalDemo-google-play-${script:AndroidAbi}-signed.aab"
     $finalPath = Join-Path $OutputRoot $finalName
 
     try {

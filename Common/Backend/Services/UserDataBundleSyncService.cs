@@ -169,21 +169,19 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
 
                 var incomingBundle = incomingVerification.VerifiedBundle!;
                 _versionClock.Observe(SyncVersionStampTraversal.Enumerate(incomingBundle));
-                anyVerified = true;
-                verifiedBundles[(snapshot.OriginDeviceId, snapshot.OriginInstanceId, snapshot.OriginRevision)] =
-                    (snapshot, incomingBundle);
                 var snapshotChangedBlobs = UserDataBlobKind.None;
 
                 try
                 {
+                    // Check the vault before applying any part of this snapshot.
+                    if (_passwordsDataMerge.Merge(canonicalBundle.UserPasswordsData, incomingBundle.UserPasswordsData, enforceDemoLimits: true))
+                        snapshotChangedBlobs |= UserDataBlobKind.Passwords;
                     if (GeneralUserDataMergeUtil.Merge(
                             canonicalBundle.GeneralUserData,
                             incomingBundle.GeneralUserData,
                             existing,
                             snapshot.User))
                         snapshotChangedBlobs |= UserDataBlobKind.General;
-                    if (_passwordsDataMerge.Merge(canonicalBundle.UserPasswordsData, incomingBundle.UserPasswordsData))
-                        snapshotChangedBlobs |= UserDataBlobKind.Passwords;
                     if (_devicesDataMerge.Merge(canonicalBundle.UserDevicesData, incomingBundle.UserDevicesData))
                         snapshotChangedBlobs |= UserDataBlobKind.Devices;
                 }
@@ -191,7 +189,20 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
                 {
                     throw ex.WithUserId(existing.UId);
                 }
+                catch (LimitReachedException)
+                {
+                    results.Add(new UserSnapshotMergeEntryResult(
+                        snapshot.OriginDeviceId,
+                        snapshot.OriginInstanceId,
+                        snapshot.OriginRevision,
+                        true,
+                        DeferredByDemoLimit: true));
+                    continue;
+                }
 
+                anyVerified = true;
+                verifiedBundles[(snapshot.OriginDeviceId, snapshot.OriginInstanceId, snapshot.OriginRevision)] =
+                    (snapshot, incomingBundle);
                 changedBlobs |= snapshotChangedBlobs;
                 var snapshotTimestamp = snapshot.CreatedAtUtc.ToUniversalTime();
                 if (snapshotChangedBlobs != UserDataBlobKind.None)

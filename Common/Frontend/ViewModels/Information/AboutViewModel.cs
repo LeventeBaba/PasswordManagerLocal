@@ -35,7 +35,7 @@ public sealed class AboutViewModel : ViewModelBase
     public ReactiveCommand<RxVoid, RxVoid> NavigateToLicensesCommand { get; }
     public bool AreLicensesAvailable { get; }
 
-    public Uri SourceCodeUri { get; } = new("https://github.com/LeventeBaba/PasswordManagerLocal");
+    public Uri SourceCodeUri { get; } = new("https://github.com/LeventeBaba/PasswordManagerLocal/tree/Demo");
     public Uri ProjectLicenseUri { get; } = new("https://github.com/LeventeBaba/PasswordManagerLocal/blob/master/LICENSE.txt");
     public Uri CreatorProfileUri { get; } = new("https://github.com/LeventeBaba");
     public Uri OnlinePrivacyPolicyUri => PrivacyPolicyLinks.ForLanguage(CurrentLanguage);
@@ -59,6 +59,10 @@ public sealed class AboutViewModel : ViewModelBase
             GetTranslation("About_BuildTime_Format"),
             timestamp)
         : GetTranslation("About_BuildTime_Unavailable");
+    public string DemoLimitsNotice => string.Format(
+        CultureInfo.CurrentCulture, GetTranslation("About_DemoLimits"),
+        DemoLimits.PasswordsPerAccount, DemoLimits.TagsPerAccount, DemoLimits.CustomColorsPerAccount,
+        DemoLimits.AccountsPerDevice, DemoLimits.DevicesPerAccount);
     public string DevelopmentNotice => GetTranslation("About_DevelopmentNotice");
     public string SecurityTitle => GetTranslation("About_Security_Title");
     public string SecurityDescription => GetTranslation("About_Security_Description");
@@ -88,6 +92,7 @@ public sealed class AboutViewModel : ViewModelBase
             nameof(ProductDescription),
             nameof(VersionText),
             nameof(BuildTimeText),
+            nameof(DemoLimitsNotice),
             nameof(DevelopmentNotice),
             nameof(SecurityTitle),
             nameof(SecurityDescription),

@@ -30,22 +30,32 @@ public sealed class WindowsInstanceNameProvider
             ?? throw new ArgumentNullException(nameof(userIdentityProvider));
     }
 
-    public WindowsInstanceNames GetNames()
+    public WindowsInstanceNames GetNames(string? pipeApplicationIdentifier = null)
     {
         var userIdentifier = _userIdentityProvider.GetStableUserIdentifier();
         ArgumentException.ThrowIfNullOrWhiteSpace(userIdentifier);
 
-        var material = Encoding.UTF8.GetBytes($"{_applicationIdentifier}\n{userIdentifier}");
-        var suffix = Convert.ToHexString(SHA256.HashData(material))[..32].ToLowerInvariant();
+        var lockSuffix = GetSuffix(_applicationIdentifier, userIdentifier);
+        // Both editions share ownership of the vault. Edition-specific pipes keep
+        // the UI from connecting to the other edition's Agent.
+        var pipeSuffix = pipeApplicationIdentifier is null
+            ? lockSuffix
+            : GetSuffix(pipeApplicationIdentifier, userIdentifier);
         var lockDirectory = Path.Combine(
             _applicationDataDirectory,
             CoordinationConstants.WindowsInstanceNameProviderInstanceLocksDirectoryName);
 
         return new WindowsInstanceNames(
-            Path.Combine(lockDirectory, $"agent.{suffix}.lock"),
-            Path.Combine(lockDirectory, $"ui.{suffix}.lock"),
-            $"PasswordManagerLocal.Control.{suffix}",
-            $"PasswordManagerLocal.UiActivation.{suffix}",
-            $"PasswordManagerLocal.Endpoints.{suffix}");
+            Path.Combine(lockDirectory, $"agent.{lockSuffix}.lock"),
+            Path.Combine(lockDirectory, $"ui.{lockSuffix}.lock"),
+            $"PasswordManagerLocal.Control.{pipeSuffix}",
+            $"PasswordManagerLocal.UiActivation.{pipeSuffix}",
+            $"PasswordManagerLocal.Endpoints.{pipeSuffix}");
+    }
+
+    private static string GetSuffix(string applicationIdentifier, string userIdentifier)
+    {
+        var material = Encoding.UTF8.GetBytes($"{applicationIdentifier}\n{userIdentifier}");
+        return Convert.ToHexString(SHA256.HashData(material))[..32].ToLowerInvariant();
     }
 }

@@ -17,7 +17,7 @@ internal static class WindowsLocalDataRemoval
         using (var ui = new FileProcessInstanceLock(names.UiLockFilePath))
         {
             if (!agent.IsOwner || !ui.IsOwner)
-                throw new InvalidOperationException("Exit Password Manager Local completely from its notification-area icon before deleting local data.");
+                throw new InvalidOperationException("Exit Password Manager Local Demo completely from its notification-area icon before deleting local data.");
 
             // Collect and validate the entire tree before deleting any vault files.
             var entries = new List<FileSystemInfo>();

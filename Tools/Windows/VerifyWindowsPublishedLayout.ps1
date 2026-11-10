@@ -25,7 +25,7 @@ function Assert-Files([string[]]$Names) {
 
 if ($NativeAOT) {
     $requiredFiles = @(
-        'PasswordManagerLocal.exe',
+        'PasswordManagerLocalDemo.exe',
         'av_libglesv2.dll',
         'libHarfBuzzSharp.dll',
         'libSkiaSharp.dll',
@@ -45,11 +45,11 @@ if ($NativeAOT) {
 }
 
 Assert-Files @(
-    'PasswordManagerLocal.exe',
-    'PasswordManagerLocal.ico',
-    'PasswordManagerLocal.dll',
-    'PasswordManagerLocal.deps.json',
-    'PasswordManagerLocal.runtimeconfig.json',
+    'PasswordManagerLocalDemo.exe',
+    'PasswordManagerLocalDemo.ico',
+    'PasswordManagerLocalDemo.dll',
+    'PasswordManagerLocalDemo.deps.json',
+    'PasswordManagerLocalDemo.runtimeconfig.json',
     'PasswordManagerLocal.Windows.Agent.exe',
     'PasswordManagerLocal.Windows.Agent.dll',
     'PasswordManagerLocal.Windows.Agent.deps.json',
@@ -80,22 +80,22 @@ Assert-Files @(
 
 $iconFiles = @(Get-ChildItem -LiteralPath $publish -Recurse -File | Where-Object { $_.Extension -ieq '.ico' })
 if ($iconFiles.Count -ne 1 -or
-    -not [string]::Equals($iconFiles[0].FullName, (Join-Path $publish 'PasswordManagerLocal.ico'), [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'The product must contain exactly one .ico file at its root: PasswordManagerLocal.ico.'
+    -not [string]::Equals($iconFiles[0].FullName, (Join-Path $publish 'PasswordManagerLocalDemo.ico'), [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'The product must contain exactly one .ico file at its root: PasswordManagerLocalDemo.ico.'
 }
 
 if (Test-Path -LiteralPath (Join-Path $publish 'AgentRuntime')) {
     throw 'The prohibited legacy AgentRuntime directory is present.'
 }
 
-foreach ($executable in @('PasswordManagerLocal.exe', 'PasswordManagerLocal.Windows.Agent.exe')) {
+foreach ($executable in @('PasswordManagerLocalDemo.exe', 'PasswordManagerLocal.Windows.Agent.exe')) {
     $matches = @(Get-ChildItem -LiteralPath $publish -Recurse -File -Filter $executable)
     if ($matches.Count -ne 1 -or -not [string]::Equals($matches[0].DirectoryName, $publish, [StringComparison]::OrdinalIgnoreCase)) {
         throw "$executable must exist exactly once in the product root."
     }
 }
 
-$frontendDeps = Get-Content -LiteralPath (Join-Path $publish 'PasswordManagerLocal.deps.json') -Raw
+$frontendDeps = Get-Content -LiteralPath (Join-Path $publish 'PasswordManagerLocalDemo.deps.json') -Raw
 $agentDeps = Get-Content -LiteralPath (Join-Path $publish 'PasswordManagerLocal.Windows.Agent.deps.json') -Raw
 foreach ($name in @('PasswordManagerLocal.Common.Backend', 'PasswordManagerLocal.Windows.Backend', 'PasswordManagerLocal.Windows.EndpointRpc.Server', 'Microsoft.EntityFrameworkCore', 'Microsoft.Data.Sqlite', 'SQLitePCLRaw', 'SQLite3MC.PCLRaw')) {
     if ($frontendDeps.IndexOf($name, [StringComparison]::OrdinalIgnoreCase) -ge 0) { throw "Frontend manifest contains backend-only dependency: $name" }
@@ -127,7 +127,7 @@ foreach ($file in Get-ChildItem -LiteralPath $publish -Recurse -File) {
 }
 
 $runtimeConfigurations = @(
-    [System.IO.Path]::Combine($publish, 'PasswordManagerLocal.runtimeconfig.json')
+    [System.IO.Path]::Combine($publish, 'PasswordManagerLocalDemo.runtimeconfig.json')
     [System.IO.Path]::Combine($publish, 'PasswordManagerLocal.Windows.Agent.runtimeconfig.json')
 )
 foreach ($runtimeConfiguration in $runtimeConfigurations) {

@@ -489,6 +489,24 @@ public sealed class SyncPeerProtocolHandler
                 request.CodeProof.ToByteArray(),
                 ct);
 
+            // A Demo sender can check capacity before committing membership. Older peers
+            // omit the optional ID, and every import still checks capacity transactionally.
+            if (result.Ok && Guid.TryParseExact(request.EnrollingUserId, "N", out var enrollingUserId) &&
+                enrollingUserId != Guid.Empty)
+            {
+                var users = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+                var accountIds = await users.ListUserIdsAsync(ct);
+                if (accountIds.Count >= DemoLimits.AccountsPerDevice && !accountIds.Contains(enrollingUserId))
+                {
+                    return new GetDeviceEnrollmentInfoReply
+                    {
+                        Ok = false,
+                        ErrorCode = DeviceEnrollmentErrorCode.DemoAccountLimitReached.ToString(),
+                        Error = $"The Demo supports up to {DemoLimits.AccountsPerDevice} accounts per device."
+                    };
+                }
+            }
+
             return new GetDeviceEnrollmentInfoReply
             {
                 Ok = result.Ok,

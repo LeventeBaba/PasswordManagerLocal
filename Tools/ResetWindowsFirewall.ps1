@@ -2,21 +2,20 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-Removes only Password Manager Local firewall configuration for manual testing.
+Removes only Password Manager Local Demo firewall configuration for manual testing.
 .DESCRIPTION
-Close the app first. Removes known current/legacy app rules from the local
-persistent policy and rules targeting the Agent executable. Does not reset
-Windows Firewall, change profile defaults, or change domain/MDM policy.
-Without AgentPath, rules targeting any PasswordManagerLocal.Windows.Agent.exe
-installation are selected. With AgentPath, unnamed application rules are
-selected only for those exact paths; known app-owned names are always selected.
+Close the Demo first. Removes Demo-owned rules from the local persistent
+policy and rules targeting the Demo executable paths. Without AgentPath, uses
+the registered Demo installation folder. For a portable Demo, pass its exact
+Agent executable path. Windows Firewall profile defaults and domain/MDM policy
+are left intact.
 ApplicationDataDirectory must refer to the app user's directory when elevation
 uses a different administrator account. Only windows-firewall.json is removed.
 This is a developer tool; it is never copied into application publications.
 .EXAMPLE
 .\Tools\ResetWindowsFirewall.ps1 -WhatIf
 .EXAMPLE
-.\Tools\ResetWindowsFirewall.ps1 -AgentPath 'C:\Apps\PasswordManagerLocal\PasswordManagerLocal.Windows.Agent.exe'
+.\Tools\ResetWindowsFirewall.ps1 -AgentPath 'C:\Apps\PasswordManagerLocalDemo\PasswordManagerLocal.Windows.Agent.exe'
 #>
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param(
@@ -27,16 +26,15 @@ param(
 $ErrorActionPreference = 'Stop'
 Import-Module NetSecurity -ErrorAction Stop
 
-$ruleGroup = 'PasswordManagerLocal.LocalNetwork.v2'
-$ownedNames = @(
-    "$ruleGroup.Tcp.In", "$ruleGroup.Udp.In", "$ruleGroup.Tcp.Out", "$ruleGroup.Udp.Out",
-    'PasswordManagerLocal Sync TCP', 'PasswordManagerLocal Sync TCP App',
-    'PasswordManagerLocal Sync TCP Port', 'PasswordManagerLocal Sync TCP Outbound App',
-    'PasswordManagerLocal mDNS UDP', 'PasswordManagerLocal mDNS UDP App',
-    'PasswordManagerLocal mDNS UDP Port', 'PasswordManagerLocal mDNS UDP Outbound App',
-    'PasswordManagerLocal Discovery UDP App', 'PasswordManagerLocal Discovery UDP Port',
-    'PasswordManagerLocal Discovery UDP Outbound App'
-)
+$ruleGroup = 'PasswordManagerLocalDemo.LocalNetwork.v2'
+$ownedNames = @("$ruleGroup.Tcp.In", "$ruleGroup.Udp.In", "$ruleGroup.Tcp.Out", "$ruleGroup.Udp.Out")
+$demoExecutableNames = @('PasswordManagerLocal.Windows.Agent.exe', 'PasswordManagerLocalDemo.exe')
+if ($AgentPath.Count -eq 0) {
+    $registration = Get-ItemProperty -LiteralPath 'HKLM:\Software\PasswordManagerLocalDemo\Installer' -ErrorAction SilentlyContinue
+    if ($registration.InstallLocation) {
+        $AgentPath = @($demoExecutableNames | ForEach-Object { Join-Path $registration.InstallLocation $_ })
+    }
+}
 
 function ConvertTo-NormalizedProgram([string]$Program) {
     if ([string]::IsNullOrWhiteSpace($Program) -or $Program -eq 'Any' -or $Program -eq '*') { return '' }
@@ -46,8 +44,8 @@ function ConvertTo-NormalizedProgram([string]$Program) {
 
 $selectedPaths = @($AgentPath | ForEach-Object {
     $path = ConvertTo-NormalizedProgram $_
-    if (-not $path -or [IO.Path]::GetFileName($path) -ine 'PasswordManagerLocal.Windows.Agent.exe') {
-        throw "AgentPath must name PasswordManagerLocal.Windows.Agent.exe: $_"
+    if (-not $path -or [IO.Path]::GetFileName($path) -notin $demoExecutableNames) {
+        throw "AgentPath must name a Demo Agent executable: $_"
     }
     $path
 })
@@ -56,23 +54,17 @@ function Test-AppRule($Rule) {
     if ($ownedNames -contains [string]$Rule.DisplayName -or [string]$Rule.Group -eq $ruleGroup) { return $true }
     foreach ($filter in @($Rule | Get-NetFirewallApplicationFilter -ErrorAction Stop)) {
         $program = ConvertTo-NormalizedProgram ([string]$filter.Program)
-        if (-not $program) { continue }
-        if ($selectedPaths.Count -gt 0) {
-            if ($selectedPaths -contains $program) { return $true }
-        }
-        elseif ([IO.Path]::GetFileName($program) -ieq 'PasswordManagerLocal.Windows.Agent.exe') {
-            return $true
-        }
+        if ($program -and $selectedPaths -contains $program) { return $true }
     }
     return $false
 }
 
-Write-Host 'Close Password Manager Local before resetting its firewall configuration.'
+Write-Host 'Close Password Manager Local Demo before resetting its firewall configuration.'
 $removed = 0
 $localRules = @(Get-NetFirewallRule -PolicyStore PersistentStore -ErrorAction Stop)
 foreach ($rule in $localRules) {
     if ((Test-AppRule $rule) -and $PSCmdlet.ShouldProcess(
-        "$($rule.DisplayName) [$($rule.Name)]", 'Remove Password Manager Local firewall rule')) {
+        "$($rule.DisplayName) [$($rule.Name)]", 'Remove Password Manager Local Demo firewall rule')) {
         $rule | Remove-NetFirewallRule -Confirm:$false -ErrorAction Stop
         $removed++
     }
@@ -80,7 +72,7 @@ foreach ($rule in $localRules) {
 
 $statusPath = Join-Path ([IO.Path]::GetFullPath($ApplicationDataDirectory)) 'windows-firewall.json'
 if ((Test-Path -LiteralPath $statusPath -PathType Leaf) -and
-    $PSCmdlet.ShouldProcess($statusPath, 'Remove cached Password Manager Local firewall status')) {
+    $PSCmdlet.ShouldProcess($statusPath, 'Remove cached Password Manager Local Demo firewall status')) {
     Remove-Item -LiteralPath $statusPath -Force -ErrorAction Stop
 }
 

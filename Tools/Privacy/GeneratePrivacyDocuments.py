@@ -20,7 +20,7 @@ LABELS = {
     "en_us": {
         "code": "en", "name": "English", "other": "Magyar", "other_code": "hu",
         "reviewed": "Last reviewed", "effective": "Effective from", "version": "Version",
-        "status": "Notice status", "deletion": "Account and data deletion — Password Manager Local",
+        "status": "Notice status", "deletion": "Account and data deletion — Password Manager Local Demo",
         "policy": "Full Privacy Policy", "delete_link": "Account and data deletion",
         "deletion_status": "Use the in-app steps below to delete your local profile. The developer can handle requests about data in the developer inbox. The developer has no remote access to your vault or devices.",
         "draft": "Draft for testing. This page describes local controls; it cannot receive deletion requests or remotely erase your devices. The public release contact and any required request route still need to be finalized.",
@@ -28,7 +28,7 @@ LABELS = {
     "hu": {
         "code": "hu", "name": "Magyar", "other": "English", "other_code": "en",
         "reviewed": "Utolsó felülvizsgálat", "effective": "Hatályos ettől", "version": "Változat",
-        "status": "A tájékoztató állapota", "deletion": "Fiók és adatok törlése — Password Manager Local",
+        "status": "A tájékoztató állapota", "deletion": "Fiók és adatok törlése — Password Manager Local Demo",
         "policy": "Teljes adatvédelmi tájékoztató", "delete_link": "Fiók és adatok törlése",
         "deletion_status": "A helyi profilodat az alábbi, alkalmazáson belüli lépésekkel törölheted. A fejlesztő a fejlesztői postafiókban kezelt adatokra vonatkozó kérelmeket tudja kezelni. Távolról nem fér hozzá a jelszótáradhoz vagy az eszközeidhez.",
         "draft": "Tesztelési tervezet. Ez az oldal a helyi lehetőségeket ismerteti; nem fogad törlési kérelmet és nem törli távolról az eszközeidet. A nyilvános kiadás kapcsolattartóját és az esetleg szükséges kérelmezési lehetőséget még véglegesíteni kell.",
@@ -144,8 +144,8 @@ def outputs() -> dict[Path, str]:
         result[OUTPUT / f"Public/account-deletion.{code}.html"] = page(document, labels, deletion=True)
     result[OUTPUT / "Public/index.html"] = f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Password Manager Local — Privacy / Adatvédelem</title><style>{CSS}</style></head>
-<body><main><h1>Password Manager Local</h1><p>Privacy / Adatvédelem</p>
+<title>Password Manager Local Demo — Privacy / Adatvédelem</title><style>{CSS}</style></head>
+<body><main><h1>Password Manager Local Demo</h1><p>Privacy / Adatvédelem</p>
 <nav aria-label="Language / Nyelv"><a href="privacy-policy.en.html" lang="en">Privacy Policy — English</a>
 <a href="privacy-policy.hu.html" lang="hu">Adatvédelmi tájékoztató — Magyar</a></nav>
 </main></body></html>

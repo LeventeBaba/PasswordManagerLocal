@@ -43,8 +43,8 @@ public sealed class PasswordTagService : IPasswordTagService
         if (!request.Validate(out var errors))
             throw new InvalidInputException(errors);
 
-        if (passwords.Tags.Count >= MaxNumberOfPasswordTags)
-            throw new LimitReachedException(MaxNumberOfPasswordTags, "passwordTag");
+        if (passwords.Tags.Count >= DemoLimits.TagsPerAccount)
+            throw new LimitReachedException(DemoLimits.TagsPerAccount, "passwordTag");
 
         var tagName = NormalizeTagName(request.Name);
         var color = NormalizeColorCode(request.Color);
@@ -179,8 +179,8 @@ public sealed class PasswordTagService : IPasswordTagService
         if (hasInvalidInput)
             throw new InvalidInputException(["PasswordTagIds"]);
 
-        if (targetPasswords.Tags.Count + passwordTagIds.Count > MaxNumberOfPasswordTags)
-            throw new LimitReachedException(MaxNumberOfPasswordTags, "passwordTag");
+        if (targetPasswords.Tags.Count + passwordTagIds.Count > DemoLimits.TagsPerAccount)
+            throw new LimitReachedException(DemoLimits.TagsPerAccount, "passwordTag");
     }
 
 

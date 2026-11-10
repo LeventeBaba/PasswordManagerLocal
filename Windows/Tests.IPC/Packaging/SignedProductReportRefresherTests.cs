@@ -14,7 +14,7 @@ public sealed class SignedProductReportRefresherTests
         Directory.CreateDirectory(root);
         try
         {
-            var path = Path.Combine(root, "PasswordManagerLocal.dll");
+            var path = Path.Combine(root, "PasswordManagerLocalDemo.dll");
             File.WriteAllText(path, "signed content with an appended certificate");
             var original = CreateReport();
             var report = SignedProductReportRefresher.RefreshInventory(root, original);
@@ -37,7 +37,7 @@ public sealed class SignedProductReportRefresherTests
         try
         {
             Assert.ThrowsExactly<FileNotFoundException>(() => SignedProductReportRefresher.RefreshInventory(root, CreateReport()));
-            File.WriteAllText(Path.Combine(root, "PasswordManagerLocal.dll"), "signed");
+            File.WriteAllText(Path.Combine(root, "PasswordManagerLocalDemo.dll"), "signed");
             File.WriteAllText(Path.Combine(root, "unexpected.dll"), "extra");
             Assert.ThrowsExactly<InvalidOperationException>(() => SignedProductReportRefresher.RefreshInventory(root, CreateReport()));
         }
@@ -63,5 +63,5 @@ public sealed class SignedProductReportRefresherTests
         "1.0", "win-x64", "net10.0-windows",
         new PackageSummary(1, 3, 1, 3, 1, 3, 0, 0, 0, 0, 0, 3, 1, 3),
         null,
-        [new PackageFileEntry("PasswordManagerLocal.dll", PackageFileSource.Both, 3, "OLD", PackageMergeAction.DeduplicatedIdentical, "application")]);
+        [new PackageFileEntry("PasswordManagerLocalDemo.dll", PackageFileSource.Both, 3, "OLD", PackageMergeAction.DeduplicatedIdentical, "application")]);
 }

@@ -320,7 +320,7 @@ public sealed class WindowsRuntimeOwnershipArchitectureTests
             "public const string Background = \"--background\";");
         Assert.IsFalse(source.Contains("Registry.LocalMachine", StringComparison.Ordinal));
         Assert.IsFalse(source.Contains("HKEY_LOCAL_MACHINE", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("PasswordManagerLocal.exe", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("PasswordManagerLocalDemo.exe", StringComparison.Ordinal));
     }
 
     [TestMethod]

@@ -1,4 +1,4 @@
-# Adatvédelmi tájékoztató — Password Manager Local
+# Adatvédelmi tájékoztató — Password Manager Local Demo
 
 Változat 1.1 · Hatályos ettől: 2026-11-07
 
@@ -8,7 +8,7 @@ A profilok és jelszavak a saját eszközeiden tárolódnak. A csatlakoztatott e
 
 ## 1. A tájékoztatóról és az adatvédelmi kapcsolattartásról
 
-A Password Manager Local fejlesztője Baba Levente (Magyarország). Ez a tájékoztató a telepített windowsos és androidos alkalmazásra, valamint a visszajelzések, hibajelentések és adatvédelmi megkeresések fogadására szolgáló fejlesztői e-mail-címre vonatkozik. A fejlesztőt a leventebaba.dev@gmail.com címen érheted el.
+A Password Manager Local Demo fejlesztője Baba Levente (Magyarország). Ez a tájékoztató a telepített windowsos és androidos alkalmazásra, valamint a visszajelzések, hibajelentések és adatvédelmi megkeresések fogadására szolgáló fejlesztői e-mail-címre vonatkozik. A fejlesztőt a leventebaba.dev@gmail.com címen érheted el.
 
 E-mailben ne küldj mesterjelszót, tárolt jelszót, csatlakoztatási kódot, kulcsfájlt vagy jelszótár-adatbázist. Az alkalmazásboltok, az operációs rendszerek és a külső weboldalak saját adatvédelmi szabályokat alkalmaznak.
 
@@ -42,7 +42,7 @@ Az Emlékezz rám ezen az eszközön lehetőség védett helyi kulcsadatokat men
 
 ## 6. Kapcsolatok és az adatok címzettjei
 
-Az alkalmazás közvetlenül azokkal az eszközökkel cserél profil- és jelszótáradatokat, amelyek csatlakoztatását jóváhagytad. Nincs fejlesztői fiók-, jelszótár- vagy közvetítőszerver. Az alkalmazás nem küldi el automatikusan a profil- vagy jelszótáradataidat a fejlesztőnek vagy olyan eszközöknek, amelyek csatlakoztatását nem hagytad jóvá. A csatlakoztatott eszközök saját másolatot tárolnak, és hitelesített információt továbbíthatnak az ismert társeszközökről. Csak saját vagy általad felügyelt eszközöket csatlakoztass.
+Az alkalmazás közvetlenül azokkal az eszközökkel cserél profil- és jelszótáradatokat, amelyek csatlakoztatását jóváhagytad. Két demóverzió közötti csatlakoztatáskor a fogadó eszköz az alkalmazás által létrehozott fiókazonosító alapján ellenőrzi a csatlakoztatási kapcsolaton keresztül, hogy van-e hely az adott fióknak. Nincs fejlesztői fiók-, jelszótár- vagy közvetítőszerver. Az alkalmazás nem küldi el automatikusan a profil- vagy jelszótáradataidat a fejlesztőnek vagy olyan eszközöknek, amelyek csatlakoztatását nem hagytad jóvá. A csatlakoztatott eszközök saját másolatot tárolnak, és hitelesített információt továbbíthatnak az ismert társeszközökről. Csak saját vagy általad felügyelt eszközöket csatlakoztass.
 
 A szinkronizálás TLS-kapcsolaton történik, és az alkalmazás ellenőrzi a társeszközt. A társeszközök megkereséséhez az alkalmazás aláírt vagy hitelesített UDP-felderítő üzeneteket küld a helyi hálózaton. A hálózat többi eszköze akkor is észlelheti a felderítés metaadatait, ha nincs csatlakoztatva a profilhoz. Ilyen adat például az IP-cím, az alkalmazás által létrehozott eszközazonosító, a csatlakoztatási munkamenet azonosítója és a forgalom időzítése. A felderítő üzenetek nem tartalmazzák a jelszótár adatait.
 
@@ -52,7 +52,7 @@ Ha a háttérműködés be van kapcsolva és elérhető, a Windows-ügynök vagy
 
 Androidon az alkalmazás internet-, hálózati/Wi-Fi-állapot- és multicastengedélyeket kér a kapcsolatokhoz és felderítéshez; kameraengedélyt a QR-beolvasáshoz; továbbá csatlakoztatott eszközökhöz tartozó előtérszolgáltatási, értesítési és rendszerindítási engedélyeket a háttérszolgáltatás működéséhez és újraindításához. A szolgáltatás értesítése jelezheti a háttértevékenységet. A kamerához futásidejű engedély kell. A kamera elutasítása mellett a kézi kódbevitel vagy a képkiválasztás továbbra is használható. Az operációs rendszer korlátozhatja a háttérműködést.
 
-Windowson a szükséges tűzfalszabályok hiányában az alkalmazás felajánlhatja azok beállítását. A módosításhoz az alkalmazásban megadott jóváhagyásod és a Windows rendszergazdai engedélye is szükséges. A beállítás a Password Manager Local ügynök szabályait hozza létre vagy cseréli le. A bejövő TCP 26688-as port az eszközök csatlakoztatására és szinkronizálására, az UDP 26689-es port a felderítésre szolgál. A bejövő szabályok a Windows hálózati profiljaira érvényesek, és nem szűrnek távoli IP-cím szerint. Kimenő szabály csak olyan engedélyezett tűzfalprofilhoz készül, amely alapértelmezésben blokkolja a kimenő forgalmat. Az alkalmazás csak a saját szabályait módosítja, a tűzfal be- vagy kikapcsolt állapotát nem változtatja meg. Ha elutasítod a beállítást, előfordulhat, hogy nem jön létre kapcsolat a társeszközökkel. A helyi jelszótár továbbra is használható.
+Windowson a szükséges tűzfalszabályok hiányában az alkalmazás felajánlhatja azok beállítását. A módosításhoz az alkalmazásban megadott jóváhagyásod és a Windows rendszergazdai engedélye is szükséges. A beállítás a Password Manager Local Demo ügynök szabályait hozza létre vagy cseréli le. A bejövő TCP 26688-as port az eszközök csatlakoztatására és szinkronizálására, az UDP 26689-es port a felderítésre szolgál. A bejövő szabályok a Windows hálózati profiljaira érvényesek, és nem szűrnek távoli IP-cím szerint. Kimenő szabály csak olyan engedélyezett tűzfalprofilhoz készül, amely alapértelmezésben blokkolja a kimenő forgalmat. Az alkalmazás csak a saját szabályait módosítja, a tűzfal be- vagy kikapcsolt állapotát nem változtatja meg. Ha elutasítod a beállítást, előfordulhat, hogy nem jön létre kapcsolat a társeszközökkel. A helyi jelszótár továbbra is használható.
 
 ## 8. Kamera, QR-képek és kiválasztott fájlok
 

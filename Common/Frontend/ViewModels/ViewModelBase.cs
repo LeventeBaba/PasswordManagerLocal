@@ -213,6 +213,10 @@ public abstract class ViewModelBase : DisposableReactiveObject
     protected string GetDeviceEnrollmentErrorMessage(DeviceEnrollmentErrorCode errorCode) =>
         errorCode switch
         {
+            DeviceEnrollmentErrorCode.DemoAccountLimitReached =>
+                string.Format(GetTranslation("Error_DeviceEnrollment_DemoAccountLimit"), DemoLimits.AccountsPerDevice),
+            DeviceEnrollmentErrorCode.DemoDeviceLimitReached =>
+                string.Format(GetTranslation("Error_DeviceEnrollment_DemoDeviceLimit"), DemoLimits.DevicesPerAccount),
             DeviceEnrollmentErrorCode.SyncDisabled => GetTranslation("Error_DeviceEnrollment_SyncDisabled"),
             DeviceEnrollmentErrorCode.InvalidCode => GetTranslation("Error_DeviceEnrollment_InvalidCode"),
             DeviceEnrollmentErrorCode.NewDeviceNotFound => GetTranslation("Error_DeviceEnrollment_NewDeviceNotFound"),

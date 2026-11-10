@@ -1,22 +1,22 @@
 <WixLocalization Culture="en-US" Codepage="1250" xmlns="http://wixtoolset.org/schemas/v4/wxl">
   <String Id="PmlProductLanguage" Value="1033" />
   <String Id="PmlSetupTitle" Value="[ProductName] Setup" />
-  <String Id="PmlWelcomeHeading" Value="Password Manager Local Setup" />
-  <String Id="PmlWelcomeIntroduction" Value="Set up Password Manager Local on this computer. Choose Next to review the license and installation options." />
+  <String Id="PmlWelcomeHeading" Value="Password Manager Local Demo Setup" />
+  <String Id="PmlWelcomeIntroduction" Value="Set up Password Manager Local Demo on this computer. Choose Next to review the license and installation options." />
   <String Id="PmlFolderLabel" Value="&amp;Installation folder" />
   <String Id="PmlBrowse" Value="&amp;Browse..." />
   <String Id="PmlCreateDesktopShortcut" Value="Create a &amp;desktop shortcut" />
   <String Id="PmlOptionsHeading" Value="Installation options" />
   <String Id="PmlFolderHelp" Value="Choose a new or empty folder on a fixed NTFS drive in a location controlled by administrators." />
   <String Id="PmlUpgradeHelp" Value="Setup will reuse the existing installation folder." />
-  <String Id="PmlLaunchAfterSetup" Value="&amp;Open Password Manager Local" />
+  <String Id="PmlLaunchAfterSetup" Value="&amp;Open Password Manager Local Demo" />
   <String Id="PmlSetupFinishedHeading" Value="Setup complete" />
-  <String Id="PmlSetupFinishedDescription" Value="Password Manager Local setup has completed. Choose Finish to close this window." />
+  <String Id="PmlSetupFinishedDescription" Value="Password Manager Local Demo setup has completed. Choose Finish to close this window." />
   <String Id="PmlAdminSetupFinishedHeading" Value="Administrative setup complete" />
   <String Id="PmlAdminSetupFinishedDescription" Value="The administrative installation image was created. Choose Finish to close this window." />
-  <String Id="PmlNewerVersionInstalled" Value="A newer version of Password Manager Local is already installed." />
+  <String Id="PmlNewerVersionInstalled" Value="A newer version of Password Manager Local Demo is already installed." />
   <String Id="PmlDesktopShortcutFeature" Value="Desktop shortcut" />
-  <String Id="PmlUninstallShortcut" Value="Uninstall Password Manager Local" />
+  <String Id="PmlUninstallShortcut" Value="Uninstall Password Manager Local Demo" />
 
   <!-- Shrink stock background bitmaps to a pixel so Windows draws the dialog
        surface, including the area behind text, in the user's system colors. -->

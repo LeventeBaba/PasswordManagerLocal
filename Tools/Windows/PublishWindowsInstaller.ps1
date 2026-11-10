@@ -18,7 +18,7 @@ $buildRoot = Join-Path $OutputRoot 'installer-build'
 $stage = Join-Path $buildRoot 'package'
 $intermediateRoot = Join-Path $buildRoot 'obj'
 $binaryLog = Join-Path $ReportRoot 'installer-build.binlog'
-$installerName = 'PasswordManagerLocal.msi'
+$installerName = 'PasswordManagerLocalDemo.msi'
 # One fresh product identity per release, shared by both inputs to the transform.
 $productCode = [Guid]::NewGuid().ToString('B').ToUpperInvariant()
 
@@ -90,4 +90,4 @@ if ($SigningContext) {
 $installer = Join-Path $OutputRoot $installerName
 Move-Item -LiteralPath $stagedInstaller -Destination $installer
 Write-Host "Windows installer: $installer"
-Write-Host 'Hungarian setup: msiexec /i "PasswordManagerLocal.msi" TRANSFORMS=:1038'
+Write-Host 'Hungarian setup: msiexec /i "PasswordManagerLocalDemo.msi" TRANSFORMS=:1038'

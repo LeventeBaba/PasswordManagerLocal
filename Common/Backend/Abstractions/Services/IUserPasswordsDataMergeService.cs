@@ -4,5 +4,5 @@ namespace PasswordManagerLocal.Common.Backend.Abstractions.Services;
 
 public interface IUserPasswordsDataMergeService
 {
-    bool Merge(UserPasswordsData local, UserPasswordsData incoming);
+    bool Merge(UserPasswordsData local, UserPasswordsData incoming, bool enforceDemoLimits = false);
 }

@@ -62,6 +62,7 @@
               <TextBlock Text="{Binding ProductDescription}"
                          Classes="subtleText"
                          TextWrapping="Wrap" />
+              <TextBlock Text="{Binding DemoLimitsNotice}" TextWrapping="Wrap" />
               <TextBlock Text="{Binding DevelopmentNotice}" TextWrapping="Wrap" />
             </StackPanel>
           </Grid>

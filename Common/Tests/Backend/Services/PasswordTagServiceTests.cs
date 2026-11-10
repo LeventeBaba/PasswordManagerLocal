@@ -5,7 +5,6 @@ using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Backend.Services;
 using System.Security.Cryptography;
 using System.Text;
-using static PasswordManagerLocal.Common.Contracts.Constants.PasswordConstants;
 
 using MSTestAssert = Microsoft.VisualStudio.TestTools.UnitTesting.Assert;
 
@@ -97,7 +96,7 @@ public sealed class PasswordTagServiceTests
         var service = new PasswordTagService();
         var passwords = CreateEmptyPasswords();
 
-        for (var i = 0; i < MaxNumberOfPasswordTags; i++)
+        for (var i = 0; i < DemoLimits.TagsPerAccount; i++)
         {
             var tag = new PasswordTag
             {
@@ -120,7 +119,7 @@ public sealed class PasswordTagServiceTests
             }, passwords);
         });
 
-        MSTestAssert.HasCount(MaxNumberOfPasswordTags, passwords.Tags);
+        MSTestAssert.HasCount(DemoLimits.TagsPerAccount, passwords.Tags);
         MSTestAssert.IsFalse(passwords.Tags.Any(tag => tag.Name == "Overflow"));
         passwords.VerifyIntegrity();
     }

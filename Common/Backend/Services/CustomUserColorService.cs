@@ -48,8 +48,8 @@ public sealed class CustomUserColorService : ICustomUserColorService
         if (requests.Count == 0)
             return;
 
-        if (passwords.CustomColors.Count + requests.Count > MaxNumberOfCustomUserColors)
-            throw new LimitReachedException(MaxNumberOfCustomUserColors, "customUserColor");
+        if (passwords.CustomColors.Count + requests.Count > DemoLimits.CustomColorsPerAccount)
+            throw new LimitReachedException(DemoLimits.CustomColorsPerAccount, "customUserColor");
 
         var normalizedColors = NormalizeAndValidateNewCustomColors(requests, passwords);
         var now = DateTime.UtcNow;
@@ -213,8 +213,8 @@ public sealed class CustomUserColorService : ICustomUserColorService
         if (hasInvalidInput)
             throw new InvalidInputException(["CustomUserColorIds"]);
 
-        if (targetPasswords.CustomColors.Count + customUserColorIds.Count > MaxNumberOfCustomUserColors)
-            throw new LimitReachedException(MaxNumberOfCustomUserColors, "customUserColor");
+        if (targetPasswords.CustomColors.Count + customUserColorIds.Count > DemoLimits.CustomColorsPerAccount)
+            throw new LimitReachedException(DemoLimits.CustomColorsPerAccount, "customUserColor");
     }
 
 

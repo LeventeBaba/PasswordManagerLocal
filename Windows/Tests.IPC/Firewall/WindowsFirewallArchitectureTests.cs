@@ -34,8 +34,6 @@ public sealed class WindowsFirewallArchitectureTests
     {
         var source = Read("Tools", "ResetWindowsFirewall.ps1");
         StringAssert.Contains(source, WindowsFirewallConfigurationService.RuleGroup);
-        foreach (var name in WindowsFirewallConfigurationService.LegacyRuleNames)
-            StringAssert.Contains(source, "'" + name + "'");
         foreach (var suffix in new[] { ".Tcp.In", ".Udp.In", ".Tcp.Out", ".Udp.Out" })
             StringAssert.Contains(source, "$ruleGroup" + suffix);
         StringAssert.Contains(source, "SupportsShouldProcess = $true");

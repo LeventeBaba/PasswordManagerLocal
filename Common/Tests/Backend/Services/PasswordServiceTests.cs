@@ -5,7 +5,6 @@ using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Backend.Services;
 using System.Security.Cryptography;
 using System.Text;
-using static PasswordManagerLocal.Common.Contracts.Constants.PasswordConstants;
 
 using MSTestAssert = Microsoft.VisualStudio.TestTools.UnitTesting.Assert;
 
@@ -67,7 +66,7 @@ public sealed class PasswordServiceTests
         var service = new PasswordService();
         var passwords = CreateEmptyPasswords();
 
-        for (var i = 0; i < MaxNumberOfPasswords; i++)
+        for (var i = 0; i < DemoLimits.PasswordsPerAccount; i++)
         {
             var password = new SecurePassword
             {
@@ -104,7 +103,7 @@ public sealed class PasswordServiceTests
             Password = Encoding.UTF8.GetBytes("source-secret")
         }, sourcePasswords);
 
-        for (var i = 0; i < MaxNumberOfPasswords; i++)
+        for (var i = 0; i < DemoLimits.PasswordsPerAccount; i++)
         {
             var password = new SecurePassword
             {
@@ -124,7 +123,7 @@ public sealed class PasswordServiceTests
             await service.ExportPasswordsAsync([sourceId], sourcePasswords, targetPasswords);
         });
 
-        MSTestAssert.HasCount(MaxNumberOfPasswords, targetPasswords.Passwords);
+        MSTestAssert.HasCount(DemoLimits.PasswordsPerAccount, targetPasswords.Passwords);
         MSTestAssert.IsFalse(targetPasswords.Passwords.Any(password => password.Name == "Exported"));
         targetPasswords.VerifyIntegrity();
     }

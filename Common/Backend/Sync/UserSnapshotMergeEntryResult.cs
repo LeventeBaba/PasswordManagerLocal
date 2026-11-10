@@ -12,4 +12,5 @@ public sealed record UserSnapshotMergeEntryResult(
     UserDataVerificationState VerificationState = UserDataVerificationState.Healthy,
     UserDataBlobKind FailedBlobs = UserDataBlobKind.None,
     string? DiagnosticCode = null,
-    bool MatchesCanonicalContent = false);
+    bool MatchesCanonicalContent = false,
+    bool DeferredByDemoLimit = false);

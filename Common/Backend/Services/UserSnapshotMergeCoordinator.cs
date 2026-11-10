@@ -277,6 +277,11 @@ public sealed class UserSnapshotMergeCoordinator : IUserSnapshotMergeCoordinator
                 continue;
             }
 
+            // Leave valid overflow snapshots pending so a later merge can retry without
+            // falsely claiming that their additions are already in the canonical vault.
+            if (result.DeferredByDemoLimit)
+                continue;
+
             await RecordMergedKnowledgeAsync(candidate.Envelope, ct);
             mergedRows.Add(candidate.Row);
         }

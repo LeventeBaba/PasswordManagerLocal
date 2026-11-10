@@ -20,7 +20,7 @@ public sealed class WindowsRunStartupRegistrationTests
     {
         var registry = new FakeWindowsCurrentUserRegistry();
         var executablePath = unifiedExecutable
-            ? Path.Combine(Path.GetDirectoryName(AgentPath)!, "PasswordManagerLocal.exe")
+            ? Path.Combine(Path.GetDirectoryName(AgentPath)!, "PasswordManagerLocalDemo.exe")
             : AgentPath;
         var command = new WindowsAgentStartupCommand(executablePath, unifiedExecutable);
         var registration = new WindowsRunStartupRegistration(command, registry);
@@ -101,7 +101,7 @@ public sealed class WindowsRunStartupRegistrationTests
     {
         var uiPath = Path.Combine(
             Path.GetDirectoryName(AgentPath)!,
-            "PasswordManagerLocal.exe");
+            "PasswordManagerLocalDemo.exe");
 
         Assert.ThrowsExactly<ArgumentException>(() =>
             new WindowsAgentStartupCommand(uiPath));

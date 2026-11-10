@@ -8,7 +8,7 @@ using PasswordManagerLocal.Common.Backend.Configuration.BackgroundSync;
 namespace PasswordManagerLocal.Android.Frontend;
 
 [BroadcastReceiver(
-    Name = "com.leventebaba.passwordmanagerlocal.AndroidBackgroundRestorationReceiver",
+    Name = "com.leventebaba.passwordmanagerlocaldemo.AndroidBackgroundRestorationReceiver",
     Enabled = true,
     Exported = false)]
 [IntentFilter(new[]

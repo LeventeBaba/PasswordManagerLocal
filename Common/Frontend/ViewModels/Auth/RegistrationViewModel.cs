@@ -467,6 +467,12 @@ public sealed class RegistrationViewModel : ViewModelBase
             if (!ApplyBackendValidationErrors(ex))
                 ShowSafeErrorMessage(ex);
         }
+        catch (Exception ex) when (!registrationCommitted &&
+            (ex is LimitReachedException or EndpointFailureException { FailureKind: EndpointFailureKind.LimitReached }))
+        {
+            ShowErrorMessage(() => string.Format(
+                GetTranslation("Error_DeviceEnrollment_DemoAccountLimit"), DemoLimits.AccountsPerDevice));
+        }
         catch (EndpointFailureException ex) when (!registrationCommitted)
         {
             MarkAllFieldsTouched();

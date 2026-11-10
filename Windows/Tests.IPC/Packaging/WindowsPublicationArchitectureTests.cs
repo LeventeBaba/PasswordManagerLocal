@@ -80,7 +80,7 @@ public sealed class WindowsPublicationArchitectureTests
         foreach (var required in new[]
         {
             "Remove-Item -LiteralPath $outputRootPath -Recurse -Force", @"staging\frontend", @"staging\agent",
-            @"product\PasswordManagerLocal", "reports", "-p:PublishTrimmed=true", "-p:PublishSingleFile=false",
+            @"product\PasswordManagerLocalDemo", "reports", "-p:PublishTrimmed=true", "-p:PublishSingleFile=false",
             "[switch]$ReadyToRun", "$readyToRunValue = if ($ReadyToRun) { 'true' } else { 'false' }",
             "-p:PublishReadyToRun=$readyToRunValue", "$publishArguments = @($commonPublishArguments)",
             "dotnet publish $frontendProject @publishArguments", "dotnet publish $agentProject @publishArguments",
@@ -90,7 +90,7 @@ public sealed class WindowsPublicationArchitectureTests
         foreach (var required in new[]
         {
             "PasswordManagerLocal.Common.Backend.dll", "PasswordManagerLocal.Windows.EndpointRpc.Server.dll",
-            "PasswordManagerLocal.deps.json", "PasswordManagerLocal.Windows.Agent.deps.json"
+            "PasswordManagerLocalDemo.deps.json", "PasswordManagerLocal.Windows.Agent.deps.json"
         })
             StringAssert.Contains(verifier, required);
     }
@@ -151,7 +151,7 @@ public sealed class WindowsPublicationArchitectureTests
 
         StringAssert.Contains(packager, "Remove-StagedUnownedDlls");
         StringAssert.Contains(packager, "prune-unowned-dlls");
-        StringAssert.Contains(packager, "PasswordManagerLocal.deps.json");
+        StringAssert.Contains(packager, "PasswordManagerLocalDemo.deps.json");
         StringAssert.Contains(packager, "PasswordManagerLocal.Windows.Agent.deps.json");
         StringAssert.Contains(program, "RunPruneUnownedDlls");
         StringAssert.Contains(pruner, "Directory.EnumerateFiles(root, \"*.dll\"");

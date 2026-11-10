@@ -4,7 +4,6 @@ using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Backend.Services;
 using System.Security.Cryptography;
-using static PasswordManagerLocal.Common.Contracts.Constants.PasswordConstants;
 
 using MSTestAssert = Microsoft.VisualStudio.TestTools.UnitTesting.Assert;
 
@@ -142,7 +141,7 @@ public sealed class CustomUserColorServiceTests
         var service = new CustomUserColorService();
         var passwords = CreateEmptyPasswords();
 
-        for (var i = 0; i < MaxNumberOfCustomUserColors; i++)
+        for (var i = 0; i < DemoLimits.CustomColorsPerAccount; i++)
         {
             var color = new CustomUserColor
             {
@@ -165,7 +164,7 @@ public sealed class CustomUserColorServiceTests
             }, passwords);
         });
 
-        MSTestAssert.HasCount(MaxNumberOfCustomUserColors, passwords.CustomColors);
+        MSTestAssert.HasCount(DemoLimits.CustomColorsPerAccount, passwords.CustomColors);
         MSTestAssert.IsFalse(passwords.CustomColors.Any(color => color.ColorName == "Overflow"));
         passwords.VerifyIntegrity();
     }

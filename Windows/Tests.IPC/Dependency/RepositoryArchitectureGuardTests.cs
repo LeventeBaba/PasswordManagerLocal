@@ -201,7 +201,7 @@ public sealed class RepositoryArchitectureGuardTests
         var project = XDocument.Load(projectPath);
 
         Assert.AreEqual(
-            "PasswordManagerLocal",
+            "PasswordManagerLocalDemo",
             project.Descendants("AssemblyName").Single().Value);
         Assert.AreEqual(
             "PasswordManagerLocal.Windows.Frontend",
@@ -222,7 +222,7 @@ public sealed class RepositoryArchitectureGuardTests
             "WindowsExecutableNames.cs"));
         StringAssert.Contains(
             executableNamesSource,
-            "UiExecutableFileName = \"PasswordManagerLocal.exe\"");
+            "UiExecutableFileName = \"PasswordManagerLocalDemo.exe\"");
     }
 
     [TestMethod]
@@ -237,16 +237,16 @@ public sealed class RepositoryArchitectureGuardTests
         };
 
         Assert.IsTrue(sources.Any(source => source.Contains(
-            "PasswordManagerLocal.exe",
+            "PasswordManagerLocalDemo.exe",
             StringComparison.Ordinal)));
         Assert.IsTrue(sources.Any(source => source.Contains(
-            "PasswordManagerLocal.dll",
+            "PasswordManagerLocalDemo.dll",
             StringComparison.Ordinal)));
         Assert.IsTrue(sources.Any(source => source.Contains(
-            "PasswordManagerLocal.deps.json",
+            "PasswordManagerLocalDemo.deps.json",
             StringComparison.Ordinal)));
         Assert.IsTrue(sources.Any(source => source.Contains(
-            "PasswordManagerLocal.runtimeconfig.json",
+            "PasswordManagerLocalDemo.runtimeconfig.json",
             StringComparison.Ordinal)));
         Assert.IsFalse(sources.Any(source => source.Contains(
             "PasswordManagerLocal.Windows.Frontend.dll",
@@ -270,9 +270,9 @@ public sealed class RepositoryArchitectureGuardTests
         StringAssert.Contains(verifier, ".IndexOf('\\reports\\', [StringComparison]::OrdinalIgnoreCase) -ge 0");
         Assert.IsFalse(verifier.Contains(".Contains('\\staging\\', [StringComparison]", StringComparison.Ordinal));
         Assert.IsFalse(verifier.Contains(".Contains('\\reports\\', [StringComparison]", StringComparison.Ordinal));
-        StringAssert.Contains(verifier, "[System.IO.Path]::Combine($publish, 'PasswordManagerLocal.runtimeconfig.json')");
+        StringAssert.Contains(verifier, "[System.IO.Path]::Combine($publish, 'PasswordManagerLocalDemo.runtimeconfig.json')");
         StringAssert.Contains(verifier, "[System.IO.Path]::Combine($publish, 'PasswordManagerLocal.Windows.Agent.runtimeconfig.json')");
-        Assert.IsFalse(verifier.Contains("Join-Path $publish 'PasswordManagerLocal.runtimeconfig.json',", StringComparison.Ordinal));
+        Assert.IsFalse(verifier.Contains("Join-Path $publish 'PasswordManagerLocalDemo.runtimeconfig.json',", StringComparison.Ordinal));
     }
 
     [TestMethod]

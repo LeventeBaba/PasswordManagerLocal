@@ -16,6 +16,13 @@ public sealed class WindowsStartupNotification
             ErrorIcon);
     }
 
+    public void ShowExistingInstance()
+    {
+        _ = MessageBox(IntPtr.Zero,
+            "Password Manager Local is already open or still closing. To switch editions, exit it completely from the notification area and try again.",
+            ApplicationBranding.DisplayName, ErrorIcon);
+    }
+
     public void ShowFrontendInitializationFailed()
     {
         _ = MessageBox(IntPtr.Zero,

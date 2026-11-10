@@ -12,5 +12,5 @@ public interface IDeviceEnrollmentEndpointService
     bool IsLocalEndpoint(EnrollmentEndpoint endpoint);
     bool IsLocalDeviceIdentity(Guid deviceId, byte[] signPublicKey, string tlsCertFingerprint);
     bool FingerprintMatchesLocalDevice(string tlsCertFingerprint);
-    Task<EnrollmentEndpoint> ResolveEndpointIdentityAsync(EnrollmentEndpoint endpoint, DeviceEnrollmentParsedCode parsed, CancellationToken ct = default);
+    Task<EnrollmentEndpoint> ResolveEndpointIdentityAsync(EnrollmentEndpoint endpoint, DeviceEnrollmentParsedCode parsed, Guid enrollingUserId, CancellationToken ct = default);
 }

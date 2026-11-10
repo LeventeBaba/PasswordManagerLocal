@@ -9,8 +9,8 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Ui;
 public sealed class WindowsAgentTrayTextTests
 {
     [TestMethod]
-    [DataRow(AppLanguage.English, "Open Password Manager Local", "Exit", "The Password Manager Local agent could not start.")]
-    [DataRow(AppLanguage.Hungarian, "Password Manager Local megnyitása", "Kilépés", "A Password Manager Local háttérügynöke nem tudott elindulni.")]
+    [DataRow(AppLanguage.English, "Open Password Manager Local Demo", "Exit", "The Password Manager Local Demo agent could not start.")]
+    [DataRow(AppLanguage.Hungarian, "Password Manager Local Demo megnyitása", "Kilépés", "A Password Manager Local Demo háttérügynöke nem tudott elindulni.")]
     public async Task EmbeddedLanguageMapsToExpectedTrayLabels(
         AppLanguage language, string openLabel, string exitLabel, string startupFailure)
     {

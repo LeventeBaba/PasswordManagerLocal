@@ -129,6 +129,15 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         if (activeSameDevice.Count != 0)
             throw new InvalidOperationException("The target device already has an active installation authorization.");
 
+        // Active authorizations include this installation and any enrollment awaiting transfer.
+        // The caller holds the account lifecycle lock and authoritative write transaction.
+        if ((await _authorizationRows.ListForUserAsync(user.UId, ct))
+            .Count(row => row.IsActive) >= DemoLimits.DevicesPerAccount)
+        {
+            throw new DeviceEnrollmentException(DeviceEnrollmentErrorCode.DemoDeviceLimitReached,
+                $"The Demo supports up to {DemoLimits.DevicesPerAccount} devices per account.");
+        }
+
         var state = await GetOrCreateStateAsync(user, user.KeyEpoch, user.MembershipEpoch, ct);
         var payload = UserControlOperationEnvelopeUtil.CreateDeviceAdditionPayload(
             user.UId,

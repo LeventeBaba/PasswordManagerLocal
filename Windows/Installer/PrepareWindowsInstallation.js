@@ -12,9 +12,9 @@ function prepareCleanup() {
     var directory = Session.TargetPath("INSTALLFOLDER");
     if (removing) {
         var executable = String(Session.Installer.ComponentPath(Session.Property("ProductCode"),
-            "{1BF91F68-8EE0-4FE9-80FD-23E4C5EEC8C2}") || "");
+            "{49247B48-4201-4F9A-80CC-F6494FE50601}") || "");
         var separator = executable.lastIndexOf("\\");
-        if (separator < 0 || executable.substring(separator + 1).toLowerCase() !== "passwordmanagerlocal.exe") {
+        if (separator < 0 || executable.substring(separator + 1).toLowerCase() !== "passwordmanagerlocaldemo.exe") {
             return 0;
         }
         directory = executable.substring(0, separator);

@@ -93,6 +93,33 @@ public sealed class DeterministicItemVersionMergeTests
     }
 
     [TestMethod]
+    public void PasswordMerge_DemoLimit_DefersNewItemsAndPreservesEditsToGrandfatheredItems()
+    {
+        using var local = Passwords();
+        for (var index = 0; index <= DemoLimits.PasswordsPerAccount; index++)
+        {
+            local.Passwords.Add(Password(
+                Guid.NewGuid(), $"Existing {index}", DateTime.UnixEpoch, Stamp(100, index, DeviceA, InstanceA)));
+        }
+        local.GenerateIntegrityHash();
+        var firstId = local.Passwords[0].Id;
+        var originalHash = local.CalculateIntegrityHash();
+        using var overflow = Passwords(password: Password(
+            Guid.NewGuid(), "New item", DateTime.UnixEpoch, Stamp(200, 0, DeviceB, InstanceB)));
+
+        MSTestAssert.ThrowsExactly<LimitReachedException>(() => new UserPasswordsDataMergeService()
+            .Merge(local, overflow, enforceDemoLimits: true));
+        CollectionAssert.AreEqual(originalHash, local.CalculateIntegrityHash());
+
+        using var edit = Passwords(password: Password(
+            firstId, "Edited existing item", DateTime.UnixEpoch, Stamp(200, 1, DeviceB, InstanceB)));
+        MSTestAssert.IsTrue(new UserPasswordsDataMergeService().Merge(local, edit, enforceDemoLimits: true));
+        MSTestAssert.HasCount(DemoLimits.PasswordsPerAccount + 1, local.Passwords);
+        MSTestAssert.AreEqual("Edited existing item", local.Passwords.Single(item => item.Id == firstId).Name);
+        local.VerifyIntegrity();
+    }
+
+    [TestMethod]
     public void PasswordMerge_IsCommutativeIdempotentAndUsesVersionInsteadOfDisplayTime()
     {
         var id = Guid.NewGuid();

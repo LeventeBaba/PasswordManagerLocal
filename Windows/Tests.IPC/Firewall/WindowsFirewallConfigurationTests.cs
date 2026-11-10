@@ -7,7 +7,7 @@ namespace PasswordManagerLocal.Windows.Tests.IPC.Firewall;
 [TestClass]
 public sealed class WindowsFirewallConfigurationTests
 {
-    private const string Agent = @"C:\Apps\PasswordManagerLocal\PasswordManagerLocal.Windows.Agent.exe";
+    private const string Agent = @"C:\Apps\PasswordManagerLocalDemo\PasswordManagerLocal.Windows.Agent.exe";
 
     [TestMethod]
     public void DefaultPolicyAddsOnlyAgentAndPortScopedInboundRulesAndIsIdempotent()
@@ -99,17 +99,21 @@ public sealed class WindowsFirewallConfigurationTests
     }
 
     [TestMethod]
-    public void LegacyBroadRulesAreReplacedWithoutRemovingUnrelatedRules()
+    public void ConfiguringDemoFirewallPreservesFullEditionAndLegacyRules()
     {
         using var policy = new FakePolicy();
-        policy.Rules.Add(BlockRule("Unrelated app", @"C:\Other\other.exe"));
-        policy.Rules.Add(new("PasswordManagerLocal Sync TCP Port", "", "", 6, 1, 1, true, 7, "26688", "*"));
-        policy.Rules.Add(new("PasswordManagerLocal mDNS UDP Port", "", "", 17, 1, 1, true, 7, "5353", "*"));
+        const string fullGroup = "PasswordManagerLocal.LocalNetwork.v2";
+        const string fullAgent = @"C:\Apps\PasswordManagerLocal\PasswordManagerLocal.Windows.Agent.exe";
+        var fullRule = new WindowsFirewallRule(fullGroup + ".Tcp.In", fullGroup, fullAgent, 6, 1, 1, true, 7, "26688", "*");
+        var legacyRule = new WindowsFirewallRule("PasswordManagerLocal Sync TCP Port", "", "", 6, 1, 1, true, 7, "26688", "*");
+        policy.Rules.AddRange([fullRule, legacyRule]);
+
         var service = new WindowsFirewallConfigurationService(policy, Agent);
         Assert.IsTrue(service.Configure().IsConfigured);
-        Assert.AreEqual(3, policy.Rules.Count);
-        Assert.IsTrue(policy.Rules.Any(rule => rule.Name == "Unrelated app"));
-        Assert.AreEqual(2, policy.Removes);
+        Assert.AreEqual(4, policy.Rules.Count);
+        Assert.IsTrue(policy.Rules.Contains(fullRule));
+        Assert.IsTrue(policy.Rules.Contains(legacyRule));
+        Assert.AreEqual(0, policy.Removes);
     }
 
     [TestMethod]
@@ -179,7 +183,7 @@ public sealed class WindowsFirewallConfigurationTests
     }
 
     [TestMethod]
-    public void FailedReplacementPreservesLegacyRulesAndCanBeRetried()
+    public void FailedConfigurationCanBeRetriedWithoutRemovingFullEditionRules()
     {
         using var policy = new FakePolicy { FailAtWrite = 2 };
         policy.Rules.Add(new("PasswordManagerLocal Sync TCP Port", "", "", 6, 1, 1, true, 7, "26688", "*"));
@@ -189,7 +193,8 @@ public sealed class WindowsFirewallConfigurationTests
         Assert.IsTrue(policy.Rules.Any(rule => rule.Name == "PasswordManagerLocal Sync TCP Port"));
         policy.FailAtWrite = null;
         Assert.IsTrue(service.Configure().IsConfigured);
-        Assert.AreEqual(2, policy.Rules.Count);
+        Assert.AreEqual(3, policy.Rules.Count);
+        Assert.IsTrue(policy.Rules.Any(rule => rule.Name == "PasswordManagerLocal Sync TCP Port"));
     }
 
     private static WindowsFirewallRule BlockRule(string name, string program) =>

@@ -456,19 +456,18 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
         CancellationToken ct)
     {
         BackendDebugLog.Info($"Enrollment connection and identity check started for {endpoint.Host}:{endpoint.Port}. HasEmbeddedIdentity={endpoint.DeviceId != Guid.Empty}.");
-        endpoint = await _endpointService.ResolveEndpointIdentityAsync(endpoint, parsed, preCriticalToken);
-        BackendDebugLog.Info($"Enrollment identity resolved for {endpoint.Host}:{endpoint.Port}. DeviceId={endpoint.DeviceId}, Origin={endpoint.OriginInstanceId}, TlsFingerprintPrefix={FingerprintUtil.Normalize(endpoint.TlsCertFingerprint)[..Math.Min(16, FingerprintUtil.Normalize(endpoint.TlsCertFingerprint).Length)]}.");
-
         Guid userId;
-        PasswordManagerLocal.Common.Backend.Security.EncryptionKey mergeKey;
         using (var authorizationScope = _scopeFactory.CreateScope())
         {
             var users = authorizationScope.ServiceProvider.GetRequiredService<IUserLookupService>();
             userId = (await users.GetAndVerifyUserAsync(token, preCriticalToken)).UId;
-            mergeKey = _interactiveState.GetEncryptionKeyFromToken(token);
         }
 
+        endpoint = await _endpointService.ResolveEndpointIdentityAsync(endpoint, parsed, userId, preCriticalToken);
+        BackendDebugLog.Info($"Enrollment identity resolved for {endpoint.Host}:{endpoint.Port}. DeviceId={endpoint.DeviceId}, Origin={endpoint.OriginInstanceId}, TlsFingerprintPrefix={FingerprintUtil.Normalize(endpoint.TlsCertFingerprint)[..Math.Min(16, FingerprintUtil.Normalize(endpoint.TlsCertFingerprint).Length)]}.");
+
         enrollmentOperation.EnterCriticalSection();
+        using var mergeKey = _interactiveState.GetEncryptionKeyFromToken(token);
 
         Guid commitId = Guid.Empty;
         Guid additionOperationId = Guid.Empty;
@@ -477,7 +476,6 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
         var transferCompleted = false;
         try
         {
-            using (mergeKey)
             using (var scope = _scopeFactory.CreateScope())
             {
                 var lifecycle = scope.ServiceProvider.GetRequiredService<IUserLifecycleCoordinator>();

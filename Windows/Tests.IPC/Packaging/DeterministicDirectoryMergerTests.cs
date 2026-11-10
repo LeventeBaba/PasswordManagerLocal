@@ -31,9 +31,9 @@ public sealed class DeterministicDirectoryMergerTests
         using var fixture = new MergeFixture();
         foreach (var name in new[]
         {
-            "PasswordManagerLocal.exe",
-            "PasswordManagerLocal.deps.json",
-            "PasswordManagerLocal.runtimeconfig.json"
+            "PasswordManagerLocalDemo.exe",
+            "PasswordManagerLocalDemo.deps.json",
+            "PasswordManagerLocalDemo.runtimeconfig.json"
         })
         {
             fixture.WriteFrontend(name, name);
@@ -55,9 +55,9 @@ public sealed class DeterministicDirectoryMergerTests
         Assert.AreEqual(7, result.Summary.FinalFileCount);
         foreach (var name in new[]
         {
-            "PasswordManagerLocal.exe",
-            "PasswordManagerLocal.deps.json",
-            "PasswordManagerLocal.runtimeconfig.json",
+            "PasswordManagerLocalDemo.exe",
+            "PasswordManagerLocalDemo.deps.json",
+            "PasswordManagerLocalDemo.runtimeconfig.json",
             "PasswordManagerLocal.Windows.Agent.exe",
             "PasswordManagerLocal.Windows.Agent.deps.json",
             "PasswordManagerLocal.Windows.Agent.runtimeconfig.json",

@@ -6,7 +6,7 @@ namespace PasswordManagerLocal.Windows.Frontend.Firewall;
 
 internal sealed class WindowsFirewallConfigurationService(IWindowsFirewallPolicy policy, string agentPath)
 {
-    internal const string RuleGroup = "PasswordManagerLocal.LocalNetwork.v2";
+    internal const string RuleGroup = "PasswordManagerLocalDemo.LocalNetwork.v2";
     internal const int AllProfiles = 7;
     internal const int Inbound = 1;
     internal const int Outbound = 2;
@@ -19,16 +19,6 @@ internal sealed class WindowsFirewallConfigurationService(IWindowsFirewallPolicy
     [
         RuleGroup + ".Tcp.In", RuleGroup + ".Udp.In",
         RuleGroup + ".Tcp.Out", RuleGroup + ".Udp.Out"
-    ];
-
-    internal static readonly string[] LegacyRuleNames =
-    [
-        "PasswordManagerLocal Sync TCP", "PasswordManagerLocal Sync TCP App",
-        "PasswordManagerLocal Sync TCP Port", "PasswordManagerLocal Sync TCP Outbound App",
-        "PasswordManagerLocal mDNS UDP", "PasswordManagerLocal mDNS UDP App",
-        "PasswordManagerLocal mDNS UDP Port", "PasswordManagerLocal mDNS UDP Outbound App",
-        "PasswordManagerLocal Discovery UDP App", "PasswordManagerLocal Discovery UDP Port",
-        "PasswordManagerLocal Discovery UDP Outbound App"
     ];
 
     internal IReadOnlyList<WindowsFirewallRule> RequiredRules(WindowsFirewallSnapshot snapshot)
@@ -78,9 +68,8 @@ internal sealed class WindowsFirewallConfigurationService(IWindowsFirewallPolicy
             policy.Add(rule);
         }
 
-        // Add replacements before removing old, broader application/port rules.
-        // Never delete arbitrary block rules, even ones targeting our executable.
-        var obsolete = LegacyRuleNames.Concat(ManagedRuleNames.Except(required.Select(rule => rule.Name)));
+        // Retire only obsolete rules owned by this edition.
+        var obsolete = ManagedRuleNames.Except(required.Select(rule => rule.Name));
         foreach (var name in obsolete)
         {
             foreach (var rule in snapshot.Rules.Where(rule =>
@@ -112,7 +101,6 @@ internal sealed class WindowsFirewallConfigurationService(IWindowsFirewallPolicy
         var complete = required.All(expected =>
                 snapshot.Rules.Count(existing => existing.Name.Equals(expected.Name, StringComparison.OrdinalIgnoreCase)) == 1 &&
                 snapshot.Rules.Any(existing => Equivalent(existing, expected))) &&
-            !snapshot.Rules.Any(rule => LegacyRuleNames.Contains(rule.Name, StringComparer.OrdinalIgnoreCase)) &&
             !snapshot.Rules.Any(rule => ManagedRuleNames.Contains(rule.Name, StringComparer.OrdinalIgnoreCase) &&
                 !required.Any(expected => expected.Name.Equals(rule.Name, StringComparison.OrdinalIgnoreCase)));
         return Result(complete, !complete, complete ? null :

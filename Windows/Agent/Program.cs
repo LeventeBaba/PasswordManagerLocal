@@ -88,7 +88,7 @@ internal sealed class Program
         var names = new WindowsInstanceNameProvider(
             "PasswordManagerLocal",
             applicationDataDirectory,
-            new WindowsUserIdentityProvider()).GetNames();
+            new WindowsUserIdentityProvider()).GetNames("PasswordManagerLocalDemo");
 
         FileProcessInstanceLock processLock;
         try
@@ -185,7 +185,7 @@ internal sealed class Program
                 new WindowsNativeTrayIconAdapter(
                     unifiedExecutable
                         ? agentExecutablePath
-                        : Path.Combine(AppContext.BaseDirectory, "PasswordManagerLocal.ico"),
+                        : Path.Combine(AppContext.BaseDirectory, "PasswordManagerLocalDemo.ico"),
                     trayText,
                     applicationLoop.MessageWindow,
                     applicationLoop.Dispatcher));

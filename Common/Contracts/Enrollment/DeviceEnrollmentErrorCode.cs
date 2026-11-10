@@ -16,5 +16,7 @@ public enum DeviceEnrollmentErrorCode
     DeviceIdentityConflict,
     UnsupportedDatabaseVersion,
     LocalNetworkUnavailable,
-    LocalEnrollmentListenerUnavailable
+    LocalEnrollmentListenerUnavailable,
+    DemoAccountLimitReached,
+    DemoDeviceLimitReached
 }

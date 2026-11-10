@@ -11,7 +11,7 @@ Install the Android SDK Build Tools and a JDK. Set `ANDROID_SDK_ROOT` and `JAVA_
 .\publish.cmd -A 16
 ```
 
-Both commands target Android 16 (API 36) and publish a single ARM64 (`arm64-v8a`) APK. The first uses Android 10 as the minimum and the second uses Android 16. Output goes to `artifacts\publish\PasswordManagerLocal.Android.Frontend\android-<minimum>-plus`.
+Both commands target Android 16 (API 36) and publish a single ARM64 (`arm64-v8a`) APK. The first uses Android 10 as the minimum and the second uses Android 16. Output goes to `artifacts\publish\PasswordManagerLocalDemo.Android\android-<minimum>-plus`.
 
 The publisher prompts privately for the keystore password and key password. Press Enter at the second prompt if both are the same. For unattended publishing, supply `PML_ANDROID_STORE_PASSWORD` and `PML_ANDROID_KEY_PASSWORD` through the process environment. Direct Release packaging uses `AndroidSigningStorePass` and `AndroidSigningKeyPass` as `env:` or `file:` references and does not prompt.
 

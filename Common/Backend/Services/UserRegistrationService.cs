@@ -342,6 +342,10 @@ public sealed class UserRegistrationService : IUserRegistrationService
         await using var transaction = await _uow.BeginTransactionAsync(ct);
         try
         {
+            // Count canonical accounts while the SQLite write transaction also excludes enrollment imports.
+            if ((await _users.ListUserIdsAsync(ct)).Count >= DemoLimits.AccountsPerDevice)
+                throw new LimitReachedException(DemoLimits.AccountsPerDevice, "account");
+
             user.KeyEpoch = 1;
             user.MembershipEpoch = 1;
             user.GenerateIntegrityHash();

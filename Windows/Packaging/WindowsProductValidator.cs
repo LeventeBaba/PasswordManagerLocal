@@ -10,11 +10,11 @@ public sealed class WindowsProductValidator
 
     private static readonly string[] FrontendRequiredFiles =
     [
-        "PasswordManagerLocal.exe",
-        "PasswordManagerLocal.ico",
-        "PasswordManagerLocal.dll",
-        "PasswordManagerLocal.deps.json",
-        "PasswordManagerLocal.runtimeconfig.json",
+        "PasswordManagerLocalDemo.exe",
+        "PasswordManagerLocalDemo.ico",
+        "PasswordManagerLocalDemo.dll",
+        "PasswordManagerLocalDemo.deps.json",
+        "PasswordManagerLocalDemo.runtimeconfig.json",
         "PasswordManagerLocal.Common.Frontend.dll",
         "PasswordManagerLocal.Common.Contracts.dll",
         "PasswordManagerLocal.Common.Preferences.dll",
@@ -46,7 +46,7 @@ public sealed class WindowsProductValidator
         "NSec.Cryptography.dll",
         "libsodium.dll",
         "Google.Protobuf.dll",
-        "PasswordManagerLocal.ico"
+        "PasswordManagerLocalDemo.ico"
     ];
 
     private static readonly string[] FrontendForbiddenDependencies =
@@ -92,10 +92,10 @@ public sealed class WindowsProductValidator
             "PasswordManagerLocal.Windows.EndpointRpc.Server.dll"
         ], "frontend staging");
         AssertNoForbiddenArtifacts(root);
-        var frontendManifest = Path.Combine(root, "PasswordManagerLocal.deps.json");
+        var frontendManifest = Path.Combine(root, "PasswordManagerLocalDemo.deps.json");
         AssertManifestBoundary(frontendManifest, FrontendForbiddenDependencies, forbidden: true);
         AssertAllDllsOwnedByManifests(root, [frontendManifest], "frontend staging");
-        AssertRuntimeConfigurationTrimmed(Path.Combine(root, "PasswordManagerLocal.runtimeconfig.json"), "frontend");
+        AssertRuntimeConfigurationTrimmed(Path.Combine(root, "PasswordManagerLocalDemo.runtimeconfig.json"), "frontend");
         // Frontend JSON loading now uses a direct JsonDocument parser. Keep the publish
         // marker aligned with the current runtime localization path rather than a retired type.
         AssertBinaryContains(
@@ -109,8 +109,8 @@ public sealed class WindowsProductValidator
         var root = RequireDirectory(directory, "Agent staging");
         AssertRequired(root, AgentRequiredFiles, "Agent staging");
         AssertAbsent(root, [
-            "PasswordManagerLocal.exe",
-            "PasswordManagerLocal.dll",
+            "PasswordManagerLocalDemo.exe",
+            "PasswordManagerLocalDemo.dll",
             "PasswordManagerLocal.Common.Frontend.dll",
             "Avalonia.dll",
             "Avalonia.Base.dll",
@@ -161,7 +161,7 @@ public sealed class WindowsProductValidator
             throw new InvalidOperationException("The final product contains the prohibited AgentRuntime directory.");
         AssertNoForbiddenArtifacts(root);
 
-        var frontendExe = Directory.EnumerateFiles(root, "PasswordManagerLocal.exe", SearchOption.AllDirectories).ToArray();
+        var frontendExe = Directory.EnumerateFiles(root, "PasswordManagerLocalDemo.exe", SearchOption.AllDirectories).ToArray();
         var agentExe = Directory.EnumerateFiles(root, "PasswordManagerLocal.Windows.Agent.exe", SearchOption.AllDirectories).ToArray();
         if (frontendExe.Length != 1 || agentExe.Length != 1 ||
             !string.Equals(Path.GetDirectoryName(frontendExe[0]), root, StringComparison.OrdinalIgnoreCase) ||
@@ -170,7 +170,7 @@ public sealed class WindowsProductValidator
             throw new InvalidOperationException("Both primary executables must exist exactly once as siblings in the final product root.");
         }
 
-        var frontendDeps = Path.Combine(root, "PasswordManagerLocal.deps.json");
+        var frontendDeps = Path.Combine(root, "PasswordManagerLocalDemo.deps.json");
         var agentDeps = Path.Combine(root, "PasswordManagerLocal.Windows.Agent.deps.json");
         AssertManifestBoundary(frontendDeps, FrontendForbiddenDependencies, forbidden: true);
         AssertManifestBoundary(agentDeps, AgentForbiddenDependencies, forbidden: true);
@@ -197,12 +197,12 @@ public sealed class WindowsProductValidator
         var icons = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
             .Where(static path => Path.GetExtension(path).Equals(".ico", StringComparison.OrdinalIgnoreCase))
             .ToArray();
-        var expected = Path.Combine(root, "PasswordManagerLocal.ico");
+        var expected = Path.Combine(root, "PasswordManagerLocalDemo.ico");
         if (icons.Length != 1 ||
             !string.Equals(icons[0], expected, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                "The final product must contain exactly one .ico file at its root: PasswordManagerLocal.ico.");
+                "The final product must contain exactly one .ico file at its root: PasswordManagerLocalDemo.ico.");
         }
     }
 

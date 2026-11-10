@@ -1,21 +1,21 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
-  <Package Name="Password Manager Local"
+  <Package Name="Password Manager Local Demo"
            Manufacturer="Levente Baba"
            Version="$(var.ProductVersion)"
            ProductCode="$(var.PmlProductCode)"
            Language="!(loc.PmlProductLanguage)"
            Codepage="1250"
            Scope="perMachine"
-           UpgradeCode="9C319A9F-809B-471F-9EDC-48E32C6C23B4">
-    <!-- Same-version builds share one installation. Early transactional removal also
+           UpgradeCode="9707A488-1DBE-42F9-8271-38B0D1C74D98">
+    <!-- Same-version Demo builds share one installation. Early transactional removal also
          replaces files whose version has not changed when switching publish modes. -->
     <MajorUpgrade AllowSameVersionUpgrades="yes" IgnoreLanguage="yes" Schedule="afterInstallInitialize"
                   DowngradeErrorMessage="!(loc.PmlNewerVersionInstalled)" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
-    <Icon Id="PasswordManagerLocal.ico" SourceFile="!(bindpath.Branding)\PasswordManagerLocal.ico" />
-    <Property Id="ARPPRODUCTICON" Value="PasswordManagerLocal.ico" />
+    <Icon Id="PasswordManagerLocalDemo.ico" SourceFile="!(bindpath.Branding)\PasswordManagerLocalDemo.ico" />
+    <Property Id="ARPPRODUCTICON" Value="PasswordManagerLocalDemo.ico" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/LeventeBaba/PasswordManagerLocal" />
     <Property Id="ARPNOMODIFY" Value="1" />
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
@@ -23,14 +23,14 @@
     <UIRef Id="WixUI_ErrorProgressText" />
 
     <Property Id="MSIDISABLERMRESTART" Value="1" />
-    <util:RestartResource Path="[INSTALLFOLDER]PasswordManagerLocal.exe" />
+    <util:RestartResource Path="[INSTALLFOLDER]PasswordManagerLocalDemo.exe" />
     <util:RestartResource Path="[INSTALLFOLDER]PasswordManagerLocal.Windows.Agent.exe" />
 
     <Property Id="INSTALLFOLDER" Secure="yes" />
     <Property Id="ADDLOCAL" Secure="yes" />
     <Property Id="REMOVE" Secure="yes" />
     <Property Id="PML_PREVIOUS_INSTALLFOLDER" Secure="yes">
-      <RegistrySearch Id="FindInstalledFolder" Root="HKLM" Key="Software\PasswordManagerLocal\Installer"
+      <RegistrySearch Id="FindInstalledFolder" Root="HKLM" Key="Software\PasswordManagerLocalDemo\Installer"
                       Name="InstallLocation" Type="raw" Bitness="always64" />
     </Property>
     <SetProperty Id="INSTALLFOLDER" Action="UseInstalledFolder" Value="[PML_PREVIOUS_INSTALLFOLDER]"
@@ -53,15 +53,15 @@
     </InstallExecuteSequence>
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="PasswordManagerLocal" />
+      <Directory Id="INSTALLFOLDER" Name="PasswordManagerLocalDemo" />
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="AppProgramsFolder" Name="Password Manager Local" />
+      <Directory Id="AppProgramsFolder" Name="Password Manager Local Demo" />
     </StandardDirectory>
 
     <StandardDirectory Id="DesktopFolder" />
 
-    <Feature Id="Application" Title="Password Manager Local" AllowAbsent="no" Level="1">
+    <Feature Id="Application" Title="Password Manager Local Demo" AllowAbsent="no" Level="1">
       <ComponentGroupRef Id="ApplicationFiles" />
     </Feature>
     <Feature Id="DesktopShortcut" Title="!(loc.PmlDesktopShortcutFeature)" Level="1">
@@ -70,26 +70,26 @@
   </Package>
 
   <Fragment>
-    <Component Id="DesktopApplicationShortcut" Directory="DesktopFolder" Guid="98D86129-6961-42BF-96A5-2BE347CC8D8A">
-      <Shortcut Id="OpenFromDesktop" Name="Password Manager Local" Target="[INSTALLFOLDER]PasswordManagerLocal.exe"
+    <Component Id="DesktopApplicationShortcut" Directory="DesktopFolder" Guid="0A1DD305-2573-409E-AEB7-06A4073C47E9">
+      <Shortcut Id="OpenFromDesktop" Name="Password Manager Local Demo" Target="[INSTALLFOLDER]PasswordManagerLocalDemo.exe"
                 WorkingDirectory="INSTALLFOLDER" />
-      <RegistryValue Root="HKCU" Key="Software\PasswordManagerLocal\Installer" Name="DesktopShortcut"
+      <RegistryValue Root="HKCU" Key="Software\PasswordManagerLocalDemo\Installer" Name="DesktopShortcut"
                      Type="integer" Value="1" KeyPath="yes" />
     </Component>
     <ComponentGroup Id="ApplicationFiles" Directory="INSTALLFOLDER">
-      <Component Id="ApplicationExecutable" Guid="1BF91F68-8EE0-4FE9-80FD-23E4C5EEC8C2">
-        <File Id="ApplicationExe" Source="!(bindpath.Product)\PasswordManagerLocal.exe" KeyPath="yes">
-          <Shortcut Id="OpenApplication" Directory="AppProgramsFolder" Name="Password Manager Local"
+      <Component Id="ApplicationExecutable" Guid="49247B48-4201-4F9A-80CC-F6494FE50601">
+        <File Id="ApplicationExe" Source="!(bindpath.Product)\PasswordManagerLocalDemo.exe" KeyPath="yes">
+          <Shortcut Id="OpenApplication" Directory="AppProgramsFolder" Name="Password Manager Local Demo"
                     Advertise="yes" WorkingDirectory="INSTALLFOLDER" />
           <Shortcut Id="UninstallApplication" Directory="AppProgramsFolder" Name="!(loc.PmlUninstallShortcut)"
                     Advertise="yes" WorkingDirectory="INSTALLFOLDER" Arguments="--uninstall" />
         </File>
         <RemoveFolder Id="RemoveAppProgramsFolder" Directory="AppProgramsFolder" On="uninstall" />
       </Component>
-      <Component Id="InstalledProductIdentity" Bitness="always64" Guid="454DE54F-263B-4EC5-A9B1-0A34A1D9DEED">
-        <RegistryValue Root="HKLM" Key="Software\PasswordManagerLocal\Installer" Name="ProductCode"
+      <Component Id="InstalledProductIdentity" Bitness="always64" Guid="8FE84ADB-3EE7-4828-BC48-63C48127D25D">
+        <RegistryValue Root="HKLM" Key="Software\PasswordManagerLocalDemo\Installer" Name="ProductCode"
                        Type="string" Value="[ProductCode]" KeyPath="yes" />
-        <RegistryValue Root="HKLM" Key="Software\PasswordManagerLocal\Installer" Name="InstallLocation"
+        <RegistryValue Root="HKLM" Key="Software\PasswordManagerLocalDemo\Installer" Name="InstallLocation"
                        Type="string" Value="[INSTALLFOLDER]" />
       </Component>
       <Component Id="ApplicationLicense">
@@ -99,7 +99,7 @@
         <File Source="!(bindpath.Repository)\Docs\THIRD_PARTY_NOTICES.md" KeyPath="yes" />
       </Component>
       <Files Include="!(bindpath.Product)\**">
-        <Exclude Files="!(bindpath.Product)\PasswordManagerLocal.exe" />
+        <Exclude Files="!(bindpath.Product)\PasswordManagerLocalDemo.exe" />
       </Files>
     </ComponentGroup>
   </Fragment>

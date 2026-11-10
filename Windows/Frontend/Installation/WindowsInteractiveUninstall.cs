@@ -10,7 +10,7 @@ internal static class WindowsInteractiveUninstall
 {
     public const string Argument = "--uninstall";
 
-    private const string InstallerKey = @"Software\PasswordManagerLocal\Installer";
+    private const string InstallerKey = @"Software\PasswordManagerLocalDemo\Installer";
     private const string StartupKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string StartupValue = "PasswordManagerLocal.Agent";
     private const int Yes = 6;
@@ -28,11 +28,11 @@ internal static class WindowsInteractiveUninstall
                 """
                 Delete the local vault and settings for this Windows user before uninstalling?
 
-                Yes permanently deletes this user's encrypted vault, its key, and settings now, even if uninstall is canceled later. Data on other devices is unaffected.
+                Yes permanently deletes the encrypted vault, its key, and settings shared by the Demo and full editions for this Windows user. This happens even if uninstall is canceled later. Data on other devices is unaffected.
                 No keeps this user's vault and settings.
                 Cancel keeps the app installed.
 
-                To delete data, first exit the app completely from its notification-area icon.
+                To delete data, first exit the running edition completely from its notification-area icon.
                 """,
                 ApplicationBranding.DisplayName,
                 YesNoCancelWithWarningAndDefaultNo);
@@ -84,7 +84,7 @@ internal static class WindowsInteractiveUninstall
                 Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory), StringComparison.OrdinalIgnoreCase) ||
             !Guid.TryParseExact(productCode, "B", out var code))
         {
-            throw new InvalidOperationException("Use this uninstall shortcut from the installed copy of Password Manager Local.");
+            throw new InvalidOperationException("Use this uninstall shortcut from the installed copy of Password Manager Local Demo.");
         }
 
         return code;

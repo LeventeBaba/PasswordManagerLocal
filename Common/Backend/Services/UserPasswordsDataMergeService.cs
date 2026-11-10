@@ -8,7 +8,7 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 
 public sealed class UserPasswordsDataMergeService : IUserPasswordsDataMergeService
 {
-    public bool Merge(UserPasswordsData local, UserPasswordsData incoming)
+    public bool Merge(UserPasswordsData local, UserPasswordsData incoming, bool enforceDemoLimits = false)
     {
         ArgumentNullException.ThrowIfNull(local);
         ArgumentNullException.ThrowIfNull(incoming);
@@ -60,6 +60,21 @@ public sealed class UserPasswordsDataMergeService : IUserPasswordsDataMergeServi
             Clone,
             "password-tag");
 
+        if (enforceDemoLimits)
+        {
+            try
+            {
+                EnsureAdditionFits(local.Passwords, passwords.Live, item => item.Id, DemoLimits.PasswordsPerAccount, "password");
+                EnsureAdditionFits(local.Tags, tags.Live, item => item.Id, DemoLimits.TagsPerAccount, "passwordTag");
+                EnsureAdditionFits(local.CustomColors, colors.Live, item => item.Id, DemoLimits.CustomColorsPerAccount, "customUserColor");
+            }
+            catch (LimitReachedException)
+            {
+                DisposeAll(passwords.Live, passwords.Deleted, colors.Live, colors.Deleted, tags.Live, tags.Deleted);
+                throw;
+            }
+        }
+
         var changed =
             local.Passwords.Any(password => !password.TagIds.SequenceEqual(password.TagIds.Order())) ||
             !Equivalent(local.Passwords, passwords.Live, item => item.Id, item => item.CalculateIntegrityHash()) ||
@@ -90,6 +105,17 @@ public sealed class UserPasswordsDataMergeService : IUserPasswordsDataMergeServi
         local.DeletedTags = tags.Deleted;
         local.GenerateIntegrityHash();
         return true;
+    }
+
+    private static void EnsureAdditionFits<T>(
+        IReadOnlyList<T> current, IReadOnlyList<T> merged, Func<T, Guid> id, int limit, string kind)
+    {
+        if (merged.Count <= limit)
+            return;
+
+        var currentIds = current.Select(id).ToHashSet();
+        if (merged.Any(item => !currentIds.Contains(id(item))))
+            throw new LimitReachedException(limit, kind);
     }
 
     private UserPasswordsMergeResult<TLive, TDeleted> MergeVersionedCollection<TLive, TDeleted>(

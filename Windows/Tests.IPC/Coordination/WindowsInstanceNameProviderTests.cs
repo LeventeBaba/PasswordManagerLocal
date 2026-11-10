@@ -67,6 +67,24 @@ public sealed partial class WindowsInstanceNameProviderTests
     }
 
     [TestMethod]
+    public void DemoSharesOwnershipWithFullEditionAndUsesItsOwnPipes()
+    {
+        var provider = new WindowsInstanceNameProvider(
+            "PasswordManagerLocal",
+            CreateApplicationDataPath(),
+            new FakeWindowsUserIdentityProvider("S-1-5-21-100"));
+
+        var full = provider.GetNames();
+        var demo = provider.GetNames("PasswordManagerLocalDemo");
+
+        Assert.AreEqual(full.AgentLockFilePath, demo.AgentLockFilePath);
+        Assert.AreEqual(full.UiLockFilePath, demo.UiLockFilePath);
+        Assert.AreNotEqual(full.ControlPipeName, demo.ControlPipeName);
+        Assert.AreNotEqual(full.UiActivationPipeName, demo.UiActivationPipeName);
+        Assert.AreNotEqual(full.EndpointPipeName, demo.EndpointPipeName);
+    }
+
+    [TestMethod]
     public void RelativeApplicationDataPathIsRejected()
     {
         Assert.ThrowsExactly<ArgumentException>(() =>

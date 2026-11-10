@@ -1,4 +1,4 @@
-# Privacy Policy — Password Manager Local
+# Privacy Policy — Password Manager Local Demo
 
 Version 1.1 · Effective from: 2026-11-07
 
@@ -8,7 +8,7 @@ Your profiles and passwords are stored on your devices. Enrolled devices exchang
 
 ## 1. About this policy and privacy contact
 
-Password Manager Local is developed by Levente Baba in Hungary. This policy covers the installed Windows and Android app and the developer email channel for feedback, bug reports and privacy requests. You can reach the developer at leventebaba.dev@gmail.com.
+Password Manager Local Demo is developed by Levente Baba in Hungary. This policy covers the installed Windows and Android app and the developer email channel for feedback, bug reports and privacy requests. You can reach the developer at leventebaba.dev@gmail.com.
 
 Do not include master passwords, stored passwords, connection codes, key files or vault databases in an email. App stores, operating systems and external websites have their own privacy practices.
 
@@ -42,7 +42,7 @@ Remember me on this device saves protected local key material so the app can res
 
 ## 6. Connections and who receives data
 
-The app exchanges profile and vault data directly with devices you approve through enrollment. It has no developer-operated account, vault, or relay server. The app does not automatically send your profile or vault data to the developer or to devices you have not approved. Enrolled devices hold their own copies and can relay authenticated information about known peers. Enroll only devices you own or control.
+The app exchanges profile and vault data directly with devices you approve through enrollment. During a Demo-to-Demo enrollment, the receiving device uses the app-generated account ID over the enrollment connection to check whether it has room for the account. It has no developer-operated account, vault, or relay server. The app does not automatically send your profile or vault data to the developer or to devices you have not approved. Enrolled devices hold their own copies and can relay authenticated information about known peers. Enroll only devices you own or control.
 
 Peer synchronization uses TLS and verifies the other device. To find peers, the app sends signed or authenticated UDP discovery messages on the local network. Other devices on that network, including ones you have not enrolled, can observe discovery metadata such as IP addresses, app-generated device IDs or enrollment-session IDs, and traffic timing. Discovery messages do not contain vault contents.
 
@@ -52,7 +52,7 @@ When background operation is enabled and available, the Windows agent or Android
 
 Android declares Internet, network/Wi-Fi state and multicast permissions for connectivity/discovery; camera permission for QR scanning; and foreground connected-device service, notification and boot-completed permissions for background service operation and restoration. A service notification can indicate background activity. The camera requires runtime permission. Denying camera access leaves manual code entry or image selection available. OS restrictions can limit background operation.
 
-On Windows, if the required firewall rules are missing, the app can offer to configure them. Changes require your approval in the app and administrator approval in Windows. Setup adds or replaces rules for the Password Manager Local Agent, allowing inbound TCP 26688 for enrollment and synchronization and UDP 26689 for discovery. These inbound rules cover Windows network profiles and do not filter by remote IP address. Outbound rules are added only for enabled profiles that block outbound traffic by default. The app changes only its own rules and does not change the firewall’s enabled state. Declining setup can prevent peer connections, while your local vault remains available.
+On Windows, if the required firewall rules are missing, the app can offer to configure them. Changes require your approval in the app and administrator approval in Windows. Setup adds or replaces rules for the Password Manager Local Demo Agent, allowing inbound TCP 26688 for enrollment and synchronization and UDP 26689 for discovery. These inbound rules cover Windows network profiles and do not filter by remote IP address. Outbound rules are added only for enabled profiles that block outbound traffic by default. The app changes only its own rules and does not change the firewall’s enabled state. Declining setup can prevent peer connections, while your local vault remains available.
 
 ## 8. Camera, QR images and selected files
 

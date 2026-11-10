@@ -9,10 +9,10 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        var iconPath = Path.Combine(AppContext.BaseDirectory, "PasswordManagerLocal.ico");
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "PasswordManagerLocalDemo.ico");
         using var iconStream = File.Exists(iconPath)
             ? File.OpenRead(iconPath)
-            : typeof(MainWindow).Assembly.GetManifestResourceStream("PasswordManagerLocal.ico");
+            : typeof(MainWindow).Assembly.GetManifestResourceStream("PasswordManagerLocalDemo.ico");
         if (iconStream is not null)
             Icon = new WindowIcon(iconStream);
 

@@ -61,9 +61,9 @@ function Get-WindowsOwnedSigningFiles {
         [Parameter(Mandatory = $true)][string]$ProductDirectory,
         [switch]$UnifiedNativeAot
     )
-    $requiredFiles = @('PasswordManagerLocal.exe')
+    $requiredFiles = @('PasswordManagerLocalDemo.exe')
     if (-not $UnifiedNativeAot) {
-        $requiredFiles += @('PasswordManagerLocal.dll', 'PasswordManagerLocal.Windows.Agent.exe', 'PasswordManagerLocal.Windows.Agent.dll')
+        $requiredFiles += @('PasswordManagerLocalDemo.dll', 'PasswordManagerLocal.Windows.Agent.exe', 'PasswordManagerLocal.Windows.Agent.dll')
     }
     foreach ($required in $requiredFiles) {
         if (-not (Test-Path -LiteralPath (Join-Path $ProductDirectory $required) -PathType Leaf)) { throw "Required signing input is missing: $required" }

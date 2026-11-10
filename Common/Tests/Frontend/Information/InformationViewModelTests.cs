@@ -22,17 +22,20 @@ public sealed class InformationViewModelTests
             areLicensesAvailable: true);
 
         Assert.AreEqual("About", viewModel.Title);
+        Assert.AreEqual("Password Manager Local Demo", viewModel.ApplicationName);
+        StringAssert.Contains(viewModel.DemoLimitsNotice, "20 saved passwords");
         Assert.AreEqual("Version 1.2.3", viewModel.VersionText);
         Assert.IsTrue(viewModel.AreLicensesAvailable);
-        Assert.AreEqual("https://leventebaba.github.io/PasswordManagerLocal/privacy-policy.en.html",
+        Assert.AreEqual("https://github.com/LeventeBaba/PasswordManagerLocal/blob/Demo/Docs/Privacy/PrivacyPolicy.en.md",
             viewModel.OnlinePrivacyPolicyUri.AbsoluteUri);
 
         var result = await preferences.SetLanguageAsync(AppLanguage.Hungarian);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("Névjegy", viewModel.Title);
+        StringAssert.Contains(viewModel.DemoLimitsNotice, "20 jelszó");
         Assert.AreEqual("Verzió: 1.2.3", viewModel.VersionText);
-        Assert.AreEqual("https://leventebaba.github.io/PasswordManagerLocal/privacy-policy.hu.html",
+        Assert.AreEqual("https://github.com/LeventeBaba/PasswordManagerLocal/blob/Demo/Docs/Privacy/PrivacyPolicy.hu.md",
             viewModel.OnlinePrivacyPolicyUri.AbsoluteUri);
     }
 

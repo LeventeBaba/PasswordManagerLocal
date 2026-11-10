@@ -18,6 +18,23 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 public sealed class AuthServiceTests
 {
     [TestMethod]
+    public async Task Register_AtDemoCapacity_RejectsAnotherAccountAndKeepsExistingProfiles()
+    {
+        using var host = new BackendTestHost();
+        var auth = host.Services.GetRequiredService<IAuthService>();
+        var users = host.Services.GetRequiredService<IUserRepository>();
+        for (var index = 0; index < DemoLimits.AccountsPerDevice; index++)
+            await auth.RegisterAsync(host.CreateValidRegistrationRequest($"demo_profile_{index}"));
+        var originalIds = (await users.ListUserIdsAsync()).ToArray();
+
+        var error = await MSTestAssert.ThrowsExactlyAsync<LimitReachedException>(() =>
+            auth.RegisterAsync(host.CreateValidRegistrationRequest("demo_overflow")));
+
+        MSTestAssert.AreEqual(DemoLimits.AccountsPerDevice, error.Limit);
+        CollectionAssert.AreEquivalent(originalIds, (await users.ListUserIdsAsync()).ToArray());
+    }
+
+    [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Unit")]
     [TestCategory("Security")]

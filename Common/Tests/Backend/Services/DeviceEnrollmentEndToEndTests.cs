@@ -28,6 +28,58 @@ public sealed partial class DeviceEnrollmentEndToEndTests
 
     [TestMethod]
     [Timeout(TestTimeoutMilliseconds)]
+    public async Task Enrollment_TargetAtDemoAccountLimit_IsRejectedBeforeSourceCommitsMembership()
+    {
+        await using var source = await ProductionEnrollmentTestHost.CreateAsync();
+        await using var target = await ProductionEnrollmentTestHost.CreateAsync();
+        Connect(source, target);
+        var sourceToken = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest("demo_source"));
+        await source.Endpoints.SetLocalUserSyncOnAsync(sourceToken, true);
+        for (var index = 0; index < DemoLimits.AccountsPerDevice; index++)
+            await target.Endpoints.RegisterAsync(target.CreateRegistrationRequest($"demo_target_{index}"));
+
+        var code = await RunStepAsync("target starts enrollment", ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
+
+        var error = await Assert.ThrowsExactlyAsync<DeviceEnrollmentException>(() => RunStepAsync(
+            "source checks target capacity", ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, code.Code, ct)));
+
+        Assert.AreEqual(DeviceEnrollmentErrorCode.DemoAccountLimitReached, error.ErrorCode);
+        Assert.AreEqual(1L, (await GetOnlyUserAsync(source)).MembershipEpoch);
+        Assert.AreEqual(0, (await GetEnrollmentCommitsAsync(source)).Count);
+        Assert.AreEqual(DemoLimits.AccountsPerDevice, (await GetUserIdsAsync(target)).Count);
+    }
+
+    [TestMethod]
+    [Timeout(TestTimeoutMilliseconds)]
+    public async Task Enrollment_ThreeDevicesIncludesTheSource_AndFourthDeviceIsRejected()
+    {
+        await using var source = await ProductionEnrollmentTestHost.CreateAsync();
+        await using var first = await ProductionEnrollmentTestHost.CreateAsync();
+        await using var second = await ProductionEnrollmentTestHost.CreateAsync();
+        await using var overflow = await ProductionEnrollmentTestHost.CreateAsync();
+        var sourceToken = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest("demo_devices"));
+        await source.Endpoints.SetLocalUserSyncOnAsync(sourceToken, true);
+
+        foreach (var target in new[] { first, second })
+        {
+            Connect(source, target);
+            var code = await RunStepAsync("target starts enrollment", ct => target.Endpoints.StartDeviceEnrollmentAsync(ct));
+            await RunStepAsync("source enrolls target", ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, code.Code, ct));
+            sourceToken = await source.Endpoints.LoginAsync(source.CreateLoginRequest("demo_devices"));
+        }
+
+        Connect(source, overflow);
+        var overflowCode = await RunStepAsync("fourth device starts enrollment", ct => overflow.Endpoints.StartDeviceEnrollmentAsync(ct));
+        var error = await Assert.ThrowsExactlyAsync<DeviceEnrollmentException>(() => RunStepAsync(
+            "source rejects a fourth device", ct => source.Endpoints.AddDeviceByCodeAsync(sourceToken, overflowCode.Code, ct)));
+
+        Assert.AreEqual(DeviceEnrollmentErrorCode.DemoDeviceLimitReached, error.ErrorCode);
+        Assert.AreEqual(DemoLimits.DevicesPerAccount, (await source.Endpoints.GetUserDevicesAsync(sourceToken)).Count);
+        Assert.AreEqual(0, (await GetUserIdsAsync(overflow)).Count);
+    }
+
+    [TestMethod]
+    [Timeout(TestTimeoutMilliseconds)]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
     [TestCategory("EndToEnd")]

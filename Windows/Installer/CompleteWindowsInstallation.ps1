@@ -92,7 +92,17 @@ function Assert-ProtectedInstallPath([string]$Path) {
 $installDirectory = Get-LocalInstallPath $pmlInstallDirectory
 if ($pmlOperation -in @('validate', 'validateInstalled')) {
     Assert-ProtectedInstallPath $installDirectory
-    $registered = Get-ItemProperty -LiteralPath 'HKLM:\Software\PasswordManagerLocal\Installer' -ErrorAction SilentlyContinue
+    $fullEdition = Get-ItemProperty -LiteralPath 'HKLM:\Software\PasswordManagerLocal\Installer' -ErrorAction SilentlyContinue
+    if ($fullEdition.InstallLocation) {
+        $fullDirectory = Get-LocalInstallPath $fullEdition.InstallLocation
+        if ($installDirectory -ieq $fullDirectory -or
+            $installDirectory.StartsWith($fullDirectory + '\', [StringComparison]::OrdinalIgnoreCase) -or
+            $fullDirectory.StartsWith($installDirectory + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Select a Demo installation folder separate from the full edition.'
+        }
+    }
+
+    $registered = Get-ItemProperty -LiteralPath 'HKLM:\Software\PasswordManagerLocalDemo\Installer' -ErrorAction SilentlyContinue
     if ($pmlOperation -eq 'validateInstalled') {
         if (-not $registered.InstallLocation -or
             (Get-LocalInstallPath $registered.InstallLocation) -ine $installDirectory) {
@@ -101,14 +111,14 @@ if ($pmlOperation -in @('validate', 'validateInstalled')) {
     }
     elseif ($registered.InstallLocation -or ([IO.Directory]::Exists($installDirectory) -and
             @(Get-ChildItem -LiteralPath $installDirectory -Force).Count -ne 0)) {
-        throw 'Select a new or empty folder for Password Manager Local.'
+        throw 'Select a new or empty folder for Password Manager Local Demo.'
     }
 
     exit 0
 }
 
 $pmlRemoving = $pmlOperation -eq 'remove'
-$frontend = Join-Path $installDirectory 'PasswordManagerLocal.exe'
+$frontend = Join-Path $installDirectory 'PasswordManagerLocalDemo.exe'
 $agent = Join-Path $installDirectory 'PasswordManagerLocal.Windows.Agent.exe'
 $managedRun = '"{0}" --background' -f $agent
 $unifiedRun = '"{0}" --agent --background' -f $frontend
@@ -162,21 +172,13 @@ finally { $users.Dispose() }
 
 try {
     Import-Module (Join-Path $PSHOME 'Modules\NetSecurity\NetSecurity.psd1')
-    $ruleGroup = 'PasswordManagerLocal.LocalNetwork.v2'
+    $ruleGroup = 'PasswordManagerLocalDemo.LocalNetwork.v2'
     $ownedNames = @("$ruleGroup.Tcp.In", "$ruleGroup.Udp.In", "$ruleGroup.Tcp.Out", "$ruleGroup.Udp.Out")
-    $legacyNames = @(
-        'PasswordManagerLocal Sync TCP', 'PasswordManagerLocal Sync TCP App',
-        'PasswordManagerLocal Sync TCP Port', 'PasswordManagerLocal Sync TCP Outbound App',
-        'PasswordManagerLocal mDNS UDP', 'PasswordManagerLocal mDNS UDP App',
-        'PasswordManagerLocal mDNS UDP Port', 'PasswordManagerLocal mDNS UDP Outbound App',
-        'PasswordManagerLocal Discovery UDP App', 'PasswordManagerLocal Discovery UDP Port',
-        'PasswordManagerLocal Discovery UDP Outbound App'
-    )
     # Query the local persistent policy. Delete the specific returned rule
     # instance, since display names can be shared with other installations.
     foreach ($rule in @(Get-NetFirewallRule -PolicyStore PersistentStore -Action Allow)) {
         $appOwned = $rule.Group -ieq $ruleGroup -and $rule.DisplayName -in $ownedNames
-        if (-not $appOwned -and $rule.DisplayName -notin $legacyNames) { continue }
+        if (-not $appOwned) { continue }
         try {
             foreach ($filter in @($rule | Get-NetFirewallApplicationFilter)) {
                 $program = [Environment]::ExpandEnvironmentVariables([string]$filter.Program).Trim('"')

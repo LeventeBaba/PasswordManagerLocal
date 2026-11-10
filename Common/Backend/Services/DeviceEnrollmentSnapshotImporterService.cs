@@ -13,6 +13,7 @@ using System.Text.Json;
 using PasswordManagerLocal.Common.Backend.Internal.Enrollment;
 
 using PasswordManagerLocal.Common.Backend.Sync.Enrollment;
+
 namespace PasswordManagerLocal.Common.Backend.Services;
 
 /// <summary>
@@ -82,12 +83,34 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             if (await deletionBarriers.ExistsAsync(snapshot.PrimaryUserId, ct))
                 throw new InvalidDataException("Account deletion won the enrollment race before bootstrap persistence.");
 
+            var existingUser = await users.GetByIdAsync(validated.User.UId, ct);
+            if (existingUser is null && (await users.ListUserIdsAsync(ct)).Count >= DemoLimits.AccountsPerDevice)
+            {
+                throw new DeviceEnrollmentException(DeviceEnrollmentErrorCode.DemoAccountLimitReached,
+                    $"The Demo supports up to {DemoLimits.AccountsPerDevice} accounts per device.");
+            }
+
+            var incomingActiveDevices = snapshot.MembershipAuthorizations
+                .Where(row => row.IsActive)
+                .Select(row => row.DeviceId)
+                .ToHashSet();
+            if (incomingActiveDevices.Count > DemoLimits.DevicesPerAccount)
+            {
+                var currentActiveDevices = (await authorizations.ListForUserAsync(validated.User.UId, ct))
+                    .Where(row => row.IsActive)
+                    .Select(row => row.DeviceId);
+                if (!incomingActiveDevices.IsSubsetOf(currentActiveDevices))
+                {
+                    throw new DeviceEnrollmentException(DeviceEnrollmentErrorCode.DemoDeviceLimitReached,
+                        $"The Demo supports up to {DemoLimits.DevicesPerAccount} devices per account.");
+                }
+            }
+
             await _localLinks.RemoveLocalDeviceRowsAsync(devices, ct);
 
             foreach (var deviceSnapshot in validated.CurrentRemoteDevices)
                 await UpsertRemoteDeviceAsync(devices, userDevices, deviceSnapshot, ct);
 
-            var existingUser = await users.GetByIdAsync(validated.User.UId, ct);
             var user = existingUser ?? new User { UId = validated.User.UId };
             ApplyUser(validated.User, user);
             if (existingUser is null)

@@ -1,22 +1,22 @@
 <WixLocalization Culture="hu-HU" Codepage="1250" xmlns="http://wixtoolset.org/schemas/v4/wxl">
   <String Id="PmlProductLanguage" Value="1038" />
   <String Id="PmlSetupTitle" Value="[ProductName] telepítője" />
-  <String Id="PmlWelcomeHeading" Value="A Password Manager Local telepítése" />
-  <String Id="PmlWelcomeIntroduction" Value="A Password Manager Local telepítéséhez tekintse át a licencet és a telepítési beállításokat. A folytatáshoz válassza a Tovább gombot." />
+  <String Id="PmlWelcomeHeading" Value="A Password Manager Local Demo telepítése" />
+  <String Id="PmlWelcomeIntroduction" Value="A Password Manager Local Demo telepítéséhez tekintse át a licencet és a telepítési beállításokat. A folytatáshoz válassza a Tovább gombot." />
   <String Id="PmlFolderLabel" Value="Telepítési &amp;mappa" />
   <String Id="PmlBrowse" Value="Ta&amp;llózás..." />
   <String Id="PmlCreateDesktopShortcut" Value="Parancsikon létrehozása az &amp;asztalon" />
   <String Id="PmlOptionsHeading" Value="Telepítési beállítások" />
   <String Id="PmlFolderHelp" Value="Válasszon új vagy üres mappát egy rögzített NTFS-meghajtón, olyan helyen, amelyet csak rendszergazdák módosíthatnak." />
   <String Id="PmlUpgradeHelp" Value="A telepítő a meglévő telepítési mappát használja." />
-  <String Id="PmlLaunchAfterSetup" Value="A Password Manager Local &amp;megnyitása" />
+  <String Id="PmlLaunchAfterSetup" Value="A Password Manager Local Demo &amp;megnyitása" />
   <String Id="PmlSetupFinishedHeading" Value="A telepítés befejeződött" />
-  <String Id="PmlSetupFinishedDescription" Value="A Password Manager Local telepítése befejeződött. Az ablak bezárásához válassza a Befejezés gombot." />
+  <String Id="PmlSetupFinishedDescription" Value="A Password Manager Local Demo telepítése befejeződött. Az ablak bezárásához válassza a Befejezés gombot." />
   <String Id="PmlAdminSetupFinishedHeading" Value="A rendszergazdai telepítés befejeződött" />
   <String Id="PmlAdminSetupFinishedDescription" Value="Elkészült a rendszergazdai telepítési csomag. Az ablak bezárásához válassza a Befejezés gombot." />
-  <String Id="PmlNewerVersionInstalled" Value="Már telepítve van a Password Manager Local újabb verziója." />
+  <String Id="PmlNewerVersionInstalled" Value="Már telepítve van a Password Manager Local Demo újabb verziója." />
   <String Id="PmlDesktopShortcutFeature" Value="Asztali parancsikon" />
-  <String Id="PmlUninstallShortcut" Value="Password Manager Local eltávolítása" />
+  <String Id="PmlUninstallShortcut" Value="Password Manager Local Demo eltávolítása" />
 
   <!-- Shrink stock background bitmaps to a pixel so Windows draws the dialog
        surface, including the area behind text, in the user's system colors. -->

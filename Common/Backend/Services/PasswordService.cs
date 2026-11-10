@@ -51,8 +51,8 @@ public sealed class PasswordService : IPasswordService
         if (!request.Validate(out var errors))
             throw new InvalidInputException(errors);
 
-        if (passwords.Passwords.Count >= MaxNumberOfPasswords)
-            throw new LimitReachedException(MaxNumberOfPasswords, "password");
+        if (passwords.Passwords.Count >= DemoLimits.PasswordsPerAccount)
+            throw new LimitReachedException(DemoLimits.PasswordsPerAccount, "password");
 
         var normalizedName = NormalizePasswordName(request.Name);
         ThrowIfPasswordNameExists(normalizedName, passwords);
@@ -209,8 +209,8 @@ public sealed class PasswordService : IPasswordService
         if (hasInvalidInput)
             throw new InvalidInputException(["PasswordIds"]);
 
-        if (targetPasswords.Passwords.Count + passwordIds.Count > MaxNumberOfPasswords)
-            throw new LimitReachedException(MaxNumberOfPasswords, "password");
+        if (targetPasswords.Passwords.Count + passwordIds.Count > DemoLimits.PasswordsPerAccount)
+            throw new LimitReachedException(DemoLimits.PasswordsPerAccount, "password");
     }
 
 

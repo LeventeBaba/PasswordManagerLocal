@@ -159,7 +159,7 @@ try {
 
     $product = Join-Path $temp 'product'
     New-Item -ItemType Directory -Path (Join-Path $product 'hu') -Force | Out-Null
-    foreach ($name in @('PasswordManagerLocal.exe', 'PasswordManagerLocal.dll', 'PasswordManagerLocal.Windows.Agent.exe',
+    foreach ($name in @('PasswordManagerLocalDemo.exe', 'PasswordManagerLocalDemo.dll', 'PasswordManagerLocal.Windows.Agent.exe',
         'PasswordManagerLocal.Windows.Agent.dll', 'PasswordManagerLocal.Common.Backend.dll', 'hu/PasswordManagerLocal.Common.Frontend.resources.dll',
         'ResetWindowsFirewall.ps1', 'System.Runtime.dll', 'Avalonia.dll', 'ThirdParty.exe', 'ThirdParty.ps1')) {
         [IO.File]::WriteAllText((Join-Path $product $name), 'test input')

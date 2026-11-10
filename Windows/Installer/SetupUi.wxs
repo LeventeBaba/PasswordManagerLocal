@@ -1,6 +1,6 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Fragment>
-    <Binary Id="SetupLogo" SourceFile="!(bindpath.Branding)\PasswordManagerLocal.ico" />
+    <Binary Id="SetupLogo" SourceFile="!(bindpath.Branding)\PasswordManagerLocalDemo.ico" />
     <Property Id="PML_DESKTOP_SHORTCUT" Value="1" />
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
     <Property Id="WixUnelevatedShellExecTarget" Value="[#ApplicationExe]" />

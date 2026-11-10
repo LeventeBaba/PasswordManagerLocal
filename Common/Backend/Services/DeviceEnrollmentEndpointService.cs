@@ -165,10 +165,10 @@ public sealed class DeviceEnrollmentEndpointService : IDeviceEnrollmentEndpointS
     }
 
 
-    public async Task<EnrollmentEndpoint> ResolveEndpointIdentityAsync(EnrollmentEndpoint endpoint, DeviceEnrollmentParsedCode parsed, CancellationToken ct = default)
+    public async Task<EnrollmentEndpoint> ResolveEndpointIdentityAsync(EnrollmentEndpoint endpoint, DeviceEnrollmentParsedCode parsed, Guid enrollingUserId, CancellationToken ct = default)
     {
         BackendDebugLog.Info($"Fetching and verifying enrollment identity from {endpoint.Host}:{endpoint.Port}.");
-        var info = await FetchEnrollmentInfoAsync(endpoint, parsed, ct);
+        var info = await FetchEnrollmentInfoAsync(endpoint, parsed, enrollingUserId, ct);
         if (!info.Ok)
         {
             BackendDebugLog.Error($"Fetching enrollment identity from {endpoint.Host}:{endpoint.Port} failed with {info.ErrorCode}: {info.Error}");
@@ -223,7 +223,7 @@ public sealed class DeviceEnrollmentEndpointService : IDeviceEnrollmentEndpointS
     }
 
 
-    private async Task<DeviceEnrollmentInfoResponse> FetchEnrollmentInfoAsync(EnrollmentEndpoint endpoint, DeviceEnrollmentParsedCode parsed, CancellationToken ct)
+    private async Task<DeviceEnrollmentInfoResponse> FetchEnrollmentInfoAsync(EnrollmentEndpoint endpoint, DeviceEnrollmentParsedCode parsed, Guid enrollingUserId, CancellationToken ct)
     {
         try
         {
@@ -231,7 +231,8 @@ public sealed class DeviceEnrollmentEndpointService : IDeviceEnrollmentEndpointS
             {
                 SessionId = parsed.SessionId,
                 CodeProof = ByteString.CopyFrom(DeviceEnrollmentCode.BuildEnrollmentInfoProof(parsed.SessionId, parsed.Secret)),
-                SourceDatabaseVersion = DatabaseConstants.CurrentDbVersion
+                SourceDatabaseVersion = DatabaseConstants.CurrentDbVersion,
+                EnrollingUserId = enrollingUserId.ToString("N")
             }, ct);
 
             var errorCode = Enum.TryParse<DeviceEnrollmentErrorCode>(reply.ErrorCode, out var parsedErrorCode)

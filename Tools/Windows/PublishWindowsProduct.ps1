@@ -37,7 +37,7 @@ if ($Sign) {
     $windowsSigningContext = Get-WindowsReleaseSigningContext
 }
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
-    $OutputRoot = Join-Path $repositoryRoot 'artifacts\publish\PasswordManagerLocal.Windows'
+    $OutputRoot = Join-Path $repositoryRoot 'artifacts\publish\PasswordManagerLocalDemo.Windows'
     if ($ReadyToRun) { $OutputRoot += '-ReadyToRun' }
     if ($NativeAOT) { $OutputRoot = Join-Path "${OutputRoot}-NativeAot" $RuntimeIdentifier }
 }
@@ -49,13 +49,13 @@ $outputRootPath = [System.IO.Path]::GetFullPath($OutputRoot)
 $stagingRoot = Join-Path $outputRootPath 'staging'
 $frontendStage = Join-Path $outputRootPath 'staging\frontend'
 $agentStage = Join-Path $outputRootPath 'staging\agent'
-$productRoot = Join-Path $outputRootPath 'product\PasswordManagerLocal'
+$productRoot = Join-Path $outputRootPath 'product\PasswordManagerLocalDemo'
 $reportRoot = Join-Path $outputRootPath 'reports'
 $collisionReportPath = Join-Path $reportRoot 'staged-collision-analysis.json'
 $copyUsedAssemblyListPath = Join-Path $reportRoot 'staged-copyused-assemblies.txt'
 $initialCopyUsedAssemblyListPath = Join-Path $reportRoot 'staged-copyused-assemblies.initial.txt'
 $copyAssemblyListPath = Join-Path $reportRoot 'staged-copy-assemblies.txt'
-$zipPath = Join-Path $outputRootPath 'PasswordManagerLocal-win-x64.zip'
+$zipPath = Join-Path $outputRootPath 'PasswordManagerLocalDemo-win-x64.zip'
 
 $frontendProject = Join-Path $repositoryRoot 'Windows\Frontend\PasswordManagerLocal.Windows.Frontend.csproj'
 $agentProject = Join-Path $repositoryRoot 'Windows\Agent\PasswordManagerLocal.Windows.Agent.csproj'
@@ -85,11 +85,11 @@ $commonPublishArguments = @(
 )
 
 $frontendStageRequiredFiles = @(
-    'PasswordManagerLocal.exe',
-    'PasswordManagerLocal.ico',
-    'PasswordManagerLocal.dll',
-    'PasswordManagerLocal.deps.json',
-    'PasswordManagerLocal.runtimeconfig.json',
+    'PasswordManagerLocalDemo.exe',
+    'PasswordManagerLocalDemo.ico',
+    'PasswordManagerLocalDemo.dll',
+    'PasswordManagerLocalDemo.deps.json',
+    'PasswordManagerLocalDemo.runtimeconfig.json',
     'Avalonia.Skia.dll',
     'Avalonia.Win32.dll',
     'PasswordManagerLocal.Common.Contracts.dll',
@@ -101,7 +101,7 @@ $frontendStageRequiredFiles = @(
 )
 $agentStageRequiredFiles = @(
     'PasswordManagerLocal.Windows.Agent.exe',
-    'PasswordManagerLocal.ico',
+    'PasswordManagerLocalDemo.ico',
     'PasswordManagerLocal.Windows.Agent.dll',
     'PasswordManagerLocal.Windows.Agent.deps.json',
     'PasswordManagerLocal.Windows.Agent.runtimeconfig.json',
@@ -220,7 +220,7 @@ function Publish-IsolatedStages(
     & dotnet publish $frontendProject @publishArguments --output $frontendStage
     if ($LASTEXITCODE -ne 0) { throw "Frontend publish failed with exit code $LASTEXITCODE." }
     Remove-StagedUnownedDlls -Label 'Frontend' -Directory $frontendStage `
-        -ManifestFileName 'PasswordManagerLocal.deps.json' -PassName $passName
+        -ManifestFileName 'PasswordManagerLocalDemo.deps.json' -PassName $passName
     Assert-StagedFiles -Label 'Frontend' -Directory $frontendStage `
         -FileNames $frontendStageRequiredFiles -Moment "after the $passName frontend publish"
 
@@ -592,7 +592,7 @@ if ($RunSmokeTests) {
     if (-not $IsWindows -and $PSVersionTable.PSEdition -eq 'Core') {
         throw 'Process smoke tests require Windows.'
     }
-    $frontendExecutable = Join-Path $productRoot 'PasswordManagerLocal.exe'
+    $frontendExecutable = Join-Path $productRoot 'PasswordManagerLocalDemo.exe'
     $agentLaunch = @{ FilePath = (Join-Path $productRoot 'PasswordManagerLocal.Windows.Agent.exe') }
     if ($NativeAOT) {
         $agentLaunch = @{ FilePath = $frontendExecutable; ArgumentList = @('--agent', '--ui-requested') }

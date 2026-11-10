@@ -53,7 +53,7 @@ internal sealed class WindowsFirewallPolicy : IWindowsFirewallPolicy
     {
         using var native = NativeObject.Create(RuleClass, RuleInterface);
         native.SetString(8, rule.Name);
-        native.SetString(10, "Password Manager Local Agent synchronization and device discovery.");
+        native.SetString(10, "Password Manager Local Demo Agent synchronization and device discovery.");
         native.SetString(12, rule.Program);
         native.SetInteger(16, rule.Protocol); // Protocol must precede port properties.
         native.SetString(18, rule.LocalPorts);
