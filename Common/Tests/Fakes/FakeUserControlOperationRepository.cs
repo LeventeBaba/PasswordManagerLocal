@@ -22,14 +22,6 @@ public sealed class FakeUserControlOperationRepository : IUserControlOperationRe
     public Task<bool> HasAppliedAccountDeletionAsync(CancellationToken ct = default) =>
         Task.FromResult(_rows.Any(row => row.OperationType == UserControlOperationType.AccountDeletion && row.Status == UserControlOperationStatus.Applied));
 
-    public Task<IReadOnlyList<Guid>> ListAppliedAccountDeletionUserIdsAsync(CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<Guid>>(_rows
-            .Where(row => row.OperationType == UserControlOperationType.AccountDeletion && row.Status == UserControlOperationStatus.Applied)
-            .Select(row => row.UserId)
-            .Distinct()
-            .OrderBy(userId => userId)
-            .ToList());
-
     public Task<bool> HasAppliedRevocationAsync(CancellationToken ct = default) =>
         Task.FromResult(_rows.Any(row => row.Status == UserControlOperationStatus.Applied &&
             row.OperationType is UserControlOperationType.DeviceRemoval or UserControlOperationType.AccountDeletion));

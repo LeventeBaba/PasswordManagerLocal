@@ -24,12 +24,16 @@ public sealed class InformationViewModelTests
         Assert.AreEqual("About", viewModel.Title);
         Assert.AreEqual("Version 1.2.3", viewModel.VersionText);
         Assert.IsTrue(viewModel.AreLicensesAvailable);
+        Assert.AreEqual("https://leventebaba.github.io/PasswordManagerLocal/privacy-policy.en.html",
+            viewModel.OnlinePrivacyPolicyUri.AbsoluteUri);
 
         var result = await preferences.SetLanguageAsync(AppLanguage.Hungarian);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("Névjegy", viewModel.Title);
         Assert.AreEqual("Verzió: 1.2.3", viewModel.VersionText);
+        Assert.AreEqual("https://leventebaba.github.io/PasswordManagerLocal/privacy-policy.hu.html",
+            viewModel.OnlinePrivacyPolicyUri.AbsoluteUri);
     }
 
     [TestMethod]

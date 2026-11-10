@@ -28,7 +28,7 @@ public sealed class DeviceServiceTests
     {
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
-        var users = host.Services.GetRequiredService<IUserService>();
+        var userSessions = host.Services.GetRequiredService<IUserSessionService>();
         var service = host.Services.GetRequiredService<IDeviceService>();
         var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
         var localUsers = (FakeLocalUserDeviceRepository)host.Services.GetRequiredService<ILocalUserDeviceRepository>();
@@ -36,7 +36,7 @@ public sealed class DeviceServiceTests
         var runtime = (FakeSyncRuntimeService)host.Services.GetRequiredService<ISyncRuntimeService>();
         var identity = (FakeDeviceIdentityService)host.Services.GetRequiredService<IDeviceIdentityService>();
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("device_sync_toggle"));
-        var userId = users.GetUidFromToken(token);
+        var userId = userSessions.GetUidFromToken(token);
         var activeDevice = CreateRemoteDevice();
         var deletedDevice = CreateRemoteDevice();
         await userDevices.AddAsync(CreateLink(userId, activeDevice, true, false));
@@ -67,18 +67,19 @@ public sealed class DeviceServiceTests
     {
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
-        var users = host.Services.GetRequiredService<IUserService>();
+        var userSessions = host.Services.GetRequiredService<IUserSessionService>();
+        var userDataReader = host.Services.GetRequiredService<IUserDataReaderService>();
         var service = host.Services.GetRequiredService<IDeviceService>();
         var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
         var devices = (FakeDeviceRepository)host.Services.GetRequiredService<IDeviceRepository>();
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("device_list"));
-        var userId = users.GetUidFromToken(token);
+        var userId = userSessions.GetUidFromToken(token);
         var remote = CreateRemoteDevice();
         remote.LastSeen = DateTime.UtcNow.AddMinutes(-2);
         devices.Seed(remote);
         await userDevices.AddAsync(CreateLink(userId, remote, true, false));
 
-        using var before = await users.GetLoadAndVerifyUserDataBundleAsync(token);
+        using var before = await userDataReader.GetLoadAndVerifyUserDataBundleAsync(token);
         var generation = before.CanonicalGeneration?.ToArray();
         var result = await service.GetUserDevicesAsync(token);
 
@@ -102,7 +103,7 @@ public sealed class DeviceServiceTests
         MSTestAssert.IsNull(localResponse.PreviousLoginDate);
         MSTestAssert.IsTrue(localResponse.IsOnline);
 
-        using var bundle = await users.GetLoadAndVerifyUserDataBundleAsync(token);
+        using var bundle = await userDataReader.GetLoadAndVerifyUserDataBundleAsync(token);
         MSTestAssert.IsFalse(bundle.UserDevicesData.Devices.Any(device => device.Id == remote.Id));
         CollectionAssert.AreEqual(generation!, bundle.CanonicalGeneration!);
     }
@@ -114,7 +115,7 @@ public sealed class DeviceServiceTests
     {
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
-        var users = host.Services.GetRequiredService<IUserService>();
+        var userSessions = host.Services.GetRequiredService<IUserSessionService>();
         var service = host.Services.GetRequiredService<IDeviceService>();
         var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
         var devices = (FakeDeviceRepository)host.Services.GetRequiredService<IDeviceRepository>();
@@ -122,7 +123,7 @@ public sealed class DeviceServiceTests
         var presence = host.Services.GetRequiredService<PasswordManagerLocal.Common.Backend.Abstractions.Sync.Presence.IDevicePresenceRegistry>();
         var transport = host.Services.GetRequiredService<FakeSyncTransportClientService>();
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("device_online_status"));
-        var userId = users.GetUidFromToken(token);
+        var userId = userSessions.GetUidFromToken(token);
         var remote = CreateRemoteDevice();
         devices.Seed(remote);
         await userDevices.AddAsync(CreateLink(userId, remote, true, false));
@@ -170,13 +171,13 @@ public sealed class DeviceServiceTests
     {
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
-        var users = host.Services.GetRequiredService<IUserService>();
+        var userSessions = host.Services.GetRequiredService<IUserSessionService>();
         var service = host.Services.GetRequiredService<IDeviceService>();
         var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
         var devices = (FakeDeviceRepository)host.Services.GetRequiredService<IDeviceRepository>();
         var identity = (FakeDeviceIdentityService)host.Services.GetRequiredService<IDeviceIdentityService>();
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("device_names"));
-        var userId = users.GetUidFromToken(token);
+        var userId = userSessions.GetUidFromToken(token);
         var remote = CreateRemoteDevice();
         devices.Seed(remote);
         await userDevices.AddAsync(CreateLink(userId, remote, true, false));
@@ -198,16 +199,18 @@ public sealed class DeviceServiceTests
     {
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
-        var users = host.Services.GetRequiredService<IUserService>();
+        var userSessions = host.Services.GetRequiredService<IUserSessionService>();
+        var userDataReader = host.Services.GetRequiredService<IUserDataReaderService>();
+        var userDataWriter = host.Services.GetRequiredService<IUserDataWriterService>();
         var service = host.Services.GetRequiredService<IDeviceService>();
         var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
         var versionClock = host.Services.GetRequiredService<ISyncVersionClockService>();
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("device_reuse_deleted_name"));
-        var userId = users.GetUidFromToken(token);
+        var userId = userSessions.GetUidFromToken(token);
         var removedDevice = CreateRemoteDevice();
         await userDevices.AddAsync(CreateLink(userId, removedDevice, false, true));
 
-        using (var bundle = await users.GetLoadAndVerifyUserDataBundleAsync(token))
+        using (var bundle = await userDataReader.GetLoadAndVerifyUserDataBundleAsync(token))
         {
             var stale = new UserDeviceData
             {
@@ -219,7 +222,7 @@ public sealed class DeviceServiceTests
             };
             stale.GenerateIntegrityHash();
             bundle.UserDevicesData.Devices.Add(stale);
-            await users.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Devices, false);
+            await userDataWriter.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Devices, false);
         }
 
         await service.SetLocalDeviceNameAsync(token, "Reusable device name");
@@ -235,14 +238,14 @@ public sealed class DeviceServiceTests
     {
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
-        var users = host.Services.GetRequiredService<IUserService>();
+        var userSessions = host.Services.GetRequiredService<IUserSessionService>();
         var service = host.Services.GetRequiredService<IDeviceService>();
         var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
         var devices = (FakeDeviceRepository)host.Services.GetRequiredService<IDeviceRepository>();
         var queue = host.Services.GetRequiredService<FakeSyncQueueService>();
         var syncIdentities = (FakeSyncDeviceIdentityService)host.Services.GetRequiredService<ISyncDeviceIdentityService>();
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("remote_sync_toggle"));
-        var userId = users.GetUidFromToken(token);
+        var userId = userSessions.GetUidFromToken(token);
         var remote = CreateRemoteDevice();
         devices.Seed(remote);
         await userDevices.AddAsync(CreateLink(userId, remote, true, false));
@@ -271,13 +274,13 @@ public sealed class DeviceServiceTests
     {
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
-        var users = host.Services.GetRequiredService<IUserService>();
+        var userSessions = host.Services.GetRequiredService<IUserSessionService>();
         var service = host.Services.GetRequiredService<IDeviceService>();
         var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
         var devices = (FakeDeviceRepository)host.Services.GetRequiredService<IDeviceRepository>();
         var queue = host.Services.GetRequiredService<FakeSyncQueueService>();
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("unblock_device"));
-        var userId = users.GetUidFromToken(token);
+        var userId = userSessions.GetUidFromToken(token);
         var remote = CreateRemoteDevice();
         remote.IsBlocked = true;
         remote.BlockedReason = "tampered payload";
@@ -309,7 +312,8 @@ public sealed class DeviceServiceTests
     {
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
-        var users = host.Services.GetRequiredService<IUserService>();
+        var userSessions = host.Services.GetRequiredService<IUserSessionService>();
+        var userDataReader = host.Services.GetRequiredService<IUserDataReaderService>();
         var service = host.Services.GetRequiredService<IDeviceService>();
         var userDevices = (FakeUserDeviceRepository)host.Services.GetRequiredService<IUserDeviceRepository>();
         var devices = (FakeDeviceRepository)host.Services.GetRequiredService<IDeviceRepository>();
@@ -318,7 +322,7 @@ public sealed class DeviceServiceTests
         var cutoffs = host.Services.GetRequiredService<IUserOriginRemovalCutoffRepository>();
         var userRepository = host.Services.GetRequiredService<IUserRepository>();
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("disconnect_device"));
-        var userId = users.GetUidFromToken(token);
+        var userId = userSessions.GetUidFromToken(token);
         var remote = CreateRemoteDevice();
         var remoteOrigin = Guid.NewGuid();
         devices.Seed(remote);
@@ -355,7 +359,7 @@ public sealed class DeviceServiceTests
         MSTestAssert.IsFalse(endedAuthorization.IsActive);
         MSTestAssert.IsNotNull(endedAuthorization.RemovalOperationId);
         MSTestAssert.IsNotEmpty(await cutoffs.ListForOriginAsync(userId, remote.Id, remoteOrigin));
-        var bundle = await users.GetLoadAndVerifyUserDataBundleAsync(token);
+        var bundle = await userDataReader.GetLoadAndVerifyUserDataBundleAsync(token);
         MSTestAssert.IsFalse(bundle.UserDevicesData.Devices.Any(device => device.Id == remote.Id));
         MSTestAssert.IsTrue(bundle.UserDevicesData.DeletedDevices.Any(device => device.Id == remote.Id));
         var remaining = await service.GetUserDevicesAsync(token);

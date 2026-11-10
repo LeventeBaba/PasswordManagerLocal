@@ -45,7 +45,6 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
 
         var devices = services.GetRequiredService<IDeviceRepository>();
         var users = services.GetRequiredService<IUserRepository>();
-        var groups = services.GetRequiredService<IGroupRepository>();
         var userDevices = services.GetRequiredService<IUserDeviceRepository>();
         var localUserDevices = services.GetRequiredService<ILocalUserDeviceRepository>();
         var authorizations = services.GetRequiredService<IUserMembershipAuthorizationRepository>();
@@ -96,36 +95,7 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             else
                 users.Update(user);
 
-            foreach (var groupSnapshot in snapshot.Groups)
-            {
-                var existingGroup = await groups.GetByIdWithUsersAsync(groupSnapshot.Id, ct);
-                var group = existingGroup ?? new Group { Id = groupSnapshot.Id };
-                group.EncryptedPayload = groupSnapshot.EncryptedPayload.ToArray();
-                group.LastModifiedAt = UtcDateTimeUtil.ToUtc(groupSnapshot.LastModifiedAt);
-                group.IntegrityHash = groupSnapshot.IntegrityHash.ToArray();
-                if (existingGroup is null)
-                    await groups.AddAsync(group, ct);
-                else
-                    groups.Update(group);
-            }
             await unitOfWork.SaveChangesAsync(ct);
-
-            foreach (var groupSnapshot in snapshot.Groups)
-            {
-                var group = await groups.GetByIdWithUsersAsync(groupSnapshot.Id, ct)
-                    ?? throw new InvalidDataException("An enrollment group could not be persisted.");
-                var importedUserIds = groupSnapshot.UserIds.Where(id => id != Guid.Empty).Distinct().ToHashSet();
-                foreach (var current in group.Users.Where(item => !importedUserIds.Contains(item.UId)).ToList())
-                    groups.SetMember(group, current, isMember: false);
-                foreach (var importedUserId in importedUserIds)
-                {
-                    if (group.Users.Any(item => item.UId == importedUserId))
-                        continue;
-                    var importedUser = await users.GetByIdAsync(importedUserId, ct);
-                    if (importedUser is not null)
-                        groups.SetMember(group, importedUser, isMember: true);
-                }
-            }
 
             foreach (var row in snapshot.MembershipAuthorizations)
             {

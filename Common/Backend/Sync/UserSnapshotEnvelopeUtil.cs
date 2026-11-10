@@ -119,12 +119,8 @@ public static class UserSnapshotEnvelopeUtil
         writer.Write(payload.UserDevicesDataLastModifiedAt.ToUniversalTime().ToUnixTimeMilliseconds());
         SyncCryptoUtil.WriteBytes(writer, payload.IntegrityHash);
 
-        var groupIds = payload.GroupIds
-            .OrderBy(id => id)
-            .ToArray();
-        writer.Write(groupIds.Length);
-        foreach (var groupId in groupIds)
-            writer.Write(groupId.ToByteArray());
+        // Preserve the canonical bytes of existing snapshots with no group memberships.
+        writer.Write(0);
 
         var deviceIds = payload.DeviceIds
             .OrderBy(id => id)
@@ -157,7 +153,7 @@ public static class UserSnapshotEnvelopeUtil
             throw new InvalidDataException("User snapshot payload is missing.");
         if (envelope.Coverage is null)
             throw new InvalidDataException("User snapshot merged coverage is missing.");
-        if (envelope.User.GroupIds is null || envelope.User.DeviceIds is null)
+        if (envelope.User.DeviceIds is null)
             throw new InvalidDataException("User snapshot relationship coverage is missing.");
 
         if (envelope.User.UId != envelope.UserId)
@@ -179,12 +175,6 @@ public static class UserSnapshotEnvelopeUtil
 
         if (envelope.Coverage.Count > SyncConstants.MaxIncomingDeltaCountPerCall)
             throw new InvalidDataException("User snapshot coverage is too large.");
-
-        if (envelope.User.GroupIds.Any(id => id == Guid.Empty) ||
-            envelope.User.GroupIds.Count != envelope.User.GroupIds.Distinct().Count())
-        {
-            throw new InvalidDataException("User snapshot group coverage contains invalid or duplicate ids.");
-        }
 
         if (envelope.User.DeviceIds.Any(id => id == Guid.Empty) ||
             envelope.User.DeviceIds.Count != envelope.User.DeviceIds.Distinct().Count())

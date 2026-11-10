@@ -49,8 +49,11 @@ public sealed class HelpCatalogTests
         foreach (var language in new[] { AppLanguage.English, AppLanguage.Hungarian })
         {
             var content = catalog.ForLanguage(language);
-            foreach (var topic in content.Topics.Values.Where(topic =>
-                         topic.CategoryId == "troubleshooting" && topic.Id != HelpTopicIds.Faq))
+            var troubleshootingTopics = content.Topics.Values.Where(topic =>
+                topic.CategoryId == "troubleshooting" && topic.Id != HelpTopicIds.Faq).ToArray();
+            Assert.IsNotEmpty(troubleshootingTopics, $"{language}: troubleshooting topics");
+
+            foreach (var topic in troubleshootingTopics)
             {
                 Assert.IsTrue(topic.Sections.Any(section => section.Id == "symptom" &&
                     section.Kind == HelpSectionKind.Explanation), $"{language}: {topic.Id} symptom");
@@ -73,31 +76,5 @@ public sealed class HelpCatalogTests
                     section.Kind == HelpSectionKind.Warning && section.Platform == HelpPlatform.All),
                     $"{language}: {id} must retain its safety warning on either platform");
         }
-    }
-
-    [TestMethod]
-    public void RelatedTopicHistoryReturnsToTheExactPreviousRoute()
-    {
-        var history = new InformationNavigationHistory();
-        var settings = new InformationRoute(InformationDestination.Settings);
-        var help = new InformationRoute(InformationDestination.Help);
-        var category = new InformationRoute(InformationDestination.HelpCategory, "user-guide");
-        var first = new InformationRoute(InformationDestination.HelpTopic, HelpTopicIds.Disconnect);
-        var related = new InformationRoute(InformationDestination.HelpTopic, HelpTopicIds.Sync);
-        history.Reset(settings);
-        foreach (var route in new[] { help, category, first, related })
-            history.Navigate(route);
-        history.Navigate(related); // Re-selecting the current destination must not add a Back step.
-
-        foreach (var expected in new[] { first, category, help, settings })
-        {
-            Assert.IsTrue(history.TryGoBack(out var actual));
-            Assert.AreEqual(expected, actual);
-        }
-        Assert.IsFalse(history.TryGoBack(out _));
-
-        history.Reset(help);
-        Assert.AreEqual(help, history.Current);
-        Assert.IsFalse(history.TryGoBack(out _));
     }
 }

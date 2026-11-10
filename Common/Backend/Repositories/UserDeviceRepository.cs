@@ -95,12 +95,6 @@ internal sealed class UserDeviceRepository(SqliteSession session) : IUserDeviceR
     public Task<bool> HasAnyActiveLinkForDeviceAsync(Guid deviceId, CancellationToken ct = default) =>
         ExistsAsync("""ud."DeviceId" = $device AND ud."IsDeleted" = 0""", ct, ("$device", deviceId));
 
-    public Task<bool> HasAnyActiveSyncEnabledLinkForDeviceAsync(Guid deviceId, CancellationToken ct = default) =>
-        ExistsAsync($"""ud."DeviceId" = $device AND {ActiveSyncLink}""", ct, ("$device", deviceId));
-
-    public Task<bool> HasAnyDeletedLinkForDeviceAsync(Guid deviceId, CancellationToken ct = default) =>
-        ExistsAsync("""ud."DeviceId" = $device AND ud."IsDeleted" = 1""", ct, ("$device", deviceId));
-
     public Task<bool> HasAnyActiveLinkForDeviceExceptUserAsync(Guid deviceId, Guid userId, CancellationToken ct = default) =>
         ExistsAsync("""ud."DeviceId" = $device AND ud."UserId" <> $user AND ud."IsDeleted" = 0""",
             ct, ("$device", deviceId), ("$user", userId));

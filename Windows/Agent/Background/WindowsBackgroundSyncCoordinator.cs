@@ -1,5 +1,5 @@
 using PasswordManagerLocal.Windows.Agent.Localization;
-using PasswordManagerLocal.Common.Backend.Hosting;
+using PasswordManagerLocal.Common.Backend.Abstractions.Hosting;
 using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 using PasswordManagerLocal.Windows.Agent.Backend;

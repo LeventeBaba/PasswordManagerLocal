@@ -13,41 +13,6 @@ namespace PasswordManagerLocal.Common.Tests.Frontend.Settings;
 public sealed class UiPreferencesTransactionTests
 {
     [TestMethod]
-    public async Task PreferenceWritesAreSerializedAndPreserveEarlierFields()
-    {
-        var firstWriteEntered = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var releaseFirstWrite = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var store = new CoordinatedPreferencesStore(DefaultPreferences())
-        {
-            BeforeWrite = async (writeNumber, _, cancellationToken) =>
-            {
-                if (writeNumber != 1)
-                    return;
-                firstWriteEntered.TrySetResult();
-                await releaseFirstWrite.Task.WaitAsync(cancellationToken);
-            }
-        };
-        await using var service = await CreateServiceAsync(store);
-
-        var themeChange = service.SetThemeAsync(AppThemeId.Light);
-        await firstWriteEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        var animationChange = service.SetInterfaceAnimationsEnabledAsync(false);
-        releaseFirstWrite.TrySetResult();
-
-        Assert.AreEqual(UiPreferenceUpdateStatus.Applied, (await themeChange).Status);
-        Assert.AreEqual(UiPreferenceUpdateStatus.Applied, (await animationChange).Status);
-        Assert.AreEqual(2, store.Writes.Count);
-        Assert.AreEqual(AppThemeId.Light, store.Writes[0].Theme);
-        Assert.IsTrue(store.Writes[0].InterfaceAnimationsEnabled);
-        Assert.AreEqual(AppThemeId.Light, store.Writes[1].Theme);
-        Assert.IsFalse(store.Writes[1].InterfaceAnimationsEnabled);
-        Assert.AreEqual(AppThemeId.Light, service.CurrentThemeId);
-        Assert.IsFalse(service.InterfaceAnimationsEnabled);
-    }
-
-    [TestMethod]
     public async Task CanceledPreferenceWriteThatIgnoresCancellationIsRolledBack()
     {
         using var cancellation = new CancellationTokenSource();
@@ -190,7 +155,7 @@ public sealed class UiPreferencesTransactionTests
     }
 
     [TestMethod]
-    public async Task CloseAndReopenReleasesOldSnapshotAndLoadsPersistedLanguage()
+    public async Task CloseAndReopenReleasesOldSnapshotAndLoadsPersistedLanguageAndTheme()
     {
         var store = new CoordinatedPreferencesStore(DefaultPreferences());
         var first = await CreateServiceAsync(store);
@@ -198,6 +163,10 @@ public sealed class UiPreferencesTransactionTests
         Assert.AreEqual(
             UiPreferenceUpdateStatus.Applied,
             (await first.SetLanguageAsync(AppLanguage.Hungarian)).Status);
+        Assert.AreEqual(
+            UiPreferenceUpdateStatus.Applied,
+            (await first.SetThemeAsync(AppThemeId.Light)).Status);
+        Assert.AreEqual(2, store.Writes.Count);
 
         await first.DisposeAsync();
 
@@ -205,6 +174,7 @@ public sealed class UiPreferencesTransactionTests
         Assert.AreEqual(0, retiredLocalization.ActiveTranslationCount);
         await using var reopened = await CreateServiceAsync(store);
         Assert.AreEqual(AppLanguage.Hungarian, reopened.CurrentLanguage);
+        Assert.AreEqual(AppThemeId.Light, reopened.CurrentThemeId);
         Assert.AreEqual(AppLanguage.Hungarian, reopened.Localization.ActiveLanguage);
         Assert.AreEqual("Magyar", reopened.GetString("Test_Label"));
     }

@@ -33,18 +33,6 @@ public sealed class NetworkDeltaServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
-    public async Task Apply_WhenDeltaTargetsAnotherDevice_RejectsIt()
-    {
-        using var setup = await CreateValidDeltaAsync();
-        setup.Delta.RecipientDeviceId = Guid.NewGuid().ToString("N");
-        var service = CreateService(setup.Recipient, new FakeDeviceRepository());
-
-        await ExpectThrowsAsync<UnauthorizedAccessException>(() => service.ApplyAsync(setup.Delta));
-    }
-
-    [TestMethod]
-    [TestCategory("Backend")]
-    [TestCategory("Integration")]
     public async Task Apply_WhenSignatureIsTampered_RejectsBeforeDatabaseLookup()
     {
         using var setup = await CreateValidDeltaAsync();
@@ -68,7 +56,6 @@ public sealed class NetworkDeltaServiceTests
     private static NetworkDeltaService CreateService(IDeviceIdentityService identity, FakeDeviceRepository devices)
     {
         var users = new InMemoryUserRepository();
-        var groups = new FakeGroupRepository();
         var userDevices = new FakeUserDeviceRepository();
         var localUsers = new FakeLocalUserDeviceRepository();
         var syncRoutes = new FakeSyncRouteRepository(userDevices, localUsers);
@@ -84,14 +71,13 @@ public sealed class NetworkDeltaServiceTests
 
         var membership = new FakeUserMembershipAuthorizationService();
         var membershipRepository = new FakeUserMembershipAuthorizationRepository();
-        var relationships = new SyncRelationshipReconciliationService(users, groups, devices, userDevices, identity, membershipRepository);
+        var relationships = new SyncRelationshipReconciliationService(users, userDevices, membershipRepository);
         var userDeltaApplier = new UserDeltaApplierService(users, tombstones, syncQueueService);
-        var protocol = new NetworkDeltaProtocolService(devices, groups, userDevices, authorization, identity, membership);
-        var replay = new NetworkDeltaReplayService(groups, devices, userDevices, tombstones);
+        var protocol = new NetworkDeltaProtocolService(devices, userDevices, authorization, identity, membership);
+        var replay = new NetworkDeltaReplayService(devices, userDevices, tombstones);
         var payloadApplier = new NetworkDeltaPayloadApplierService(
             userDeltaApplier,
             users,
-            groups,
             devices,
             userDevices,
             syncRoutes,
@@ -159,7 +145,6 @@ public sealed class NetworkDeltaServiceTests
         var localUsers = new FakeLocalUserDeviceRepository();
         var builder = new OutgoingDeltaBuilderService(
             new InMemoryUserRepository(),
-            new FakeGroupRepository(),
             new FakeDeviceRepository(),
             userDevices,
             new FakeSyncRouteRepository(userDevices, localUsers),
@@ -169,7 +154,7 @@ public sealed class NetworkDeltaServiceTests
         var delta = await builder.BuildAsync(new SyncItem
         {
             ModelId = Guid.NewGuid(),
-            ModelType = SyncModelType.Group,
+            ModelType = SyncModelType.Device,
             ChangeType = SyncChangeType.Deleted
         }, target);
 

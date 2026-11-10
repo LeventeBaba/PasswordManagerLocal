@@ -50,37 +50,17 @@ public sealed class TokenServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Unit")]
-    public void Validate_EmptyOrUnknownToken_IsFalse()
+    public void EmptyAndUnknownTokensAreRejected()
     {
         ITokenService svc = new TokenService();
 
-        MSTestAssert.IsFalse(svc.Validate(Guid.Empty));
-        MSTestAssert.IsFalse(svc.Validate(Guid.NewGuid()));
-    }
-
-    [TestMethod]
-    [TestCategory("Backend")]
-    [TestCategory("Unit")]
-    public void TryGetUid_EmptyOrUnknownToken_IsFalse()
-    {
-        ITokenService svc = new TokenService();
-
-        MSTestAssert.IsFalse(svc.TryGetUid(Guid.Empty, out var uid1));
-        MSTestAssert.AreEqual(Guid.Empty, uid1);
-
-        MSTestAssert.IsFalse(svc.TryGetUid(Guid.NewGuid(), out var uid2));
-        MSTestAssert.AreEqual(Guid.Empty, uid2);
-    }
-
-    [TestMethod]
-    [TestCategory("Backend")]
-    [TestCategory("Unit")]
-    public void Revoke_EmptyOrUnknownToken_IsFalse()
-    {
-        ITokenService svc = new TokenService();
-
-        MSTestAssert.IsFalse(svc.Revoke(Guid.Empty));
-        MSTestAssert.IsFalse(svc.Revoke(Guid.NewGuid()));
+        foreach (var token in new[] { Guid.Empty, Guid.NewGuid() })
+        {
+            MSTestAssert.IsFalse(svc.Validate(token));
+            MSTestAssert.IsFalse(svc.TryGetUid(token, out var userId));
+            MSTestAssert.AreEqual(Guid.Empty, userId);
+            MSTestAssert.IsFalse(svc.Revoke(token));
+        }
     }
 
     [TestMethod]

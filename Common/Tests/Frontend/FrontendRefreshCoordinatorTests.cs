@@ -12,7 +12,7 @@ public sealed class FrontendRefreshCoordinatorTests
     private static readonly Guid RuntimeId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
     [TestMethod]
-    public async Task IdleFrontendMakesNoRecurringAuthenticationOrEnrollmentStatusCalls()
+    public async Task StartWithoutReconciliationMarkerDoesNotScheduleStatusReads()
     {
         var source = new FakeChangeHintSource();
         var delay = new FakeRefreshDelay();

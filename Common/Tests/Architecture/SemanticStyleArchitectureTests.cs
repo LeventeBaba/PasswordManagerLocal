@@ -90,7 +90,9 @@ public sealed class SemanticStyleArchitectureTests
         {
             var fullPath = Path.GetFullPath(path);
             var relativePath = Path.GetRelativePath(frontend, fullPath).Replace('\\', '/');
-            if (relativePath.StartsWith("Assets/Themes/", StringComparison.OrdinalIgnoreCase) ||
+            if (relativePath.StartsWith("obj/", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.StartsWith("bin/", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.StartsWith("Assets/Themes/", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.StartsWith("Assets/Icons/", StringComparison.OrdinalIgnoreCase) ||
                 approvedResourceFiles.Contains(fullPath))
             {

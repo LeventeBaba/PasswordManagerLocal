@@ -4,6 +4,7 @@ using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Windows.Backend;
 using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
+using PasswordManagerLocal.Common.Backend.Abstractions.Hosting;
 
 namespace PasswordManagerLocal.Windows.Agent.Backend;
 

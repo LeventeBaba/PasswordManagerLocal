@@ -20,12 +20,12 @@ public sealed class SyncTombstoneRepositoryTests
         var startTs = DateTimeOffset.UtcNow.AddDays(-1).ToUnixTimeMilliseconds();
 
         for (var i = 0; i < TombstoneConstants.MaxSyncTombstones; i++)
-            await database.Tombstones.UpsertAsync(Guid.NewGuid(), SyncModelType.Group, startTs + i);
+            await database.Tombstones.UpsertAsync(Guid.NewGuid(), SyncModelType.Device, startTs + i);
 
         await database.UnitOfWork.SaveChangesAsync();
 
         await MSTestAssert.ThrowsExactlyAsync<InvalidOperationException>(async () =>
-            await database.Tombstones.UpsertAsync(Guid.NewGuid(), SyncModelType.Group, startTs + TombstoneConstants.MaxSyncTombstones));
+            await database.Tombstones.UpsertAsync(Guid.NewGuid(), SyncModelType.Device, startTs + TombstoneConstants.MaxSyncTombstones));
 
         var timestamps = await database.UnitOfWork.ReadAsync("""
             SELECT "DeletedAtTs" FROM "SyncTombstones" ORDER BY "DeletedAtTs";

@@ -257,10 +257,7 @@ public class RememberMeService : IRememberMeService
                             ? _sessionIssuer.IssueAuthenticatedSession(user.UId, key, bundle)
                             : _tokens.Issue(user.UId);
                         if (_sessionIssuer is null)
-                        {
                             _keys.SetUserKey(token, key);
-                            _keys.SetUserBlobKeys(token, bundle.UserData);
-                        }
                         if (localBundle is not null)
                             _postLogin!.DeferUntilInitialRead(user.UId, user.KeyEpoch, user.MembershipEpoch, token);
                         return token;

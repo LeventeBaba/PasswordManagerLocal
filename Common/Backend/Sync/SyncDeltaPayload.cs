@@ -9,7 +9,6 @@ public sealed class SyncDeltaPayload
     public SyncChangeType ChangeType { get; set; }
     public UserSnapshotEnvelope? UserSnapshot { get; set; }
     public UserControlOperationEnvelope? UserControlOperation { get; set; }
-    public GroupSyncPayload? Group { get; set; }
     public DeviceSyncPayload? Device { get; set; }
     public UserDeviceSyncPayload? UserDevice { get; set; }
 }

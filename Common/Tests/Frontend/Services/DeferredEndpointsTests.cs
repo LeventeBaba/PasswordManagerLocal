@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using PasswordManagerLocal.Android.Runtime;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Backend.Hosting;
 using PasswordManagerLocal.Common.Frontend.Services;
@@ -15,10 +16,18 @@ public sealed class DeferredEndpointsTests
     public async Task EachOperation_UsesTheActiveInteractiveSession()
     {
         using var host = new BackendTestHost();
-        var runtime = new FakeBackendRuntime(host.Services.GetRequiredService<IEndpoints>());
+        var runtime = new FakeBackendRuntime(host.Services.GetRequiredService<IEndpoints>())
+        {
+            ChangeSource = new FakeBackendChangeSource()
+        };
         var lifetimeCoordinator = new BackendRuntimeLifetimeCoordinator(runtime);
-        await using var backendClient = new InProcessFrontendBackendClient(runtime, lifetimeCoordinator);
-        await backendClient.ConnectAsync();
+        var composition = new BackendRuntimeComposition(runtime, lifetimeCoordinator, "test-data");
+        await using var serviceHost = new AndroidRuntimeServiceHost(
+            new FakeAndroidRuntimeCompositionFactory(() => composition),
+            new FakeBackgroundSyncSettingsStore(false),
+            new FakeAndroidForegroundServiceController(),
+            new FakeAndroidSecureStorageAvailability { IsAvailable = true });
+        await using var backendClient = await serviceHost.AttachInteractiveClientAsync();
         var endpoints = new DeferredEndpoints(backendClient);
         var token = Guid.NewGuid();
 

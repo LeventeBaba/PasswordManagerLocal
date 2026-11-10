@@ -29,33 +29,6 @@ public sealed class InteractiveSessionStateServiceTests
     }
 
     [TestMethod]
-    public async Task InactiveStateDoesNotResolveInteractiveServices()
-    {
-        var tokenServiceResolutions = 0;
-        var keyVaultResolutions = 0;
-        var services = new ServiceCollection();
-        services.AddSingleton<ITokenService>(_ =>
-        {
-            tokenServiceResolutions++;
-            return new TokenService();
-        });
-        services.AddSingleton<IKeyVaultService>(_ =>
-        {
-            keyVaultResolutions++;
-            return new KeyVaultService();
-        });
-        await using var provider = services.BuildServiceProvider();
-        var state = new InteractiveSessionStateService(
-            provider.GetRequiredService<IServiceScopeFactory>());
-
-        Assert.IsFalse(state.TryGetUserEncryptionKey(Guid.NewGuid(), out _));
-        await state.InvalidateUserCacheAsync(Guid.NewGuid());
-
-        Assert.AreEqual(0, tokenServiceResolutions);
-        Assert.AreEqual(0, keyVaultResolutions);
-    }
-
-    [TestMethod]
     public void InteractiveUserDataAccessorRejectsInactiveStateBeforeResolvingSensitiveServices()
     {
         var userSessionResolutions = 0;
@@ -153,36 +126,57 @@ public sealed class InteractiveSessionStateServiceTests
     }
 
     [TestMethod]
-    public async Task ActiveStateResolvesInteractiveServicesAndDeactivationReturnsToNoOp()
+    public async Task OnlyActiveStateCanResolveServicesAndReadAnExistingSessionKey()
     {
         var tokenServiceResolutions = 0;
         var keyVaultResolutions = 0;
+        var userId = Guid.NewGuid();
+        var tokens = new TokenService();
+        var token = tokens.Issue(userId);
+        var keyVault = new KeyVaultService();
+        using var key = EncryptionKey.Create();
+        keyVault.SetUserKey(token, key);
+
         var services = new ServiceCollection();
-        services.AddSingleton<ITokenService>(_ =>
+        services.AddScoped<ITokenService>(_ =>
         {
             tokenServiceResolutions++;
-            return new TokenService();
+            return tokens;
         });
-        services.AddSingleton<IKeyVaultService>(_ =>
+        services.AddScoped<IKeyVaultService>(_ =>
         {
             keyVaultResolutions++;
-            return new KeyVaultService();
+            return keyVault;
         });
-        services.AddMemoryCache(options => options.SizeLimit = 10);
-        services.AddSingleton<SafeMemoryCache>();
-        services.AddSingleton<IDataCachingService, DataCachingService>();
         await using var provider = services.BuildServiceProvider();
-        var state = new InteractiveSessionStateService(
-            provider.GetRequiredService<IServiceScopeFactory>());
+        using var state = new InteractiveSessionStateService(provider.GetRequiredService<IServiceScopeFactory>());
 
-        await state.ActivateAsync();
-        Assert.IsFalse(state.TryGetUserEncryptionKey(Guid.NewGuid(), out _));
-        Assert.AreEqual(1, tokenServiceResolutions);
-        Assert.AreEqual(1, keyVaultResolutions);
+        try
+        {
+            Assert.IsFalse(state.TryGetUserEncryptionKey(userId, out _));
+            await state.InvalidateUserCacheAsync(userId);
+            Assert.AreEqual(0, tokenServiceResolutions);
+            Assert.AreEqual(0, keyVaultResolutions);
 
-        await state.DeactivateAsync();
-        Assert.IsFalse(state.TryGetUserEncryptionKey(Guid.NewGuid(), out _));
-        Assert.AreEqual(1, tokenServiceResolutions);
-        Assert.AreEqual(1, keyVaultResolutions);
+            await state.ActivateAsync();
+            Assert.IsTrue(state.TryGetUserEncryptionKey(userId, out var resolved));
+            using (resolved)
+            {
+                Assert.IsNotNull(resolved);
+                Assert.IsTrue(key.AsSpan().SequenceEqual(resolved.AsSpan()));
+            }
+            Assert.AreEqual(1, tokenServiceResolutions);
+            Assert.AreEqual(1, keyVaultResolutions);
+
+            await state.DeactivateAsync();
+            Assert.IsFalse(state.TryGetUserEncryptionKey(userId, out _));
+            await state.InvalidateUserCacheAsync(userId);
+            Assert.AreEqual(1, tokenServiceResolutions);
+            Assert.AreEqual(1, keyVaultResolutions);
+        }
+        finally
+        {
+            keyVault.InvalidateToken(token);
+        }
     }
 }

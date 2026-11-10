@@ -56,7 +56,6 @@ public sealed class AndroidServiceOwnershipArchitectureTests
 
         Assert.IsFalse(combined.Contains("AndroidBackendRuntimeFactory", StringComparison.Ordinal));
         Assert.IsFalse(combined.Contains("BackendRuntimeLifetimeCoordinator", StringComparison.Ordinal));
-        Assert.IsFalse(combined.Contains("new InProcessFrontendBackendClient", StringComparison.Ordinal));
         Assert.IsFalse(combined.Contains("IBackendRuntime ", StringComparison.Ordinal));
         Assert.IsFalse(combined.Contains("BackgroundSyncSettingsStore", StringComparison.Ordinal));
         StringAssert.Contains(activity, "AndroidActivityServiceAttachmentHandle");
@@ -66,8 +65,9 @@ public sealed class AndroidServiceOwnershipArchitectureTests
     [TestMethod]
     public void AndroidManifestDeclaresConnectedDeviceForegroundServiceAndMinimalRestorationReceivers()
     {
+        var root = GetRepositoryRoot();
         var manifestPath = Path.Combine(
-            GetRepositoryRoot(),
+            root,
             "Android",
             "Frontend",
             "Properties",
@@ -100,10 +100,13 @@ public sealed class AndroidServiceOwnershipArchitectureTests
         Assert.AreEqual("false", receiver.Attribute(android + "exported")?.Value);
         Assert.IsNull(receiver.Attribute(android + "directBootAware"));
         Assert.IsFalse(permissions.Contains("android.permission.FOREGROUND_SERVICE_DATA_SYNC"));
-        CollectionAssert.Contains(actions, "android.intent.action.BOOT_COMPLETED");
-        CollectionAssert.Contains(actions, "android.intent.action.MY_PACKAGE_REPLACED");
-        CollectionAssert.DoesNotContain(actions, "android.intent.action.USER_UNLOCKED");
-        CollectionAssert.DoesNotContain(actions, "android.intent.action.LOCKED_BOOT_COMPLETED");
+        CollectionAssert.AreEquivalent(
+            new[] { "android.intent.action.BOOT_COMPLETED", "android.intent.action.MY_PACKAGE_REPLACED" },
+            actions);
+
+        var activity = File.ReadAllText(Path.Combine(root, "Android", "Frontend", "MainActivity.cs"));
+        StringAssert.Contains(activity, "MainLauncher = true");
+        StringAssert.Contains(activity, "Exported = true");
     }
 
 
@@ -134,8 +137,10 @@ public sealed class AndroidServiceOwnershipArchitectureTests
         StringAssert.Contains(manifestReceiver, "AndroidBackgroundRestorationPolicy");
         StringAssert.Contains(manifestReceiver, "IsUserUnlocked");
         StringAssert.Contains(unlockReceiver, "Intent.ActionUserUnlocked");
+        StringAssert.Contains(unlockReceiver, "_queueRestoration();");
         StringAssert.Contains(service, "new AndroidDeferredUnlockReceiver(QueueBackgroundRestoration)");
         StringAssert.Contains(service, "ReceiverFlags.NotExported");
+        StringAssert.Contains(service, "UnregisterDeferredUnlockReceiver");
         Assert.IsFalse(unlockReceiver.Contains("StartForegroundService", StringComparison.Ordinal));
         Assert.IsFalse(unlockReceiver.Contains("BackgroundSyncSettingsStore", StringComparison.Ordinal));
         Assert.IsFalse(File.Exists(Path.Combine(
@@ -172,9 +177,9 @@ public sealed class AndroidServiceOwnershipArchitectureTests
             "PasswordManagerBackgroundService.cs"));
 
         var startMethod = source.IndexOf("OnStartCommand", StringComparison.Ordinal);
+        Assert.IsTrue(startMethod >= 0);
         var unsafeCheck = source.IndexOf("runtimeSnapshot.IsRuntimeUnsafe", startMethod, StringComparison.Ordinal);
         var enterForeground = source.IndexOf("EnterForeground(", startMethod, StringComparison.Ordinal);
-        Assert.IsTrue(startMethod >= 0);
         Assert.IsTrue(unsafeCheck > startMethod);
         Assert.IsTrue(enterForeground > unsafeCheck);
         StringAssert.Contains(source, "RequestProcessTermination");
@@ -193,15 +198,26 @@ public sealed class AndroidServiceOwnershipArchitectureTests
 
         StringAssert.Contains(source, "Background synchronization is active");
         StringAssert.Contains(source, "Background synchronization is waiting for device unlock");
-        StringAssert.Contains(source, "typeof(MainActivity)");
+        StringAssert.Contains(source, "new Intent(_service, typeof(MainActivity))");
         StringAssert.Contains(source, "PendingIntentFlags.Immutable");
         StringAssert.Contains(source, "Resource.Drawable.ic_stat_password_manager");
         StringAssert.Contains(source, "GetNotificationChannel");
         StringAssert.Contains(source, "CreateNotificationChannel");
-        Assert.IsFalse(source.Contains("username", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(source.Contains("token", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(source.Contains("password title", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(source.Contains("IPAddress", StringComparison.Ordinal));
+        foreach (var forbidden in new[]
+        {
+            "username",
+            "token",
+            "masterPassword",
+            "password title",
+            "enrollment code",
+            "device key",
+            "sync payload",
+            "stack trace",
+            "IPAddress"
+        })
+        {
+            Assert.IsFalse(source.Contains(forbidden, StringComparison.OrdinalIgnoreCase), forbidden);
+        }
     }
 
     [TestMethod]
@@ -219,6 +235,7 @@ public sealed class AndroidServiceOwnershipArchitectureTests
                 StringComparison.Ordinal))
             .ToArray();
 
+        Assert.IsNotEmpty(windowsProjects, "The Windows project boundary must inspect actual projects.");
         foreach (var project in windowsProjects)
         {
             Assert.IsFalse(
@@ -245,8 +262,6 @@ public sealed class AndroidServiceOwnershipArchitectureTests
             .ToArray();
 
         StringAssert.Contains(project, "PasswordManagerLocal.Android.Runtime.csproj");
-        Assert.IsFalse(androidSources.Any(source =>
-            source.Contains("new InProcessFrontendBackendClient", StringComparison.Ordinal)));
         Assert.IsFalse(androidSources.Any(source =>
             source.Contains("StoreBackgroundSyncSettingsClient", StringComparison.Ordinal)));
     }
@@ -316,6 +331,8 @@ public sealed class AndroidServiceOwnershipArchitectureTests
 
         StringAssert.Contains(client, "AndroidInteractiveCleanupOutcome.RuntimeUnsafe");
         StringAssert.Contains(host, "FailClosedUnsafeRuntimeLockedAsync");
+        StringAssert.Contains(host, "private volatile bool _runtimeUnsafe;");
+        StringAssert.Contains(host, "ThrowIfUnavailable();");
         StringAssert.Contains(host, "ReleaseBackgroundLeaseLockedAsync");
         StringAssert.Contains(host, "DisposeCompositionLockedAsync");
         StringAssert.Contains(host, "RequestProcessTermination");

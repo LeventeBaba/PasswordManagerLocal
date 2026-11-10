@@ -113,11 +113,12 @@ Assert-Source ($runtimeHostText.Contains('_runtimeUnsafe', [StringComparison]::O
 
 foreach ($resourceRelativePath in @(
     'Android\Frontend\Resources\drawable\ic_stat_password_manager.xml',
-    'Android\Frontend\Resources\drawable\icon.png',
+    'PasswordManagerLocal.svg',
+    'Tools\Android\GenerateAdaptiveIcon.xslt',
     'Android\Frontend\Resources\xml\file_paths.xml'
 )) {
     Assert-Source (Test-Path -LiteralPath (Join-Path $RepositoryRoot $resourceRelativePath) -PathType Leaf) `
-        "Required Android resource is missing: $resourceRelativePath"
+        "Required Android resource source is missing: $resourceRelativePath"
 }
 
 if ($failures.Count -gt 0) {

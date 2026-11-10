@@ -67,9 +67,6 @@ internal sealed class BackendChangeSet
             case Device:
                 CaptureDevice(addedOrDeleted, changed);
                 break;
-            case Group group:
-                CaptureGroup(addedOrDeleted, changed, group);
-                break;
             case LocalDeviceIdentity:
                 CaptureLocalDeviceIdentity(addedOrDeleted, changed);
                 break;
@@ -177,21 +174,6 @@ internal sealed class BackendChangeSet
         {
             Add(null, FrontendChangeScope.LocalDevice | FrontendChangeScope.BackgroundSync);
         }
-    }
-
-    private void CaptureGroup(bool addedOrDeleted, Func<string, bool> changed, Group group)
-    {
-        if (!addedOrDeleted &&
-            !changed(nameof(Group.EncryptedPayload)))
-        {
-            return;
-        }
-
-        if (group.Users.Count == 0)
-            Add(null, FrontendChangeScope.Passwords);
-        else
-            foreach (var user in group.Users)
-                Add(user.UId, FrontendChangeScope.Passwords);
     }
 
     private void CaptureEnrollmentCommit(bool addedOrDeleted, Func<string, bool> changed,

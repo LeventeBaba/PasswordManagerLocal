@@ -13,8 +13,10 @@
 ## Publishing and maintenance
 
 - [Windows publishing and installer](WINDOWS_INSTALLER.md) covers build modes, output paths, icon generation, MSI behavior, and installation diagnostics.
+- Edit [PasswordManagerLocal.svg](../PasswordManagerLocal.svg) to update the app icon. Windows renders the full SVG into an ICO. The [Android build transform](../Tools/Android/GenerateAdaptiveIcon.xslt) uses the SVG's vault group and case colors to generate the adaptive icon shared by the launcher and splash screen.
 - [Release signing](RELEASE_SIGNING.md) covers Android APK publishing and Windows Authenticode.
 - [Third-party notices](THIRD_PARTY_NOTICES.md) contains attribution shipped with the Windows installer.
-- [Privacy policy](Privacy/PrivacyPolicy.en.md) · [Hungarian policy](Privacy/PrivacyPolicy.hu.md) · [Public privacy and account-deletion pages](Privacy/Public/index.html).
+- [Published privacy and account-deletion pages](https://leventebaba.github.io/PasswordManagerLocal/) · [English privacy policy](https://leventebaba.github.io/PasswordManagerLocal/privacy-policy.en.html) · [Hungarian privacy policy](https://leventebaba.github.io/PasswordManagerLocal/privacy-policy.hu.html).
+- Privacy policy files in this repository include the [English document](Privacy/PrivacyPolicy.en.md), the [Hungarian document](Privacy/PrivacyPolicy.hu.md), and the [generated site](Privacy/Public/index.html).
 
 Keep architecture docs focused on responsibilities, boundaries, and the reasons for them. Link to source for identifiers, limits, and detailed behavior.

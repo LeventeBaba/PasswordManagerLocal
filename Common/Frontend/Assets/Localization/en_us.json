@@ -642,6 +642,7 @@
   "Settings_Privacy_Description": "How profiles, passwords, device connections and deletion work.",
   "Privacy_ReadPolicy": "Read the Privacy Policy",
   "Register_PrivacySummary": "Your profile details and passwords stay on your devices and sync with devices you enroll. Review how data, background connections and deletion work before creating a profile.",
+  "Privacy_OpenOnline": "Open the privacy policy in your browser",
   "Privacy_Version_Format": "Version {0}",
   "Privacy_Reviewed_Format": "Last reviewed: {0}",
   "Privacy_Effective_Format": "Effective from: {0}",

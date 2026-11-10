@@ -84,12 +84,6 @@ public sealed class FakeUserDeviceRepository : IUserDeviceRepository
     public Task<bool> HasAnyActiveLinkForDeviceAsync(Guid deviceId, CancellationToken ct = default) =>
         Task.FromResult(_items.Any(item => item.DeviceId == deviceId && !item.IsDeleted));
 
-    public Task<bool> HasAnyActiveSyncEnabledLinkForDeviceAsync(Guid deviceId, CancellationToken ct = default) =>
-        Task.FromResult(_items.Any(item => item.DeviceId == deviceId && !item.IsDeleted && item.IsSyncOn));
-
-    public Task<bool> HasAnyDeletedLinkForDeviceAsync(Guid deviceId, CancellationToken ct = default) =>
-        Task.FromResult(_items.Any(item => item.DeviceId == deviceId && item.IsDeleted));
-
     public Task<bool> HasAnyActiveLinkForDeviceExceptUserAsync(Guid deviceId, Guid userId, CancellationToken ct = default) =>
         Task.FromResult(_items.Any(item => item.DeviceId == deviceId && item.UserId != userId && !item.IsDeleted));
 

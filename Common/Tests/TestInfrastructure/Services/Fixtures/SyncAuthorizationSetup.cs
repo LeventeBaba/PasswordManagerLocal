@@ -10,7 +10,6 @@ namespace PasswordManagerLocal.Common.Tests.TestInfrastructure.Services.Fixtures
 
 internal sealed record SyncAuthorizationSetup(
     SyncAuthorizationService Service,
-    FakeGroupRepository Groups,
     FakeUserDeviceRepository UserDevices,
     FakeLocalUserDeviceRepository LocalUsers,
     FakeDeviceIdentityService Identity);

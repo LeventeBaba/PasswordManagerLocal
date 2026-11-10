@@ -47,7 +47,6 @@ public sealed class EndpointRpcSeparationArchitectureTests
         CollectionAssert.Contains(closure, "PasswordManagerLocal.Windows.EndpointRpc.Client.csproj");
         CollectionAssert.Contains(closure, "PasswordManagerLocal.Windows.EndpointRpc.Contracts.csproj");
         CollectionAssert.DoesNotContain(closure, "PasswordManagerLocal.Common.Backend.csproj");
-        CollectionAssert.DoesNotContain(closure, "PasswordManagerLocal.Common.Backend.Hosting.csproj");
         CollectionAssert.DoesNotContain(closure, "PasswordManagerLocal.Windows.Backend.csproj");
         CollectionAssert.DoesNotContain(closure, "PasswordManagerLocal.Windows.EndpointRpc.Server.csproj");
     }
@@ -64,7 +63,6 @@ public sealed class EndpointRpcSeparationArchitectureTests
         CollectionAssert.Contains(closure, "PasswordManagerLocal.Windows.EndpointRpc.Server.csproj");
         CollectionAssert.Contains(closure, "PasswordManagerLocal.Windows.EndpointRpc.Contracts.csproj");
         CollectionAssert.Contains(closure, "PasswordManagerLocal.Common.Backend.csproj");
-        CollectionAssert.Contains(closure, "PasswordManagerLocal.Common.Backend.Hosting.csproj");
         CollectionAssert.Contains(closure, "PasswordManagerLocal.Windows.Backend.csproj");
         CollectionAssert.DoesNotContain(closure, "PasswordManagerLocal.Windows.EndpointRpc.Client.csproj");
         CollectionAssert.DoesNotContain(closure, "PasswordManagerLocal.Common.Frontend.csproj");

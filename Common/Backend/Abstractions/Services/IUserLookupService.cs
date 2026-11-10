@@ -9,7 +9,6 @@ public interface IUserLookupService
     Task<User> GetAndVerifyUserAsync(Guid token, CancellationToken ct = default);
     Task<UserLoginIdentityMatchResult> ResolveUsernameAsync(byte[] username, CancellationToken ct = default);
     Task<User?> GetUserByUsernameAsync(byte[] username, CancellationToken ct = default);
-    Task<User> GetAndVerifyUserByUsernameAsync(byte[] username, CancellationToken ct = default);
     Task<IReadOnlyList<User>> GetAndVerifyRememberMeEnabledUsersAsync(CancellationToken ct = default);
     Task<bool> UserExistsAsync(Guid uid, CancellationToken ct = default);
 }

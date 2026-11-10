@@ -2,7 +2,6 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
-using System.Xml.Linq;
 
 namespace PasswordManagerLocal.Common.Tests.Architecture;
 
@@ -116,113 +115,6 @@ public sealed class AndroidLifecycleSecurityArchitectureTests
     }
 
     [TestMethod]
-    public void RuntimeOwnerAndRestorationComponentsRemainNarrowAndNonExported()
-    {
-        var root = GetRepositoryRoot();
-        var manifestPath = Path.Combine(
-            root,
-            "Android",
-            "Frontend",
-            "Properties",
-            "AndroidManifest.xml");
-        var document = XDocument.Load(manifestPath);
-        XNamespace android = "http://schemas.android.com/apk/res/android";
-        var service = document.Descendants("service").Single(element =>
-            element.Attribute(android + "name")?.Value.EndsWith(
-                "PasswordManagerBackgroundService",
-                StringComparison.Ordinal) == true);
-        var receiver = document.Descendants("receiver").Single(element =>
-            element.Attribute(android + "name")?.Value.EndsWith(
-                "AndroidBackgroundRestorationReceiver",
-                StringComparison.Ordinal) == true);
-        var actions = receiver.Descendants("action")
-            .Select(element => element.Attribute(android + "name")?.Value)
-            .ToArray();
-
-        Assert.AreEqual("false", service.Attribute(android + "exported")?.Value);
-        Assert.AreEqual("connectedDevice", service.Attribute(android + "foregroundServiceType")?.Value);
-        Assert.AreEqual("false", receiver.Attribute(android + "exported")?.Value);
-        Assert.IsNull(receiver.Attribute(android + "directBootAware"));
-        CollectionAssert.AreEquivalent(
-            new[]
-            {
-                "android.intent.action.BOOT_COMPLETED",
-                "android.intent.action.MY_PACKAGE_REPLACED"
-            },
-            actions);
-        CollectionAssert.DoesNotContain(actions, "android.intent.action.LOCKED_BOOT_COMPLETED");
-
-        var activitySource = File.ReadAllText(Path.Combine(
-            root,
-            "Android",
-            "Frontend",
-            "MainActivity.cs"));
-        StringAssert.Contains(activitySource, "MainLauncher = true");
-        StringAssert.Contains(activitySource, "Exported = true");
-    }
-
-    [TestMethod]
-    public void UserUnlockCannotStartTheServiceFromAManifestReceiver()
-    {
-        var root = GetRepositoryRoot();
-        var manifestReceiver = File.ReadAllText(Path.Combine(
-            root,
-            "Android",
-            "Frontend",
-            "Background",
-            "AndroidBackgroundRestorationReceiver.cs"));
-        var unlockReceiver = File.ReadAllText(Path.Combine(
-            root,
-            "Android",
-            "Frontend",
-            "Background",
-            "AndroidDeferredUnlockReceiver.cs"));
-        var service = File.ReadAllText(Path.Combine(
-            root,
-            "Android",
-            "Frontend",
-            "Runtime",
-            "PasswordManagerBackgroundService.cs"));
-
-        Assert.IsFalse(manifestReceiver.Contains("Intent.ActionUserUnlocked", StringComparison.Ordinal));
-        StringAssert.Contains(unlockReceiver, "Intent.ActionUserUnlocked");
-        StringAssert.Contains(unlockReceiver, "_queueRestoration();");
-        Assert.IsFalse(unlockReceiver.Contains("StartForegroundService", StringComparison.Ordinal));
-        Assert.IsFalse(unlockReceiver.Contains("BackgroundSyncSettingsStore", StringComparison.Ordinal));
-        StringAssert.Contains(service, "new AndroidDeferredUnlockReceiver(QueueBackgroundRestoration)");
-        StringAssert.Contains(service, "ReceiverFlags.NotExported");
-        StringAssert.Contains(service, "UnregisterDeferredUnlockReceiver");
-    }
-
-    [TestMethod]
-    public void ForegroundNotificationUsesExplicitImmutableIntentAndGenericContent()
-    {
-        var source = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(),
-            "Android",
-            "Frontend",
-            "Runtime",
-            "AndroidForegroundServiceController.cs"));
-
-        StringAssert.Contains(source, "new Intent(_service, typeof(MainActivity))");
-        StringAssert.Contains(source, "PendingIntentFlags.Immutable");
-        StringAssert.Contains(source, "Resource.Drawable.ic_stat_password_manager");
-        Assert.IsFalse(source.Contains("PutExtra(", StringComparison.Ordinal));
-        foreach (var forbidden in new[]
-        {
-            "masterPassword",
-            "enrollment code",
-            "auth token",
-            "device key",
-            "sync payload",
-            "stack trace"
-        })
-        {
-            Assert.IsFalse(source.Contains(forbidden, StringComparison.OrdinalIgnoreCase), forbidden);
-        }
-    }
-
-    [TestMethod]
     public void AndroidLifecycleCallbacksNeverSynchronouslyWaitForRuntimeCleanup()
     {
         var root = GetRepositoryRoot();
@@ -304,32 +196,6 @@ public sealed class AndroidLifecycleSecurityArchitectureTests
             var source = File.ReadAllText(Path.Combine(root, relativePath));
             Assert.IsFalse(source.Contains("PutExtra(", StringComparison.Ordinal), relativePath);
         }
-    }
-
-    [TestMethod]
-    public void UnsafeProcessAdmissionPrecedesEveryRuntimeCreationPath()
-    {
-        var host = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(),
-            "Android",
-            "Runtime",
-            "AndroidRuntimeServiceHost.cs"));
-        var service = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(),
-            "Android",
-            "Frontend",
-            "Runtime",
-            "PasswordManagerBackgroundService.cs"));
-
-        StringAssert.Contains(host, "private volatile bool _runtimeUnsafe;");
-        StringAssert.Contains(host, "ThrowIfUnavailable();");
-        StringAssert.Contains(host, "if (_runtimeUnsafe)");
-        StringAssert.Contains(host, "RequiresProcessRestart = true");
-        StringAssert.Contains(host, "RequestProcessTermination");
-        var unsafeCheck = service.IndexOf("runtimeSnapshot.IsRuntimeUnsafe", StringComparison.Ordinal);
-        var foregroundEntry = service.IndexOf("EnterForeground(", unsafeCheck, StringComparison.Ordinal);
-        Assert.IsTrue(unsafeCheck >= 0);
-        Assert.IsTrue(foregroundEntry > unsafeCheck);
     }
 
     [TestMethod]
@@ -604,33 +470,6 @@ public sealed class AndroidLifecycleSecurityArchitectureTests
 
         StringAssert.Contains(networkLease, "CreateMulticastLock");
         StringAssert.Contains(networkLease, "Release");
-    }
-
-    [TestMethod]
-    public void EndpointAndMutationCompletenessGuardsUseDerivedSetsAndCoverSelfDiagnostics()
-    {
-        var root = GetRepositoryRoot();
-        var paritySource = File.ReadAllText(Path.Combine(
-            root,
-            "Windows",
-            "Tests.EndpointRpc",
-            "Mapping",
-            "EndpointOperationParityTests.cs"));
-        var proxySource = File.ReadAllText(Path.Combine(
-            root,
-            "Windows",
-            "Tests.EndpointRpc",
-            "Client",
-            "NamedPipeEndpointsProxyMappingTests.cs"));
-
-        StringAssert.Contains(paritySource, "typeof(IEndpoints).GetMethods()");
-        StringAssert.Contains(paritySource, "EndpointOperationTestAssertions.AreEquivalent");
-        StringAssert.Contains(paritySource, "Enum.GetValues<EndpointOperationId>()");
-        StringAssert.Contains(paritySource, "descriptor.CommitModel != EndpointMutationCommitModel.NoDurableMutation");
-        StringAssert.Contains(paritySource, "descriptor.MutatesState");
-        StringAssert.Contains(proxySource, "EndpointOperationManifest.All");
-        StringAssert.Contains(proxySource, "nameof(IEndpoints.RunSelfDiagnosticsAndRepairAsync)");
-        StringAssert.Contains(proxySource, "EndpointOperationTestAssertions.AreEquivalent");
     }
 
     private static void AssertMethodSetEquals(

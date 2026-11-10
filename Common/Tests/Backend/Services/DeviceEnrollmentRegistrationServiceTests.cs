@@ -24,7 +24,6 @@ public sealed class DeviceEnrollmentRegistrationServiceTests
         var queue = new FakeSyncQueueService();
         using var services = new ServiceCollection()
             .AddSingleton<IDeletedUserBarrierRepository, FakeDeletedUserBarrierRepository>()
-            .AddSingleton<IGroupRepository, FakeGroupRepository>()
             .AddSingleton<ISyncChangeQueueService>(queue)
             .BuildServiceProvider();
         var identity = new FakeDeviceIdentityService();

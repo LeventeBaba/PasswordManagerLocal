@@ -10,20 +10,17 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 /// </summary>
 public sealed class SyncTargetResolverService : ISyncTargetResolverService
 {
-    private readonly IGroupRepository _groups;
     private readonly IDeviceRepository _devices;
     private readonly IUserDeviceRepository _userDevices;
     private readonly ILocalUserDeviceRepository _localUserDevices;
     private readonly ILocalDeviceMatcherService _localDevices;
 
     public SyncTargetResolverService(
-        IGroupRepository groups,
         IDeviceRepository devices,
         IUserDeviceRepository userDevices,
         ILocalUserDeviceRepository localUserDevices,
         ILocalDeviceMatcherService localDevices)
     {
-        _groups = groups;
         _devices = devices;
         _userDevices = userDevices;
         _localUserDevices = localUserDevices;
@@ -57,9 +54,6 @@ public sealed class SyncTargetResolverService : ISyncTargetResolverService
         if (item.ModelType == SyncModelType.User)
             return await ListUserTargetDevicesAsync(item.ModelId, ct);
 
-        if (item.ModelType == SyncModelType.Group)
-            return await ListGroupTargetDevicesAsync(item.ModelId, ct);
-
         if (item.ModelType == SyncModelType.Device)
             return await ListDeviceTargetDevicesAsync(item.ModelId, ct);
 
@@ -85,24 +79,6 @@ public sealed class SyncTargetResolverService : ISyncTargetResolverService
             return [];
 
         var links = await _userDevices.ListByUserWithDevicesAsync(userId, ct);
-        return SelectDistinctDevices(links.Where(link => !link.IsDeleted && link.IsSyncOn));
-    }
-
-    private async Task<IReadOnlyList<Device>> ListGroupTargetDevicesAsync(Guid groupId, CancellationToken ct)
-    {
-        var groupUserIds = await _groups.ListUserIdsAsync(groupId, ct);
-        if (groupUserIds.Count == 0)
-            return [];
-
-        var locallyEnabledUserIds = (await _localUserDevices.ListSyncOnUserIdsAsync(ct)).ToHashSet();
-        var enabledGroupUserIds = groupUserIds
-            .Where(locallyEnabledUserIds.Contains)
-            .Distinct()
-            .ToList();
-        if (enabledGroupUserIds.Count == 0)
-            return [];
-
-        var links = await _userDevices.ListByUsersWithDevicesAsync(enabledGroupUserIds, ct);
         return SelectDistinctDevices(links.Where(link => !link.IsDeleted && link.IsSyncOn));
     }
 

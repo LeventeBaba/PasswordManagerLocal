@@ -43,6 +43,11 @@ public sealed class UserDataReaderServiceTests
         using var host = new BackendTestHost();
         var services = host.Services;
         var token = await services.GetRequiredService<IAuthService>().RegisterAsync(host.CreateValidRegistrationRequest());
+        var cache = services.GetRequiredService<IDataCachingService>();
+        MSTestAssert.IsTrue(cache.TryGetUserDataBundle(token, out var cached));
+        using var cachedBundle = cached;
+        MSTestAssert.IsNotNull(cachedBundle);
+
         var userId = services.GetRequiredService<ITokenService>().GetUidOrThrow(token);
         var user = await services.GetRequiredService<IUserRepository>().GetByIdAsync(userId);
         user!.EncryptedPayload[0] ^= 0x01;

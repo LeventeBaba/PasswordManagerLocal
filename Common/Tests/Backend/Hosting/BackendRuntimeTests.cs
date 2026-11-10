@@ -942,16 +942,18 @@ public sealed class BackendRuntimeTests
     public async Task FactoryReturningNull_FailsStartup()
     {
         using var directory = new TemporaryDirectory();
-        var runtime = BackendRuntimeFactory.Create(
+        var composition = BackendRuntimeFactory.Create(
             new BackendStoragePaths(directory.Path),
             static () => null!,
             static () => new FakeLocalDiscoveryNetworkLease());
+        await using var runtime = composition.Runtime;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            async () => await runtime.EnsureStartedAsync());
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await composition.LifetimeCoordinator.AcquireAsync(BackendLifetimeReason.InteractiveUi));
 
+        StringAssert.Contains(failure.Message, "platform key-protector factory returned null");
         Assert.AreEqual(BackendRuntimeState.Failed, runtime.Snapshot.State);
-        await runtime.DisposeAsync();
+        Assert.AreEqual(BackendLifetimeReason.None, composition.LifetimeCoordinator.ActiveReasons);
     }
 
     private static BackendRuntime CreateRuntime(

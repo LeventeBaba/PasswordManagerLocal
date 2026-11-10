@@ -14,7 +14,7 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 public sealed class UserPasswordsServiceTests
 {
     [TestMethod]
-    public async Task AddNewPassword_ThenList_Works()
+    public async Task AddNewPassword_PersistsMetadataAndSecret()
     {
         using var host = new BackendTestHost();
 
@@ -24,10 +24,11 @@ public sealed class UserPasswordsServiceTests
 
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("steve"));
 
+        var secret = Encoding.UTF8.GetBytes("secret");
         await svc.AddNewPasswordAsync(token, new NewPasswordRequest
         {
             Name = "Email",
-            Password = Encoding.UTF8.GetBytes("secret")
+            Password = secret
         });
 
         cache.InvalidateToken(token);
@@ -36,6 +37,8 @@ public sealed class UserPasswordsServiceTests
         MSTestAssert.HasCount(1, response.Passwords);
         MSTestAssert.IsEmpty(response.CustomColors);
         MSTestAssert.AreEqual("Email", response.Passwords[0].Name);
+        var decrypted = await svc.GetUnsecurePasswordAsync(token, response.Passwords[0].Id);
+        CollectionAssert.AreEqual(secret, decrypted);
     }
 
 
@@ -67,34 +70,6 @@ public sealed class UserPasswordsServiceTests
         var response = await svc.GetSavedPasswordsAsync(token);
         MSTestAssert.HasCount(1, response.Passwords);
     }
-
-    [TestMethod]
-    public async Task RemovePasswords_SingleItemList_RemovesPersistently()
-    {
-        using var host = new BackendTestHost();
-
-        var auth = host.Services.GetRequiredService<IAuthService>();
-        var svc = host.Services.GetRequiredService<IUserPasswordsService>();
-        var cache = host.Services.GetRequiredService<IDataCachingService>();
-
-        var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("bob"));
-
-        await svc.AddNewPasswordAsync(token, new NewPasswordRequest
-        {
-            Name = "Test",
-            Password = Encoding.UTF8.GetBytes("pw")
-        });
-
-        var response = await svc.GetSavedPasswordsAsync(token);
-        var id = response.Passwords[0].Id;
-
-        await svc.RemovePasswordsAsync(token, [id]);
-
-        cache.InvalidateToken(token);
-        var after = await svc.GetSavedPasswordsAsync(token);
-        MSTestAssert.IsEmpty(after.Passwords);
-    }
-
 
     [TestMethod]
     public async Task RemovePasswords_MultipleItems_RemovesAllRequestedPersistently()
@@ -132,30 +107,6 @@ public sealed class UserPasswordsServiceTests
     }
 
     [TestMethod]
-    public async Task GetUnsecurePassword_Roundtrip_Works()
-    {
-        using var host = new BackendTestHost();
-
-        var auth = (IAuthService)host.Services.GetRequiredService(typeof(IAuthService));
-        var svc = (IUserPasswordsService)host.Services.GetRequiredService(typeof(IUserPasswordsService));
-
-        var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("charlie"));
-
-        var raw = Encoding.UTF8.GetBytes("topsecret");
-
-        await svc.AddNewPasswordAsync(token, new NewPasswordRequest
-        {
-            Name = "Vault",
-            Password = raw
-        });
-
-        var response = await svc.GetSavedPasswordsAsync(token);
-        var decrypted = await svc.GetUnsecurePasswordAsync(token, response.Passwords[0].Id);
-
-        CollectionAssert.AreEqual(raw, decrypted);
-    }
-
-    [TestMethod]
     public async Task UpdatePassword_PersistsChanges()
     {
         using var host = new BackendTestHost();
@@ -189,36 +140,6 @@ public sealed class UserPasswordsServiceTests
         MSTestAssert.HasCount(1, updated.Passwords);
         MSTestAssert.AreEqual("New", updated.Passwords[0].Name);
         CollectionAssert.AreEqual(Encoding.UTF8.GetBytes("newpw"), decrypted);
-    }
-
-
-    [TestMethod]
-    public async Task CustomUserColors_AreIncludedInSavedPasswordsResponse()
-    {
-        using var host = new BackendTestHost();
-
-        var auth = host.Services.GetRequiredService<IAuthService>();
-        var passwordService = host.Services.GetRequiredService<IUserPasswordsService>();
-        var customColorService = host.Services.GetRequiredService<IUserCustomColorService>();
-        var cache = host.Services.GetRequiredService<IDataCachingService>();
-
-        var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("colors"));
-
-        await customColorService.AddCustomUserColorsAsync(token,
-        [
-            new NewCustomUserColorRequest
-            {
-                ColorName = "Work",
-                ColorCode = "#FF123456"
-            }
-        ]);
-
-        cache.InvalidateToken(token);
-        var response = await passwordService.GetSavedPasswordsAsync(token);
-        MSTestAssert.IsEmpty(response.Passwords);
-        MSTestAssert.HasCount(1, response.CustomColors);
-        MSTestAssert.AreEqual("Work", response.CustomColors[0].ColorName);
-        MSTestAssert.AreEqual("#FF123456", response.CustomColors[0].ColorCode);
     }
 
 

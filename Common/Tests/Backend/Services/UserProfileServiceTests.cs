@@ -132,17 +132,18 @@ public sealed class UserProfileServiceTests
 
         var auth = host.Services.GetRequiredService<IAuthService>();
         var profile = host.Services.GetRequiredService<IUserProfileService>();
-        var users = host.Services.GetRequiredService<IUserService>();
+        var userSessions = host.Services.GetRequiredService<IUserSessionService>();
+        var userLookup = host.Services.GetRequiredService<IUserLookupService>();
         var tokens = host.Services.GetRequiredService<ITokenService>();
         var keys = host.Services.GetRequiredService<IKeyVaultService>();
 
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("dave"));
         var secondToken = await auth.LoginAsync(host.CreateValidLoginRequest("dave"));
-        var uid = users.GetUidFromToken(token);
+        var uid = userSessions.GetUidFromToken(token);
 
         await profile.DeleteUserAccountAsync(token, Encoding.UTF8.GetBytes("P@ssw0rd12345678"));
 
-        var exists = await users.UserExistsAsync(uid);
+        var exists = await userLookup.UserExistsAsync(uid);
         MSTestAssert.IsFalse(exists);
 
         MSTestAssert.IsFalse(tokens.Validate(token));

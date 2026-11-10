@@ -4,7 +4,6 @@ using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Security;
 using PasswordManagerLocal.Common.Backend.Exceptions;
-using PasswordManagerLocal.Common.Backend.Models.Projections;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Sync;
@@ -19,106 +18,18 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 public sealed class SyncRelationshipReconciliationService : ISyncRelationshipReconciliationService
 {
     private readonly IUserRepository _users;
-    private readonly IGroupRepository _groups;
-    private readonly IDeviceRepository _devices;
     private readonly IUserDeviceRepository _userDevices;
-    private readonly IDeviceIdentityService _identity;
     private readonly IUserMembershipAuthorizationRepository _membershipAuthorizations;
 
     public SyncRelationshipReconciliationService(
         IUserRepository users,
-        IGroupRepository groups,
-        IDeviceRepository devices,
         IUserDeviceRepository userDevices,
-        IDeviceIdentityService identity,
         IUserMembershipAuthorizationRepository membershipAuthorizations)
     {
         _users = users;
-        _groups = groups;
-        _devices = devices;
         _userDevices = userDevices;
-        _identity = identity;
         _membershipAuthorizations = membershipAuthorizations;
     }
-
-    public async Task SyncUserGroupsAsync(User user, IEnumerable<Guid> groupIds, CancellationToken ct)
-    {
-        var ids = CreateIdSet(groupIds);
-
-        foreach (var group in user.Groups.Where(g => !ids.Contains(g.Id)).ToList())
-            _groups.SetMember(group, user, isMember: false);
-
-        var missingIds = ids.Where(id => user.Groups.All(g => g.Id != id)).ToArray();
-        var groups = await _groups.ListByIdsAsync(missingIds, ct);
-        foreach (var group in groups)
-            _groups.SetMember(group, user, isMember: true);
-    }
-
-
-    public async Task SyncUserDevicesAsync(User user, IEnumerable<Guid> deviceIds, DateTimeOffset modifiedAt, CancellationToken ct)
-    {
-        var requestedIds = CreateIdSet(deviceIds);
-        requestedIds.Remove(_identity.LocalDeviceId);
-        var ids = new HashSet<Guid>();
-        foreach (var deviceId in requestedIds)
-        {
-            if ((await _membershipAuthorizations.ListActiveForDeviceAsync(user.UId, deviceId, ct)).Count != 0)
-                ids.Add(deviceId);
-        }
-
-        var devices = (await _devices.ListByIdsAsync(ids, ct)).ToDictionary(device => device.Id);
-        var knownLinks = user.UserDevices.ToDictionary(link => link.DeviceId);
-        foreach (var id in ids)
-        {
-            if (!devices.TryGetValue(id, out var remoteDevice))
-                continue;
-
-            if (knownLinks.TryGetValue(id, out var existingLink))
-            {
-                existingLink.Device = remoteDevice;
-                existingLink.VerifyIntegrity();
-                if (existingLink.IsDeleted)
-                {
-                    existingLink.IsDeleted = false;
-                    existingLink.DeletedAt = null;
-                    existingLink.IsSyncOn = false;
-                    existingLink.LastModifiedAt = modifiedAt;
-                    existingLink.GenerateIntegrityHash();
-                }
-                _userDevices.Update(existingLink);
-                continue;
-            }
-
-            var newLink = new UserDevice
-            {
-                UserId = user.UId,
-                DeviceId = id,
-                User = user,
-                Device = remoteDevice,
-                IsSyncOn = false,
-                IsDeleted = false,
-                LastModifiedAt = modifiedAt
-            };
-            newLink.GenerateIntegrityHash();
-            user.UserDevices.Add(newLink);
-            await _userDevices.AddAsync(newLink, ct);
-        }
-    }
-
-
-    public async Task SyncGroupUsersAsync(Group group, IEnumerable<Guid> userIds, CancellationToken ct)
-    {
-        var ids = CreateIdSet(userIds);
-
-        foreach (var user in group.Users.Where(u => !ids.Contains(u.UId)).ToList())
-            _groups.SetMember(group, user, isMember: false);
-
-        var missingIds = ids.Where(id => group.Users.All(u => u.UId != id)).ToArray();
-        var users = await _users.ListByIdsAsync(missingIds, ct);
-        foreach (var user in users)
-            _groups.SetMember(group, user, isMember: true);
-    }
-
 
     public async Task SyncDeviceUsersAsync(Device device, IEnumerable<Guid> userIds, DateTimeOffset modifiedAt, CancellationToken ct)
     {

@@ -52,7 +52,6 @@ public sealed class BackendTestHost : IDisposable
         sc.AddSingleton<IEndpoints, Endpoints>();
 
         sc.AddSingleton<IUserRepository, InMemoryUserRepository>();
-        sc.AddSingleton<IGroupRepository, FakeGroupRepository>();
         sc.AddSingleton<FakeUserDeviceRepository>();
         sc.AddSingleton<IUserDeviceRepository>(sp => sp.GetRequiredService<FakeUserDeviceRepository>());
         sc.AddSingleton<IDeviceRepository, FakeDeviceRepository>();
@@ -137,7 +136,6 @@ public sealed class BackendTestHost : IDisposable
         sc.AddSingleton<IUserTombstoneGarbageCollector, UserTombstoneGarbageCollector>();
         sc.AddSingleton<IUserAccountDeletionCleanupService, FakeUserAccountDeletionCleanupService>();
         sc.AddSingleton<IUserDeletionService, UserDeletionService>();
-        sc.AddSingleton<IUserService, UserService>();
         sc.AddSingleton<IUserProfileService, UserProfileService>();
         sc.AddSingleton<IRememberMeService, RememberMeService>();
         sc.AddSingleton<IUserRegistrationService, UserRegistrationService>();

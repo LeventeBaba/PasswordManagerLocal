@@ -67,7 +67,6 @@ public sealed class OutgoingDeltaBuilderServiceTests
         var localUsers = new FakeLocalUserDeviceRepository();
         var builder = new OutgoingDeltaBuilderService(
             users,
-            new FakeGroupRepository(),
             new FakeDeviceRepository(),
             userDevices,
             new FakeSyncRouteRepository(userDevices, localUsers),
@@ -127,7 +126,6 @@ public sealed class OutgoingDeltaBuilderServiceTests
         var localUsers = new FakeLocalUserDeviceRepository();
         var builder = new OutgoingDeltaBuilderService(
             new InMemoryUserRepository(),
-            new FakeGroupRepository(),
             new FakeDeviceRepository(),
             userDevices,
             new FakeSyncRouteRepository(userDevices, localUsers),
@@ -139,7 +137,7 @@ public sealed class OutgoingDeltaBuilderServiceTests
         var delta = await builder.BuildAsync(new SyncItem
         {
             ModelId = deletedId,
-            ModelType = SyncModelType.Group,
+            ModelType = SyncModelType.Device,
             ChangeType = SyncChangeType.Deleted
         }, target);
 
@@ -152,9 +150,9 @@ public sealed class OutgoingDeltaBuilderServiceTests
         var payload = JsonSerializer.Deserialize<SyncDeltaPayload>(plaintext);
         MSTestAssert.IsNotNull(payload);
         MSTestAssert.AreEqual(deletedId, payload.ModelId);
-        MSTestAssert.AreEqual(SyncModelType.Group, payload.ModelType);
+        MSTestAssert.AreEqual(SyncModelType.Device, payload.ModelType);
         MSTestAssert.AreEqual(SyncChangeType.Deleted, payload.ChangeType);
-        MSTestAssert.IsNull(payload.Group);
+        MSTestAssert.IsNull(payload.Device);
         SyncCryptoUtil.ValidatePayloadIntegrity(payload, delta.Ts);
     }
 
@@ -188,7 +186,6 @@ public sealed class OutgoingDeltaBuilderServiceTests
         await userDevices.AddAsync(userDevice);
         var builder = new OutgoingDeltaBuilderService(
             new InMemoryUserRepository(),
-            new FakeGroupRepository(),
             new FakeDeviceRepository(),
             userDevices,
             new FakeSyncRouteRepository(userDevices, localUsers),
@@ -273,7 +270,6 @@ public sealed class OutgoingDeltaBuilderServiceTests
 
         var builder = new OutgoingDeltaBuilderService(
             new InMemoryUserRepository(),
-            new FakeGroupRepository(),
             devices,
             userDevices,
             new FakeSyncRouteRepository(userDevices, localUsers),
@@ -352,7 +348,6 @@ public sealed class OutgoingDeltaBuilderServiceTests
         var localUsers = new FakeLocalUserDeviceRepository();
         var builder = new OutgoingDeltaBuilderService(
             new InMemoryUserRepository(),
-            new FakeGroupRepository(),
             devices,
             userDevices,
             new FakeSyncRouteRepository(userDevices, localUsers),
@@ -457,7 +452,6 @@ public sealed class OutgoingDeltaBuilderServiceTests
         var localUsers = new FakeLocalUserDeviceRepository();
         var builder = new OutgoingDeltaBuilderService(
             new InMemoryUserRepository(),
-            new FakeGroupRepository(),
             devices,
             userDevices,
             new FakeSyncRouteRepository(userDevices, localUsers),
@@ -512,7 +506,6 @@ public sealed class OutgoingDeltaBuilderServiceTests
         var localUsers = new FakeLocalUserDeviceRepository();
         var builder = new OutgoingDeltaBuilderService(
             new InMemoryUserRepository(),
-            new FakeGroupRepository(),
             new FakeDeviceRepository(),
             userDevices,
             new FakeSyncRouteRepository(userDevices, localUsers),

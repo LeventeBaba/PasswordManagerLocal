@@ -10,59 +10,31 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 public sealed class DeviceOnlineStatusEvaluatorTests
 {
     [TestMethod]
-    public void InteractiveProfile_UsesConfiguredAuthenticatedPresenceBoundary()
+    public void ProfileChange_AppliesTheNewTimeoutToExistingAuthenticatedPresence()
     {
+        var now = DateTimeOffset.Parse("2026-07-24T08:00:00+00:00");
+        var registry = new DevicePresenceRegistry(() => now);
+        registry.RefreshAuthenticated("AABB", endpoint: null, DevicePresenceObservationSource.IncomingSync);
         var provider = CreateProvider(TimeSpan.FromSeconds(35), isInteractive: true);
-        var registry = new RecordingDevicePresenceRegistry();
         var evaluator = new DeviceOnlineStatusEvaluator(provider, registry);
 
-        evaluator.IsOnline("AA");
+        now = now.AddSeconds(35);
+        Assert.IsTrue(evaluator.IsOnline("AA:BB"));
+        now = now.AddTicks(1);
+        Assert.IsFalse(evaluator.IsOnline("AA:BB"));
 
-        Assert.AreEqual(TimeSpan.FromSeconds(35), registry.LastMaximumAge);
-    }
-
-    [TestMethod]
-    public void BackgroundProfile_UsesConfiguredAuthenticatedPresenceBoundary()
-    {
-        var provider = CreateProvider(TimeSpan.FromSeconds(125), isInteractive: false);
-        var registry = new RecordingDevicePresenceRegistry();
-        var evaluator = new DeviceOnlineStatusEvaluator(provider, registry);
-
-        evaluator.IsOnline("AA");
-
-        Assert.AreEqual(TimeSpan.FromSeconds(125), registry.LastMaximumAge);
-    }
-
-    [TestMethod]
-    public void ProfileChange_SubsequentQueryUsesNewTimeout()
-    {
-        var provider = CreateProvider(TimeSpan.FromSeconds(35), isInteractive: true);
-        var registry = new RecordingDevicePresenceRegistry();
-        var evaluator = new DeviceOnlineStatusEvaluator(provider, registry);
-        evaluator.IsOnline("AA");
-
+        var refreshedAt = now;
+        registry.RefreshAuthenticated("AABB", endpoint: null, DevicePresenceObservationSource.IncomingSync);
+        now = refreshedAt.AddSeconds(36);
         provider.SetProfile(
             new BackendExecutionProfile(
                 TimeSpan.FromSeconds(60),
                 TimeSpan.FromSeconds(60),
                 TimeSpan.FromSeconds(125)),
             isInteractive: false);
-        evaluator.IsOnline("AA");
 
-        Assert.AreEqual(TimeSpan.FromSeconds(125), registry.LastMaximumAge);
-    }
-
-    [TestMethod]
-    public void AuthenticatedPresenceBoundary_IsInclusiveAndThenExpires()
-    {
-        var now = DateTimeOffset.Parse("2026-07-24T08:00:00+00:00");
-        var registry = new DevicePresenceRegistry(() => now);
-        registry.RefreshAuthenticated("AABB", endpoint: null, DevicePresenceObservationSource.IncomingSync);
-        var evaluator = new DeviceOnlineStatusEvaluator(
-            CreateProvider(TimeSpan.FromSeconds(35), isInteractive: true),
-            registry);
-
-        now = now.AddSeconds(35);
+        Assert.IsTrue(evaluator.IsOnline("AA:BB"));
+        now = refreshedAt.AddSeconds(125);
         Assert.IsTrue(evaluator.IsOnline("AA:BB"));
         now = now.AddTicks(1);
         Assert.IsFalse(evaluator.IsOnline("AA:BB"));

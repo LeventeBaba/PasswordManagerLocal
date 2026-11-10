@@ -79,18 +79,6 @@ public sealed class FakeSyncQueueRepository : ISyncQueueRepository
         }
     }
 
-    public Task<IReadOnlyList<Guid>> ListQueuedDeviceIdsAsync(Guid syncItemId, IReadOnlyList<Guid> deviceIds, CancellationToken ct = default)
-    {
-        lock (_gate)
-        {
-            return Task.FromResult((IReadOnlyList<Guid>)_items
-                .Where(item => item.SyncItemId == syncItemId && deviceIds.Contains(item.DeviceId))
-                .Select(item => item.DeviceId)
-                .Distinct()
-                .ToList());
-        }
-    }
-
     public Task EnqueueAsync(Guid syncItemId, Guid deviceId, CancellationToken ct = default)
     {
         lock (_gate)

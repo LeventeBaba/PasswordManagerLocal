@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Contracts.Preferences;
 using PasswordManagerLocal.Common.Frontend.Information;
@@ -8,7 +7,6 @@ namespace PasswordManagerLocal.Common.Tests.Frontend.Information;
 [TestClass]
 public sealed class HelpSearchTests
 {
-    public TestContext TestContext { get; set; } = null!;
     [TestMethod]
     public void SearchRequiresEveryWordAndRanksTitlesAheadOfBodyMatches()
     {
@@ -92,7 +90,7 @@ public sealed class HelpSearchTests
     }
 
     [TestMethod]
-    public void FullCatalogSearchFindsRealTermsOnBothPlatformsAndReportsRuntimeTiming()
+    public void FullCatalogSearchFindsRealTermsInBothLanguagesAndOnBothPlatforms()
     {
         var catalog = HelpCatalogLoader.Load();
         foreach (var language in new[] { AppLanguage.English, AppLanguage.Hungarian })
@@ -115,9 +113,6 @@ public sealed class HelpSearchTests
                     (Query: "ESZKÖZ LEVÁLASZTÁSA", Id: HelpTopicIds.Disconnect, First: true),
                     (Query: "emlekezz ram", Id: HelpTopicIds.RememberMe, First: false)
                 };
-            var cold = Stopwatch.StartNew();
-            catalog.Search(language, platform, cases[0].Query);
-            cold.Stop();
             foreach (var item in cases)
             {
                 var matches = catalog.Search(language, platform, item.Query);
@@ -129,16 +124,6 @@ public sealed class HelpSearchTests
                 CollectionAssert.AreEqual(
                     catalog.Search(language, platform, "ESZKÖZ LEVÁLASZTÁSA").Select(match => match.Topic.Id).ToArray(),
                     catalog.Search(language, platform, "eszkoz levalasztasa").Select(match => match.Topic.Id).ToArray());
-
-            const int repetitions = 128;
-            var warm = Stopwatch.StartNew();
-            for (var i = 0; i < repetitions; i++)
-                catalog.Search(language, platform, cases[i % cases.Length].Query);
-            warm.Stop();
-            // Diagnostic output only: a hardware-dependent pass/fail timing limit would be flaky.
-            TestContext.WriteLine($"Help search {language}/{platform}: {catalog.ForLanguage(language).Topics.Count} topics, " +
-                $"index + first query {cold.Elapsed.TotalMilliseconds:F3} ms, " +
-                $"warm query average {warm.Elapsed.TotalMilliseconds / repetitions:F3} ms.");
         }
     }
 

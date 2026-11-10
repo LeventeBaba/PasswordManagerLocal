@@ -4,5 +4,5 @@ namespace PasswordManagerLocal.Common.Contracts.Constants;
 public static class ApplicationBranding
 {
     public const string DisplayName = "Password Manager Local";
-    public const string DeveloperEmail = "levente.baba.dev@gmail.com";
+    public const string DeveloperEmail = "leventebaba.dev@gmail.com";
 }

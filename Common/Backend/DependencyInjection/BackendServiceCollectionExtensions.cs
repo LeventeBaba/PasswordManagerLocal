@@ -78,7 +78,6 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<IUserDeviceRepository, UserDeviceRepository>();
         services.AddScoped<ILocalUserDeviceRepository, LocalUserDeviceRepository>();
         services.AddScoped<ISyncRouteRepository, SyncRouteRepository>();
-        services.AddScoped<IGroupRepository, GroupRepository>();
         services.AddScoped<ISyncQueueRepository, SyncQueueRepository>();
         services.AddScoped<ISyncItemRepository, SyncItemRepository>();
         services.AddScoped<ISyncTombstoneRepository, SyncTombstoneRepository>();
@@ -196,7 +195,6 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<ISyncQueueWriterService, SyncQueueWriterService>();
         services.AddScoped<ISyncChangeQueueService, SyncChangeQueueService>();
         services.AddScoped<IUserSyncCatchUpService, UserSyncCatchUpService>();
-        services.AddScoped<ISyncService, SyncService>();
 
         services.AddSingleton<SyncPeerProtocolHandler>();
         services.AddSingleton<SyncDeviceIdentityWarmupHostedService>();
@@ -222,8 +220,6 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<IPasswordService, PasswordService>();
         services.AddScoped<ICustomUserColorService, CustomUserColorService>();
         services.AddScoped<IPasswordTagService, PasswordTagService>();
-        services.AddScoped<IGroupService, GroupService>();
-        services.AddScoped<IGroupPasswordsService, GroupPasswordsService>();
         services.AddScoped<IUserRecoverySessionService, UserRecoverySessionService>();
         services.AddScoped<IUserRegistrationService, UserRegistrationService>();
         services.AddScoped<IUserLoginService, UserLoginService>();
@@ -235,7 +231,6 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUserSessionService, UserSessionService>();
         services.AddScoped<IUserDeletionService, UserDeletionService>();
-        services.AddScoped<IUserService, UserService>();
         services.AddScoped<IRememberMeService, RememberMeService>();
         services.AddScoped<IUserProfileService, UserProfileService>();
         services.AddScoped<LocalUserDeviceLinkManager>();

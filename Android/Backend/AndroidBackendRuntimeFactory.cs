@@ -20,14 +20,9 @@ public static class AndroidBackendRuntimeFactory
 
         var storagePaths = new BackendStoragePaths(
             Path.Combine(filesDirectory, ApplicationFileNames.AppFolderName));
-        var runtime = BackendRuntimeFactory.Create(
+        return BackendRuntimeFactory.Create(
             storagePaths,
             static () => new AndroidKeyProtector(),
             () => new AndroidLocalDiscoveryNetworkLease(applicationContext));
-
-        return new BackendRuntimeComposition(
-            runtime,
-            new BackendRuntimeLifetimeCoordinator(runtime),
-            storagePaths.RootDirectory);
     }
 }

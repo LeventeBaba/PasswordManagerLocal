@@ -2,13 +2,13 @@
 
 Version 1.1 · Effective from: 2026-11-07
 
-> Privacy questions and requests can be sent to levente.baba.dev@gmail.com.
+> Privacy questions and requests can be sent to leventebaba.dev@gmail.com.
 
 Your profiles and passwords are stored on your devices. Enrolled devices exchange data directly, including in the background when enabled. The app has no developer-operated vault server or automatic telemetry. If you email the developer, the information you choose to send is handled separately.
 
 ## 1. About this policy and privacy contact
 
-Password Manager Local is developed by Levente Baba in Hungary. This policy covers the installed Windows and Android app and the developer email channel for feedback, bug reports and privacy requests. You can reach the developer at levente.baba.dev@gmail.com.
+Password Manager Local is developed by Levente Baba in Hungary. This policy covers the installed Windows and Android app and the developer email channel for feedback, bug reports and privacy requests. You can reach the developer at leventebaba.dev@gmail.com.
 
 Do not include master passwords, stored passwords, connection codes, key files or vault databases in an email. App stores, operating systems and external websites have their own privacy practices.
 
@@ -78,7 +78,7 @@ The app deliberately retains account/device identifiers, signed deletion/control
 
 The app can check and, where supported, repair account and synchronization state locally and show the result or an error on screen. It does not write routine diagnostic logs or automatically send telemetry, error reports, or crash reports to the developer. The app does not notify the developer when something goes wrong. Your operating system or app store may handle its own crash or diagnostic records under its own policies.
 
-If you find a bug, please report it to levente.baba.dev@gmail.com. Include the app version, platform, what you were doing, and steps to reproduce the issue. Leave out sensitive information such as usernames, passwords, connection codes, database files, and keys. If you attach a screenshot, cover or remove sensitive details first. The developer will investigate reports and fix issues where possible.
+If you find a bug, please report it to leventebaba.dev@gmail.com. Include the app version, platform, what you were doing, and steps to reproduce the issue. Leave out sensitive information such as usernames, passwords, connection codes, database files, and keys. If you attach a screenshot, cover or remove sensitive details first. The developer will investigate reports and fix issues where possible.
 
 ## 12. System backups and loss of access
 
@@ -104,7 +104,7 @@ You can read and change profile and password information through the app, choose
 
 Where the GDPR applies to a controller’s processing of your data, rights may include access, rectification, erasure, restriction, portability and objection, subject to their legal conditions. Where processing relies on consent, you may withdraw it without affecting prior lawful processing. You may complain to a supervisory authority, particularly where you live or work or where an alleged infringement occurred; in Hungary this is the Nemzeti Adatvédelmi és Információszabadság Hatóság (NAIH), https://www.naih.hu/.
 
-For a question or to exercise rights over data handled by the developer, email levente.baba.dev@gmail.com. Describe what the request is about and what you would like the developer to do. You can manage data held only on your devices through the local controls described above.
+For a question or to exercise rights over data handled by the developer, email leventebaba.dev@gmail.com. Describe what the request is about and what you would like the developer to do. You can manage data held only on your devices through the local controls described above.
 
 ## 16. Automated decisions and intended use
 

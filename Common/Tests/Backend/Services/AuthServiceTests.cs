@@ -25,7 +25,7 @@ public sealed class AuthServiceTests
     {
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
-        var users = host.Services.GetRequiredService<IUserService>();
+        var userSessions = host.Services.GetRequiredService<IUserSessionService>();
         var userRepository = host.Services.GetRequiredService<IUserRepository>();
         var identity = host.Services.GetRequiredService<IDeviceIdentityService>();
         var authorizations = host.Services.GetRequiredService<IUserMembershipAuthorizationRepository>();
@@ -33,7 +33,7 @@ public sealed class AuthServiceTests
         var syncStates = host.Services.GetRequiredService<IUserSyncStateRepository>();
 
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("genesis_member"));
-        var userId = users.GetUidFromToken(token);
+        var userId = userSessions.GetUidFromToken(token);
         var user = await userRepository.GetByIdAsync(userId);
         var authorization = await authorizations.GetActiveAsync(userId, identity.LocalDeviceId, identity.OriginInstanceId);
         var controlState = await controlStates.GetAsync(userId);
@@ -107,11 +107,11 @@ public sealed class AuthServiceTests
         using var host = new BackendTestHost(timeProvider: timeProvider);
 
         var auth = host.Services.GetRequiredService<IAuthService>();
-        var users = host.Services.GetRequiredService<IUserService>();
+        var userSessions = host.Services.GetRequiredService<IUserSessionService>();
         var tokens = host.Services.GetRequiredService<ITokenService>();
 
         var registrationToken = await auth.RegisterAsync(host.CreateValidRegistrationRequest("failed_login"));
-        var uid = users.GetUidFromToken(registrationToken);
+        var uid = userSessions.GetUidFromToken(registrationToken);
         var tokensBefore = tokens.ListTokensByUid(uid).OrderBy(token => token).ToArray();
 
         var request = host.CreateValidLoginRequest("failed_login");
@@ -158,10 +158,10 @@ public sealed class AuthServiceTests
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
         var users = host.Services.GetRequiredService<IUserRepository>();
-        var userService = host.Services.GetRequiredService<IUserService>();
+        var userSessions = host.Services.GetRequiredService<IUserSessionService>();
 
         var existingToken = await auth.RegisterAsync(host.CreateValidRegistrationRequest("existing_projection_user"));
-        var existingUserId = userService.GetUidFromToken(existingToken);
+        var existingUserId = userSessions.GetUidFromToken(existingToken);
         var projection = await users.GetLoginIdentityStateAsync(existingUserId)
             ?? throw new AssertFailedException("The registered user must have a login-identity projection.");
         projection.Status = UserLoginIdentityStatus.InvalidSource;
@@ -184,10 +184,10 @@ public sealed class AuthServiceTests
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
         var users = host.Services.GetRequiredService<IUserRepository>();
-        var userService = host.Services.GetRequiredService<IUserService>();
+        var userSessions = host.Services.GetRequiredService<IUserSessionService>();
 
         var existingToken = await auth.RegisterAsync(host.CreateValidRegistrationRequest("broken_projection_user"));
-        var existingUserId = userService.GetUidFromToken(existingToken);
+        var existingUserId = userSessions.GetUidFromToken(existingToken);
         var existingUser = await users.GetByIdAsync(existingUserId)
             ?? throw new AssertFailedException("The registered user must exist.");
         existingUser.UsernameHash = [];
@@ -237,13 +237,14 @@ public sealed class AuthServiceTests
 
         MSTestAssert.IsTrue(tokens.Validate(token));
         MSTestAssert.IsTrue(keys.HasUserKey(token));
-        MSTestAssert.IsTrue(cache.TryGetUserData(token, out _));
+        MSTestAssert.IsTrue(cache.TryGetUserDataBundle(token, out var cachedBundle));
+        using var cached = cachedBundle;
 
         auth.Logout(token);
 
         MSTestAssert.IsFalse(tokens.Validate(token));
         MSTestAssert.IsFalse(keys.HasUserKey(token));
-        MSTestAssert.IsFalse(cache.TryGetUserData(token, out _));
+        MSTestAssert.IsFalse(cache.TryGetUserDataBundle(token, out _));
     }
 
     [TestMethod]
@@ -268,8 +269,8 @@ public sealed class AuthServiceTests
 
         await auth.ChangeMasterPasswordAsync(request);
 
-        var users = host.Services.GetRequiredService<IUserService>();
-        var changedUser = await users.GetUserByUsernameAsync(Encoding.UTF8.GetBytes("dave"));
+        var userLookup = host.Services.GetRequiredService<IUserLookupService>();
+        var changedUser = await userLookup.GetUserByUsernameAsync(Encoding.UTF8.GetBytes("dave"));
         var merge = host.Services.GetRequiredService<IUserSnapshotMergeCoordinator>() as FakeUserSnapshotMergeCoordinator;
         var controlWriter = host.Services.GetRequiredService<IUserControlOperationWriterService>() as FakeUserControlOperationWriterService;
         var queueWriter = host.Services.GetRequiredService<ISyncQueueWriterService>() as FakeSyncQueueWriterService;
@@ -318,7 +319,7 @@ public sealed class AuthServiceTests
         MSTestAssert.IsTrue(keys.HasUserKey(currentToken));
         MSTestAssert.IsFalse(tokens.Validate(otherToken));
         MSTestAssert.IsFalse(keys.HasUserKey(otherToken));
-        MSTestAssert.IsFalse(cache.TryGetUserData(otherToken, out _));
+        MSTestAssert.IsFalse(cache.TryGetUserDataBundle(otherToken, out _));
         MSTestAssert.IsTrue(tokens.TryGetInvalidationReason(otherToken, out var reason));
         MSTestAssert.AreEqual(AuthSessionInvalidationReason.ProfilePasswordChanged, reason);
     }
@@ -331,12 +332,12 @@ public sealed class AuthServiceTests
     {
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
-        var users = host.Services.GetRequiredService<IUserService>();
+        var userLookup = host.Services.GetRequiredService<IUserLookupService>();
         var snapshots = host.Services.GetRequiredService<IUserSyncSnapshotRepository>() as FakeUserSyncSnapshotRepository;
         var controlWriter = host.Services.GetRequiredService<IUserControlOperationWriterService>() as FakeUserControlOperationWriterService;
         var tokens = host.Services.GetRequiredService<ITokenService>();
         var token = await auth.RegisterAsync(host.CreateValidRegistrationRequest("quarantined_rotation"));
-        var user = await users.GetUserByUsernameAsync(Encoding.UTF8.GetBytes("quarantined_rotation"));
+        var user = await userLookup.GetUserByUsernameAsync(Encoding.UTF8.GetBytes("quarantined_rotation"));
         MSTestAssert.IsNotNull(user);
         MSTestAssert.IsNotNull(snapshots);
         await snapshots.AddAsync(new UserSyncSnapshot
@@ -363,7 +364,7 @@ public sealed class AuthServiceTests
             NewPassword = Encoding.UTF8.GetBytes("N3wP@ssw0rd_123456")
         }));
 
-        var unchanged = await users.GetUserByUsernameAsync(Encoding.UTF8.GetBytes("quarantined_rotation"));
+        var unchanged = await userLookup.GetUserByUsernameAsync(Encoding.UTF8.GetBytes("quarantined_rotation"));
         MSTestAssert.IsNotNull(unchanged);
         MSTestAssert.AreEqual(1L, unchanged.KeyEpoch);
         MSTestAssert.AreEqual(0, controlWriter?.Calls);
@@ -378,11 +379,11 @@ public sealed class AuthServiceTests
     {
         using var host = new BackendTestHost();
         var auth = host.Services.GetRequiredService<IAuthService>();
-        var users = host.Services.GetRequiredService<IUserService>();
+        var userLookup = host.Services.GetRequiredService<IUserLookupService>();
         var registration = host.CreateValidRegistrationRequest("remembered_rotation");
         registration.RememberMe = true;
         var token = await auth.RegisterAsync(registration);
-        var before = await users.GetUserByUsernameAsync(Encoding.UTF8.GetBytes("remembered_rotation"));
+        var before = await userLookup.GetUserByUsernameAsync(Encoding.UTF8.GetBytes("remembered_rotation"));
         MSTestAssert.IsNotNull(before);
         MSTestAssert.IsNotNull(before.SavedKey);
         var oldSavedKey = before.SavedKey.ToArray();
@@ -394,7 +395,7 @@ public sealed class AuthServiceTests
             NewPassword = Encoding.UTF8.GetBytes("N3wP@ssw0rd_123456")
         });
 
-        var after = await users.GetUserByUsernameAsync(Encoding.UTF8.GetBytes("remembered_rotation"));
+        var after = await userLookup.GetUserByUsernameAsync(Encoding.UTF8.GetBytes("remembered_rotation"));
         MSTestAssert.IsNotNull(after);
         MSTestAssert.IsNotNull(after.SavedKey);
         MSTestAssert.AreEqual(2L, after.KeyEpoch);
@@ -433,14 +434,14 @@ public sealed class AuthServiceTests
         using var host = new BackendTestHost();
 
         var auth = (IAuthService)host.Services.GetRequiredService(typeof(IAuthService));
-        var users = (IUserService)host.Services.GetRequiredService(typeof(IUserService));
+        var userLookup = host.Services.GetRequiredService<IUserLookupService>();
 
         var reg = host.CreateValidRegistrationRequest("remember_me_user");
         reg.RememberMe = true;
 
         await auth.RegisterAsync(reg);
 
-        var user = await users.GetUserByUsernameAsync(Encoding.UTF8.GetBytes("remember_me_user"));
+        var user = await userLookup.GetUserByUsernameAsync(Encoding.UTF8.GetBytes("remember_me_user"));
         MSTestAssert.IsNotNull(user);
         MSTestAssert.IsNotNull(user.SavedKey);
         MSTestAssert.IsNotEmpty(user.SavedKey);

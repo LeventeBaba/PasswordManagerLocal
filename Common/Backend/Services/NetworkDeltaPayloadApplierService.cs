@@ -6,7 +6,6 @@ using PasswordManagerLocal.Common.Backend.Utils;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Security;
 using PasswordManagerLocal.Common.Backend.Exceptions;
-using PasswordManagerLocal.Common.Backend.Models.Projections;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
 using static PasswordManagerLocal.Common.Contracts.Constants.DataLengthConstants;
@@ -20,7 +19,6 @@ public sealed class NetworkDeltaPayloadApplierService : INetworkDeltaPayloadAppl
 {
     private readonly IUserDeltaApplierService _userDeltas;
     private readonly IUserRepository _users;
-    private readonly IGroupRepository _groups;
     private readonly IDeviceRepository _devices;
     private readonly IUserDeviceRepository _userDevices;
     private readonly ISyncRouteRepository _syncRoutes;
@@ -36,7 +34,6 @@ public sealed class NetworkDeltaPayloadApplierService : INetworkDeltaPayloadAppl
     public NetworkDeltaPayloadApplierService(
         IUserDeltaApplierService userDeltas,
         IUserRepository users,
-        IGroupRepository groups,
         IDeviceRepository devices,
         IUserDeviceRepository userDevices,
         ISyncRouteRepository syncRoutes,
@@ -51,7 +48,6 @@ public sealed class NetworkDeltaPayloadApplierService : INetworkDeltaPayloadAppl
     {
         _userDeltas = userDeltas;
         _users = users;
-        _groups = groups;
         _devices = devices;
         _userDevices = userDevices;
         _syncRoutes = syncRoutes;
@@ -69,46 +65,10 @@ public sealed class NetworkDeltaPayloadApplierService : INetworkDeltaPayloadAppl
         payload.ModelType switch
         {
             SyncModelType.User => _userDeltas.ApplyAsync(payload, sourceDeviceId, ts, ct),
-            SyncModelType.Group => ApplyGroupAsync(payload, ts, ct),
             SyncModelType.Device => ApplyDeviceAsync(payload, ts, ct),
             SyncModelType.UserDevice => ApplyUserDeviceAsync(payload, ts, ct),
             _ => throw new InvalidOperationException("Unknown sync model type.")
         };
-
-    private async Task<bool> ApplyGroupAsync(SyncDeltaPayload delta, long ts, CancellationToken ct)
-    {
-        var existing = await _groups.GetByIdWithUsersAsync(delta.ModelId, ct);
-
-        if (existing is not null && IsIncomingOlderOrSame(existing.LastModifiedAt, ts))
-            return false;
-
-        if (delta.ChangeType == SyncChangeType.Deleted)
-        {
-            if (existing is not null)
-                _groups.Delete(existing);
-
-            await _tombstones.UpsertAsync(delta.ModelId, delta.ModelType, ts, ct);
-            return true;
-        }
-
-        if (delta.Group is null)
-            throw new InvalidDataException("Group sync payload is missing.");
-
-        var group = existing ?? CreateGroup(delta.Group);
-        CopyGroupData(delta.Group, group);
-        group.LastModifiedAt = FromTimestamp(ts);
-        group.GenerateIntegrityHash();
-
-        if (existing is null)
-            await _groups.AddAsync(group, ct);
-
-        await _relationships.SyncGroupUsersAsync(group, delta.Group.UserIds, ct);
-        if (existing is not null)
-            _groups.Update(group);
-        await RemoveTombstoneAsync(delta, ct);
-        return true;
-    }
-
 
     private async Task<bool> ApplyDeviceAsync(SyncDeltaPayload delta, long ts, CancellationToken ct)
     {
@@ -249,15 +209,6 @@ public sealed class NetworkDeltaPayloadApplierService : INetworkDeltaPayloadAppl
             return link?.UserId == removedUserId;
         }
 
-        if (item.ModelType == SyncModelType.Group)
-        {
-            var userIds = await _groups.ListUserIdsAsync(item.ModelId, ct);
-            if (!userIds.Contains(removedUserId))
-                return false;
-
-            return !await AnyOtherUserCanStillSyncToTargetAsync(userIds, removedUserId, targetDeviceId, ct);
-        }
-
         if (item.ModelType == SyncModelType.Device)
         {
             var links = await _userDevices.ListByDeviceAsync(item.ModelId, ct);
@@ -355,26 +306,11 @@ public sealed class NetworkDeltaPayloadApplierService : INetworkDeltaPayloadAppl
     }
 
 
-    private Group CreateGroup(GroupSyncPayload payload) =>
-        new()
-        {
-            Id = payload.Id
-        };
-
-
     private Device CreateDevice(DeviceSyncPayload payload) =>
         new()
         {
             Id = payload.Id
         };
-
-
-    private void CopyGroupData(GroupSyncPayload source, Group target)
-    {
-        target.Id = source.Id;
-        target.EncryptedPayload = source.EncryptedPayload;
-        target.IntegrityHash = source.IntegrityHash;
-    }
 
 
     private void CopyDeviceData(DeviceSyncPayload source, Device target, bool isNew)

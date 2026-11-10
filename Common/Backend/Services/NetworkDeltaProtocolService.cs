@@ -9,7 +9,6 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Security;
-using PasswordManagerLocal.Common.Backend.Models.Projections;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using static PasswordManagerLocal.Common.Contracts.Constants.DataLengthConstants;
 using static PasswordManagerLocal.Common.Backend.Utils.DataCodec;
@@ -19,7 +18,6 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 public sealed class NetworkDeltaProtocolService : INetworkDeltaProtocolService
 {
     private readonly IDeviceRepository _devices;
-    private readonly IGroupRepository _groups;
     private readonly IUserDeviceRepository _userDevices;
     private readonly ISyncAuthorizationService _authorization;
     private readonly IDeviceIdentityService _identity;
@@ -43,7 +41,6 @@ public sealed class NetworkDeltaProtocolService : INetworkDeltaProtocolService
 
     public NetworkDeltaProtocolService(
         IDeviceRepository devices,
-        IGroupRepository groups,
         IUserDeviceRepository userDevices,
         ISyncAuthorizationService authorization,
         IDeviceIdentityService identity,
@@ -52,7 +49,6 @@ public sealed class NetworkDeltaProtocolService : INetworkDeltaProtocolService
         IDeletedUserBarrierRepository? deletionBarriers = null)
     {
         _devices = devices;
-        _groups = groups;
         _userDevices = userDevices;
         _authorization = authorization;
         _identity = identity;
@@ -208,18 +204,6 @@ public sealed class NetworkDeltaProtocolService : INetworkDeltaProtocolService
             return;
         }
 
-        if (payload.ModelType == SyncModelType.Group)
-        {
-            IReadOnlyCollection<Guid> userIds = await _groups.ListUserIdsAsync(payload.ModelId, ct);
-            if (userIds.Count == 0)
-                userIds = payload.Group?.UserIds ?? [];
-
-            if (await _userDevices.HasAnyActiveLinkAsync(userIds, sourceDevice.Id, ct))
-                return;
-
-            throw new UnauthorizedAccessException("Source device cannot modify this group.");
-        }
-
         if (payload.ModelType == SyncModelType.Device)
         {
             if (SyncPayloadRules.IsLocalDevicePayload(payload, _identity))
@@ -333,9 +317,6 @@ public sealed class NetworkDeltaProtocolService : INetworkDeltaProtocolService
         {
             throw new InvalidDataException("User control-operation payload envelope is invalid.");
         }
-
-        if (payload.Group is not null && (payload.ModelType != SyncModelType.Group || payload.Group.Id != payload.ModelId))
-            throw new InvalidDataException("Group sync payload envelope is invalid.");
 
         if (payload.Device is not null && (payload.ModelType != SyncModelType.Device || payload.Device.Id != payload.ModelId))
             throw new InvalidDataException("Device sync payload envelope is invalid.");

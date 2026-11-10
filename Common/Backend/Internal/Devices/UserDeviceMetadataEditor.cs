@@ -112,27 +112,6 @@ public sealed class UserDeviceMetadataEditor
         return activeDeviceIds;
     }
 
-    public bool EnsureDeviceData(UserDevicesData userDevicesData, Guid deviceId, DateTimeOffset linkedAt)
-    {
-        if (userDevicesData.Devices.Any(d => d.Id == deviceId))
-            return false;
-
-        var baseName = DeviceNameUtil.BuildDefaultDeviceName(deviceId);
-        var version = _versionClock.Next();
-        var deviceData = new UserDeviceData
-        {
-            Id = deviceId,
-            Name = BuildUniqueEncryptedDeviceName(userDevicesData, baseName, deviceId),
-            LinkedAt = linkedAt == default ? DateTimeOffset.UtcNow : linkedAt,
-            LastUpdatedAt = DateTimeOffset.UtcNow,
-            Version = version
-        };
-        deviceData.GenerateIntegrityHash();
-        userDevicesData.DeletedDevices.RemoveAll(deleted => deleted.Id == deviceData.Id);
-        userDevicesData.Devices.Add(deviceData);
-        return true;
-    }
-
     private string BuildUniqueEncryptedDeviceName(UserDevicesData userDevicesData, string requestedName, Guid deviceId)
     {
         var baseName = string.IsNullOrWhiteSpace(requestedName) ? DeviceNameUtil.BuildDefaultDeviceName(deviceId) : requestedName.Trim();
