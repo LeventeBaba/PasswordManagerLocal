@@ -16,12 +16,12 @@
                  android:fullBackupContent="@xml/backup_rules"
                  android:dataExtractionRules="@xml/data_extraction_rules">
         <service
-            android:name="com.leventebaba.passwordmanagerlocaldemo.PasswordManagerBackgroundService"
+            android:name="com.leventebaba.passwordmanagerlocal.demo.PasswordManagerBackgroundService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice"
             android:stopWithTask="false" />
         <receiver
-            android:name="com.leventebaba.passwordmanagerlocaldemo.AndroidBackgroundRestorationReceiver"
+            android:name="com.leventebaba.passwordmanagerlocal.demo.AndroidBackgroundRestorationReceiver"
             android:enabled="true"
             android:exported="false">
             <intent-filter>
@@ -31,7 +31,7 @@
         </receiver>
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="com.leventebaba.passwordmanagerlocaldemo.fileprovider"
+            android:authorities="com.leventebaba.passwordmanagerlocal.demo.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

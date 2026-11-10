@@ -30,7 +30,7 @@ The `Demo` branch carries the restricted edition.
 
 ## Installation and publishing
 
-* Android uses `com.leventebaba.passwordmanagerlocaldemo` and a separate app sandbox from the earlier Android package. Enroll the Demo on a device if you want to transfer an existing vault through the app.
+* Android uses `com.leventebaba.passwordmanagerlocal.demo` and a separate app sandbox from the earlier Android package. Enroll the Demo on a device if you want to transfer an existing vault through the app.
 * The Windows Demo installs in `%ProgramFiles%\\PasswordManagerLocalDemo` alongside the full edition. Both share the same per-user vault, preferences, and instance locks. Exit the running edition from the notification area before opening the other one.
 * The Windows launcher is `PasswordManagerLocalDemo.exe`. The MSI and portable ZIP are `PasswordManagerLocalDemo.msi` and `PasswordManagerLocalDemo-win-x64.zip`. The Demo icon is generated from the shared SVG.
 * The app's online policy links open the localized files on the `Demo` branch. For a store listing, publish the generated HTML under `Docs/Privacy/Public` at the Demo's public policy URL.

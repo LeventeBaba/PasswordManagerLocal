@@ -11,7 +11,7 @@ using PasswordManagerLocal.Common.Backend.Configuration.BackgroundSync;
 namespace PasswordManagerLocal.Android.Frontend;
 
 [Service(
-    Name = "com.leventebaba.passwordmanagerlocaldemo.PasswordManagerBackgroundService",
+    Name = "com.leventebaba.passwordmanagerlocal.demo.PasswordManagerBackgroundService",
     Exported = false,
     ForegroundServiceType = ForegroundService.TypeConnectedDevice)]
 public sealed class PasswordManagerBackgroundService : Service, IAndroidRuntimeCompositionFactory
