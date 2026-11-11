@@ -175,8 +175,23 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
             }
         }
 
-        return requests;
+        // The inventory is grouped by origin installation, not by causal order. A later
+        // device addition can be signed by a newly enrolled device, whose authorization
+        // only exists after earlier membership transitions have been applied. Relay the
+        // missing control operations in epoch order rather than GUID order so a peer
+        // catching up across multiple enrollments can validate each author in turn.
+        return OrderRequestsByControlEpoch(requests).ToArray();
     }
+
+    private static IOrderedEnumerable<UserControlOperationRequest> OrderRequestsByControlEpoch(
+        IEnumerable<UserControlOperationRequest> requests) =>
+        requests.OrderBy(request => request.PreviousMembershipEpoch)
+            .ThenBy(request => request.PreviousKeyEpoch)
+            .ThenBy(request => request.UserId, StringComparer.Ordinal)
+            .ThenBy(request => request.OriginDeviceId, StringComparer.Ordinal)
+            .ThenBy(request => request.OriginInstanceId, StringComparer.Ordinal)
+            .ThenBy(request => request.OriginSequence)
+            .ThenBy(request => request.OperationId, StringComparer.Ordinal);
 
     public async Task<IReadOnlyList<NetworkDelta>> BuildRequestedOperationDeltasAsync(
         Guid peerDeviceId,
@@ -189,7 +204,9 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
         if (!peer.IsTrusted || peer.IsBlocked)
             throw new UnauthorizedAccessException("The control-operation relay peer is not authorized.");
 
-        var list = requests.ToList();
+        // Defend the sender too: callers may supply a request batch in arbitrary order.
+        // The encrypted delta timestamps follow this order when the transport sends it.
+        var list = OrderRequestsByControlEpoch(requests).ToList();
         if (list.Count > SyncConstants.MaxUserControlRequestsPerCall)
             throw new InvalidDataException("Too many control operations were requested.");
 
