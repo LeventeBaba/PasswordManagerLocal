@@ -12,4 +12,4 @@ using PasswordManagerLocal.Common.Backend.Utils;
 
 namespace PasswordManagerLocal.Common.Backend.Internal.Sync;
 
-internal sealed record PendingDeviceSyncStart(DiscoveredDeviceEndpoint Endpoint, Device Device);
+internal sealed record PendingDeviceSyncStart(DiscoveredDeviceEndpoint Endpoint, Device Device, bool DiscoveryOnly = false);

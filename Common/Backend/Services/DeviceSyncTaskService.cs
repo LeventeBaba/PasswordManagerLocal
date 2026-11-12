@@ -25,6 +25,14 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
     private readonly ISyncDeviceIdentityService _syncDeviceIdentities;
     private readonly IDiscoveredDeviceEndpointRegistry _endpointRegistry;
     private readonly IDeviceIdentityService _identity;
+    private readonly IBackendExecutionProfileProvider? _executionProfile;
+    private readonly TimeProvider _clock;
+    // A successful full reconciliation allows a short, bounded discovery-only quiet period.
+    // This is process-local: agent restarts and network-service restarts always recheck peers.
+    private static readonly TimeSpan InteractiveReconciliationInterval = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan BackgroundReconciliationInterval = TimeSpan.FromMinutes(3);
+    private readonly Dictionary<Guid, SuccessfulReconciliation> _lastSuccessfulReconciliations = new();
+    private readonly Dictionary<Guid, DiscoveredDeviceEndpoint> _runningEndpoints = new();
     private readonly ConcurrentDictionary<Guid, byte> _runningDeviceIds = new();
     private readonly ConcurrentDictionary<Guid, Task> _runningTasks = new();
     private readonly Dictionary<Guid, PendingDeviceSyncStart> _pendingStarts = new();
@@ -37,8 +45,12 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         ISyncTransportClientService syncTransport,
         ISyncDeviceIdentityService syncDeviceIdentities,
         IDiscoveredDeviceEndpointRegistry endpointRegistry,
-        IDeviceIdentityService identity)
+        IDeviceIdentityService identity,
+        IBackendExecutionProfileProvider? executionProfile = null,
+        TimeProvider? clock = null)
     {
+        _executionProfile = executionProfile;
+        _clock = clock ?? TimeProvider.System;
         _scopeFactory = scopeFactory;
         _syncTransport = syncTransport;
         _syncDeviceIdentities = syncDeviceIdentities;
@@ -47,7 +59,13 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
     }
 
 
-    public bool TryStart(DiscoveredDeviceEndpoint endpoint, Device device)
+    public bool TryStart(DiscoveredDeviceEndpoint endpoint, Device device) =>
+        TryStartCore(endpoint, device, discoveryOnly: false);
+
+    public bool TryStartFromDiscovery(DiscoveredDeviceEndpoint endpoint, Device device) =>
+        TryStartCore(endpoint, device, discoveryOnly: true);
+
+    private bool TryStartCore(DiscoveredDeviceEndpoint endpoint, Device device, bool discoveryOnly)
     {
         if (!_identity.IsSyncOn)
             return false;
@@ -72,6 +90,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
 
         Device targetDevice;
         CancellationToken token;
+        CancellationTokenSource runtime;
         lock (_runtimeLock)
         {
             if (!_identity.IsSyncOn || _runtimeCancellation.IsCancellationRequested)
@@ -79,20 +98,32 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
 
             if (_runningDeviceIds.ContainsKey(device.Id))
             {
-                _pendingStarts[device.Id] = new PendingDeviceSyncStart(CloneEndpoint(endpoint), CloneDevice(device));
+                // Frequent discovery packets must not generate an endless chain of
+                // full sessions while an unchanged peer is already being synchronized.
+                // An explicit activation still requests an immediate follow-up run.
+                if (discoveryOnly && _runningEndpoints.TryGetValue(device.Id, out var current) &&
+                    SameEndpoint(current, endpoint))
+                    return false;
+
+                if (!discoveryOnly || !_pendingStarts.TryGetValue(device.Id, out var existing) || existing.DiscoveryOnly)
+                    _pendingStarts[device.Id] = new PendingDeviceSyncStart(CloneEndpoint(endpoint), CloneDevice(device), discoveryOnly);
+                else
+                    _pendingStarts[device.Id] = new PendingDeviceSyncStart(CloneEndpoint(endpoint), CloneDevice(device));
                 return false;
             }
 
             _runningDeviceIds[device.Id] = 0;
+            _runningEndpoints[device.Id] = CloneEndpoint(endpoint);
             if (!_idleSignals.ContainsKey(device.Id))
             {
                 _idleSignals[device.Id] = new TaskCompletionSource<bool>(
                     TaskCreationOptions.RunContinuationsAsynchronously);
             }
 
-            token = _runtimeCancellation.Token;
+            runtime = _runtimeCancellation;
+            token = runtime.Token;
             targetDevice = CloneDevice(device);
-            var task = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => RunAsync(CloneEndpoint(endpoint), targetDevice, token), CancellationToken.None);
+            var task = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => RunAsync(CloneEndpoint(endpoint), targetDevice, discoveryOnly, token, runtime), CancellationToken.None);
             _runningTasks[device.Id] = task;
         }
 
@@ -145,6 +176,8 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         lock (_runtimeLock)
         {
             _runningDeviceIds.Clear();
+            _runningEndpoints.Clear();
+            _lastSuccessfulReconciliations.Clear();
             _runningTasks.Clear();
             _pendingStarts.Clear();
             idleSignals = _idleSignals.Values.ToArray();
@@ -164,6 +197,8 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         lock (_runtimeLock)
         {
             _runtimeCancellation.Cancel();
+            _lastSuccessfulReconciliations.Clear();
+            _runningEndpoints.Clear();
             _pendingStarts.Clear();
             idleSignals = _idleSignals.Values.ToArray();
             _idleSignals.Clear();
@@ -175,14 +210,25 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
     }
 
 
-    private async Task RunAsync(DiscoveredDeviceEndpoint endpoint, Device targetDevice, CancellationToken ct)
+    private async Task RunAsync(DiscoveredDeviceEndpoint endpoint, Device targetDevice, bool discoveryOnly, CancellationToken ct, CancellationTokenSource runtime)
     {
+        var completedFullReconciliation = false;
+        var attemptedFullReconciliation = false;
         BackendDebugLog.Info(
             $"Outgoing synchronization worker started. TargetDeviceId={targetDevice.Id:N}, Endpoint={endpoint.Host}:{endpoint.Port}.",
             "Synchronization");
 
         try
         {
+            // Only periodic discovery can be deferred. A durable delta, a device
+            // activation, or an explicit synchronization request bypasses the window.
+            // Check the persisted queue as well as the in-memory success stamp: missed
+            // activation notifications must not postpone already durable work.
+            if (discoveryOnly && RecentlyReconciled(endpoint, targetDevice.Id) &&
+                !await HasPendingAsync(targetDevice.Id, ct))
+                return;
+
+            attemptedFullReconciliation = true;
             // Authoritative epoch/membership barriers must arrive before ordinary snapshots that
             // depend on them. This avoids deleting a queue item after a receiver correctly rejects
             // a newer-epoch ordinary snapshot.
@@ -219,6 +265,8 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
                    await TrySendNextAsync(endpoint, targetDevice, ct))
             {
             }
+
+            completedFullReconciliation = !ct.IsCancellationRequested && _identity.IsSyncOn;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -229,46 +277,91 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         }
         finally
         {
-            PendingDeviceSyncStart? pendingStart;
+            // Keep this device marked as running until the final persisted-work check
+            // and reconciliation stamp are complete. Releasing that slot earlier lets
+            // a discovery notification start an unnecessary second full session in
+            // the window between completing the transport and recording its success.
+            var hasPending = true;
+            var pendingCheckSucceeded = false;
+            try
+            {
+                hasPending = await HasPendingAsync(targetDevice.Id, CancellationToken.None);
+                pendingCheckSucceeded = true;
+            }
+            catch (Exception ex)
+            {
+                // An unknown queue state must never create a discovery quiet period.
+                BackendDebugLog.Error($"Outgoing synchronization worker final pending-work check for device {targetDevice.Id:N} failed: {ex.Message}", ex);
+            }
+
+            PendingDeviceSyncStart? pendingStart = null;
+            bool ownsRunningSlot;
             lock (_runtimeLock)
             {
-                _runningDeviceIds.TryRemove(targetDevice.Id, out _);
-                _runningTasks.TryRemove(targetDevice.Id, out _);
-                _pendingStarts.Remove(targetDevice.Id, out pendingStart);
+                // StopAllAsync may have timed out waiting for a cancelled worker and
+                // started a new runtime. An old worker must not clear the new one's
+                // running slot, pending request, or reconciliation stamp.
+                ownsRunningSlot = ReferenceEquals(runtime, _runtimeCancellation) &&
+                                  _runningDeviceIds.ContainsKey(targetDevice.Id);
+                if (ownsRunningSlot)
+                {
+                    if (attemptedFullReconciliation)
+                    {
+                        if (completedFullReconciliation && pendingCheckSucceeded && !hasPending &&
+                            !ct.IsCancellationRequested && _identity.IsSyncOn &&
+                            !_runtimeCancellation.IsCancellationRequested)
+                        {
+                            _lastSuccessfulReconciliations[targetDevice.Id] =
+                                new SuccessfulReconciliation(CloneEndpoint(endpoint), _clock.GetUtcNow());
+                        }
+                        else
+                        {
+                            // Failed sessions must remain eligible for discovery retries.
+                            _lastSuccessfulReconciliations.Remove(targetDevice.Id);
+                        }
+                    }
+
+                    _runningDeviceIds.TryRemove(targetDevice.Id, out _);
+                    _runningEndpoints.Remove(targetDevice.Id);
+                    _runningTasks.TryRemove(targetDevice.Id, out _);
+                    _pendingStarts.Remove(targetDevice.Id, out pendingStart);
+                }
             }
 
             try
             {
-                var hasPending = await HasPendingAsync(targetDevice.Id, CancellationToken.None);
-                // A remembered start is also used for anti-entropy-only work, such as
-                // acquiring authenticated endpoint hints after a relayed membership
-                // addition. That work may have no durable queue item, so always honor the
-                // requested rerun instead of dropping it when the ordinary queue is empty.
-                var rerunRequested = false;
-                if (pendingStart is not null && _identity.IsSyncOn)
+                if (ownsRunningSlot)
                 {
-                    rerunRequested = true;
-                    TryStart(pendingStart.Endpoint, pendingStart.Device);
-                }
-                else if (!hasPending)
-                {
-                    // A new worker can start after this worker releases its running-device
-                    // slot but while the asynchronous pending-work check is in progress.
-                    // Do not remove the identity underneath that replacement worker.
-                    lock (_runtimeLock)
+                    // Explicit activations and changed endpoints still request another
+                    // session even if ordinary queue work is empty. A duplicate
+                    // discovery of the same in-flight endpoint is never queued.
+                    var rerunRequested = pendingStart is not null && _identity.IsSyncOn;
+                    if (rerunRequested)
                     {
-                        if (!_runningDeviceIds.ContainsKey(targetDevice.Id) &&
-                            !_pendingStarts.ContainsKey(targetDevice.Id))
+                        if (pendingStart!.DiscoveryOnly)
+                            TryStartFromDiscovery(pendingStart.Endpoint, pendingStart.Device);
+                        else
+                            TryStart(pendingStart!.Endpoint, pendingStart.Device);
+                    }
+                    else if (pendingCheckSucceeded && !hasPending)
+                    {
+                        // Do not remove a peer's identity after its replacement worker
+                        // has started while this cleanup was completing.
+                        lock (_runtimeLock)
                         {
-                            _syncDeviceIdentities.TryRemove(targetDevice);
+                            if (!_runningDeviceIds.ContainsKey(targetDevice.Id) &&
+                                !_pendingStarts.ContainsKey(targetDevice.Id))
+                            {
+                                _syncDeviceIdentities.TryRemove(targetDevice);
+                            }
                         }
                     }
-                }
 
-                BackendDebugLog.Info(
-                    $"Outgoing synchronization worker session finished. TargetDeviceId={targetDevice.Id:N}, " +
-                    $"PendingWork={hasPending}, RerunRequested={rerunRequested}.",
-                    "Synchronization");
+                    BackendDebugLog.Info(
+                        $"Outgoing synchronization worker session finished. TargetDeviceId={targetDevice.Id:N}, " +
+                        $"PendingWork={hasPending}, RerunRequested={rerunRequested}.",
+                        "Synchronization");
+                }
             }
             catch (Exception ex)
             {
@@ -277,15 +370,18 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             finally
             {
                 TaskCompletionSource<bool>? idleSignal = null;
-                lock (_runtimeLock)
+                if (ownsRunningSlot)
                 {
-                    // An external start or a remembered kick may already have launched the next
-                    // session. Keep the same signal alive until the complete per-device chain is idle.
-                    if (!_runningDeviceIds.ContainsKey(targetDevice.Id) &&
-                        !_pendingStarts.ContainsKey(targetDevice.Id) &&
-                        _idleSignals.Remove(targetDevice.Id, out var signal))
+                    lock (_runtimeLock)
                     {
-                        idleSignal = signal;
+                        // Keep the same signal until a remembered kick and any
+                        // replacement session have completely finished.
+                        if (!_runningDeviceIds.ContainsKey(targetDevice.Id) &&
+                            !_pendingStarts.ContainsKey(targetDevice.Id) &&
+                            _idleSignals.Remove(targetDevice.Id, out var signal))
+                        {
+                            idleSignal = signal;
+                        }
                     }
                 }
 
@@ -293,8 +389,6 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             }
         }
     }
-
-
     private async Task<bool> TrySendNextAsync(DiscoveredDeviceEndpoint endpoint, Device targetDevice, CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
@@ -837,6 +931,30 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         return historicallyAuthorizedUsers.Any(userId => revokedUserIds.Contains(userId));
     }
 
+
+    private bool RecentlyReconciled(DiscoveredDeviceEndpoint endpoint, Guid deviceId)
+    {
+        lock (_runtimeLock)
+        {
+            if (!_lastSuccessfulReconciliations.TryGetValue(deviceId, out var previous) ||
+                !SameEndpoint(previous.Endpoint, endpoint))
+                return false;
+
+            var age = _clock.GetUtcNow() - previous.FinishedAt;
+            var interval = _executionProfile?.IsInteractive == true
+                ? InteractiveReconciliationInterval
+                : BackgroundReconciliationInterval;
+            return age >= TimeSpan.Zero && age < interval;
+        }
+    }
+
+    private static bool SameEndpoint(DiscoveredDeviceEndpoint a, DiscoveredDeviceEndpoint b) =>
+        a.Port == b.Port &&
+        string.Equals(a.Host, b.Host, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(FingerprintUtil.NormalizeOrEmpty(a.TlsCertFingerprint),
+            FingerprintUtil.NormalizeOrEmpty(b.TlsCertFingerprint), StringComparison.OrdinalIgnoreCase);
+
+    private sealed record SuccessfulReconciliation(DiscoveredDeviceEndpoint Endpoint, DateTimeOffset FinishedAt);
 
     private bool IsLocalDevice(Device device)
     {

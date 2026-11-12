@@ -28,7 +28,7 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
     private CancellationTokenSource? _debounceCancellation;
     private CancellationTokenSource? _pollCancellation;
     private Task? _pollTask;
-    private string _lastNetworkSignature = string.Empty;
+    private NetworkSignatureChangeTracker? _networkSignatureTracker;
     private bool _started;
 
     public SyncNetworkRefreshHostedService(
@@ -79,7 +79,8 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
         var pollCancellation = new CancellationTokenSource();
         lock (_lock)
         {
-            _lastNetworkSignature = BuildNetworkSignature();
+            _networkSignatureTracker = new NetworkSignatureChangeTracker(
+                BuildNetworkSignature(), NetworkInterface.GetIsNetworkAvailable());
             _pollCancellation = pollCancellation;
             _started = true;
         }
@@ -115,7 +116,7 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
             _pollCancellation = null;
             pollTask = _pollTask;
             _pollTask = null;
-            _lastNetworkSignature = string.Empty;
+            _networkSignatureTracker = null;
         }
 
         debounceCancellation?.Cancel();
@@ -157,12 +158,12 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
         _identity.IsSyncOn || _enrollmentState.IsActive;
 
     private void OnNetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e) =>
-        NotifyNetworkChange();
+        ScheduleRefresh(captureCurrentSignature: true, reportedAvailability: e.IsAvailable);
 
     private void OnNetworkChanged(object? sender, EventArgs e) =>
         NotifyNetworkChange();
 
-    private void ScheduleRefresh(bool captureCurrentSignature)
+    private void ScheduleRefresh(bool captureCurrentSignature, bool? reportedAvailability = null)
     {
         if (!IsNetworkRuntimeActive())
             return;
@@ -177,7 +178,8 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
                 return;
 
             if (currentSignature is not null)
-                _lastNetworkSignature = currentSignature;
+                _networkSignatureTracker?.Observe(
+                    currentSignature, isNetworkEvent: true, reportedAvailability: reportedAvailability);
 
             previousCancellation = _debounceCancellation;
             _debounceCancellation = new CancellationTokenSource();
@@ -220,11 +222,11 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
                 if (!_started)
                     return;
 
-                if (!string.Equals(_lastNetworkSignature, currentSignature, StringComparison.Ordinal))
-                {
-                    _lastNetworkSignature = currentSignature;
-                    changed = true;
-                }
+                // Compare against the last *successfully applied* configuration.
+                // Merely observing a change must not update that baseline: doing
+                // so would suppress retries if the actual restart fails.
+                changed = _networkSignatureTracker?.Observe(currentSignature) == true ||
+                    _networkSignatureTracker?.HasUnappliedTransition == true;
             }
 
             if (changed)
@@ -275,6 +277,27 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
             if (!IsNetworkRuntimeActive())
                 return;
 
+            // An OS event does not necessarily change effective network
+            // configuration. Decide only after debounce and while holding the
+            // refresh lock so overlapping notifications cannot restart twice.
+            var currentSignature = BuildNetworkSignature();
+            long observedVersion;
+            lock (_lock)
+            {
+                if (!_started || _networkSignatureTracker is null)
+                    return;
+
+                if (!_networkSignatureTracker.RequiresRefresh(currentSignature))
+                {
+                    BackendDebugLog.Debug(
+                        "Skipping network refresh: effective network configuration is unchanged.",
+                        "Sync");
+                    return;
+                }
+
+                observedVersion = _networkSignatureTracker.ObservationVersion;
+            }
+
             BackendDebugLog.Info("Network configuration changed. Restarting local synchronization/enrollment networking.");
 
             await _deviceSyncTasks.StopAllAsync(ct);
@@ -290,10 +313,13 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
             await _tcpServer.StartAsync(ct);
             await _discovery.StartAsync(ct);
 
+            var refreshedSignature = BuildNetworkSignature();
+            var refreshedAvailability = NetworkInterface.GetIsNetworkAvailable();
             lock (_lock)
             {
                 if (_started)
-                    _lastNetworkSignature = BuildNetworkSignature();
+                    _networkSignatureTracker?.MarkRefreshed(
+                        refreshedSignature, refreshedAvailability, observedVersion);
             }
 
             BackendDebugLog.Info("Local synchronization/enrollment networking was refreshed after the network change.");

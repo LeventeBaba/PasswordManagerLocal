@@ -4,6 +4,11 @@ The five-device regression test is in:
 
 `Common/Tests/Backend/Services/MultiDeviceConvergenceStressTests.cs`
 
+Both stress-test classes share the production-backed host and synchronization
+helpers in `Common/Tests/Backend/Services/MultiDeviceSyncStressFixture.cs`.
+Each source file defines exactly one matching primary type, as required by the
+architecture guard. The opt-in categories and test behavior remain unchanged.
+
 This test uses five independently enrolled production backend instances, each with its own
 SQLite database, repository layer, encrypted snapshots, version clocks, signed operations,
 queues, and protocol handlers. Only the operating-system network transport is replaced
@@ -49,3 +54,60 @@ all replicas agree and unrelated changes are preserved.
 
 Do not remove a failing seed or increase retry limits simply to make a failure pass.
 Use the recorded seed, schedule, queue state, and snapshots to investigate first.
+
+
+## Extended adversarial churn test (separate opt-in category)
+
+The additional test is in
+`Common/Tests/Backend/Services/MultiDeviceAdversarialChurnStressTests.cs`.
+It reuses the same production-backed five-device test fixture and is considerably
+slower than the original two-seed test. Run it separately **after building**:
+
+```cmd
+ dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj --no-build --environment "PASSWORDMANAGERLOCAL_SYNC_STRESS=1" --filter "TestCategory=SyncStressExtended"
+```
+
+It uses the reproducible operation/topology seeds `271828` and `314159`, with a
+20-minute per-case timeout. Seeds fix the intended operation order and graph
+schedule, not operating-system thread scheduling. Use a filter such as
+`--filter "FullyQualifiedName~FiveDevices_StaleReplicaQueueLossAndRepeatedChurn_ConvergeWithoutResurrection&TestCategory=SyncStressExtended"`
+to run just this test method (both seeds). To isolate one seed, temporarily
+comment out the other `[DataRow]`; retain both in the committed source.
+
+### New coverage (not simply more repetitions of the baseline test)
+
+1. Keep a **long-lived fifth peer fully disconnected** while the other four
+   repeatedly partition, perform 12 waves of independent writes and competing
+   edits, exchange snapshots over changing topologies, and restart relays.
+2. Delete an item on the active side; prove the four active replicas agree on
+   the tombstone while the fifth still carries the old live version.
+3. Create another publication on the stale peer, erase **all its pending
+   outgoing queue entries**, restart the peer, and reconnect it through a single
+   link. Its new data must still propagate through **snapshot anti-entropy**,
+   while the old deleted item must not be resurrected.
+4. Require the five devices to reach canonical logical agreement and drain
+   pending queues in a full mesh. Verify the **exact decrypted secret bytes** of
+   every independently created password on every device, not merely its name.
+5. After this first convergence, partition **all five devices again**. Make
+   additional independent writes plus five competing edits to the same password,
+   restart a relay, and converge over a different multi-hop chain.
+6. Require a second full-mesh quiescence, no deleted-item resurrection, no lost
+   independent secret, and stability after redundant anti-entropy exchanges.
+
+This is an intentionally adversarial recovery test. It deliberately erases
+**queue bookkeeping** through the existing test-host helper; it does **not**
+delete encrypted snapshots or modify production synchronization code. The
+expected behavior is recovery through the production anti-entropy protocol.
+
+### Troubleshooting
+
+The test logs the seed, wave, reachable edges, writers, restart, and queue-loss
+count. `HealUntilAsync` includes per-device membership epochs, operations,
+transport failures, pending queues, and password names when a convergence
+checkpoint fails. Do not reduce the assertions, remove a failing seed, or
+silently raise the healing-pass limit. First determine whether the fault is in
+simulated scheduling, recovery logic, merge semantics, or the test's assumptions.
+
+As with the original stress test, this does **not** simulate real Wi-Fi, Android
+service suspension, arbitrary clock skew, or every possible interleaving. Passing
+both seeds is valuable evidence, but cannot prove universal convergence.

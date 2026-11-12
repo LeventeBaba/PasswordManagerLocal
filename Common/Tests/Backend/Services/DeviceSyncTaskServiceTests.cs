@@ -302,6 +302,305 @@ public sealed class DeviceSyncTaskServiceTests
             "The second pass must still require an enabled, authenticated shared-user route.");
     }
 
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task Discovery_AfterSuccessfulIdleReconciliation_SkipsDuplicateInventoriesButNotExplicitSync()
+    {
+        var clock = new AdjustableTimeProvider();
+        using var setup = CreateSetup(enableAntiEntropy: true, clock: clock);
+
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(1, setup.Transport.InventoryCalls);
+
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(1, setup.Transport.InventoryCalls,
+            "Repeated discovery of an unchanged, reconciled peer must not open another inventory session.");
+
+        MSTestAssert.IsTrue(setup.Service.TryStart(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(2, setup.Transport.InventoryCalls,
+            "Explicit synchronization must bypass the discovery-only quiet period.");
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task Discovery_RechecksAfterBoundedInterval_AndWhenEndpointChanges()
+    {
+        var clock = new AdjustableTimeProvider();
+        using var setup = CreateSetup(enableAntiEntropy: true, clock: clock);
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+
+        clock.Advance(TimeSpan.FromMinutes(4));
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(2, setup.Transport.InventoryCalls,
+            "Full reconciliation must resume periodically to recover missed remote changes.");
+
+        var movedEndpoint = new DiscoveredDeviceEndpoint
+        {
+            Host = "192.168.1.27",
+            Port = setup.Endpoint.Port,
+            TlsCertFingerprint = setup.Endpoint.TlsCertFingerprint
+        };
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(movedEndpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(3, setup.Transport.InventoryCalls,
+            "A discovered endpoint change must bypass the quiet period.");
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task Discovery_InteractiveProfileUsesShorterReconciliationInterval()
+    {
+        var clock = new AdjustableTimeProvider();
+        var profile = new FakeBackendExecutionProfileProvider();
+        profile.SetProfile(new BackendExecutionProfile(TimeSpan.FromSeconds(15),
+            TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(35)), isInteractive: true);
+        using var setup = CreateSetup(enableAntiEntropy: true, clock: clock, profile: profile);
+
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        clock.Advance(TimeSpan.FromSeconds(61));
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(2, setup.Transport.InventoryCalls,
+            "Foreground use should force full anti-entropy more frequently than background-only sync.");
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task Discovery_WhenDurableQueueBecomesNonempty_BypassesRecentSuccess()
+    {
+        var clock = new AdjustableTimeProvider();
+        using var setup = CreateSetup(enableAntiEntropy: true, clock: clock);
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        setup.Queue.Seed(CreateQueueItem(setup.Device.Id));
+
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(1, setup.Transport.SendCalls,
+            "A missed activation notification must not delay durable queue delivery.");
+        MSTestAssert.AreEqual(2, setup.Transport.InventoryCalls);
+        MSTestAssert.AreEqual(0, setup.Queue.Items.Count(item => item.ProcessedAt is null));
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task Discovery_NetworkRestartClearsRecentSuccess()
+    {
+        using var setup = CreateSetup(enableAntiEntropy: true);
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        await setup.Service.StopAllAsync();
+
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(2, setup.Transport.InventoryCalls,
+            "After a network/runtime restart a peer must be reconciled without relying on stale state.");
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task Discovery_FailedInventoryDoesNotCreateQuietPeriod()
+    {
+        using var setup = CreateSetup(enableAntiEntropy: true,
+            snapshotAntiEntropy: new FailOnceSnapshotAntiEntropyService());
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(0, setup.Transport.InventoryCalls);
+
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(1, setup.Transport.InventoryCalls,
+            "Failed anti-entropy attempts must be eligible for an immediate retry.");
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task Discovery_ExplicitFailureInvalidatesEarlierSuccessfulReconciliation()
+    {
+        using var setup = CreateSetup(enableAntiEntropy: true,
+            snapshotAntiEntropy: new FailOnceSnapshotAntiEntropyService(failOnBuild: 2));
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(1, setup.Transport.InventoryCalls);
+
+        MSTestAssert.IsTrue(setup.Service.TryStart(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(1, setup.Transport.InventoryCalls);
+
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(2, setup.Transport.InventoryCalls,
+            "A failed explicit run must invalidate its previous discovery cooldown.");
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task Discovery_DuringInFlightWork_DoesNotQueueDuplicateSession()
+    {
+        var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var setup = CreateSetup(sendGate: gate, enableAntiEntropy: true);
+        setup.Queue.Seed(CreateQueueItem(setup.Device.Id));
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await WaitUntilAsync(() => setup.Transport.SendCalls == 1);
+        MSTestAssert.IsFalse(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        gate.TrySetResult(true);
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(1, setup.Transport.InventoryCalls,
+            "Duplicate discovery messages should not chain redundant full sessions.");
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task Discovery_DuringFinalPendingCheck_DoesNotStartAnotherFullSession()
+    {
+        var cleanupEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseCleanup = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var setup = CreateSetup(enableAntiEntropy: true);
+        // With an empty queue, the first check is before anti-entropy; the second
+        // occurs in RunAsync's final cleanup after inventories have been exchanged.
+        setup.Queue.OnHasPendingCheckAsync = async check =>
+        {
+            if (check != 2)
+                return;
+            cleanupEntered.TrySetResult(true);
+            await releaseCleanup.Task;
+        };
+
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        try
+        {
+            await cleanupEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            for (var i = 0; i < 5; i++)
+                MSTestAssert.IsFalse(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device),
+                    "An unchanged discovery must be coalesced even while the worker is finishing cleanup.");
+        }
+        finally
+        {
+            releaseCleanup.TrySetResult(true);
+        }
+
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(1, setup.Transport.InventoryCalls,
+            "A discovery notification during cleanup must not open a second authenticated inventory session.");
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task ExplicitActivation_DuringFinalPendingCheck_StillRunsSecondSession()
+    {
+        var cleanupEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseCleanup = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var setup = CreateSetup(enableAntiEntropy: true);
+        setup.Queue.OnHasPendingCheckAsync = async check =>
+        {
+            if (check != 2)
+                return;
+            cleanupEntered.TrySetResult(true);
+            await releaseCleanup.Task;
+        };
+
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        try
+        {
+            await cleanupEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            MSTestAssert.IsFalse(setup.Service.TryStart(setup.Endpoint, setup.Device),
+                "An explicit activation must be retained as a pending follow-up while cleanup is active.");
+        }
+        finally
+        {
+            releaseCleanup.TrySetResult(true);
+        }
+
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(2, setup.Transport.InventoryCalls,
+            "Coalescing discovery must not swallow an explicit anti-entropy request.");
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    [TestCategory("Integration")]
+    public async Task Discovery_EndpointChangeDuringFinalPendingCheck_StillReconcilesNewRoute()
+    {
+        var cleanupEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseCleanup = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var setup = CreateSetup(enableAntiEntropy: true);
+        setup.Queue.OnHasPendingCheckAsync = async check =>
+        {
+            if (check != 2)
+                return;
+            cleanupEntered.TrySetResult(true);
+            await releaseCleanup.Task;
+        };
+        var moved = new DiscoveredDeviceEndpoint
+        {
+            Host = "192.168.1.40",
+            Port = setup.Endpoint.Port,
+            TlsCertFingerprint = setup.Endpoint.TlsCertFingerprint
+        };
+
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        try
+        {
+            await cleanupEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            MSTestAssert.IsFalse(setup.Service.TryStartFromDiscovery(moved, setup.Device),
+                "An updated route must schedule a follow-up, not a concurrent worker.");
+        }
+        finally
+        {
+            releaseCleanup.TrySetResult(true);
+        }
+
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(2, setup.Transport.InventoryCalls,
+            "The new endpoint must trigger an immediate follow-up reconciliation.");
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(moved, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(10));
+        MSTestAssert.AreEqual(2, setup.Transport.InventoryCalls,
+            "The successful follow-up must record the updated endpoint as reconciled.");
+    }
+
+    private sealed class AdjustableTimeProvider : TimeProvider
+    {
+        private DateTimeOffset _now = new(2026, 11, 12, 0, 0, 0, TimeSpan.Zero);
+        public override DateTimeOffset GetUtcNow() => _now;
+        public void Advance(TimeSpan by) => _now += by;
+    }
+
+    private sealed class FailOnceSnapshotAntiEntropyService(int failOnBuild = 1) : IUserSnapshotAntiEntropyService
+    {
+        private int _builds;
+        public Task<UserSnapshotInventoryExchangeRequest> BuildInventoryAsync(Guid peerDeviceId, CancellationToken ct = default)
+        {
+            if (Interlocked.Increment(ref _builds) == failOnBuild)
+                throw new InvalidDataException("Injected inventory failure");
+            return Task.FromResult(new UserSnapshotInventoryExchangeRequest());
+        }
+        public Task<UserSnapshotInventoryExchangeReply> BuildInventoryReplyAsync(Guid peerDeviceId,
+            UserSnapshotInventoryExchangeRequest remoteInventory, CancellationToken ct = default) =>
+            Task.FromResult(new UserSnapshotInventoryExchangeReply());
+        public IReadOnlyList<UserSnapshotRequest> FindMissingSnapshots(UserSnapshotInventoryExchangeRequest localInventory,
+            IEnumerable<UserSnapshotUserInventory> remoteInventory, Guid? authenticatedPeerId = null) => [];
+        public Task<IReadOnlyList<NetworkDelta>> BuildRequestedSnapshotDeltasAsync(Guid peerDeviceId,
+            IEnumerable<UserSnapshotRequest> requests, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<NetworkDelta>>([]);
+    }
+
     private static async Task AddHintRouteAsync(DeviceSyncTaskSetup setup, Guid userId, Device? candidate, bool candidateEnabled)
     {
         var local = new LocalUserDevice { UserId = userId, LocalDeviceIdentityId = setup.Identity.LocalDeviceId, IsSyncOn = true };
@@ -322,7 +621,9 @@ public sealed class DeviceSyncTaskServiceTests
         TaskCompletionSource<bool>? sendGate = null,
         bool enableAntiEntropy = false,
         IUserSnapshotAntiEntropyService? snapshotAntiEntropy = null,
-        IIncomingDeltaApplierService? incomingApplier = null)
+        IIncomingDeltaApplierService? incomingApplier = null,
+        TimeProvider? clock = null,
+        IBackendExecutionProfileProvider? profile = null)
     {
         var device = new Device
         {
@@ -392,7 +693,9 @@ public sealed class DeviceSyncTaskServiceTests
             transport,
             syncIdentities,
             endpointRegistry,
-            identity);
+            identity,
+            executionProfile: profile,
+            clock: clock);
 
         return new DeviceSyncTaskSetup(
             service,

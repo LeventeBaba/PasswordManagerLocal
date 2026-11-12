@@ -7,6 +7,11 @@ public sealed class FakeSyncQueueRepository : ISyncQueueRepository
 {
     private readonly object _gate = new();
     private readonly List<SyncQueueItem> _items = [];
+    private int _hasPendingCheckCount;
+
+    // Optional test gate to reproduce scheduling that overlaps worker cleanup.
+    public Func<int, Task>? OnHasPendingCheckAsync { get; set; }
+    public int HasPendingCheckCount => Volatile.Read(ref _hasPendingCheckCount);
 
     public IReadOnlyList<SyncQueueItem> Items
     {
@@ -23,10 +28,14 @@ public sealed class FakeSyncQueueRepository : ISyncQueueRepository
             return Task.FromResult(_items.Any(item => item.SyncItemId == syncItemId && item.DeviceId == deviceId));
     }
 
-    public Task<bool> HasPendingForDeviceAsync(Guid deviceId, CancellationToken ct = default)
+    public async Task<bool> HasPendingForDeviceAsync(Guid deviceId, CancellationToken ct = default)
     {
+        var checkNumber = Interlocked.Increment(ref _hasPendingCheckCount);
+        if (OnHasPendingCheckAsync is { } checkHook)
+            await checkHook(checkNumber).WaitAsync(ct);
+
         lock (_gate)
-            return Task.FromResult(_items.Any(item => item.DeviceId == deviceId && item.ProcessedAt is null));
+            return _items.Any(item => item.DeviceId == deviceId && item.ProcessedAt is null);
     }
 
     public Task<bool> HasPendingForSyncItemAsync(Guid syncItemId, CancellationToken ct = default)

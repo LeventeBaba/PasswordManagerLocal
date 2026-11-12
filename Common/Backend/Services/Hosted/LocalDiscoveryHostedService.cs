@@ -515,7 +515,7 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
             _presenceProbeService?.OnEndpointDiscovered(requester, requesterEndpoint);
             _syncDeviceIdentities.TryAdd(requester);
             if (_syncDeviceIdentities.ContainsId(requester.Id))
-                _deviceSyncTasks.TryStart(requesterEndpoint, requester);
+                _deviceSyncTasks.TryStartFromDiscovery(requesterEndpoint, requester);
         }
 
         var fingerprint = FingerprintHexToBytes(_identity.FingerprintHex);
@@ -575,7 +575,7 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
             return;
 
         if (_syncDeviceIdentities.ContainsId(device.Id))
-            _deviceSyncTasks.TryStart(endpoint, device);
+            _deviceSyncTasks.TryStartFromDiscovery(endpoint, device);
     }
 
 

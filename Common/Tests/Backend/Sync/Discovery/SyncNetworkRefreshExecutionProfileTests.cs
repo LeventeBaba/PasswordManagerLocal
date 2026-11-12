@@ -42,6 +42,33 @@ public sealed class SyncNetworkRefreshExecutionProfileTests
     }
 
     [TestMethod]
+    public async Task DuplicateNetworkEvent_WithUnchangedSignature_DoesNotRestartNetworking()
+    {
+        var profiles = CreateProfiles(TimeSpan.FromSeconds(30), isInteractive: false);
+        var networkAddresses = new FakeLocalNetworkAddressService();
+        var syncTasks = new FakeDeviceSyncTaskService();
+        using var service = CreateService(profiles, networkAddresses, syncTasks);
+        await service.StartAsync(CancellationToken.None);
+
+        try
+        {
+            service.NotifyNetworkChange();
+            Assert.IsTrue(service.HasPendingRefresh);
+            await WaitForAsync(() => !service.HasPendingRefresh, TimeSpan.FromSeconds(6));
+            // The pending flag is cleared just before the asynchronous refresh
+            // decision; allow that decision to finish before asserting.
+            await Task.Delay(100);
+
+            Assert.AreEqual(0, syncTasks.StopAllCalls,
+                "An OS notification with no effective network change must not stop sync workers.");
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [TestMethod]
     public async Task ProfileChangeAndNetworkEventRace_LeavesOneSafePendingRefreshPath()
     {
         var profiles = CreateProfiles(TimeSpan.FromSeconds(30), isInteractive: false);
@@ -75,12 +102,13 @@ public sealed class SyncNetworkRefreshExecutionProfileTests
 
     private static SyncNetworkRefreshHostedService CreateService(
         FakeBackendExecutionProfileProvider profiles,
-        FakeLocalNetworkAddressService networkAddresses)
+        FakeLocalNetworkAddressService networkAddresses,
+        FakeDeviceSyncTaskService? syncTasks = null)
     {
         var identity = new FakeDeviceIdentityService { IsSyncOn = true };
         var enrollmentState = new EnrollmentRuntimeState();
         var registry = new DiscoveredDeviceEndpointRegistry();
-        var syncTasks = new FakeDeviceSyncTaskService();
+        syncTasks ??= new FakeDeviceSyncTaskService();
         var transport = new FakeLocalDiscoveryTransport();
         var discovery = new LocalDiscoveryHostedService(
             identity,
@@ -118,9 +146,9 @@ public sealed class SyncNetworkRefreshExecutionProfileTests
     private static BackendExecutionProfile CreateProfile(TimeSpan interval) =>
         new(interval, interval, TimeSpan.FromSeconds(35));
 
-    private static async Task WaitForAsync(Func<bool> condition)
+    private static async Task WaitForAsync(Func<bool> condition, TimeSpan? timeout = null)
     {
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(2);
+        var deadline = DateTimeOffset.UtcNow.Add(timeout ?? TimeSpan.FromSeconds(2));
         while (!condition())
         {
             if (DateTimeOffset.UtcNow >= deadline)
