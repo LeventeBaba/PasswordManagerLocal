@@ -1,3 +1,5 @@
+using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Windows.Ipc.Validation;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
@@ -32,7 +34,7 @@ public sealed class WindowsBackgroundSyncCoordinatorTests
         Assert.IsTrue(state.IsEnabled);
         Assert.IsTrue(state.IsStartupRegistered);
         Assert.IsTrue(state.IsBackgroundLeaseActive);
-        Assert.AreEqual(WindowsBackgroundSyncConsistency.Operational, state.Consistency);
+        Assert.AreEqual(WindowsBackgroundSyncConsistency.EnabledIdle, state.Consistency);
     }
 
     [TestMethod]
@@ -134,7 +136,7 @@ public sealed class WindowsBackgroundSyncCoordinatorTests
         Assert.IsTrue(startup.Snapshot.IsRegistered);
         Assert.AreEqual(1, owner.BackgroundLeaseAcquireCount);
         Assert.IsTrue(state.IsRuntimeRunning);
-        Assert.AreEqual(WindowsBackgroundSyncConsistency.Operational, state.Consistency);
+        Assert.AreEqual(WindowsBackgroundSyncConsistency.EnabledIdle, state.Consistency);
     }
 
     [TestMethod]
@@ -339,7 +341,7 @@ public sealed class WindowsBackgroundSyncCoordinatorTests
 
         await reset.DisposeAsync();
         var state = await change;
-        Assert.AreEqual(WindowsBackgroundSyncConsistency.Operational, state.Consistency);
+        Assert.AreEqual(WindowsBackgroundSyncConsistency.EnabledIdle, state.Consistency);
     }
 
     [TestMethod]
@@ -548,6 +550,47 @@ public sealed class WindowsBackgroundSyncCoordinatorTests
 
         Assert.IsTrue(state.IsTransitionInProgress);
         Assert.AreEqual(WindowsBackgroundSyncConsistency.Transitioning, state.Consistency);
+    }
+
+    [TestMethod]
+    [DataRow(SyncRuntimeState.Disabled, WindowsBackgroundSyncConsistency.EnabledIdle)]
+    [DataRow(SyncRuntimeState.Starting, WindowsBackgroundSyncConsistency.Starting)]
+    [DataRow(SyncRuntimeState.Running, WindowsBackgroundSyncConsistency.Operational)]
+    [DataRow(SyncRuntimeState.Degraded, WindowsBackgroundSyncConsistency.DegradedRetrying)]
+    public async Task BackendReadyReportsActualSynchronizationHealth(SyncRuntimeState syncState,
+        WindowsBackgroundSyncConsistency expected)
+    {
+        var store = new FakeBackgroundSyncSettingsStore { Settings = new BackgroundSyncSettings(true) };
+        var startup = new FakeWindowsStartupRegistration();
+        var owner = new FakeWindowsAgentBackendRuntimeOwner();
+        using var transitions = new WindowsAgentLifecycleTransitionCoordinator();
+        var coordinator = CreateCoordinator(store, startup, owner, transitions);
+        await coordinator.InitializeAsync();
+        owner.PublishSnapshot(owner.Snapshot with { Synchronization = new SyncRuntimeSnapshot(syncState,
+            syncState == SyncRuntimeState.Degraded ? new IOException("temporary listener failure") : null) });
+        var state = await coordinator.GetStateAsync();
+        Assert.AreEqual(expected, state.Consistency);
+        Assert.AreEqual(syncState == SyncRuntimeState.Degraded, state.Failure is not null);
+        Assert.AreEqual(1, owner.BackgroundLeaseAcquireCount);
+        new WindowsIpcContractValidator().Validate(state);
+    }
+
+    [TestMethod]
+    public async Task UnsafeSynchronizationRequiresRestart_EvenWhileAgentAndBackendExist()
+    {
+        var store = new FakeBackgroundSyncSettingsStore { Settings = new BackgroundSyncSettings(true) };
+        var startup = new FakeWindowsStartupRegistration();
+        var owner = new FakeWindowsAgentBackendRuntimeOwner();
+        using var transitions = new WindowsAgentLifecycleTransitionCoordinator();
+        var coordinator = CreateCoordinator(store, startup, owner, transitions);
+        await coordinator.InitializeAsync();
+        owner.PublishSnapshot(owner.Snapshot with { Synchronization = new SyncRuntimeSnapshot(SyncRuntimeState.Degraded,
+            new IOException("uncertain worker ownership"), RequiresProcessRestart: true) });
+        var state = await coordinator.GetStateAsync();
+        Assert.AreEqual(WindowsBackgroundSyncConsistency.RestartRequired, state.Consistency);
+        Assert.IsTrue(state.Failure!.RequiresProcessRestart);
+        Assert.IsFalse(state.Failure.IsRetryable);
+        new WindowsIpcContractValidator().Validate(state);
     }
 
     private static WindowsBackgroundSyncCoordinator CreateOperationalCoordinator(

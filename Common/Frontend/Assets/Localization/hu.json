@@ -702,5 +702,8 @@
   "Profile_Device_SelfDiagnostics_RecoveryBlockedJournal": "A helyreállítási adatok nem tárolhatók és nem ellenőrizhetők a védett adatbázisban. A profil előzményei nem álltak vissza. Ellenőrizze a szabad tárhelyet, majd próbálja újra.",
   "Profile_Device_SelfDiagnostics_RecoveryJournalCleaned": "A helyreállítás ellenőrzése sikeres volt, az ideiglenes profilmásolat törlődött az adatbázisból.",
   "Profile_Device_SelfDiagnostics_RecoveryJournalRetained": "A helyreállítási bizonyítékok az ellenőrzés vagy a rendezés befejezéséig az eszköz védett adatbázisában maradnak. Ha igazoltan nincs rájuk szükség, vagy a profil törlődik, ezek is törlődnek.",
-  "Profile_Device_Recovery_JournalRetained": "A helyreállítási adatok az ellenőrzés vagy a bizonyítékok rendezésének befejezéséig az eszköz titkosított adatbázisában maradnak védetten."
+  "Profile_Device_Recovery_JournalRetained": "A helyreállítási adatok az ellenőrzés vagy a bizonyítékok rendezésének befejezéséig az eszköz titkosított adatbázisában maradnak védetten.",
+  "Settings_BackgroundSync_Idle": "A háttérbeli szinkronizálás engedélyezve van, és megfelelő kapcsolt eszközre vár.",
+  "Settings_BackgroundSync_Retrying": "A háttérbeli szinkronizálás átmenetileg nem érhető el. Automatikus újrapróbálkozás.",
+  "Settings_BackgroundSync_RestartRequired": "A háttérbeli szinkronizálás helyreállításához indítsd újra az alkalmazást."
 }

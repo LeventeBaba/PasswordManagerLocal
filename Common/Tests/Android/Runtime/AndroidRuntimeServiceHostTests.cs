@@ -1398,6 +1398,60 @@ public sealed class AndroidRuntimeServiceHostTests
         Assert.AreEqual(BackendLifetimeReason.InteractiveUi | BackendLifetimeReason.BackgroundSync, fixture.Coordinator.ActiveReasons);
     }
 
+    [TestMethod]
+    public async Task EnabledIdleIsHealthyAndKeepsPreferenceWithoutForegroundService()
+    {
+        using var fixture = CreateFixture(backgroundEnabled: true);
+        await using var host = fixture.Host;
+        fixture.Runtime.SetSyncSnapshot(new SyncRuntimeSnapshot(SyncRuntimeState.Disabled, null));
+        var state = await host.RestoreBackgroundStateAsync();
+        Assert.AreEqual(BackgroundSyncOperationalState.EnabledIdle, state.OperationalState);
+        Assert.IsFalse(state.IsDegraded);
+        Assert.IsTrue(state.IsOperational);
+        Assert.IsFalse(state.IsForegroundActive);
+        Assert.IsTrue(fixture.Settings.Current.IsEnabled);
+    }
+
+    [TestMethod]
+    public async Task RecoverableSyncFailureKeepsForegroundOwnership_AndReportsRetryingAfterActivityCloses()
+    {
+        using var fixture = CreateFixture(backgroundEnabled: true);
+        await using var host = fixture.Host;
+        await host.RestoreBackgroundStateAsync();
+        var client = await host.AttachInteractiveClientAsync();
+        fixture.Runtime.SetSyncSnapshot(new SyncRuntimeSnapshot(SyncRuntimeState.Degraded, new IOException("transient discovery failure")));
+        var state = await host.GetBackgroundStateFromAttachmentAsync(client);
+        Assert.AreEqual(BackgroundSyncOperationalState.DegradedRetrying, state.OperationalState);
+        Assert.IsTrue(state.IsDegraded);
+        Assert.IsFalse(state.IsOperational);
+        Assert.IsFalse(state.IsRuntimeReady);
+        Assert.IsTrue(state.IsForegroundActive);
+        await client.DisposeAsync();
+        Assert.IsTrue(host.Snapshot.HasBackgroundLease);
+        Assert.IsFalse(host.Snapshot.HasInteractiveAttachment);
+        fixture.Runtime.SetSyncSnapshot(new SyncRuntimeSnapshot(SyncRuntimeState.Running, null));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (!(await host.GetBackgroundStateAsync()).IsOperational) await Task.Delay(5, timeout.Token);
+    }
+
+    [TestMethod]
+    public async Task UnsafeSyncFailureReportsRestartRequiredWithoutStartingAnotherOwner()
+    {
+        using var fixture = CreateFixture(backgroundEnabled: true);
+        await using var host = fixture.Host;
+        await host.RestoreBackgroundStateAsync();
+        await using var client = await host.AttachInteractiveClientAsync();
+        fixture.Runtime.SetSyncSnapshot(new SyncRuntimeSnapshot(SyncRuntimeState.Degraded,
+            new IOException("uncertain socket ownership"), RequiresProcessRestart: true));
+        var state = await host.GetBackgroundStateFromAttachmentAsync(client);
+        Assert.AreEqual(BackgroundSyncOperationalState.RestartRequired, state.OperationalState);
+        Assert.IsTrue(state.RequiresProcessRestart);
+        Assert.IsTrue(state.RequiresUserAction);
+        Assert.IsFalse(state.IsOperational);
+        Assert.IsTrue(host.Snapshot.IsRuntimeUnsafe);
+        Assert.AreEqual(1, fixture.Factory.CreateCalls);
+    }
+
     private static AndroidRuntimeServiceHostFixture CreateFixture(
         bool backgroundEnabled,
         bool secureStorageAvailable = true,

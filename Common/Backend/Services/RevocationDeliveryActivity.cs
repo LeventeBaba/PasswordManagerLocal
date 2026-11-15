@@ -8,6 +8,13 @@ public sealed class RevocationDeliveryActivity : IRevocationDeliveryActivity
     private readonly Channel<bool> _refreshes = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
     { FullMode = BoundedChannelFullMode.DropWrite, SingleReader = true, SingleWriter = false });
     private int _active;
+    private long _evidenceVersion;
+    public long EvidenceVersion => Interlocked.Read(ref _evidenceVersion);
+    public void NotifyCommittedChange()
+    {
+        Interlocked.Increment(ref _evidenceVersion);
+        RequestRefresh();
+    }
     public bool HasActiveWork => Volatile.Read(ref _active) != 0;
     public IDisposable Enter() { Interlocked.Increment(ref _active); return new Lease(this); }
     public void RequestRefresh() => _refreshes.Writer.TryWrite(true);

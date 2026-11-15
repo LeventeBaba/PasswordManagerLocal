@@ -1,4 +1,5 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
+using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Repositories;
@@ -10,10 +11,10 @@ internal sealed class SqliteRepositoryTestDatabase : IAsyncDisposable
 {
     private readonly SqliteTestVault _vault;
 
-    private SqliteRepositoryTestDatabase(SqliteTestVault vault, IBackendChangePublisher? publisher)
+    private SqliteRepositoryTestDatabase(SqliteTestVault vault, IBackendChangePublisher? publisher, IRevocationDeliveryActivity? activity)
     {
         _vault = vault;
-        UnitOfWork = new SqliteSession(Connections, publisher);
+        UnitOfWork = new SqliteSession(Connections, publisher, activity);
         DeviceIdentity = new DeviceIdentityRepository(UnitOfWork);
         Users = new UserRepository(UnitOfWork);
         Devices = new DeviceRepository(UnitOfWork);
@@ -61,8 +62,8 @@ internal sealed class SqliteRepositoryTestDatabase : IAsyncDisposable
     public UserCanonicalCheckpointRepository UserCanonicalCheckpoints { get; }
     public UserSyncFaultRepository UserSyncFaults { get; }
 
-    public static async Task<SqliteRepositoryTestDatabase> CreateAsync(IBackendChangePublisher? publisher = null) =>
-        new(await SqliteTestVault.CreateAsync(), publisher);
+    public static async Task<SqliteRepositoryTestDatabase> CreateAsync(IBackendChangePublisher? publisher = null, IRevocationDeliveryActivity? activity = null) =>
+        new(await SqliteTestVault.CreateAsync(), publisher, activity);
 
     public SqliteSession OpenSession() => new(Connections);
 

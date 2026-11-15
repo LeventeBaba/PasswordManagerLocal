@@ -44,7 +44,12 @@ public sealed class LocalUserDeviceLinkManager
         link.GenerateIntegrityHash();
         await _localUserDevices.AddAsync(link, ct);
         await _uow.SaveChangesAsync(ct);
-        await _syncRuntime.RefreshSyncEnabledAsync(ct);
+        try { await _syncRuntime.RefreshSyncEnabledAsync(ct); }
+        catch (Exception ex)
+        {
+            PasswordManagerLocal.Common.Backend.Diagnostics.BackendDebugLog.Warning(
+                "The committed local profile will be reconciled automatically.", ex, "Synchronization");
+        }
         return link;
     }
 }

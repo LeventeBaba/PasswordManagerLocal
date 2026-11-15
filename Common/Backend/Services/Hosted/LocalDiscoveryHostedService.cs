@@ -20,7 +20,7 @@ using PasswordManagerLocal.Common.Backend.Diagnostics;
 
 namespace PasswordManagerLocal.Common.Backend.Services.Hosted;
 
-internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService, ILocalDiscoveryService, IDisposable
+internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService, ILocalDiscoveryService, ISyncRuntimeHealth, IDisposable
 {
     private readonly IDeviceIdentityService _identity;
     private readonly ISyncDeviceIdentityService _syncDeviceIdentities;
@@ -48,6 +48,7 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
     private bool _started;
     private bool _passiveOwner;
     private bool _networkLeaseAcquired;
+    private bool _unsafeStop;
 
     public LocalDiscoveryHostedService(
         IDeviceIdentityService identity,
@@ -78,6 +79,17 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
     }
 
 
+    public bool RequiresProcessRestart => _unsafeStop || _transport is ISyncRuntimeHealth health && health.RequiresProcessRestart;
+    public bool IsHealthy
+    {
+        get
+        {
+            _ = _syncQueryLoopTask?.Exception;
+            return _started && (_transport is not ISyncRuntimeHealth health || health.IsHealthy) &&
+                (!_identity.IsSyncOn || _syncQueryLoopTask is { IsCompleted: false });
+        }
+    }
+
     public int StartOrder => 30;
 
 
@@ -86,6 +98,7 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
         await _lifecycleLock.WaitAsync(ct);
         try
         {
+            if (RequiresProcessRestart) throw new InvalidOperationException("Discovery requires a complete process restart.");
             if (!_identity.IsSyncOn && !_enrollmentState.IsActive && !_passiveOwner)
                 return;
 
@@ -357,37 +370,21 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
     {
         var cancellation = _syncQueryLoopCancellation;
         var task = _syncQueryLoopTask;
-        _syncQueryLoopCancellation = null;
-        _syncQueryLoopTask = null;
-
-        if (cancellation is null)
-            return;
-
+        if (cancellation is null) return;
+        cancellation.Cancel();
         try
         {
-            cancellation.Cancel();
-        }
-        catch
-        {
-        }
-
-        if (task is not null)
-        {
-            try
+            if (task is not null)
             {
-                await task;
-            }
-            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-            {
-            }
-            catch
-            {
+                try { await task.WaitAsync(TimeSpan.FromSeconds(5)); }
+                catch when (task.IsCompleted) { }
             }
         }
-
+        catch { _unsafeStop = true; throw; }
+        _syncQueryLoopCancellation = null;
+        _syncQueryLoopTask = null;
         cancellation.Dispose();
     }
-
 
     private async Task SyncQueryLoopAsync(CancellationToken ct)
     {

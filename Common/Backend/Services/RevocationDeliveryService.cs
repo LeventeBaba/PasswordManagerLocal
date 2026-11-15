@@ -15,10 +15,10 @@ public sealed class RevocationDeliveryService(IRevocationReceiptRepository evide
     IUserMembershipAuthorizationRepository membership) : IRevocationDeliveryService
 {
     public async Task<bool> HasPendingDeliveryAsync(CancellationToken ct = default) =>
-        (await GetSnapshotsAsync(ct)).Any(s => s.State != RevocationDeliveryState.Completed);
+        (await GetSnapshotsAsync(ct)).Any(s => s.RequiresNetworking);
 
     public async Task<IReadOnlyList<Guid>> ListPendingUserIdsAsync(CancellationToken ct = default) =>
-        (await GetSnapshotsAsync(ct)).Where(s => s.State != RevocationDeliveryState.Completed).Select(s => s.UserId).Distinct().Order().ToArray();
+        (await GetSnapshotsAsync(ct)).Where(s => s.RequiresNetworking).Select(s => s.UserId).Distinct().Order().ToArray();
 
     public async Task<bool> HasPendingForPeerAsync(Guid deviceId, CancellationToken ct = default)
     {
@@ -58,7 +58,39 @@ public sealed class RevocationDeliveryService(IRevocationReceiptRepository evide
                     conflicts[context.UserId] = conflicted;
                 }
                 var row = await operations.GetByIdAsync(context.OperationId, ct);
-                if (conflicted || context.HistoryResetBlocked || context.HasReceiptConflict ||
+                if (context.HistoryResetBlocked && row is null && !conflicted && !context.HasReceiptConflict)
+                {
+                    // The receipt protocol cannot advertise/request this absent live operation
+                    // in the replacement history. Validate the complete frozen chain before
+                    // treating it as dormant, retaining every obligation and permanent barrier.
+                    var frozen = RevocationReceiptService.ReadEvidence(context);
+                    _ = RevocationDeliveryHistoryUtil.Validate(context, frozen.Operation, frozen.Members);
+                    var retainedReceipts = await evidence.ListAsync(context.OperationId, ct);
+                    foreach (var receipt in retainedReceipts)
+                    {
+                        var signed = RevocationReceiptService.VerifyStored(receipt, frozen.Operation, frozen.Members);
+                        if (signed.Kind == RevocationReceiptKind.AppliedReceiptStored)
+                            RevocationReceiptService.ValidateCustody(signed, frozen.Operation, retainedReceipts);
+                    }
+                    result[context.OperationId] = Blocked(context.OperationId, context.UserId,
+                        "Verified historical evidence has no live operation in the replacement history.",
+                        RevocationDeliveryWorkKind.DormantHistoryResetEvidence);
+                    continue;
+                }
+                if (conflicted || context.HasReceiptConflict)
+                {
+                    result[context.OperationId] = Blocked(context.OperationId, context.UserId,
+                        "Unresolved authority or authenticated receipt conflict.", RevocationDeliveryWorkKind.AuthorityConflict);
+                    continue;
+                }
+                if (context.HistoryResetBlocked)
+                {
+                    result[context.OperationId] = Blocked(context.OperationId, context.UserId,
+                        "Reset-blocked evidence still has live authority requiring conservative reconciliation.",
+                        RevocationDeliveryWorkKind.BlockedHistoryResetEvidence);
+                    continue;
+                }
+                if (
                     row is { Status: not UserControlOperationStatus.Applied })
                     throw new InvalidDataException("The revocation has unresolved authority, receipt or reset evidence.");
                 var verified = RevocationReceiptService.ReadEvidence(context);
@@ -116,7 +148,9 @@ public sealed class RevocationDeliveryService(IRevocationReceiptRepository evide
                 complete ? RevocationDeliveryState.Completed : appliedCount + retired.Length > 0
                     ? RevocationDeliveryState.PartiallyDelivered : RevocationDeliveryState.Pending,
                 context.Required.Length, appliedCount, retired.Length, custodyMissing || evidenceDebt,
-                complete ? null : evidenceDebt ? "A required peer's committed evidence inventory is still incomplete." : custodyMissing ? "Signed custody evidence remains outstanding." : "Required installations have not applied the revocation.");
+                complete ? null : evidenceDebt ? "A required peer's committed evidence inventory is still incomplete." : custodyMissing ? "Signed custody evidence remains outstanding." : "Required installations have not applied the revocation.",
+                complete ? RevocationDeliveryWorkKind.Completed : custodyMissing || evidenceDebt
+                    ? RevocationDeliveryWorkKind.PendingEvidenceCustody : RevocationDeliveryWorkKind.AwaitingRecipientEvidence);
         }
         return result.Values.OrderBy(s => s.UserId).ThenBy(s => s.OperationId).ToArray();
     }
@@ -135,8 +169,9 @@ public sealed class RevocationDeliveryService(IRevocationReceiptRepository evide
             o.OriginInstanceId == member.OriginInstanceId && Hashing.Verify(o.SignPublicKeyHash, member.SignPublicKeyHash));
     }
 
-    private static RevocationDeliverySnapshot Blocked(Guid operation, Guid user, string reason) =>
-        new(operation, user, RevocationDeliveryState.Blocked, 0, 0, 0, false, reason);
+    private static RevocationDeliverySnapshot Blocked(Guid operation, Guid user, string reason,
+        RevocationDeliveryWorkKind kind = RevocationDeliveryWorkKind.UnverifiedEvidence) =>
+        new(operation, user, RevocationDeliveryState.Blocked, 0, 0, 0, false, reason, kind);
 
     private sealed record Context(UserControlOperationEnvelope Operation, UserMembershipAuthorization[] Required,
         IReadOnlyList<StoredRevocationReceipt> Receipts, IReadOnlyList<RevocationEvidenceDebt> Debts);

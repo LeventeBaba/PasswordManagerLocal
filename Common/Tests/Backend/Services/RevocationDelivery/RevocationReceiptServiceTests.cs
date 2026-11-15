@@ -365,7 +365,38 @@ public sealed partial class RevocationReceiptServiceTests
         node.Db.UserMembershipAuthorizations.DeleteRange(await node.Db.UserMembershipAuthorizations.ListForUserAsync(scenario.User.UId));
         await node.Db.UnitOfWork.SaveChangesAsync();
         Assert.AreEqual(RevocationDeliveryState.Blocked, (await SnapshotAsync(node, scenario.Operation.OperationId)).State);
+        var dormant = await SnapshotAsync(node, scenario.Operation.OperationId);
+        Assert.AreEqual(RevocationDeliveryWorkKind.DormantHistoryResetEvidence, dormant.WorkKind);
+        Assert.IsFalse(dormant.RequiresNetworking);
+        Assert.IsFalse(await node.Delivery.HasPendingDeliveryAsync());
         Assert.AreEqual(1, (await node.Db.RevocationReceipts.ListAsync(scenario.Operation.OperationId)).Count(r => r.Kind == RevocationReceiptKind.Applied));
+        Assert.IsNotNull(await node.Db.DeletedUserBarriers.GetAsync(scenario.User.UId));
+    }
+
+    [TestMethod]
+    public async Task DormantResetEvidenceReactivatesConservativelyWhenALiveOperationReturns()
+    {
+        await using var scenario = await Scenario.CreateAsync(peerCount: 2, authenticatedHistory: true);
+        await using var node = DeliveryNode.Wrap(scenario);
+        await node.ApplyAsync(scenario.Operation);
+        await using (var transaction = await node.Db.UnitOfWork.BeginTransactionAsync())
+        {
+            await node.Delivery.StageHistoryResetAsync(scenario.User.UId);
+            node.Db.UserControlOperations.DeleteRange(await node.Db.UserControlOperations.ListForUserAsync(scenario.User.UId));
+            await node.Db.UnitOfWork.SaveChangesAsync(); await transaction.CommitAsync();
+        }
+        Assert.AreEqual(RevocationDeliveryWorkKind.DormantHistoryResetEvidence,
+            (await SnapshotAsync(node, scenario.Operation.OperationId)).WorkKind);
+        Assert.IsFalse(await node.Delivery.HasPendingDeliveryAsync());
+        await node.Db.UserControlOperations.AddAsync(UserControlOperationMapping.ToStoredOperation(scenario.Operation,
+            UserControlOperationEnvelopeUtil.Serialize(scenario.Operation), UserControlOperationStatus.Applied,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+        await node.Db.UnitOfWork.SaveChangesAsync();
+        var restored = await SnapshotAsync(node, scenario.Operation.OperationId);
+        Assert.AreEqual(RevocationDeliveryState.Blocked, restored.State);
+        Assert.AreEqual(RevocationDeliveryWorkKind.BlockedHistoryResetEvidence, restored.WorkKind);
+        Assert.IsTrue(await node.Delivery.HasPendingDeliveryAsync());
+        Assert.IsTrue((await node.Db.RevocationReceipts.GetEvidenceAsync(scenario.Operation.OperationId))!.HistoryResetBlocked);
         Assert.IsNotNull(await node.Db.DeletedUserBarriers.GetAsync(scenario.User.UId));
     }
 
@@ -379,6 +410,8 @@ public sealed partial class RevocationReceiptServiceTests
         var profiles = new FakeLocalUserDeviceRepository(); var activity = new RevocationDeliveryActivity();
         var services = new ServiceCollection();
         services.AddSingleton<ILocalUserDeviceRepository>(profiles);
+        var eligibility = new FakeSyncRuntimeEligibilityService();
+        services.AddSingleton<ISyncRuntimeEligibilityService>(eligibility);
         services.AddSingleton<IRevocationDeliveryService>(author.Delivery);
         services.AddSingleton<IRevocationDeliveryActivity>(activity);
         using var provider = services.BuildServiceProvider();
@@ -396,6 +429,8 @@ public sealed partial class RevocationReceiptServiceTests
         Assert.AreEqual(SyncRuntimeState.Disabled, runtime.Snapshot.State);
         Assert.IsTrue(await author.Db.UserControlOperations.HasAppliedRevocationAsync());
         await profiles.AddAsync(new LocalUserDevice { UserId = Guid.NewGuid(), LocalDeviceIdentityId = author.Identity.LocalDeviceId, IsSyncOn = true });
+        await runtime.RefreshSyncEnabledAsync(); Assert.IsFalse(author.Identity.IsSyncOn, "A local-only profile is intentionally idle.");
+        eligibility.Result = new(SyncRuntimeEligibilityReason.Eligible);
         await runtime.RefreshSyncEnabledAsync(); Assert.IsTrue(author.Identity.IsSyncOn);
         await runtime.StopAsync();
     }
@@ -410,6 +445,8 @@ public sealed partial class RevocationReceiptServiceTests
         await ConvergeAsync(author, peer, scenario.Operation.OperationId);
         var services = new ServiceCollection();
         services.AddSingleton<ILocalUserDeviceRepository>(new FakeLocalUserDeviceRepository());
+        var eligibility = new FakeSyncRuntimeEligibilityService();
+        services.AddSingleton<ISyncRuntimeEligibilityService>(eligibility);
         services.AddSingleton<IRevocationDeliveryService>(author.Delivery);
         using var provider = services.BuildServiceProvider();
         var runtime = new SyncRuntimeService(provider.GetRequiredService<IServiceScopeFactory>(), author.Identity,

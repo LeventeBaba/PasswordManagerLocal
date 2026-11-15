@@ -485,6 +485,12 @@ public sealed class WindowsIpcContractValidator
             throw new IpcPayloadException("The operational background synchronization state is inconsistent.");
         }
 
+        if ((state.Consistency is WindowsBackgroundSyncConsistency.EnabledIdle or WindowsBackgroundSyncConsistency.Starting) &&
+            (!state.IsEnabled || !state.IsStartupRegistered || !state.IsBackgroundLeaseActive || !state.IsRuntimeRunning))
+            throw new IpcPayloadException("The enabled background synchronization state is inconsistent.");
+        if (state.Consistency == WindowsBackgroundSyncConsistency.RestartRequired && state.Failure?.RequiresProcessRestart != true)
+            throw new IpcPayloadException("The restart-required background synchronization failure is inconsistent.");
+
         if (state.Consistency == WindowsBackgroundSyncConsistency.Disabled &&
             (state.IsEnabled || state.IsStartupRegistered ||
                 state.IsBackgroundLeaseActive || state.IsTransitionInProgress ||
@@ -502,7 +508,9 @@ public sealed class WindowsIpcContractValidator
         var requiresFailure = state.Consistency is
             WindowsBackgroundSyncConsistency.Degraded or
             WindowsBackgroundSyncConsistency.Inconsistent or
-            WindowsBackgroundSyncConsistency.Unavailable;
+            WindowsBackgroundSyncConsistency.Unavailable or
+            WindowsBackgroundSyncConsistency.DegradedRetrying or
+            WindowsBackgroundSyncConsistency.RestartRequired;
         if (requiresFailure != (state.Failure is not null) ||
             requiresFailure != (state.FailureKind != WindowsBackgroundSyncFailureKind.None))
         {

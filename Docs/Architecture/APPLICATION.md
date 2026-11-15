@@ -19,6 +19,8 @@ The [interactive project map](../SOLUTION_PROJECT_ARCHITECTURE.html) shows the d
 
 [Hosting](../../Common/Backend/Hosting) composes services and coordinates runtime leases, interactive session authority, and startup and shutdown. The Windows and Android runtime owners use [hosting abstractions](../../Common/Backend/Abstractions/Hosting). [Persistence](../../Common/Backend/Persistence) owns vault file operations, including reset cleanup, while [background sync configuration](../../Common/Backend/Configuration/BackgroundSync) can be read before the vault opens.
 
+The [synchronization runtime](SYNC_RUNTIME_ELIGIBILITY_AND_RESILIENCE.md) independently derives networking requirements and health. A backend ownership lease or ready backend does not establish healthy active synchronization.
+
 ## Windows runtime
 
 The frontend owns the desktop UI. The Agent owns the backend, the vault, and peer network operations. The frontend sends requests over named pipes. With background sync enabled, the Agent can continue after the UI exits and start at sign-in.

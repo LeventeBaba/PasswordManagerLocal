@@ -167,6 +167,21 @@ public sealed class BackendRuntimeTests
     }
 
     [TestMethod]
+    public async Task DelayedSynchronizationNotification_CannotRestoreAnObsoleteRunningState()
+    {
+        using var directory = new TemporaryDirectory();
+        var sync = new FakeSyncRuntimeService();
+        var runtime = CreateRuntime(directory.Path, _ => Task.CompletedTask, sync, out _);
+        await runtime.EnsureStartedAsync();
+        await sync.StartAsync();
+        var obsolete = sync.Snapshot;
+        await sync.StopAsync();
+        sync.ReplayStateNotification(obsolete);
+        Assert.AreEqual(SyncRuntimeState.Disabled, runtime.SyncSnapshot.State);
+        await runtime.DisposeAsync();
+    }
+
+    [TestMethod]
     public async Task SyncFailure_LeavesBackendReadyAndMarksSyncDegraded()
     {
         using var directory = new TemporaryDirectory();

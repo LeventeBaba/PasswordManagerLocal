@@ -185,8 +185,8 @@ public sealed class WindowsAgentStatusProvider : IWindowsIpcStatusProvider
             ? CreateFailure(
                 IpcFailureKind.Synchronization,
                 _localizer.GetString(AgentLocalizationKeys.RuntimeBackgroundSyncDegraded),
-                retryable: true,
-                requiresRestart: false)
+                retryable: !sync.RequiresProcessRestart,
+                requiresRestart: sync.RequiresProcessRestart)
             : null;
         return Task.FromResult(new SynchronizationStatusDto(state, failure));
     }

@@ -919,7 +919,9 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
                         return;
 
                     stateChange = SetSyncSnapshotLocked(
-                        new SyncRuntimeSnapshot(SyncRuntimeState.Degraded, exception));
+                        syncRuntime.Snapshot.State is SyncRuntimeState.Degraded or SyncRuntimeState.Running
+                            ? syncRuntime.Snapshot
+                            : new SyncRuntimeSnapshot(SyncRuntimeState.Degraded, exception));
                 }
 
                 Publish(stateChange);
@@ -1082,7 +1084,10 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
             if (!ReferenceEquals(sender, _syncRuntime))
                 return;
 
-            stateChange = SetSyncSnapshotLocked(args.Current);
+            // Publication happens after the sync lifecycle semaphore is released. A
+            // later reconciliation can finish before an earlier event is delivered.
+            // Re-read the current owner instead of restoring an obsolete Running state.
+            stateChange = SetSyncSnapshotLocked(_syncRuntime!.Snapshot);
         }
 
         Publish(stateChange);

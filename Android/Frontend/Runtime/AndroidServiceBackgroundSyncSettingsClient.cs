@@ -53,7 +53,11 @@ public sealed class AndroidServiceBackgroundSyncSettingsClient : IBackgroundSync
         state.IsDegraded,
         state.IsTransitionInProgress,
         MapFailure(state.FailureKind),
-        state.SafeMessage);
+        state.SafeMessage, state.OperationalState == BackgroundSyncOperationalState.Unspecified
+            ? state.RequiresProcessRestart ? BackgroundSyncOperationalState.RestartRequired
+                : !state.IsAvailable || state.IsSecureStorageDeferred ? BackgroundSyncOperationalState.Unavailable
+                : BackgroundSyncOperationalState.Unspecified
+            : state.OperationalState);
 
     private BackgroundSyncClientFailureKind MapFailure(
         AndroidBackgroundSyncFailureKind failureKind) => failureKind switch

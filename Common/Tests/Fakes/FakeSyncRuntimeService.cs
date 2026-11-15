@@ -61,6 +61,9 @@ public sealed class FakeSyncRuntimeService : ISyncRuntimeService
 
     public void SetDegraded(Exception failure) => Transition(SyncRuntimeState.Degraded, failure);
 
+    public void ReplayStateNotification(SyncRuntimeSnapshot stale) =>
+        StateChanged?.Invoke(this, new SyncRuntimeStateChangedEventArgs(_snapshot, stale));
+
     private void Transition(SyncRuntimeState state, Exception? failure = null)
     {
         var previous = _snapshot;

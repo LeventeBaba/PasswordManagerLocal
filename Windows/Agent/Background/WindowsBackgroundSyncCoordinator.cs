@@ -1,3 +1,4 @@
+using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Windows.Agent.Localization;
 using PasswordManagerLocal.Common.Backend.Abstractions.Hosting;
 using PasswordManagerLocal.Common.Contracts.Runtime;
@@ -235,7 +236,9 @@ public sealed class WindowsBackgroundSyncCoordinator : IWindowsBackgroundSyncCoo
             var state = await ReadAuthoritativeStateAsync(
                 CancellationToken.None,
                 includeTransition: false);
-            if (state.Consistency != WindowsBackgroundSyncConsistency.Operational)
+            if (state.Consistency is not (WindowsBackgroundSyncConsistency.Operational or
+                WindowsBackgroundSyncConsistency.EnabledIdle or WindowsBackgroundSyncConsistency.Starting or
+                WindowsBackgroundSyncConsistency.DegradedRetrying))
             {
                 throw new InvalidOperationException(
                     _localizer.GetString(AgentLocalizationKeys.BackgroundNotOperational));
@@ -433,7 +436,8 @@ public sealed class WindowsBackgroundSyncCoordinator : IWindowsBackgroundSyncCoo
         var transitionInProgress = includeTransition &&
             _lifecycleTransitions.State != WindowsAgentLifecycleTransitionState.Idle;
         var leaseActive = HasBackgroundLease();
-        var runtimeState = _backendOwner.Snapshot.Runtime.State;
+        var owner = _backendOwner.Snapshot;
+        var runtimeState = owner.Runtime.State;
         var runtimeRunning = IsRuntimeRunning(runtimeState);
         var failureKind = GetFailureKind();
         var failureSnapshot = GetFailure();
@@ -480,18 +484,30 @@ public sealed class WindowsBackgroundSyncCoordinator : IWindowsBackgroundSyncCoo
                 Failure: null);
         }
 
+        if (settings.IsEnabled && (owner.RequiresProcessRestart || owner.Synchronization.RequiresProcessRestart))
+            return new WindowsBackgroundSyncStateDto(true, registration.IsRegistered, leaseActive, runtimeRunning,
+                false, WindowsBackgroundSyncConsistency.RestartRequired, WindowsBackgroundSyncFailureKind.RuntimeLease,
+                CreateFailure(_localizer.GetString(AgentLocalizationKeys.RuntimeBackgroundSyncDegraded), false, true));
+
         if (settings.IsEnabled && registration.IsRegistered && leaseActive &&
             runtimeState == BackendRuntimeState.Ready)
         {
-            return new WindowsBackgroundSyncStateDto(
-                IsEnabled: true,
-                IsStartupRegistered: true,
-                IsBackgroundLeaseActive: true,
-                IsRuntimeRunning: true,
-                IsTransitionInProgress: false,
-                WindowsBackgroundSyncConsistency.Operational,
-                WindowsBackgroundSyncFailureKind.None,
-                Failure: null);
+            var sync = owner.Synchronization;
+            var consistency = owner.RequiresProcessRestart || sync.RequiresProcessRestart
+                ? WindowsBackgroundSyncConsistency.RestartRequired
+                : sync.State switch
+                {
+                    SyncRuntimeState.Disabled => WindowsBackgroundSyncConsistency.EnabledIdle,
+                    SyncRuntimeState.Starting or SyncRuntimeState.Stopping => WindowsBackgroundSyncConsistency.Starting,
+                    SyncRuntimeState.Running => WindowsBackgroundSyncConsistency.Operational,
+                    _ => WindowsBackgroundSyncConsistency.DegradedRetrying
+                };
+            var failed = consistency is WindowsBackgroundSyncConsistency.DegradedRetrying or WindowsBackgroundSyncConsistency.RestartRequired;
+            return new WindowsBackgroundSyncStateDto(true, true, true, true, false, consistency,
+                failed ? WindowsBackgroundSyncFailureKind.RuntimeLease : WindowsBackgroundSyncFailureKind.None,
+                failed ? CreateFailure(_localizer.GetString(AgentLocalizationKeys.RuntimeBackgroundSyncDegraded),
+                    retryable: !sync.RequiresProcessRestart && !owner.RequiresProcessRestart,
+                    requiresRestart: sync.RequiresProcessRestart || owner.RequiresProcessRestart) : null);
         }
 
         var inconsistent = IsInconsistent(settings, registration, leaseActive);

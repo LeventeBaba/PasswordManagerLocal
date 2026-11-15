@@ -78,6 +78,7 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<IUserDeviceRepository, UserDeviceRepository>();
         services.AddScoped<ILocalUserDeviceRepository, LocalUserDeviceRepository>();
         services.AddScoped<ISyncRouteRepository, SyncRouteRepository>();
+        services.AddScoped<ISyncRuntimeEligibilityService, SyncRuntimeEligibilityRepository>();
         services.AddScoped<ISyncQueueRepository, SyncQueueRepository>();
         services.AddScoped<ISyncItemRepository, SyncItemRepository>();
         services.AddScoped<ISyncTombstoneRepository, SyncTombstoneRepository>();
@@ -208,7 +209,8 @@ public static class BackendServiceCollectionExtensions
         services.AddSingleton<ISyncControlledHostedService>(sp => sp.GetRequiredService<SyncDeviceIdentityWarmupHostedService>());
         // The passive authenticated control listener belongs to backend lifetime, independently of active discovery.
         services.AddSingleton<PassiveDiscoveryHostedService>();
-        services.AddSingleton<IBackendHostedService>(sp => sp.GetRequiredService<PassiveDiscoveryHostedService>());
+        services.AddSingleton<IPassiveSyncRuntime>(sp => sp.GetRequiredService<PassiveDiscoveryHostedService>());
+        services.AddSingleton<ISyncControlledHostedService>(sp => sp.GetRequiredService<TcpSyncServerHostedService>());
         services.AddSingleton<ISyncControlledHostedService>(sp => sp.GetRequiredService<LocalDiscoveryHostedService>());
         services.AddSingleton<ISyncControlledHostedService>(sp => sp.GetRequiredService<SyncNetworkRefreshHostedService>());
         services.AddSingleton<IBackendHostedService>(sp => sp.GetRequiredService<RevocationDeliveryRuntimeHostedService>());

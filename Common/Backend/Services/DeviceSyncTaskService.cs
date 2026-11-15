@@ -38,6 +38,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
     private readonly ConcurrentDictionary<Guid, Task> _runningTasks = new();
     private readonly Dictionary<Guid, PendingDeviceSyncStart> _pendingStarts = new();
     private readonly Dictionary<Guid, TaskCompletionSource<bool>> _idleSignals = new();
+    private readonly SemaphoreSlim _stopLock = new(1, 1);
     private readonly object _runtimeLock = new();
     private CancellationTokenSource _runtimeCancellation = new();
 
@@ -156,43 +157,40 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
 
     public async Task StopAllAsync(CancellationToken ct = default)
     {
-        Task[] runningTasks;
-
-        lock (_runtimeLock)
+        await _stopLock.WaitAsync(ct);
+        try
         {
-            _runtimeCancellation.Cancel();
-            runningTasks = _runningTasks.Values.ToArray();
-        }
+            Task[] runningTasks;
 
-        if (runningTasks.Length != 0)
-        {
-            try
+            lock (_runtimeLock)
             {
-                await Task.WhenAny(Task.WhenAll(runningTasks), Task.Delay(TimeSpan.FromSeconds(5), ct));
+                _runtimeCancellation.Cancel();
+                runningTasks = _runningTasks.Values.ToArray();
             }
-            catch
+
+            // A timeout is an unsafe stop, never permission to forget still-running workers.
+            // Keep the old canceled generation and all ownership records until every task exits.
+            await Task.WhenAll(runningTasks).WaitAsync(TimeSpan.FromSeconds(5), ct);
+
+            TaskCompletionSource<bool>[] idleSignals;
+            lock (_runtimeLock)
             {
+                _runningDeviceIds.Clear();
+                _runningEndpoints.Clear();
+                _lastSuccessfulReconciliations.Clear();
+                _runningTasks.Clear();
+                _pendingStarts.Clear();
+                idleSignals = _idleSignals.Values.ToArray();
+                _idleSignals.Clear();
+                _runtimeCancellation.Dispose();
+                _runtimeCancellation = new CancellationTokenSource();
             }
-        }
 
-        TaskCompletionSource<bool>[] idleSignals;
-        lock (_runtimeLock)
-        {
-            _runningDeviceIds.Clear();
-            _runningEndpoints.Clear();
-            _lastSuccessfulReconciliations.Clear();
-            _runningTasks.Clear();
-            _pendingStarts.Clear();
-            idleSignals = _idleSignals.Values.ToArray();
-            _idleSignals.Clear();
-            _runtimeCancellation.Dispose();
-            _runtimeCancellation = new CancellationTokenSource();
+            foreach (var signal in idleSignals)
+                signal.TrySetResult(true);
         }
-
-        foreach (var signal in idleSignals)
-            signal.TrySetResult(true);
+        finally { _stopLock.Release(); }
     }
-
 
     public void Dispose()
     {
@@ -216,6 +214,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
     private async Task RunAsync(DiscoveredDeviceEndpoint endpoint, Device targetDevice, bool discoveryOnly, CancellationToken ct, CancellationTokenSource runtime)
     {
         using var deliveryLease = _deliveryActivity?.Enter();
+        var evidenceVersion = _deliveryActivity?.EvidenceVersion ?? 0;
         var completedFullReconciliation = false;
         var attemptedFullReconciliation = false;
         BackendDebugLog.Info(
@@ -229,7 +228,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             // Check the persisted queue as well as the in-memory success stamp: missed
             // activation notifications must not postpone already durable work.
             if (discoveryOnly && RecentlyReconciled(endpoint, targetDevice.Id) &&
-                !await HasPendingAsync(targetDevice.Id, ct))
+                !await HasQueuedAsync(targetDevice.Id, ct))
                 return;
 
             attemptedFullReconciliation = true;
@@ -260,9 +259,11 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             // A false send result can mean that transport or target validation failed, not only
             // that the queue is empty. If ordinary durable work remains, stop this worker session
             // and let discovery/a later kick retry it. Continuing into anti-entropy and the final
-            // drain used to send the same failed batch again immediately.
+            // drain used to send the same failed batch again immediately. Outstanding revocation
+            // evidence is tracked separately: an offline recipient must not prevent an authorized
+            // ordinary route from finishing its snapshot exchange and recording a quiet period.
             if (!ct.IsCancellationRequested && _identity.IsSyncOn &&
-                await HasPendingAsync(targetDevice.Id, ct))
+                await HasQueuedAsync(targetDevice.Id, ct))
             {
                 return;
             }
@@ -297,9 +298,11 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             // the window between completing the transport and recording its success.
             var hasPending = true;
             var pendingCheckSucceeded = false;
+            var hasQueued = true;
             try
             {
-                hasPending = await HasPendingAsync(targetDevice.Id, CancellationToken.None);
+                hasQueued = await HasQueuedAsync(targetDevice.Id, CancellationToken.None);
+                hasPending = hasQueued || await HasPendingRevocationAsync(targetDevice.Id, CancellationToken.None);
                 pendingCheckSucceeded = true;
             }
             catch (Exception ex)
@@ -312,21 +315,21 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             bool ownsRunningSlot;
             lock (_runtimeLock)
             {
-                // StopAllAsync may have timed out waiting for a cancelled worker and
-                // started a new runtime. An old worker must not clear the new one's
-                // running slot, pending request, or reconciliation stamp.
+                // Keep generation ownership explicit. A canceled/retired worker must
+                // never clear another generation's slot, request or reconciliation stamp.
                 ownsRunningSlot = ReferenceEquals(runtime, _runtimeCancellation) &&
                                   _runningDeviceIds.ContainsKey(targetDevice.Id);
                 if (ownsRunningSlot)
                 {
                     if (attemptedFullReconciliation)
                     {
-                        if (completedFullReconciliation && pendingCheckSucceeded && !hasPending &&
+                        if (completedFullReconciliation && pendingCheckSucceeded && !hasQueued &&
+                            evidenceVersion == (_deliveryActivity?.EvidenceVersion ?? 0) &&
                             !ct.IsCancellationRequested && _identity.IsSyncOn &&
                             !_runtimeCancellation.IsCancellationRequested)
                         {
                             _lastSuccessfulReconciliations[targetDevice.Id] =
-                                new SuccessfulReconciliation(CloneEndpoint(endpoint), _clock.GetUtcNow());
+                                new SuccessfulReconciliation(CloneEndpoint(endpoint), _clock.GetUtcNow(), evidenceVersion);
                         }
                         else
                         {
@@ -946,6 +949,12 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
     }
 
 
+    private async Task<bool> HasQueuedAsync(Guid deviceId, CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<ISyncQueueRepository>().HasPendingForDeviceAsync(deviceId, ct);
+    }
+
     private async Task<bool> HasPendingAsync(Guid deviceId, CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
@@ -957,13 +966,19 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         return delivery is not null && await delivery.HasPendingForPeerAsync(deviceId, ct);
     }
 
+    private async Task<bool> HasPendingRevocationAsync(Guid deviceId, CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var delivery = scope.ServiceProvider.GetService<IRevocationDeliveryService>();
+        return delivery is not null && await delivery.HasPendingForPeerAsync(deviceId, ct);
+    }
 
     private bool RecentlyReconciled(DiscoveredDeviceEndpoint endpoint, Guid deviceId)
     {
         lock (_runtimeLock)
         {
             if (!_lastSuccessfulReconciliations.TryGetValue(deviceId, out var previous) ||
-                !SameEndpoint(previous.Endpoint, endpoint))
+                !SameEndpoint(previous.Endpoint, endpoint) || previous.EvidenceVersion != (_deliveryActivity?.EvidenceVersion ?? 0))
                 return false;
 
             var age = _clock.GetUtcNow() - previous.FinishedAt;
@@ -980,7 +995,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         string.Equals(FingerprintUtil.NormalizeOrEmpty(a.TlsCertFingerprint),
             FingerprintUtil.NormalizeOrEmpty(b.TlsCertFingerprint), StringComparison.OrdinalIgnoreCase);
 
-    private sealed record SuccessfulReconciliation(DiscoveredDeviceEndpoint Endpoint, DateTimeOffset FinishedAt);
+    private sealed record SuccessfulReconciliation(DiscoveredDeviceEndpoint Endpoint, DateTimeOffset FinishedAt, long EvidenceVersion);
 
     private bool IsLocalDevice(Device device)
     {

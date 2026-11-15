@@ -352,7 +352,7 @@ public sealed class WindowsAgentBackendRuntimeOwner : IWindowsAgentBackendRuntim
                 interactive,
                 sync,
                 reasons,
-                requiresRestart,
+                requiresRestart || sync.RequiresProcessRestart,
                 isResetting,
                 failure,
                 DateTimeOffset.UtcNow);

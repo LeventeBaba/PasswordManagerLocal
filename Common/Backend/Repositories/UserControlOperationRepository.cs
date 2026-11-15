@@ -45,7 +45,7 @@ internal sealed class UserControlOperationRepository(SqliteSession session) : IU
         (nameof(UserControlOperation.Status), row => (byte)row.Status),
         (nameof(UserControlOperation.StatusReason), row => row.StatusReason),
         (nameof(UserControlOperation.UserId), row => row.UserId)
-    ], [nameof(UserControlOperation.OperationHash)], trackChanges: false);
+    ], [nameof(UserControlOperation.OperationHash)], trackChanges: true);
 
     public async Task<UserControlOperation?> GetByIdAsync(Guid operationId, CancellationToken ct = default) =>
         (await session.ReadAsync($""" {Select} WHERE "OperationId" = $id; """,

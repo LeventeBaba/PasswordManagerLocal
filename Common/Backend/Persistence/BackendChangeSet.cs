@@ -12,8 +12,9 @@ internal sealed class BackendChangeSet
     private FrontendChangeScope _globalScope;
 
     private bool _deliveryStateChanged;
+    private bool _eligibilityStateChanged;
 
-    public bool IsEmpty => !_deliveryStateChanged && _globalScope == FrontendChangeScope.None && _userChanges.Count == 0;
+    public bool IsEmpty => !_deliveryStateChanged && !_eligibilityStateChanged && _globalScope == FrontendChangeScope.None && _userChanges.Count == 0;
 
     public void Add(Guid? userId, FrontendChangeScope scope)
     {
@@ -33,6 +34,7 @@ internal sealed class BackendChangeSet
     public void Merge(BackendChangeSet other)
     {
         _deliveryStateChanged |= other._deliveryStateChanged;
+        _eligibilityStateChanged |= other._eligibilityStateChanged;
         Add(null, other._globalScope);
         foreach (var change in other._userChanges)
             Add(change.Key, change.Value);
@@ -40,7 +42,8 @@ internal sealed class BackendChangeSet
 
     public void Publish(IBackendChangePublisher? publisher, IRevocationDeliveryActivity? activity = null)
     {
-        if (_deliveryStateChanged) activity?.RequestRefresh();
+        if (_deliveryStateChanged) activity?.NotifyCommittedChange();
+        else if (_eligibilityStateChanged) activity?.RequestRefresh();
         if (publisher is null)
             return;
 
@@ -55,6 +58,19 @@ internal sealed class BackendChangeSet
 
     public void AddEntityMutation(object entity, bool addedOrDeleted, Func<string, bool> changed)
     {
+        // Delivered only after a durable COMMIT (including explicit transactions). No network
+        // lifecycle calls run inside a transaction or inside a network/worker callback.
+        _eligibilityStateChanged |= entity switch
+        {
+            User => addedOrDeleted || changed(nameof(User.MembershipEpoch)) || changed(nameof(User.KeyEpoch)),
+            LocalUserDevice => addedOrDeleted || changed(nameof(LocalUserDevice.IsSyncOn)),
+            UserDevice => addedOrDeleted || changed(nameof(UserDevice.IsSyncOn)) || changed(nameof(UserDevice.IsDeleted)),
+            Device => addedOrDeleted || changed(nameof(Device.IsTrusted)) || changed(nameof(Device.IsBlocked)) ||
+                changed(nameof(Device.PublicKey)) || changed(nameof(Device.SignPublicKey)) || changed(nameof(Device.TlsCertFingerprint)),
+            UserMembershipAuthorization or UserOriginRemovalCutoff or UserControlState or UserControlOperation or DeletedUserBarrier => true,
+            LocalDeviceIdentity => addedOrDeleted || changed(nameof(LocalDeviceIdentity.OriginInstanceId)),
+            _ => false
+        };
         switch (entity)
         {
             case User user:
@@ -79,9 +95,10 @@ internal sealed class BackendChangeSet
                 CaptureEnrollmentCommit(addedOrDeleted, changed, commit);
                 break;
             case UserMembershipAuthorization authorization:
+                _deliveryStateChanged = true;
                 CaptureMembershipAuthorization(addedOrDeleted, changed, authorization);
                 break;
-            case RevocationReceiptEvidence or StoredRevocationReceipt or RevocationEvidenceDebt or UserControlState:
+            case UserOriginRemovalCutoff or RevocationReceiptEvidence or StoredRevocationReceipt or RevocationEvidenceDebt or UserControlState or UserControlOperation:
                 _deliveryStateChanged = true;
                 Add(null, FrontendChangeScope.BackgroundSync);
                 break;

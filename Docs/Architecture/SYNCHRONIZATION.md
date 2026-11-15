@@ -10,6 +10,10 @@ Enrolled devices reconcile encrypted state over the local network. They can rela
 - **Enrollment.** Queries and responses use HMAC-SHA256 with the enrollment secret. The response binds the session, device and installation identities, device type, public keys, TLS fingerprint, and responder address. Discovery requires an active interactive enrollment session.
 - **Trust boundary.** UDP packets are authenticated and can expose network metadata. Discovery yields candidate addresses. The TCP/TLS exchange authenticates the actual peer and applies device or enrollment authorization before accepting application data. A relayed endpoint hint can help locate a peer, whose identity still has to pass the same connection checks.
 
+## Runtime eligibility and recovery
+
+[Phase 2 runtime lifecycle](SYNC_RUNTIME_ELIGIBILITY_AND_RESILIENCE.md) separates persisted profile/device eligibility, actionable revocation delivery, explicit enrollment and in-flight work. Offline peers remain eligible. A commit-driven supervisor retries recoverable failures and reports idle, running, retrying and restart-required states through the platform owners.
+
 ## Snapshot exchange
 
 The [TCP protocol handler](../../Common/Backend/Sync/Tcp/SyncPeerProtocolHandler.cs) handles the transport peer. The [snapshot inbox](../../Common/Backend/Services/UserSnapshotInboxService.cs) separately verifies the immutable snapshot's original author using historical authorization and removal cutoffs. A pre-removal revision can still be accepted within the cutoff. Relays retain the original signed envelope.

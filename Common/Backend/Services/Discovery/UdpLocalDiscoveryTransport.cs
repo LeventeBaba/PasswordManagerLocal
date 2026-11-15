@@ -6,7 +6,7 @@ using static PasswordManagerLocal.Common.Backend.Constants.SyncConstants;
 
 namespace PasswordManagerLocal.Common.Backend.Services.Discovery;
 
-internal sealed class UdpLocalDiscoveryTransport : ILocalDiscoveryTransport, IDisposable
+internal sealed class UdpLocalDiscoveryTransport : ILocalDiscoveryTransport, ISyncRuntimeHealth, IDisposable
 {
     private readonly ILocalNetworkAddressService _networkAddresses;
     private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
@@ -14,6 +14,17 @@ internal sealed class UdpLocalDiscoveryTransport : ILocalDiscoveryTransport, IDi
     private Socket? _socket;
     private CancellationTokenSource? _lifetimeCancellation;
     private Task? _receiveLoopTask;
+    public bool RequiresProcessRestart { get; private set; }
+
+    public bool IsHealthy
+    {
+        get
+        {
+            var task = _receiveLoopTask;
+            _ = task?.Exception;
+            return _socket is not null && task is { IsCompleted: false };
+        }
+    }
 
     public UdpLocalDiscoveryTransport(ILocalNetworkAddressService networkAddresses)
     {
@@ -28,6 +39,7 @@ internal sealed class UdpLocalDiscoveryTransport : ILocalDiscoveryTransport, IDi
         await _lifecycleLock.WaitAsync(ct);
         try
         {
+            if (RequiresProcessRestart) throw new InvalidOperationException("The UDP transport requires a complete process restart.");
             if (_socket is not null)
                 return;
 
@@ -47,57 +59,27 @@ internal sealed class UdpLocalDiscoveryTransport : ILocalDiscoveryTransport, IDi
 
     public async Task StopAsync(CancellationToken ct = default)
     {
-        Task? receiveLoopTask;
-        CancellationTokenSource? cancellation;
-        Socket? socket;
-
         await _lifecycleLock.WaitAsync(ct);
         try
         {
-            receiveLoopTask = _receiveLoopTask;
-            cancellation = _lifetimeCancellation;
-            socket = _socket;
-
+            var receiveLoopTask = _receiveLoopTask;
+            var cancellation = _lifetimeCancellation;
+            cancellation?.Cancel();
+            _socket?.Dispose();
+            if (receiveLoopTask is not null)
+            {
+                try { await receiveLoopTask.WaitAsync(TimeSpan.FromSeconds(2), ct); }
+                catch when (receiveLoopTask.IsCompleted) { }
+            }
+            await _sendLock.WaitAsync(ct);
+            _sendLock.Release();
             _receiveLoopTask = null;
             _lifetimeCancellation = null;
             _socket = null;
+            cancellation?.Dispose();
         }
-        finally
-        {
-            _lifecycleLock.Release();
-        }
-
-        if (cancellation is null && socket is null)
-            return;
-
-        try
-        {
-            cancellation?.Cancel();
-        }
-        catch
-        {
-        }
-
-        try
-        {
-            socket?.Dispose();
-        }
-        catch
-        {
-        }
-
-        if (receiveLoopTask is not null)
-        {
-            try
-            {
-                await Task.WhenAny(receiveLoopTask, Task.Delay(TimeSpan.FromSeconds(2), ct));
-            }
-            catch
-            {
-            }
-        }
-
-        cancellation?.Dispose();
+        catch { RequiresProcessRestart = true; throw; }
+        finally { _lifecycleLock.Release(); }
     }
 
 
@@ -134,47 +116,52 @@ internal sealed class UdpLocalDiscoveryTransport : ILocalDiscoveryTransport, IDi
             ExclusiveAddressUse = false
         };
 
-        socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-        socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastTimeToLive, 1);
-        socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastLoopback, false);
-        socket.Bind(new IPEndPoint(IPAddress.Any, LocalDiscoveryPort));
-
-        var multicastAddress = IPAddress.Parse(LocalDiscoveryMulticastAddress);
-        var joinedMulticastGroup = false;
-
-        foreach (var interfaceAddress in _networkAddresses.GetMulticastInterfaceAddresses())
+        try
         {
-            try
-            {
-                socket.SetSocketOption(
-                    SocketOptionLevel.IP,
-                    SocketOptionName.AddMembership,
-                    new MulticastOption(multicastAddress, interfaceAddress));
-                joinedMulticastGroup = true;
-            }
-            catch
-            {
-            }
-        }
+            socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastTimeToLive, 1);
+            socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastLoopback, false);
+            socket.Bind(new IPEndPoint(IPAddress.Any, LocalDiscoveryPort));
 
-        if (!joinedMulticastGroup)
-        {
-            // Starting synchronization while the device is completely offline must not
-            // prevent the application from starting. There may be no default multicast
-            // interface yet, particularly on Android or during a Windows adapter change.
-            // The network refresh service will recreate this socket and join the correct
-            // interfaces once an address becomes available.
-            try
+            var multicastAddress = IPAddress.Parse(LocalDiscoveryMulticastAddress);
+            var joinedMulticastGroup = false;
+
+            foreach (var interfaceAddress in _networkAddresses.GetMulticastInterfaceAddresses())
             {
-                socket.SetSocketOption(
-                    SocketOptionLevel.IP,
-                    SocketOptionName.AddMembership,
-                    new MulticastOption(multicastAddress));
+                try
+                {
+                    socket.SetSocketOption(
+                        SocketOptionLevel.IP,
+                        SocketOptionName.AddMembership,
+                        new MulticastOption(multicastAddress, interfaceAddress));
+                    joinedMulticastGroup = true;
+                }
+                catch
+                {
+                }
             }
-            catch
+
+            if (!joinedMulticastGroup)
             {
+                // Starting synchronization while the device is completely offline must not
+                // prevent the application from starting. There may be no default multicast
+                // interface yet, particularly on Android or during a Windows adapter change.
+                // The network refresh service will recreate this socket and join the correct
+                // interfaces once an address becomes available.
+                try
+                {
+                    socket.SetSocketOption(
+                        SocketOptionLevel.IP,
+                        SocketOptionName.AddMembership,
+                        new MulticastOption(multicastAddress));
+                }
+                catch
+                {
+                }
             }
+
         }
+        catch { socket.Dispose(); throw; }
 
         return socket;
     }
@@ -259,11 +246,12 @@ internal sealed class UdpLocalDiscoveryTransport : ILocalDiscoveryTransport, IDi
                     continue;
 
                 var payload = buffer.AsSpan(0, result.ReceivedBytes).ToArray();
-                await receiveHandler(new LocalDiscoveryDatagram
+                try
                 {
-                    Payload = payload,
-                    RemoteEndpoint = ipEndpoint
-                }, ct);
+                    await receiveHandler(new LocalDiscoveryDatagram { Payload = payload, RemoteEndpoint = ipEndpoint }, ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
+                catch { /* Invalid datagrams cannot terminate the authenticated responder. */ }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -277,17 +265,8 @@ internal sealed class UdpLocalDiscoveryTransport : ILocalDiscoveryTransport, IDi
             {
                 return;
             }
-            catch
-            {
-                try
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    return;
-                }
-            }
+            catch { throw; } // Socket failure is supervised; never spin on a dead receive loop.
+
         }
     }
 }

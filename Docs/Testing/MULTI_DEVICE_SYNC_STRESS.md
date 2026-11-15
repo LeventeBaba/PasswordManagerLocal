@@ -111,3 +111,7 @@ simulated scheduling, recovery logic, merge semantics, or the test's assumptions
 As with the original stress test, this does **not** simulate real Wi-Fi, Android
 service suspension, arbitrary clock skew, or every possible interleaving. Passing
 both seeds is valuable evidence, but cannot prove universal convergence.
+
+## Runtime eligibility stress
+
+`MultiDeviceRuntimeEligibilityStressTests` adds two deterministic five-vault scenarios for offline eligibility, peer disable/re-enable, duplicate wake-ups, controlled-service failure/retry and persisted restart decisions. It uses production enrollment, SQLite authority and in-process transport, with simulated controlled OS networking. See [Phase 2 validation](../Architecture/SYNC_RUNTIME_ELIGIBILITY_AND_RESILIENCE.md#tests-and-static-verification).

@@ -19,7 +19,7 @@ public sealed class SyncRuntimeServiceTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Unit")]
-    public async Task RefreshSyncEnabled_WhenAUserIsEnabled_EnablesIdentityAndStartsInOrder()
+    public async Task RefreshSyncEnabled_WhenAnEligiblePairExists_EnablesIdentityAndStartsInOrder()
     {
         var calls = new List<string>();
         var localUsers = new FakeLocalUserDeviceRepository();
@@ -117,6 +117,10 @@ public sealed class SyncRuntimeServiceTests
         var localUsers = new FakeLocalUserDeviceRepository();
         var services = new ServiceCollection();
         services.AddSingleton<ILocalUserDeviceRepository>(localUsers);
+        services.AddSingleton<ISyncRuntimeEligibilityService>(new FakeSyncRuntimeEligibilityService
+        {
+            Result = new(SyncRuntimeEligibilityReason.Eligible)
+        });
         using var provider = services.BuildServiceProvider();
         var identity = new FakeDeviceIdentityService { IsSyncOn = true };
         var syncIdentities = new FakeSyncDeviceIdentityService();
@@ -155,6 +159,11 @@ public sealed class SyncRuntimeServiceTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<ILocalUserDeviceRepository>(localUsers);
+        services.AddSingleton<ISyncRuntimeEligibilityService>(new FakeSyncRuntimeEligibilityService
+        {
+            Handler = async ct => new(await localUsers.AnySyncOnAsync(ct)
+                ? SyncRuntimeEligibilityReason.Eligible : SyncRuntimeEligibilityReason.NoLocalProfiles)
+        });
         var provider = services.BuildServiceProvider();
         syncIdentities = new FakeSyncDeviceIdentityService();
         endpoints = new DiscoveredDeviceEndpointRegistry();
