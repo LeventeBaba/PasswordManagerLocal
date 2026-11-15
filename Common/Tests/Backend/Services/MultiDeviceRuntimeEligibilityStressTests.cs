@@ -23,6 +23,9 @@ public sealed class MultiDeviceRuntimeEligibilityStressTests : MultiDeviceSyncSt
     [TestCategory("SyncStress")]
     public async Task PartitionDisableReenableFaultAndRestart_KeepAuthoritativeEligibility(int seed)
     {
+        if (Environment.GetEnvironmentVariable("PASSWORDMANAGERLOCAL_SYNC_STRESS") != "1")
+            Assert.Inconclusive("Set PASSWORDMANAGERLOCAL_SYNC_STRESS=1 to run multi-device runtime stress tests.");
+
         await using var setup = await CreateFiveDeviceSetupAsync(seed);
         // Pairwise enrollment preflight only heals each parent/child pair. Earlier replicas
         // must learn the later signed additions before we partition all five installations.

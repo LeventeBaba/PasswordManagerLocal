@@ -1,69 +1,84 @@
 # Application architecture
 
-PasswordManagerLocal stores a vault on each installation. The shared backend owns access to that vault and synchronization with enrolled peers. Each platform supplies its runtime host, key protection, and frontend connection. This keeps account, storage, and sync behavior in the same code on Windows and Android while allowing each platform to manage its own process and service lifetime.
+PasswordManagerLocal maintains an encrypted local vault on each installation and synchronizes approved profiles directly between enrolled devices. Shared backend code owns account operations, persistence, cryptography, and synchronization. Platform code owns processes, operating-system key protection, and frontend connectivity.
 
 ## Project boundaries
 
-| Area | Responsibility |
+| Project area | Responsibility |
 | --- | --- |
-| [Common/Contracts](../../Common/Contracts) | Endpoint contracts, DTOs, and other types shared across the frontend and backend boundary |
-| [Common/Frontend](../../Common/Frontend) | Avalonia views, view models, UI sessions, and refresh coordination |
-| [Common/Backend](../../Common/Backend) | Account and vault services, persistence, cryptography, peer synchronization, and shared runtime hosting |
-| [Common/Preferences](../../Common/Preferences) | Shared application preference persistence |
-| [Windows](../../Windows) | Desktop frontend, Agent, IPC, Endpoint RPC, platform integration, and packaging |
-| [Android](../../Android) | Activity, bound service, Android runtime hosting, and platform integration |
+| [Common/Contracts](../../Common/Contracts) | Endpoint interfaces, DTOs, notifications, and shared boundary types |
+| [Common/Backend](../../Common/Backend) | Domain services, direct SQLite persistence, security, peer protocols, and runtime hosting |
+| [Common/Frontend](../../Common/Frontend) | Avalonia views/view models, UI sessions, localization, themes, and refresh coordination |
+| [Common/Preferences](../../Common/Preferences) | Application preference storage |
+| [Windows](../../Windows) | Frontend, Agent, IPC, Endpoint RPC, OS integration, and packaging |
+| [Android](../../Android) | Activity, private bound/foreground service, runtime owner, and OS integration |
 
-The [interactive project map](../SOLUTION_PROJECT_ARCHITECTURE.html) shows the default project-reference graph and the runtime process boundaries.
+The [project map](../SOLUTION_PROJECT_ARCHITECTURE.html) shows default project references and runtime boundaries.
 
-## Shared backend runtime
+## Shared runtime
 
-[Hosting](../../Common/Backend/Hosting) composes services and coordinates runtime leases, interactive session authority, and startup and shutdown. The Windows and Android runtime owners use [hosting abstractions](../../Common/Backend/Abstractions/Hosting). [Persistence](../../Common/Backend/Persistence) owns vault file operations, including reset cleanup, while [background sync configuration](../../Common/Backend/Configuration/BackgroundSync) can be read before the vault opens.
+[Hosting](../../Common/Backend/Hosting) and its [abstractions](../../Common/Backend/Abstractions/Hosting) coordinate backend startup, ownership leases, interactive sessions, and shutdown. Backend lifetime and synchronization lifetime are separate: a ready backend or active lease does not establish healthy synchronization.
 
-The [synchronization runtime](SYNC_RUNTIME_ELIGIBILITY_AND_RESILIENCE.md) independently derives networking requirements and health. A backend ownership lease or ready backend does not establish healthy active synchronization.
+`BackendRuntimeLifetimeCoordinator` tracks interactive and background reasons. The execution profile is interactive while the frontend owns a lease and background-only while only background synchronization owns one. [Synchronization eligibility](SYNCHRONIZATION.md#runtime-eligibility) independently determines active networking, delivery work, enrollment, and passive historical ingress.
+
+[Background settings](../../Common/Backend/Configuration/BackgroundSync) are separate from the vault and UI preferences. The platform owner reads the desired setting before acquiring background ownership. A disabled background setting does not prevent foreground synchronization under an interactive lease.
 
 ## Windows runtime
 
-The frontend owns the desktop UI. The Agent owns the backend, the vault, and peer network operations. The frontend sends requests over named pipes. With background sync enabled, the Agent can continue after the UI exits and start at sign-in.
+The frontend owns UI. The Agent owns the backend, vault, peer networking, endpoint host, and tray integration. Requests cross named pipes.
 
-Managed and ReadyToRun builds ship separate frontend and Agent executables. Native AOT ships one executable with a UI entry point and an `--agent` entry point. The two roles still run in separate processes with separate instance locks and the same IPC boundary. The app's fixed elevated firewall setup targets the executable that runs the Agent role.
-
-### IPC and endpoint outcomes
-
-[Windows/IPC](../../Windows/IPC) owns pipe transport, framing, handshake and authorization, instance coordination, and UI registration. [Windows/EndpointRpc](../../Windows/EndpointRpc) owns the endpoint client, contracts, and server dispatch. Generic transport and framing coverage lives in [Tests.IPC](../../Windows/Tests.IPC). Endpoint-specific behavior lives in [Tests.EndpointRpc](../../Windows/Tests.EndpointRpc).
-
-The [operation manifest](../../Windows/EndpointRpc/Contracts/Metadata/EndpointOperationManifest.cs) assigns stable IDs and commit models. The [dispatcher](../../Windows/EndpointRpc/Server/EndpointRpcDispatcher.cs) tracks invocation and reports the observable outcome.
-
-| Commit model | Meaning |
+| Publish mode | Process layout |
 | --- | --- |
-| `NoDurableMutation` | A read-only operation |
-| `SingleAtomicCommit` | One authoritative commit or indivisible local mutation |
-| `CommitThenFollowUp` | A commit can succeed before required session, cache, or runtime work fails |
-| `MultiStageRecoverableCommit` | A later stage can fail after a known durable subset |
-| `ExternallyObservableSideEffect` | A process, listener, network, or session change can happen independently of a database commit |
+| Managed / ReadyToRun | Separate frontend and Agent executables |
+| Native AOT | One executable; UI entry point and `--agent` entry point run as separate processes |
 
-A rejection known to precede execution can return `NotCommitted`. A known durable subset can return `PartiallyCommittedRecoveryRequired`. An operation that may have taken effect can return `OutcomeUnknown`. A restart requirement is separate from the outcome. Resolve uncertainty by reading authoritative state or using the operation's recovery flow. For example, [enrollment transfer](ACCOUNT_LIFECYCLE.md#enrollment) can be retried after the signed addition commits.
+Both layouts retain separate instance locks and the same IPC boundary. Windows firewall integration targets the executable running the Agent role. [Publishing](../WINDOWS_INSTALLER.md) defines the product layout, sign-in registration, installation, and removal behavior.
+
+### IPC and commit outcomes
+
+[Windows/IPC](../../Windows/IPC) owns named-pipe transport, framing, handshake/authorization, instance coordination, and UI registration. [Windows/EndpointRpc](../../Windows/EndpointRpc) owns endpoint payloads, client/proxy behavior, and server dispatch. [EndpointOperationManifest](../../Windows/EndpointRpc/Contracts/Metadata/EndpointOperationManifest.cs) assigns stable operation IDs and commit models.
+
+| Commit model | Boundary |
+| --- | --- |
+| `NoDurableMutation` | Read-only operation |
+| `SingleAtomicCommit` | One authoritative commit or indivisible local mutation |
+| `CommitThenFollowUp` | Durable commit followed by session, cache, or runtime work |
+| `MultiStageRecoverableCommit` | Durable subset can precede a later failure |
+| `ExternallyObservableSideEffect` | Process, network, listener, or session effect independent of a database commit |
+
+[Dispatcher](../../Windows/EndpointRpc/Server/EndpointRpcDispatcher.cs) results distinguish `NotCommitted`, `PartiallyCommittedRecoveryRequired`, and `OutcomeUnknown` where applicable. Process restart requirements are separate from commit outcome. Authoritative readback or an operation-specific recovery path resolves uncertain effects; blind mutation replay is unsafe.
 
 ## Android runtime
 
-[MainActivity](../../Android/Frontend/MainActivity.cs) owns the frontend session. It binds to a private [PasswordManagerBackgroundService](../../Android/Frontend/Runtime/PasswordManagerBackgroundService.cs) in the same app process. The service hosts the backend through [AndroidRuntimeServiceHost](../../Android/Runtime/AndroidRuntimeServiceHost.cs). Each activity attachment has a generation. Detachment or replacement revokes the old generation's endpoint authority and notification access.
+[MainActivity](../../Android/Frontend/MainActivity.cs) binds to the private [PasswordManagerBackgroundService](../../Android/Frontend/Runtime/PasswordManagerBackgroundService.cs) in the app process. [AndroidRuntimeServiceHost](../../Android/Runtime/AndroidRuntimeServiceHost.cs) owns the backend composition and foreground/background leases.
 
-| Active owners | Runtime profile |
-| --- | --- |
-| Interactive UI | Interactive, through the bound service |
-| Interactive UI and background sync | Interactive, with the background-sync foreground service and notification |
-| Background sync | Background, for regular sync with enrolled peers |
-| None | Runtime stops after the last owner releases it |
+Each activity attachment has a generation. Replacement/detachment revokes the old generation's endpoint and notification authority. Enrollment, database reset, and attachment-owned settings changes require the current authorized attachment. Activity closure cancels or drains work according to its commit boundary.
 
-Enrollment and database reset require the current interactive attachment. When the activity closes, work is canceled or drained according to its commit boundary. The [manifest](../../Android/Frontend/Properties/AndroidManifest.xml) declares the non-exported `connectedDevice` foreground service and boot and package-replacement restoration. Restoration depends on the saved preference, the device's unlock state, and Android's service-start rules.
+The [manifest](../../Android/Frontend/Properties/AndroidManifest.xml) declares a non-exported `connectedDevice` foreground service and boot/package-replacement receivers. Restoration respects the saved preference, protected-storage availability, first unlock, and Android service-start restrictions.
 
-## Vault persistence
+## Background ownership and health
 
-The backend accesses SQLite directly through SQLite3MC. The [database initializer](../../Common/Backend/Persistence/AppDatabaseInitializer.cs) creates the [baseline schema](../../Common/Backend/Persistence/Schema/InitialSchema.sql) or opens an existing vault and checks database integrity. The [encryption migrator](../../Common/Backend/Persistence/DatabaseEncryptionMigrator.cs) handles supported legacy SQLCipher storage. Windows DPAPI and Android Keystore protect the local database key. The vault file on its own cannot be opened on another installation.
+| Platform | Required synchronization / retry | Intentional idle |
+| --- | --- | --- |
+| Windows | The enabled background preference retains the existing Agent/backend owner after frontend closure | The lightweight background lease remains for IPC and justified passive ingress; ordinary discovery is inactive |
+| Android | Foreground/background ownership remains while eligible synchronization, actionable revocation delivery, or recoverable retry requires it | Foreground/background ownership is released; the enabled preference remains stored |
 
-[Repositories](../../Common/Backend/Repositories) read and write persisted data. Backend services own validation, lifecycle decisions, and transactions across repositories. A canonical change commits with its durable sync state and queue work. Transport activation follows the commit so peers cannot observe work for a rolled-back mutation.
+An attached Android activity can keep an idle backend alive and reactivate foreground ownership after a committed local change. With no owner, the service/backend can stop; historical traffic is unavailable until a supported local/restoration action starts it again. The app has no periodic WorkManager synchronization mode.
+
+Platform status distinguishes enabled idle, startup, running synchronization, recoverable degradation, unavailability, and restart-required failure. Foreground notification presence and backend readiness are separate from synchronization readiness. Unsafe Android cleanup closes attachment authority and uses the host's process-termination path. Neither platform creates a second backend owner to bypass an unsafe runtime latch.
+
+## Persistence and transactions
+
+[SqliteSession](../../Common/Backend/Persistence/SqliteSession.cs) provides direct SQLite repository/unit-of-work transactions over SQLite3MC. [AppDatabaseInitializer](../../Common/Backend/Persistence/AppDatabaseInitializer.cs) creates the [schema](../../Common/Backend/Persistence/Schema/InitialSchema.sql), checks supported database versions, and performs structural integrity checks. [DatabaseEncryptionMigrator](../../Common/Backend/Persistence/DatabaseEncryptionMigrator.cs) handles supported legacy SQLCipher encryption separately from schema compatibility.
+
+Windows DPAPI and Android Keystore protect the installation's database key. The vault file alone cannot transfer that OS protection to another installation. Enrollment transfers authorized profile data instead of copying protected local keys.
+
+[Repositories](../../Common/Backend/Repositories) implement persisted reads/writes. Services own validation, lifecycle decisions, and multi-repository transactions. Per-user lifecycle ownership serializes canonical and authority-sensitive work. Durable mutation, checkpoint/publication state, and queue work commit together; transport activation follows commit. Post-commit failures preserve the operation's actual durable outcome.
+
+Current storage controls include bounded protocol messages/inventories, latest-per-origin snapshot replacement, causal tombstone collection, and explicit evidence-processing limits. They do not impose a global lifetime bound on the database. User data, origin/epoch namespaces, control history, and retained revocation evidence have distinct growth paths. [Storage baseline tests](../Testing/MULTI_DEVICE_SYNC_STRESS.md#storage-baselines) measure those paths without treating constant file size as proof of bounded storage.
 
 ## Frontend state
 
-The backend sends scoped, sequenced change notifications. Windows carries them over IPC. Android delivers them through the active attachment. The [frontend refresh coordinator](../../Common/Frontend/Services/FrontendRefreshCoordinator.cs) coalesces work in the UI session, handles missed events or runtime replacement, and preserves in-progress edits. Device views read cached presence. The backend owns discovery and presence refresh.
+The backend publishes scoped, sequenced change notifications. Windows carries them over IPC; Android delivers them through the authorized activity attachment. [FrontendRefreshCoordinator](../../Common/Frontend/Services/FrontendRefreshCoordinator.cs) coalesces refreshes, handles missed notifications/runtime replacement, and preserves in-progress edits. Device views consume cached presence; backend discovery/probing owns network work.
 
-[Application preferences](../../Common/Contracts/Preferences/ApplicationPreferences.cs) hold language, theme, and presentation settings. The UI applies its active localization and theme within the frontend session. The Windows Agent reads language independently for the tray. Background runtime configuration and vault state are stored separately from presentation preferences.
+[ApplicationPreferences](../../Common/Contracts/Preferences/ApplicationPreferences.cs) stores language, theme, and presentation settings. The frontend applies localization/theme per UI session. The Agent reads its language independently for tray text. Presentation preferences, background configuration, and vault state remain separate stores.

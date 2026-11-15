@@ -1,51 +1,106 @@
 # Synchronization
 
-Enrolled devices reconcile encrypted state over the local network. They can relay authenticated snapshots while locked and apply their contents once they have the user key. Signed [lifecycle operations](ACCOUNT_LIFECYCLE.md) carry authority for device membership, key changes, and account deletion. Ordinary snapshots carry vault data.
+Enrolled installations exchange encrypted vault snapshots and signed account-control operations over the local network. Transport identity, snapshot authorship, membership authority, and knowledge of merged data are verified separately.
 
 ## Discovery and transport
 
-[Local discovery](../../Common/Backend/Services/Hosted/LocalDiscoveryHostedService.cs) sends UDP multicast queries and receives unicast responses. [Sync constants](../../Common/Backend/Constants/SyncConstants.cs) and [shared port defaults](../../Common/Contracts/Sync/SyncProtocolDefaults.cs) define the current versions, addresses, bounds, and time windows. The [packet codec](../../Common/Backend/Sync/Discovery/Protocol/LocalDiscoveryPacketCodec.cs) defines the wire fields.
+[LocalDiscoveryHostedService](../../Common/Backend/Services/Hosted/LocalDiscoveryHostedService.cs) uses UDP multicast queries and unicast responses. [SyncProtocolDefaults](../../Common/Contracts/Sync/SyncProtocolDefaults.cs) defines TCP port 26688 and discovery UDP port 26689. [SyncConstants](../../Common/Backend/Constants/SyncConstants.cs) defines wire versions, multicast addresses, message bounds, timeouts, and replay windows.
 
-- **Regular sync.** Devices sign queries and responses with Ed25519. A response matches an outstanding nonce, targets the requester, and binds the responder's device identity, address, and TLS fingerprint. The advertised responder address must match the UDP source. Blocked or untrusted devices cannot establish a route through discovery.
-- **Enrollment.** Queries and responses use HMAC-SHA256 with the enrollment secret. The response binds the session, device and installation identities, device type, public keys, TLS fingerprint, and responder address. Discovery requires an active interactive enrollment session.
-- **Trust boundary.** UDP packets are authenticated and can expose network metadata. Discovery yields candidate addresses. The TCP/TLS exchange authenticates the actual peer and applies device or enrollment authorization before accepting application data. A relayed endpoint hint can help locate a peer, whose identity still has to pass the same connection checks.
+| Mode | Authentication | Admission |
+| --- | --- | --- |
+| Regular synchronization | Ed25519-signed query/response; response binds the request nonce, recipient, responder identity, address, and TLS fingerprint | Trusted, unblocked peer with applicable account authority |
+| Enrollment | HMAC-SHA256 with the enrollment secret; response binds the session, installation identity, keys, device type, address, and TLS fingerprint | Active interactive enrollment session |
 
-## Runtime eligibility and recovery
+The advertised responder address must match the UDP source. Discovery supplies candidate endpoints. TCP/TLS binds the connected peer to its pinned identity before account-specific authorization. Relayed endpoint hints do not establish trust.
 
-[Phase 2 runtime lifecycle](SYNC_RUNTIME_ELIGIBILITY_AND_RESILIENCE.md) separates persisted profile/device eligibility, actionable revocation delivery, explicit enrollment and in-flight work. Offline peers remain eligible. A commit-driven supervisor retries recoverable failures and reports idle, running, retrying and restart-required states through the platform owners.
+## Runtime eligibility
 
-## Snapshot exchange
+[SyncRuntimeEligibilityRepository](../../Common/Backend/Repositories/SyncRuntimeEligibilityRepository.cs) reads one committed SQLite snapshot. Ordinary synchronization requires at least one profile satisfying all of these conditions:
 
-The [TCP protocol handler](../../Common/Backend/Sync/Tcp/SyncPeerProtocolHandler.cs) handles the transport peer. The [snapshot inbox](../../Common/Backend/Services/UserSnapshotInboxService.cs) separately verifies the immutable snapshot's original author using historical authorization and removal cutoffs. A pre-removal revision can still be accepted within the cutoff. Relays retain the original signed envelope.
+- The exact local installation has a sync-enabled `LocalUserDevice`.
+- A distinct remote `UserDevice` is sync-enabled and not deleted.
+- The remote device is trusted, unblocked, and has usable public identities.
+- Both installations have active membership authorization for the profile's current membership and key epochs.
+- The local origin, keys, and certificate match local authority; the remote signing identity and certificate match its retained device record.
+- No applicable removal cutoff, account-deletion barrier, or control-plane conflict excludes the relationship.
 
-[Anti-entropy](../../Common/Backend/Services/UserSnapshotAntiEntropyService.cs) compares bounded inventories and requests exact missing identities and hashes. The protocol distinguishes a known revision, an envelope retained for transfer, and a revision incorporated into canonical state. The receiver returns a receipt after durable storage. A pending receipt is compatible with a locked receiver that has yet to merge the contents.
+Qualifying relationship/device rows pass integrity checks. Eligibility does not decrypt vault payloads or depend on endpoint availability, heartbeat age, or an online flag. An offline eligible peer continues to justify discovery. One qualifying relationship is sufficient across all profiles.
 
-When a user key is available, [the merge coordinator](../../Common/Backend/Services/UserSnapshotMergeCoordinator.cs) verifies and merges eligible snapshots and can publish a new local revision. In an ordinary merge, the publisher can advertise that its publication is equivalent to a specific snapshot authored by the recipient. The recipient can skip the return transfer while its matching authored snapshot is still retained and merged. Fork detection and acquisition of signed coverage receipts take precedence over this optimization.
+`LocalUserDevice.IsSyncOn` is the local profile preference. `UserDevice.IsSyncOn` is the locally stored peer relationship setting, not a live report of the remote service. `DeviceIdentityService.IsSyncOn` is derived runtime state and is not an eligibility input.
 
-A repeated revision with the same hash is idempotent. Different hashes for the same origin, key epoch, and revision are evidence of a fork. Control operations have their own inventory and are delivered ahead of dependent snapshots. Missing control predecessors remain pending until the necessary signed history arrives. See [fault isolation](RECOVERY.md#fault-isolation).
+The platform background preference controls autonomous backend ownership. Foreground synchronization and explicit enrollment use interactive ownership independently of that preference.
 
-## Revocation application receipts
+## Activation and service ownership
 
-Control anti-entropy also exchanges [authenticated revocation receipts](SYNC_REVOCATION_DELIVERY_COMPLETION.md). Each receipt is signed by the acknowledging historical installation and committed with application. Exact receipt inventories and requests let intermediaries relay evidence after account cleanup. Delivery completion now derives from verified historical recipient obligations, Applied signatures, signed receipt custody and cleared peer evidence debt. Completed historical operations remain stored while active discovery can stop. Backend-owned passive control ingress preserves authenticated catch-up while the backend is alive; ordinary profile synchronization retains its own lifecycle.
+[SyncRuntimeService](../../Common/Backend/Services/SyncRuntimeService.cs) serializes startup, reconciliation, cleanup, and shutdown. Its activation reasons are independent:
 
-## Deterministic item merge
+| `SyncRuntimeReason` | Source |
+| --- | --- |
+| `NormalProfileSynchronization` | Eligible persisted profile/device relationship |
+| `PendingRevocationDelivery` | Actionable signed delivery or custody obligations |
+| `ActiveEnrollment` | Explicit interactive enrollment session |
+| `ActiveInFlightSynchronization` | Existing worker/frame activity while effective synchronization is enabled |
 
-Each independently mergeable item and item tombstone carries a `SyncVersionStamp`. The comparison order is UTC milliseconds, logical counter, device ID, and installation origin ID. The [persistent clock](../../Common/Backend/Services/SyncVersionClockService.cs) advances from local writes and observed remote stamps, so restart or clock rollback does not make a later local mutation sort before observed state.
+Enrollment alone does not enable ordinary profile exchange. Control-only sessions remain subject to route authorization and stop before ordinary snapshot exchange when no eligible user route exists. Completing revocation delivery leaves an eligible normal relationship active. Removing the last ordinary relationship does not discard outstanding delivery obligations.
 
-For each item ID, the highest valid version wins across live and deleted values. Equal versions with different authenticated content are an integrity conflict. General profile data is one atomic item, including username metadata. Encrypted device presentation data has item versions, while signed lifecycle operations decide membership. Enrollment and key rotation carry forward existing logical versions.
+Controlled services start in order: identity warmup, TCP listener, local discovery, network refresh. Cleanup runs in reverse order after worker drain. Interactive presence polling has a separate lifetime.
 
-The merge orders persisted collections deterministically. Concurrent writes to different IDs can produce duplicate display names even when local creation checks for uniqueness. Reads filter references to deleted tags and resolve device display names without generating a logical edit.
+`SyncRuntimeState` distinguishes `Disabled`, `Starting`, `Running`, `Stopping`, and `Degraded`. `Disabled` means no active synchronization work; `IsPassiveListening` separately reports passive historical ingress. `RequiresProcessRestart` distinguishes unsafe ownership from a retryable degraded state.
+
+## Reconciliation and failure handling
+
+[BackendChangeSet](../../Common/Backend/Persistence/BackendChangeSet.cs) requests reconciliation after a durable commit affecting eligibility, authority, or delivery. Rollbacks do not publish that signal. Heartbeat-only writes and changes to the derived transport switch do not create eligibility feedback loops.
+
+[RevocationDeliveryRuntimeHostedService](../../Common/Backend/Services/Hosted/RevocationDeliveryRuntimeHostedService.cs) consumes the bounded, coalesced activity channel with a 75 ms debounce. Startup performs a fresh authoritative read. Repeated unchanged decisions do not restart healthy services.
+
+Recoverable failures retry after 1, 2, 4, 8, 16, 32, then at most 60 seconds. Relevant external changes can advance reconciliation; successful reconciliation resets the retry count. A 30-second fallback checks process-local task health while active or passive networking exists. Healthy checks perform no periodic SQLite reads or writes. An idle runtime without listeners has no periodic reconciliation timer.
+
+Partial startup is cleaned up before retry. Failed cleanup, unconfirmed worker/socket ownership, corrupt integrity/database evidence, and non-retryable platform failures latch `RequiresProcessRestart`. Reconciliation cannot clear that latch or create replacement network owners. Backend shutdown joins supervision before draining workers, preventing late activity releases from reopening services.
+
+## Passive historical ingress
+
+[PassiveDiscoveryHostedService](../../Common/Backend/Services/Hosted/PassiveDiscoveryHostedService.cs) owns passive TCP/discovery ingress while the backend is alive and retains a matching trusted, unblocked remote historical identity. A local-only genesis does not justify passive sockets.
+
+Passive discovery answers authenticated historical peers without multicast querying or outgoing workers. Passive TCP permits authorized control inventories and relay; ordinary snapshot traffic is unavailable. Certificate, signature, cutoff, frame, and replay checks remain active. Passive ownership does not enable ordinary profile synchronization.
+
+Platform ownership determines whether a backend remains alive to serve passive traffic; see [application architecture](APPLICATION.md#background-ownership-and-health).
+
+## Worker coalescing and network changes
+
+[DeviceSyncTaskService](../../Common/Backend/Services/DeviceSyncTaskService.cs) coalesces same-endpoint discovery while a worker is running. Explicit activation retains a follow-up request. After a successful full reconciliation, an unchanged endpoint can skip discovery-only exchanges for 60 seconds interactively or 3 minutes in background mode, provided no durable ordinary queue work exists and the committed evidence generation is unchanged.
+
+New authority/receipt/debt evidence, queued work, explicit activation, endpoint changes, failure, and runtime/network restart bypass or invalidate that success window. Unchanged unresolved delivery does not continuously defeat the window. A success stamp is process-local and does not establish network-wide convergence.
+
+[SyncNetworkRefreshHostedService](../../Common/Backend/Services/Hosted/SyncNetworkRefreshHostedService.cs) debounces OS notifications and compares effective network signatures under its refresh lock. The baseline advances only after successful rebind. Availability transitions, transient changes/reversions, and changes observed during rebind remain actionable. An unchanged signature avoids restarting workers and listeners.
+
+Active networking retains its execution-profile network poller. Passive ingress retains OS notifications without idle polling. Full shutdown drains pending rebinds before closing passive listeners.
+
+## Snapshot exchange and relay
+
+[SyncPeerProtocolHandler](../../Common/Backend/Sync/Tcp/SyncPeerProtocolHandler.cs) authenticates the transport peer. [UserSnapshotInboxService](../../Common/Backend/Services/UserSnapshotInboxService.cs) separately authenticates the immutable original envelope using historical membership and removal cutoffs. A relay preserves the original signature, identity, revision, and hash.
+
+[UserSnapshotAntiEntropyService](../../Common/Backend/Services/UserSnapshotAntiEntropyService.cs) compares bounded inventories and requests exact missing identities/hashes. Durable storage, retained transferable evidence, and canonical merge knowledge are distinct. A locked installation can acknowledge durable ciphertext storage and relay it without claiming a canonical merge.
+
+[UserSnapshotMergeCoordinator](../../Common/Backend/Services/UserSnapshotMergeCoordinator.cs) verifies and merges eligible snapshots when a key is available, then updates knowledge and publication state. A publication can identify equivalent recipient-authored content to avoid redundant transfer. Fork detection and acquisition of signed coverage evidence take precedence over that optimization.
+
+The same revision/hash is idempotent. Different hashes for the same origin, key epoch, and revision establish a fork. Control operations arrive before dependent ordinary snapshots; missing predecessors remain pending. [Account lifecycle](ACCOUNT_LIFECYCLE.md#revocation-delivery) defines revocation receipt exchange and completion.
+
+## Deterministic merge
+
+Each mergeable item and item tombstone carries `SyncVersionStamp`, ordered by UTC milliseconds, logical counter, device ID, and installation origin ID. [SyncVersionClockService](../../Common/Backend/Services/SyncVersionClockService.cs) persists local advancement and observed remote versions across restart and clock rollback.
+
+The highest valid item version wins across live/deleted values. Equal versions with different authenticated content are integrity conflicts. General profile data, including username metadata, is one atomic item. Encrypted device presentation data has item versions; signed control operations determine membership.
+
+Collection order is deterministic. Concurrent independent IDs can retain duplicate display names despite local uniqueness checks. Reads filter references to deleted tags and resolve presentation names without creating logical edits.
 
 ## Causal tombstone collection
 
-A tombstone's item version orders the deletion against edits. Its causal reference identifies the first signed snapshot expected to contain the deletion, including the origin, key epoch, membership epoch, and revision.
+A tombstone's item version orders deletion against edits. Its causal reference identifies the first signed snapshot containing that deletion: origin, key epoch, membership epoch, and revision.
 
-The [collector](../../Common/Backend/Services/UserTombstoneGarbageCollector.cs) compacts the deletion only when local merged knowledge covers that reference and each installation authorized at the deletion is accounted for:
+[UserTombstoneGarbageCollector](../../Common/Backend/Services/UserTombstoneGarbageCollector.cs) removes a tombstone only when local merged knowledge covers the reference and every installation authorized at deletion is accounted for:
 
-- An active installation has an authenticated signed reporting snapshot covering the anchor.
-- An installation removed later has complete signed cutoffs, and local merged knowledge covers all accepted revisions named by those cutoffs.
-- Installations that joined later begin with the enrollment baseline. A later key epoch counts for an earlier deletion only if the reporting snapshot explicitly covers the earlier namespace.
+- Active installations have authenticated signed reporting snapshots covering the anchor.
+- Later-removed installations have complete signed cutoffs and local merged coverage of every accepted revision named by those cutoffs.
+- Later additions start from their enrollment baseline. A later key epoch covers an earlier deletion only through explicit earlier-namespace coverage.
 
-A signed envelope can serve as a coverage receipt even when its content already merged indirectly. Acquiring the receipt retains evidence without reapplying the content. Missing or conflicting history, pending or quarantined evidence, and exceeded safety limits leave the tombstone in place.
-
-Collection uses the per-user lifecycle lock and a transaction. Compaction preserves surviving logical versions, publishes a new outer snapshot, and queues sync atomically. Account deletion takes precedence over item compaction.
+Signed envelopes can serve as coverage receipts after indirect merge. Missing/conflicting authority, pending/quarantined evidence, and safety limits retain the tombstone. Collection uses per-user lifecycle ownership and a transaction, preserves surviving logical versions, and atomically publishes and queues the compacted state. Account deletion takes precedence.

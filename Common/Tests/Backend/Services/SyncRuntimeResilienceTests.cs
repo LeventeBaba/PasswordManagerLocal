@@ -13,7 +13,7 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 [TestClass]
 [TestCategory("Backend")]
 [TestCategory("Unit")]
-public sealed class SyncRuntimeResilienceTests
+public sealed partial class SyncRuntimeResilienceTests
 {
     [TestMethod]
     public async Task IdleHasNoNetworkWork_EnrollmentStillWorks_AndUnchangedEligibleStateDoesNotRestart()
@@ -207,8 +207,20 @@ public sealed class SyncRuntimeResilienceTests
         public bool IsHealthy { get; set; }
         public int Starts { get; private set; }
         public int Stops { get; private set; }
-        public Task StartAsync(CancellationToken ct = default) { Starts++; IsHealthy = true; return Task.CompletedTask; }
-        public Task StopAsync(CancellationToken ct = default) { Stops++; IsHealthy = false; return Task.CompletedTask; }
+        public int FailuresRemaining { get; set; }
+        public bool FailStop { get; set; }
+        public Task StartAsync(CancellationToken ct = default)
+        {
+            Starts++; IsHealthy = true;
+            if (FailuresRemaining-- > 0) throw new IOException("Injected partial passive startup failure.");
+            return Task.CompletedTask;
+        }
+        public Task StopAsync(CancellationToken ct = default)
+        {
+            Stops++;
+            if (FailStop) throw new IOException("Injected uncertain passive ownership.");
+            IsHealthy = false; return Task.CompletedTask;
+        }
     }
 
     [TestMethod]
@@ -265,6 +277,10 @@ public sealed class SyncRuntimeResilienceTests
         public bool IsHealthy { get; set; }
         public int MaximumConcurrentStarts { get; private set; }
         private int _starting;
+        public TaskCompletionSource? StartEntered { get; set; }
+        public Task? StartRelease { get; set; }
+        public TaskCompletionSource? StopEntered { get; set; }
+        public Task? StopRelease { get; set; }
         public async Task StartAsync(CancellationToken ct)
         {
             var active = Interlocked.Increment(ref _starting);
@@ -272,18 +288,21 @@ public sealed class SyncRuntimeResilienceTests
             try
             {
                 Starts++;
+                StartEntered?.TrySetResult();
+                if (StartRelease is not null) await StartRelease.WaitAsync(ct);
                 await Task.Yield();
                 if (FailuresRemaining-- > 0) throw new IOException("temporary controlled-service failure");
                 IsHealthy = true;
             }
             finally { Interlocked.Decrement(ref _starting); }
         }
-        public Task StopAsync(CancellationToken ct)
+        public async Task StopAsync(CancellationToken ct)
         {
             Stops++;
+            StopEntered?.TrySetResult();
+            if (StopRelease is not null) await StopRelease.WaitAsync(ct);
             if (FailStop) throw new IOException("uncertain resource ownership");
             IsHealthy = false;
-            return Task.CompletedTask;
         }
     }
 

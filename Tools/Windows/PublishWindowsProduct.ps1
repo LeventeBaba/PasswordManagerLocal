@@ -42,7 +42,7 @@ if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     if ($NativeAOT) { $OutputRoot = Join-Path "${OutputRoot}-NativeAot" $RuntimeIdentifier }
 }
 if ([string]::IsNullOrWhiteSpace($BaselineTreePath)) {
-    $BaselineTreePath = Join-Path $repositoryRoot 'Docs\Baselines\PHASE6_SUPPLIED_WINDOWS_PUBLISH_TREE.txt'
+    $BaselineTreePath = Join-Path $repositoryRoot 'Docs\Baselines\WINDOWS_PUBLISH_TREE.txt'
 }
 
 $outputRootPath = [System.IO.Path]::GetFullPath($OutputRoot)
@@ -562,7 +562,7 @@ else {
 
 if ($Sign) {
     # Sign once after all trimming, optimization and deduplication. The signed
-    # product directory is also the input for a future installer; ZIP is incidental.
+    # product directory is also the installer input; ZIP uses the same files.
     $signingDirectory = if ($NativeAOT) { $stagingRoot } else { $productRoot }
     Invoke-WindowsProductSigning -ProductDirectory $signingDirectory -Context $windowsSigningContext `
         -ReportPath (Join-Path $reportRoot 'windows-signing-report.json') -UnifiedNativeAot:$NativeAOT

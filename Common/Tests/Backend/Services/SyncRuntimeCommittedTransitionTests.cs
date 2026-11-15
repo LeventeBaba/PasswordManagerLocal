@@ -15,7 +15,7 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 [TestClass]
 [TestCategory("Backend")]
 [TestCategory("Integration")]
-public sealed class SyncRuntimeCommittedTransitionTests
+public sealed partial class SyncRuntimeCommittedTransitionTests
 {
     [TestMethod]
     public async Task CommittedRemoteSettingsSecurityAndMembershipChanges_WakeRuntimeWithoutFrontendRefresh()

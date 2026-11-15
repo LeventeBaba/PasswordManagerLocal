@@ -4,7 +4,7 @@ param(
     [ValidateSet('Hold', 'Probe')]
     [string]$Mode,
 
-    [string]$LockPath = (Join-Path $env:LOCALAPPDATA 'PasswordManagerLocal\phase9-diagnostics\cross-session.lock')
+    [string]$LockPath = (Join-Path $env:LOCALAPPDATA 'PasswordManagerLocal\lock-diagnostics\cross-session.lock')
 )
 
 $ErrorActionPreference = 'Stop'

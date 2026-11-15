@@ -1,117 +1,92 @@
-# Multi-device synchronization stress test
+# Multi-device synchronization tests
 
-The five-device regression test is in:
+The synchronization suites use production services with isolated SQLite vaults, encrypted snapshots, signed authority, revision knowledge, queues, and protocol handlers. [ProductionSyncTestHost](../../Common/Tests/TestInfrastructure/ProductionSyncTestHost.cs) replaces OS transport with authenticated in-process transport. [MultiDeviceSyncStressFixture](../../Common/Tests/Backend/Services/MultiDeviceSyncStressFixture.cs) shares enrollment, topology, restart, healing, and convergence helpers across five-device scenarios.
 
-`Common/Tests/Backend/Services/MultiDeviceConvergenceStressTests.cs`
+## Opt-in scenarios
 
-Both stress-test classes share the production-backed host and synchronization
-helpers in `Common/Tests/Backend/Services/MultiDeviceSyncStressFixture.cs`.
-Each source file defines exactly one matching primary type, as required by the
-architecture guard. The opt-in categories and test behavior remain unchanged.
+Expensive cases require `PASSWORDMANAGERLOCAL_SYNC_STRESS=1`. Normal suite filters exclude `SyncStress` and `SyncStressExtended`.
 
-This test uses five independently enrolled production backend instances, each with its own
-SQLite database, repository layer, encrypted snapshots, version clocks, signed operations,
-queues, and protocol handlers. Only the operating-system network transport is replaced
-with the repository's existing in-process authenticated transport.
+| Suite / scenario | Category | Seeds / setup | Coverage |
+| --- | --- | --- | --- |
+| [MultiDeviceConvergenceStressTests](../../Common/Tests/Backend/Services/MultiDeviceConvergenceStressTests.cs) | `SyncStress` | `1701`, `20261111`; five devices | Partitions, concurrent writes, edit/delete races, tags/colors, relay, failed transfer/retry, persistent restart, chain/mesh convergence |
+| [MultiDeviceRuntimeEligibilityStressTests](../../Common/Tests/Backend/Services/MultiDeviceRuntimeEligibilityStressTests.cs) | `SyncStress` | `20261115`, `7719`; five devices | Offline eligibility, peer disable/re-enable, duplicate wake-ups, controlled-service failure/retry, persisted restart decisions |
+| [MultiDeviceAdversarialChurnStressTests](../../Common/Tests/Backend/Services/MultiDeviceAdversarialChurnStressTests.cs) | `SyncStressExtended` | `271828`, `314159`; five devices | Stale fifth replica, 12 write/partition waves, relay restart, queue loss, anti-entropy recovery, second partition/convergence, no resurrection |
+| [LockedRelayRestart](../../Common/Tests/Backend/Services/Relay/RegularSyncEndToEndTests.cs) | `SyncStressExtended` | Three-device scenario | Pending signed-envelope custody across locked relay restart, indirect merge, and merge after unlock |
+| [EnrollmentRemovalCycles](../../Common/Tests/Backend/Services/Storage/DatabaseGrowthBaselineTests.cs) | `SyncStressExtended`, `DatabaseGrowthBaseline` | Four enrollment/removal cycles | Bounded live membership with retained historical-authority measurements |
 
-## Running
+Five-device cases enroll independent installations; databases are not cloned. Enrollment preflight propagates signed membership before partitioning. Reachable edges are explicit. Queue-loss scenarios remove queue bookkeeping while retaining the durable signed snapshots needed for anti-entropy.
 
-The test is opt-in to keep everyday test runs fast. After building the project yourself,
-run from the repository root:
+Convergence assertions compare logical IDs, metadata, secrets, tags/colors, deletion state, and queue drain as applicable. Independent writes must survive; competing versions can resolve to one deterministic winner. Seeds fix intended operations/topologies, not thread scheduling. Five-device convergence/runtime cases allow 12 minutes per seed; extended churn allows 20 minutes per seed.
 
-```cmd
- dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj --no-build --environment "PASSWORDMANAGERLOCAL_SYNC_STRESS=1" --filter "TestCategory=SyncStress"
+## Commands
+
+Commands use PowerShell from the repository root after a Debug build. `--environment` enables stress only in test hosts.
+
+```powershell
+# Both five-device categories, including extended relay/membership cases.
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --environment 'PASSWORDMANAGERLOCAL_SYNC_STRESS=1' --filter 'TestCategory=SyncStress|TestCategory=SyncStressExtended' --logger 'trx;LogFilePrefix=sync-stress'
+
+# Standard convergence and runtime eligibility.
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --environment 'PASSWORDMANAGERLOCAL_SYNC_STRESS=1' --filter 'TestCategory=SyncStress'
+
+# Extended adversarial churn, locked relay, and membership measurement.
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --environment 'PASSWORDMANAGERLOCAL_SYNC_STRESS=1' --filter 'TestCategory=SyncStressExtended'
+
+# One class, retaining all of its declared data rows.
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --environment 'PASSWORDMANAGERLOCAL_SYNC_STRESS=1' --filter 'FullyQualifiedName~MultiDeviceAdversarialChurnStressTests'
 ```
 
-If not built yet, omit `--no-build`. The test runs two fixed replayable random seeds,
-`1701` and `20261111`. A failure includes the seed, the step, active graph edges, and
-per-device membership IDs, signed control-operation epochs and statuses, fault diagnostics, durable queues, and transport failures. For a single-seed reproduction, temporarily keep
-only the applicable `[DataRow(...)]` on the test method.
+The fixed seeds and healing-pass limits are part of regression coverage. Failures identify the seed, step/wave, topology, device, authority state, queue state, and transport observations. Investigate that state before changing retry ceilings or expected convergence.
 
-## What is exercised
+## Supporting regression suites
 
-1. Sequential enrollment of five separate devices. Every new pair explicitly enables local sync and completes authenticated control-inventory/queue exchange before the next enrollment. Signed membership still must propagate to all existing devices over the chain before editing starts.
-2. Offline independent password additions on all five devices, repeated across four
-   changing partitions with randomized write order and session direction.
-3. Concurrent edits to one existing password, and an edit-vs-delete race on another.
-4. Password tags and custom colors created independently on different devices.
-5. Multi-hop forwarding from device 0 to device 4, with no direct network link.
-6. Injected failed delta transfer, durable queue retention, and retry propagation.
-7. Restart of device 2 from its persistent database while disconnected, followed by
-   a new edit and reconnection.
-8. Eventual propagation through a chain, then full-mesh anti-entropy and queue drain.
-9. Agreement on logical password IDs, metadata, hashes of decrypted secrets, tags, and
-   custom colors, plus preservation of every uniquely created password.
+| Area | Test suites |
+| --- | --- |
+| Committed eligibility and lifecycle | `SyncRuntimeEligibilityTests`, `SyncRuntimeCommittedTransitionTests`, `SyncRuntimeServiceTests`, `SyncRuntimeResilienceTests` |
+| Worker/network behavior | `DeviceSyncTaskServiceTests`, `NetworkSignatureChangeTrackerTests`, `SyncNetworkRefreshExecutionProfileTests`, `LocalDiscoveryNetworkLeaseTests` |
+| Revocation and deletion | `RevocationReceiptServiceTests`, account-lifecycle and revocation partials of `RegularSyncEndToEndTests`, interrupted-export scenario |
+| Recovery durability/concurrency | `UserDataRecoveryCoordinatorTests`, `AutomaticRecoveryTriggerTests`, `UserRecoverySessionServiceTests`, lifecycle and tombstone suites |
+| Android ownership/restoration | `AndroidRuntimeServiceHostTests`, `AndroidBackgroundRestorationPolicyTests`, `AndroidServiceStartStateMachineTests` |
+| Windows ownership/IPC | `WindowsAgentBackendRuntimeOwnerTests`, `WindowsBackgroundSyncCoordinatorTests`, Windows IPC and Endpoint RPC suites |
 
-## Limits and interpretation
-
-The test does not simulate actual TCP/UDP packet timing, Android process suspension,
-clock jumps, or arbitrary Byzantine devices. It establishes deterministic agreement
-for the tested schedules; it does not prove universal convergence for every possible
-combination of concurrent operations. Conflict resolution may legitimately choose
-one of two competing updates, or a deletion over an update; the test verifies that
-all replicas agree and unrelated changes are preserved.
-
-Do not remove a failing seed or increase retry limits simply to make a failure pass.
-Use the recorded seed, schedule, queue state, and snapshots to investigate first.
-
-
-## Extended adversarial churn test (separate opt-in category)
-
-The additional test is in
-`Common/Tests/Backend/Services/MultiDeviceAdversarialChurnStressTests.cs`.
-It reuses the same production-backed five-device test fixture and is considerably
-slower than the original two-seed test. Run it separately **after building**:
-
-```cmd
- dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj --no-build --environment "PASSWORDMANAGERLOCAL_SYNC_STRESS=1" --filter "TestCategory=SyncStressExtended"
+```powershell
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --filter 'FullyQualifiedName~SyncRuntime|FullyQualifiedName~DeviceSyncTaskServiceTests|FullyQualifiedName~NetworkSignatureChangeTrackerTests'
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --filter 'FullyQualifiedName~RevocationReceiptServiceTests|FullyQualifiedName~FinalDeletionReceipt_RestartBeforeExport|FullyQualifiedName~UserDataRecoveryCoordinatorTests'
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --filter 'FullyQualifiedName~AndroidRuntimeServiceHostTests|FullyQualifiedName~AndroidBackgroundRestorationPolicyTests|FullyQualifiedName~AndroidServiceStartStateMachineTests'
+dotnet test .\Windows\Tests.IPC\PasswordManagerLocal.Windows.Tests.IPC.csproj -c Debug --no-build --no-restore
+dotnet test .\Windows\Tests.EndpointRpc\PasswordManagerLocal.Windows.Tests.EndpointRpc.csproj -c Debug --no-build --no-restore
 ```
 
-It uses the reproducible operation/topology seeds `271828` and `314159`, with a
-20-minute per-case timeout. Seeds fix the intended operation order and graph
-schedule, not operating-system thread scheduling. Use a filter such as
-`--filter "FullyQualifiedName~FiveDevices_StaleReplicaQueueLossAndRepeatedChurn_ConvergeWithoutResurrection&TestCategory=SyncStressExtended"`
-to run just this test method (both seeds). To isolate one seed, temporarily
-comment out the other `[DataRow]`; retain both in the committed source.
+## Fixture ownership and deterministic boundaries
 
-### New coverage (not simply more repetitions of the baseline test)
+`ProductionSyncTestHost` owns its post-login consumer, protocol workers, temporary database directory, and service provider. Restart preserves the on-disk vault/installation identity and creates a new host. Disposal joins owned work before releasing services/files.
 
-1. Keep a **long-lived fifth peer fully disconnected** while the other four
-   repeatedly partition, perform 12 waves of independent writes and competing
-   edits, exchange snapshots over changing topologies, and restart relays.
-2. Delete an item on the active side; prove the four active replicas agree on
-   the tombstone while the fifth still carries the old live version.
-3. Create another publication on the stale peer, erase **all its pending
-   outgoing queue entries**, restart the peer, and reconnect it through a single
-   link. Its new data must still propagate through **snapshot anti-entropy**,
-   while the old deleted item must not be resurrected.
-4. Require the five devices to reach canonical logical agreement and drain
-   pending queues in a full mesh. Verify the **exact decrypted secret bytes** of
-   every independently created password on every device, not merely its name.
-5. After this first convergence, partition **all five devices again**. Make
-   additional independent writes plus five competing edits to the same password,
-   restart a relay, and converge over a different multi-hop chain.
-6. Require a second full-mesh quiescence, no deleted-item resurrection, no lost
-   independent secret, and stability after redundant anti-entropy exchanges.
+`ControlledDelayTimeProvider` gates one-shot supervisor delays. Explicit signals/gates control startup, shutdown, retry, and recovery fault injection. Production app code has no test fault switches.
 
-This is an intentionally adversarial recovery test. It deliberately erases
-**queue bookkeeping** through the existing test-host helper; it does **not**
-delete encrypted snapshots or modify production synchronization code. The
-expected behavior is recovery through the production anti-entropy protocol.
+Initial-read gate release makes deferred post-login reconciliation runnable; it does not join the consumer. Tests measuring unchanged canonical state during rejected admission use the existing per-user lifecycle coordinator around the baseline, requests, and readback. Nested inbox calls remain reentrant and execute real transactions. Ordinary transfer idleness alone does not establish canonical-write idleness.
 
-### Troubleshooting
+Partial test classes are grouped by behavior under `AccountLifecycle`, `Adversarial`, `FailureInjection`, `Recovery`, `Relay`, `RevocationDelivery`, `Runtime`, and `Storage`. Each file retains the matching primary type name. SDK default compile inclusion discovers those files without explicit project entries.
 
-The test logs the seed, wave, reachable edges, writers, restart, and queue-loss
-count. `HealUntilAsync` includes per-device membership epochs, operations,
-transport failures, pending queues, and password names when a convergence
-checkpoint fails. Do not reduce the assertions, remove a failing seed, or
-silently raise the healing-pass limit. First determine whether the fault is in
-simulated scheduling, recovery logic, merge semantics, or the test's assumptions.
+## Storage baselines
 
-As with the original stress test, this does **not** simulate real Wi-Fi, Android
-service suspension, arbitrary clock skew, or every possible interleaving. Passing
-both seeds is valuable evidence, but cannot prove universal convergence.
+The `DatabaseGrowthBaseline` category uses [SqliteStorageMeasurement](../../Common/Tests/TestInfrastructure/Storage/SqliteStorageMeasurement.cs) to capture main/WAL/SHM/journal lengths, page/freelist counts, journal mode, every persistent table's row count, and aggregate BLOB lengths. Explicit PASSIVE checkpoint samples record busy/log/checkpointed-frame status. Output contains counts and lengths rather than plaintext vault data or keys.
 
-## Runtime eligibility stress
+Workloads cover unchanged synchronization, repeated discovery, bounded live-data edits/remote merges, receipt/custody exchanges, enrollment/removal, recovery attempts, rejected authentication/malformed envelopes, backend restart, control anti-entropy, and causal tombstone collection. No-op/admission cases assert idempotence; fixed-origin cases check applicable snapshot row bounds. Membership churn retains signed history rather than deleting evidence to meet a file-size assertion.
 
-`MultiDeviceRuntimeEligibilityStressTests` adds two deterministic five-vault scenarios for offline eligibility, peer disable/re-enable, duplicate wake-ups, controlled-service failure/retry and persisted restart decisions. It uses production enrollment, SQLite authority and in-process transport, with simulated controlled OS networking. See [Phase 2 validation](../Architecture/SYNC_RUNTIME_ELIGIBILITY_AND_RESILIENCE.md#tests-and-static-verification).
+```powershell
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --filter 'TestCategory=DatabaseGrowthBaseline&TestCategory!=SyncStressExtended' --logger 'console;verbosity=normal' --logger 'trx;LogFilePrefix=storage-baseline'
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --environment 'PASSWORDMANAGERLOCAL_SYNC_STRESS=1' --filter 'TestCategory=DatabaseGrowthBaseline' --logger 'trx;LogFilePrefix=storage-baseline-complete'
+```
+
+Stable file size or row count does not establish a lifetime storage bound. BLOBs can grow within fixed rows; SQLite can reuse free pages or retain allocated space after deletion. Connection closure can checkpoint/remove WAL sidecars. Interpret row/BLOB totals, allocated/used-page estimates, and sidecar/checkpoint samples together.
+
+## Physical-device coverage
+
+In-process transport and controlled runtime services do not reproduce OS socket timing, Wi-Fi multicast, platform scheduling, force-stop, or installer behavior.
+
+| Platform | Physical checks |
+| --- | --- |
+| Windows | Sign-in startup; frontend closure/reopen with one Agent; enabled idle; last-peer disable/re-enable/block/unblock; offline peer return; sleep/resume; interface/firewall changes; Agent restart; upgrade; revocation-only delivery; final receipt with another eligible profile; retry/restart status |
+| Android | Foreground notification/readiness; activity closure/replacement; enabled idle and local reactivation; screen lock/sleep; Wi-Fi/router multicast; reboot/first unlock; supported service restoration; notification/start restrictions; battery/OEM limits; revocation-only delivery; remembered-key recovery; force-stop behavior |
+
+Passing the seeded cases establishes behavior for those scenarios. It does not establish universal convergence across every interleaving or guarantee platform restoration when the operating system forbids execution.

@@ -3058,7 +3058,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
                 return await RefreshUserProfileAutomaticallyAsync(isCurrent, cancellationToken);
 
             case FrontendRefreshPage.Devices:
-                // Both scopes use the Phase 13 cached endpoint; neither starts network probes.
+                // Both scopes read cached device presence; neither starts network probes.
                 return await ProfileViewModel.RefreshDevicesAutomaticallyAsync(isCurrent, cancellationToken);
 
             case FrontendRefreshPage.LocalDevice:

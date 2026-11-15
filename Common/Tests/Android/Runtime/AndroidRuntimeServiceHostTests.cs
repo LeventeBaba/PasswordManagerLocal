@@ -1452,6 +1452,40 @@ public sealed class AndroidRuntimeServiceHostTests
         Assert.AreEqual(1, fixture.Factory.CreateCalls);
     }
 
+    [TestMethod]
+    public async Task DuplicateRecoveryAndFinalReceiptEvents_WithActivityReplacement_PreserveSingleForegroundOwner()
+    {
+        using var fixture = CreateFixture(backgroundEnabled: true);
+        await using var host = fixture.Host;
+        await host.RestoreBackgroundStateAsync();
+        for (var index = 0; index < 8; index++)
+        {
+            var client = await host.AttachInteractiveClientAsync();
+            try
+            {
+                fixture.Runtime.SetSyncSnapshot(new(SyncRuntimeState.Degraded, new IOException("transient listener failure"),
+                    SyncRuntimeReason.NormalProfileSynchronization | SyncRuntimeReason.PendingRevocationDelivery));
+                var degraded = await host.GetBackgroundStateFromAttachmentAsync(client);
+                Assert.AreEqual(BackgroundSyncOperationalState.DegradedRetrying, degraded.OperationalState);
+                Assert.IsTrue(degraded.IsForegroundActive);
+                Assert.IsFalse(degraded.IsRuntimeReady);
+                fixture.Runtime.SetSyncSnapshot(new(SyncRuntimeState.Running, null, SyncRuntimeReason.NormalProfileSynchronization));
+                var recovered = await host.GetBackgroundStateFromAttachmentAsync(client);
+                Assert.AreEqual(BackgroundSyncOperationalState.Running, recovered.OperationalState);
+            }
+            finally { await client.DisposeAsync(); }
+            Assert.IsTrue(host.Snapshot.HasBackgroundLease);
+            Assert.IsFalse(host.Snapshot.HasInteractiveAttachment);
+            Assert.IsTrue(fixture.Platform.IsForeground);
+            Assert.AreEqual(BackendLifetimeReason.BackgroundSync, fixture.Coordinator.ActiveReasons);
+            Assert.AreEqual(1, fixture.Factory.CreateCalls);
+            Assert.AreEqual(0, fixture.Runtime.DisposeCalls);
+            Assert.AreEqual(0, fixture.Runtime.StopCalls);
+        }
+        Assert.IsTrue(fixture.Settings.Current.IsEnabled);
+        Assert.AreEqual(0, fixture.Platform.RequestProcessTerminationCalls);
+    }
+
     private static AndroidRuntimeServiceHostFixture CreateFixture(
         bool backgroundEnabled,
         bool secureStorageAvailable = true,
