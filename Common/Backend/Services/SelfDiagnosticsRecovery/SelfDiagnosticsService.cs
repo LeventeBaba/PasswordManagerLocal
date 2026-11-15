@@ -207,6 +207,8 @@ public sealed partial class SelfDiagnosticsService
             // The recovery record and history reset share this transaction. If either fails,
             // both roll back; the original profile remains the recovery source.
             journalId = await StageRecoveryJournalAsync(archive, checked(plan.MaximumKeyEpoch + 1), confirmed, ct);
+            if (_revocationDelivery is not null)
+                await _revocationDelivery.StageHistoryResetAsync(user.UId, ct);
             // All affected rows belong to this profile. Other profiles and global devices are untouched.
             _cutoffs.DeleteRange(archive.Cutoffs);
             _operations.DeleteRange(archive.Operations);

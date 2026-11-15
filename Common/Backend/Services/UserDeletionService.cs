@@ -26,6 +26,8 @@ public sealed class UserDeletionService : IUserDeletionService
     private readonly IUnitOfWork _uow;
     private readonly IDeviceEnrollmentService? _enrollment;
 
+    private readonly IRevocationReceiptService? _revocationReceipts;
+
     public UserDeletionService(
         IUserLookupService lookup,
         IUserRepository users,
@@ -37,8 +39,10 @@ public sealed class UserDeletionService : IUserDeletionService
         IAuthSessionService auth,
         ISyncRuntimeService syncRuntime,
         IUnitOfWork uow,
-        IDeviceEnrollmentService? enrollment = null)
+        IDeviceEnrollmentService? enrollment = null,
+        IRevocationReceiptService? revocationReceipts = null)
     {
+        _revocationReceipts = revocationReceipts;
         _lookup = lookup;
         _users = users;
         _lifecycle = lifecycle;
@@ -116,6 +120,8 @@ public sealed class UserDeletionService : IUserDeletionService
                         await _barriers.AddAsync(barrier, token);
 
                         await _cleanup.DeleteCanonicalAndPendingStateAsync(userId, token);
+                        if (_revocationReceipts is not null)
+                            await _revocationReceipts.StageAppliedAsync(envelope, token);
                         await _uow.SaveChangesAsync(token);
                         await transaction.CommitAsync(token);
                     }

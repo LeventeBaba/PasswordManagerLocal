@@ -435,3 +435,40 @@ CREATE INDEX "IX_UserLoginIdentityStates_KeyEpoch_MembershipEpoch" ON "UserLogin
 CREATE INDEX "IX_UserSyncFaults_UserId_Status_Scope" ON "UserSyncFaults" ("UserId", "Status", "Scope");
 
 CREATE INDEX "IX_UserSyncFaults_UserId_Scope_Kind_OriginDeviceId_OriginInstanceId_KeyEpoch" ON "UserSyncFaults" ("UserId", "Scope", "Kind", "OriginDeviceId", "OriginInstanceId", "KeyEpoch");
+
+-- Public, immutable receipt evidence intentionally survives user cleanup and history reset.
+CREATE TABLE "RevocationReceiptEvidence" (
+    "OperationId" TEXT NOT NULL PRIMARY KEY,
+    "UserId" TEXT NOT NULL,
+    "OperationHash" BLOB NOT NULL CHECK(length("OperationHash") = 32),
+    "EnvelopePayload" BLOB NOT NULL,
+    "AuthorizationPayload" BLOB NOT NULL,
+    "HistoryResetBlocked" INTEGER NOT NULL,
+    "HasReceiptConflict" INTEGER NOT NULL,
+    "MembershipProofPayload" BLOB NOT NULL
+);
+CREATE INDEX "IX_RevocationReceiptEvidence_UserId" ON "RevocationReceiptEvidence" ("UserId");
+CREATE TABLE "RevocationDeliveryReceipts" (
+    "OperationId" TEXT NOT NULL,
+    "RecipientDeviceId" TEXT NOT NULL,
+    "RecipientOriginInstanceId" TEXT NOT NULL,
+    "RecipientAuthorizationId" TEXT NOT NULL,
+    "Kind" INTEGER NOT NULL CHECK("Kind" IN (1, 2, 3)),
+    "AttestedReceiptHash" BLOB NOT NULL CHECK(("Kind" = 3 AND length("AttestedReceiptHash") = 32) OR ("Kind" IN (1, 2) AND length("AttestedReceiptHash") = 0)),
+    "UserId" TEXT NOT NULL,
+    "ReceiptHash" BLOB NOT NULL CHECK(length("ReceiptHash") = 32),
+    "Payload" BLOB NOT NULL CHECK(length("Payload") BETWEEN 1 AND 2048),
+    PRIMARY KEY ("OperationId", "RecipientDeviceId", "RecipientOriginInstanceId", "RecipientAuthorizationId", "Kind", "AttestedReceiptHash")
+);
+CREATE INDEX "IX_RevocationDeliveryReceipts_UserId" ON "RevocationDeliveryReceipts" ("UserId", "OperationId");
+CREATE INDEX "IX_RevocationDeliveryReceipts_Recipient" ON "RevocationDeliveryReceipts" ("RecipientDeviceId", "RecipientOriginInstanceId", "RecipientAuthorizationId");
+
+CREATE TABLE "RevocationEvidenceDebts" (
+    "OperationId" TEXT NOT NULL,
+    "PeerDeviceId" TEXT NOT NULL,
+    "PeerOriginInstanceId" TEXT NOT NULL,
+    "PeerAuthorizationId" TEXT NOT NULL,
+    "ReceiptHash" BLOB NOT NULL CHECK(length("ReceiptHash") = 32),
+    PRIMARY KEY ("OperationId", "PeerDeviceId", "PeerOriginInstanceId", "PeerAuthorizationId", "ReceiptHash")
+);
+CREATE INDEX "IX_RevocationEvidenceDebts_Peer" ON "RevocationEvidenceDebts" ("PeerDeviceId", "PeerOriginInstanceId");

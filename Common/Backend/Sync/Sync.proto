@@ -148,13 +148,26 @@ message UserControlOperationInventoryEntry {
   bytes conflicting_operation_hash = 12;
 }
 
+message RevocationReceiptInventoryEntry {
+  string operation_id = 1;
+  string recipient_device_id = 2;
+  string recipient_origin_instance_id = 3;
+  string recipient_authorization_id = 4;
+  int32 kind = 5;
+  bytes receipt_hash = 6;
+  bytes attested_receipt_hash = 7;
+}
+
 message UserControlOperationUserInventory {
   string user_id = 1;
   repeated UserControlOperationInventoryEntry operations = 2;
+  repeated RevocationReceiptInventoryEntry receipts = 3;
 }
 
 message UserControlOperationInventoryExchangeRequest {
   repeated UserControlOperationUserInventory users = 1;
+  repeated RevocationReceiptInventoryEntry requested_receipts = 2;
+  repeated bytes receipt_responses = 3;
 }
 
 message UserControlOperationRequest {
@@ -174,6 +187,8 @@ message UserControlOperationRequest {
 message UserControlOperationInventoryExchangeReply {
   repeated UserControlOperationUserInventory users = 1;
   repeated UserControlOperationRequest requested_operations = 2;
+  repeated RevocationReceiptInventoryEntry requested_receipts = 3;
+  repeated bytes receipt_responses = 4;
 }
 
 message UserControlOperationRequestBatch {

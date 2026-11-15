@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 
 namespace PasswordManagerLocal.Common.Backend.Persistence;
 
@@ -12,15 +13,17 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
     private const string FlushSavepoint = "pml_flush";
     private readonly SqliteConnection _connection;
     private readonly IBackendChangePublisher? _publisher;
+    private readonly IRevocationDeliveryActivity? _deliveryActivity;
     private readonly List<SqliteMutation> _pending = [];
     private SessionTransaction? _active;
     private SqliteTransaction? _readSnapshot;
     private bool _disposed;
 
-    public SqliteSession(SqliteConnectionFactory connections, IBackendChangePublisher? publisher = null)
+    public SqliteSession(SqliteConnectionFactory connections, IBackendChangePublisher? publisher = null, IRevocationDeliveryActivity? deliveryActivity = null)
     {
         _connection = connections.CreateConnection(enforceForeignKeys: true);
         _publisher = publisher;
+        _deliveryActivity = deliveryActivity;
     }
 
     public bool HasActiveTransaction => _active is not null;
@@ -132,7 +135,7 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
                     await transaction.CommitAsync(ct);
                     AcceptPending(transaction: null);
                 }
-                changes.Publish(_publisher);
+                changes.Publish(_publisher, _deliveryActivity);
             }
         }
         catch (SqliteException exception) when (IsBusy(exception))
@@ -388,7 +391,7 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
                 }
                 _rollbackActions.Clear();
                 if (committed)
-                    Changes.Publish(owner._publisher);
+                    Changes.Publish(owner._publisher, owner._deliveryActivity);
             }
         }
     }

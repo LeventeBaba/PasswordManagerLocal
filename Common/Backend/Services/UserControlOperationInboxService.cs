@@ -32,6 +32,8 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
     private readonly IUserSyncFaultService? _syncFaults;
     private readonly IPendingSyncActivationService? _pendingSyncActivation;
 
+    private readonly IRevocationReceiptService? _revocationReceipts;
+
     public UserControlOperationInboxService(
         IUserControlOperationRepository operations,
         IUserControlStateRepository states,
@@ -54,8 +56,10 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         ISyncVersionClockService? versionClock = null,
         IUserCanonicalHealthService? canonicalHealth = null,
         IUserSyncFaultService? syncFaults = null,
-        IPendingSyncActivationService? pendingSyncActivation = null)
+        IPendingSyncActivationService? pendingSyncActivation = null,
+        IRevocationReceiptService? revocationReceipts = null)
     {
+        _revocationReceipts = revocationReceipts;
         _operations = operations;
         _states = states;
         _users = users;
@@ -191,6 +195,8 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
                 return Receipt(envelope, UserControlOperationReceiptState.Quarantined, existing.StatusReason);
             }
 
+            existing.EnvelopePayload = UserControlOperationEnvelopeUtil.Serialize(RevocationDeliveryHistoryUtil.MergeProofs(
+                UserControlOperationEnvelopeUtil.Deserialize(existing.EnvelopePayload), envelope));
             existing.ReceivedAtUtc = DateTimeOffset.UtcNow;
             existing.LastReceivedFromDeviceId = transportPeerDeviceId;
             _operations.Update(existing);
@@ -333,6 +339,8 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
                 return Receipt(envelope, UserControlOperationReceiptState.Quarantined, existing.StatusReason);
             }
 
+            existing.EnvelopePayload = UserControlOperationEnvelopeUtil.Serialize(RevocationDeliveryHistoryUtil.MergeProofs(
+                UserControlOperationEnvelopeUtil.Deserialize(existing.EnvelopePayload), envelope));
             existing.ReceivedAtUtc = DateTimeOffset.UtcNow;
             existing.LastReceivedFromDeviceId = transportPeerDeviceId;
             _operations.Update(existing);
@@ -520,7 +528,10 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
 
         if (row.Status == UserControlOperationStatus.Applied)
         {
-            await transaction.RollbackAsync(ct);
+            if (_revocationReceipts is not null)
+                await _revocationReceipts.StageAppliedAsync(envelope, ct);
+            await _uow.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
             return Receipt(envelope, UserControlOperationReceiptState.Applied, row.StatusReason);
         }
         if (row.Status == UserControlOperationStatus.Quarantined)
@@ -765,6 +776,8 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         await _deletionCleanup.DeleteCanonicalAndPendingStateAsync(envelope.UserId, ct);
         var state = await GetOrCreateStateAsync(envelope.UserId, envelope, ct);
         MarkApplied(row, state, envelope, resultDetail);
+        if (_revocationReceipts is not null)
+            await _revocationReceipts.StageAppliedAsync(envelope, ct);
         await _uow.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 
@@ -960,6 +973,8 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
             if (payload.Origins.All(origin => ended.Any(auth => auth.AuthorizationId == origin.AuthorizationId && auth.RemovalOperationId == envelope.OperationId && auth.RemovalOperationHash is not null && HashEquals(auth.RemovalOperationHash, envelope.OperationHash))))
             {
                 MarkApplied(row, state, envelope, "The exact device removal was already reflected in canonical membership.");
+                if (_revocationReceipts is not null)
+                    await _revocationReceipts.StageAppliedAsync(envelope, ct);
                 if (_loginIdentities is not null)
                     await _loginIdentities.RecalculateUnderLifecycleAsync(user.UId, ct);
                 await _uow.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
@@ -1007,6 +1022,8 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
             "membership-removal-awaiting-keyed-verification",
             ct);
         MarkApplied(row, state, envelope, null);
+        if (_revocationReceipts is not null)
+            await _revocationReceipts.StageAppliedAsync(envelope, ct);
         if (_loginIdentities is not null)
             await _loginIdentities.RecalculateUnderLifecycleAsync(user.UId, ct);
         await _uow.SaveChangesAsync(ct);

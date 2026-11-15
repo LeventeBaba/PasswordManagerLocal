@@ -14,6 +14,24 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Sync.Discovery;
 public sealed class SyncNetworkRefreshExecutionProfileTests
 {
     [TestMethod]
+    public async Task PassiveIngress_KeepsNetworkEventsAfterActiveStop_WithoutIdlePolling()
+    {
+        var profiles = CreateProfiles(TimeSpan.FromMilliseconds(20), isInteractive: false);
+        var addresses = new FakeLocalNetworkAddressService();
+        using var service = CreateService(profiles, addresses, syncOn: false);
+        await service.StartPassiveAsync(CancellationToken.None);
+        await service.StopAsync(CancellationToken.None);
+        addresses.MulticastInterfaceAddresses = [IPAddress.Parse("192.168.1.42")];
+        await Task.Delay(100);
+        Assert.IsFalse(service.HasPendingRefresh, "An idle passive listener must not run the fallback poller.");
+        service.NotifyNetworkChange();
+        Assert.IsTrue(service.HasPendingRefresh);
+        await service.StopPassiveAsync(CancellationToken.None);
+        service.NotifyNetworkChange();
+        Assert.IsFalse(service.HasPendingRefresh);
+    }
+
+    [TestMethod]
     public async Task BackgroundPollingWait_InteractiveProfileChangeWakesImmediately()
     {
         var profiles = CreateProfiles(TimeSpan.FromSeconds(30), isInteractive: false);
@@ -103,9 +121,9 @@ public sealed class SyncNetworkRefreshExecutionProfileTests
     private static SyncNetworkRefreshHostedService CreateService(
         FakeBackendExecutionProfileProvider profiles,
         FakeLocalNetworkAddressService networkAddresses,
-        FakeDeviceSyncTaskService? syncTasks = null)
+        FakeDeviceSyncTaskService? syncTasks = null, bool syncOn = true)
     {
-        var identity = new FakeDeviceIdentityService { IsSyncOn = true };
+        var identity = new FakeDeviceIdentityService { IsSyncOn = syncOn };
         var enrollmentState = new EnrollmentRuntimeState();
         var registry = new DiscoveredDeviceEndpointRegistry();
         syncTasks ??= new FakeDeviceSyncTaskService();

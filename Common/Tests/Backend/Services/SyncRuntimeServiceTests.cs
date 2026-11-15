@@ -100,9 +100,11 @@ public sealed class SyncRuntimeServiceTests
         var identity = new FakeDeviceIdentityService { IsSyncOn = false };
         var service = CreateService(new FakeLocalUserDeviceRepository(), identity, calls, out _, out _, out _);
 
+        MSTestAssert.AreEqual(SyncRuntimeState.Starting, service.Snapshot.State);
         await service.StartAsync();
 
         MSTestAssert.HasCount(0, calls);
+        MSTestAssert.AreEqual(SyncRuntimeState.Disabled, service.Snapshot.State);
     }
 
 

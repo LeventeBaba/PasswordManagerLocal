@@ -64,8 +64,12 @@ public sealed class SyncAuthorizationService : ISyncAuthorizationService
 
     public async Task<bool> CanReceiveAsync(SyncDeltaPayload payload, Guid sourceDeviceId, CancellationToken ct = default)
     {
-        if (!_identity.IsSyncOn || sourceDeviceId == Guid.Empty || sourceDeviceId == _identity.LocalDeviceId)
+        if (sourceDeviceId == Guid.Empty || sourceDeviceId == _identity.LocalDeviceId)
             return false;
+
+        if (payload.UserControlOperation is not null && _membershipHistory is not null)
+            return await _membershipHistory.HasHistoricalAuthorizationAsync(payload.ModelId, sourceDeviceId, ct);
+        if (!_identity.IsSyncOn) return false;
 
         if (payload.ModelType == SyncModelType.User)
         {

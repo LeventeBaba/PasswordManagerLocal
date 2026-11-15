@@ -23,6 +23,8 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
     private readonly IUserCanonicalHealthService? _canonicalHealth;
     private readonly IUserLoginIdentityProjectionService? _loginIdentities;
 
+    private readonly IRevocationReceiptService? _revocationReceipts;
+
     public UserControlOperationWriterService(
         IUserControlOperationRepository operations,
         IUserControlStateRepository states,
@@ -35,8 +37,10 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         IUserLifecycleCoordinator lifecycle,
         IUnitOfWork uow,
         IUserCanonicalHealthService? canonicalHealth = null,
-        IUserLoginIdentityProjectionService? loginIdentities = null)
+        IUserLoginIdentityProjectionService? loginIdentities = null,
+        IRevocationReceiptService? revocationReceipts = null)
     {
+        _revocationReceipts = revocationReceipts;
         _operations = operations;
         _states = states;
         _users = users;
@@ -215,6 +219,8 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         if (_loginIdentities is not null)
             await _loginIdentities.SetCanonicalAsync(user, user.GetGeneralUserDataVersion(), ct);
         _states.Update(state);
+        if (_revocationReceipts is not null)
+            await _revocationReceipts.StageAppliedAsync(envelope, ct);
         await _uow.SaveChangesAsync(ct);
         return envelope;
     }
@@ -368,6 +374,18 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
 
     private async Task PersistAppliedEnvelopeAsync(UserControlOperationEnvelope envelope, UserControlState state, CancellationToken ct)
     {
+        if (envelope.OperationType is UserControlOperationType.DeviceRemoval or UserControlOperationType.AccountDeletion)
+        {
+            var history = await _authorizationRows.ListForUserAsync(envelope.UserId, ct);
+            envelope.RevocationMembers = UserControlOperationEnvelopeUtil.CreateMembershipSummary(history.Where(m =>
+                m.StartedMembershipEpoch <= envelope.PreviousMembershipEpoch && m.MinimumKeyEpoch <= envelope.PreviousKeyEpoch));
+            foreach (var proof in (await _operations.ListForUserAsync(envelope.UserId, ct)).Where(o =>
+                         o.Status == UserControlOperationStatus.Applied && o.ResultingMembershipEpoch <= envelope.PreviousMembershipEpoch &&
+                         o.OperationType is UserControlOperationType.DeviceAddition or UserControlOperationType.DeviceRemoval))
+                envelope.RevocationHistoryProofs.Add(UserControlOperationEnvelopeUtil.CopyCoreProof(
+                    UserControlOperationEnvelopeUtil.Deserialize(proof.EnvelopePayload)));
+            UserControlOperationEnvelopeUtil.FillOriginAuthentication(envelope, _identity);
+        }
         var serialized = UserControlOperationEnvelopeUtil.Serialize(envelope);
         var receivedAtUtc = DateTimeOffset.UtcNow;
         await _operations.AddAsync(

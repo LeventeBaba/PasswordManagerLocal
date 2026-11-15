@@ -284,6 +284,11 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             await canonicalHealth.UpdateCheckpointAsync(user, ct);
             await loginIdentities.SetCanonicalAsync(user, validated.User.GeneralUserDataVersion, ct);
             await unitOfWork.SaveChangesAsync(ct);
+            var receiptService = services.GetService<IRevocationReceiptService>();
+            if (receiptService is not null)
+                foreach (var operation in validated.ControlOperations.Where(o => o.Snapshot.Status == UserControlOperationStatus.Applied))
+                    await receiptService.StageAppliedAsync(operation.Envelope, ct);
+            await unitOfWork.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
         }
         catch

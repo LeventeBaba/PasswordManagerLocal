@@ -1,5 +1,7 @@
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Hosting;
+using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Utils;
 using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
@@ -759,6 +761,12 @@ public sealed class AndroidRuntimeServiceHost : IAsyncDisposable
             return;
         }
 
+        if (_composition?.Runtime.Snapshot.IsReady == true && _composition.Runtime.SyncSnapshot.State == SyncRuntimeState.Disabled)
+        {
+            await DisableBackgroundRuntimeLockedAsync(requestServiceStop: true);
+            _backgroundState = CreateOperationalState(true);
+            return;
+        }
         if (_backgroundLease is not null && _backgroundState.IsForegroundActive)
         {
             _backgroundState = CreateOperationalState(true);
@@ -803,6 +811,8 @@ public sealed class AndroidRuntimeServiceHost : IAsyncDisposable
                 cancellationToken);
         }
 
+        if (composition.Runtime.SyncSnapshot.State == SyncRuntimeState.Disabled)
+            await DisableBackgroundRuntimeLockedAsync(requestServiceStop: true);
         _backgroundState = CreateOperationalState(true);
     }
 
@@ -925,7 +935,42 @@ public sealed class AndroidRuntimeServiceHost : IAsyncDisposable
 
         _composition = _compositionFactory.Create()
             ?? throw new InvalidOperationException("The Android runtime composition factory returned no composition.");
+        _composition.Runtime.SyncStateChanged += HandleSyncActivityChanged;
         return _composition;
+    }
+
+    private void HandleSyncActivityChanged(object? sender, SyncRuntimeStateChangedEventArgs args)
+    {
+        // Events can occur while startup/attachment owns the gate. Never block the backend's
+        // sync transition or dispose its runtime from the network callback that triggered it.
+        _ = IndependentBackgroundWork.Run(() => ReconcileSyncActivityAsync(sender as IBackendRuntime), CancellationToken.None);
+    }
+
+    private async Task ReconcileSyncActivityAsync(IBackendRuntime? runtime)
+    {
+        var entered = false;
+        try
+        {
+            await _transitionLock.WaitAsync();
+            entered = true;
+            if (_disposed || _runtimeUnsafe || runtime is null || !ReferenceEquals(_composition?.Runtime, runtime) ||
+                !runtime.Snapshot.IsReady || !_settingsLoaded || !_backgroundState.IsEnabled) return;
+            if (runtime.SyncSnapshot.State == SyncRuntimeState.Disabled)
+            {
+                await DisableBackgroundRuntimeLockedAsync(requestServiceStop: true);
+                _backgroundState = CreateOperationalState(true);
+            }
+            else if (runtime.SyncSnapshot.State is SyncRuntimeState.Running or SyncRuntimeState.Degraded)
+                await EnsureBackgroundRuntimeLockedAsync(CancellationToken.None);
+        }
+        catch (ObjectDisposedException) { }
+        catch (Exception)
+        {
+            if (entered && !_disposed && !_runtimeUnsafe)
+                _backgroundState = CreateFailureState(true, AndroidBackgroundSyncFailureKind.RuntimeLease,
+                    "Background synchronization activity could not be reconciled.");
+        }
+        finally { if (entered) _transitionLock.Release(); }
     }
 
     private async Task DisposeCompositionWhenUnownedLockedAsync()
@@ -941,7 +986,10 @@ public sealed class AndroidRuntimeServiceHost : IAsyncDisposable
         var composition = _composition;
         _composition = null;
         if (composition is not null)
+        {
+            composition.Runtime.SyncStateChanged -= HandleSyncActivityChanged;
             await composition.Runtime.DisposeAsync();
+        }
     }
 
     private async Task<bool?> TryReadAuthoritativeEnabledLockedAsync()

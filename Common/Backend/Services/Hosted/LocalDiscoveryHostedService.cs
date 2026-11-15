@@ -46,6 +46,7 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
     private CancellationTokenSource? _syncQueryLoopCancellation;
     private Task? _syncQueryLoopTask;
     private bool _started;
+    private bool _passiveOwner;
     private bool _networkLeaseAcquired;
 
     public LocalDiscoveryHostedService(
@@ -85,7 +86,7 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
         await _lifecycleLock.WaitAsync(ct);
         try
         {
-            if (!_identity.IsSyncOn && !_enrollmentState.IsActive)
+            if (!_identity.IsSyncOn && !_enrollmentState.IsActive && !_passiveOwner)
                 return;
 
             if (_identity.IsSyncOn)
@@ -130,7 +131,24 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
     }
 
 
-    public async Task StopAsync(CancellationToken ct = default)
+    internal async Task StartPassiveAsync(CancellationToken ct = default)
+    {
+        _passiveOwner = true;
+        try { await StartAsync(ct); }
+        catch { _passiveOwner = false; throw; }
+    }
+
+    internal async Task StopPassiveAsync(CancellationToken ct = default)
+    {
+        _passiveOwner = false;
+        await StopAsync(ct);
+    }
+
+    public Task StopAsync(CancellationToken ct = default) => StopCoreAsync(ct, force: false);
+    internal Task StopForNetworkRefreshAsync(CancellationToken ct) => StopCoreAsync(ct, force: true);
+    internal Task RestorePassiveAsync(CancellationToken ct) => _passiveOwner ? StartAsync(ct) : Task.CompletedTask;
+
+    private async Task StopCoreAsync(CancellationToken ct, bool force)
     {
         await _lifecycleLock.WaitAsync(ct);
         try
@@ -138,6 +156,13 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
             if (!_started && !_networkLeaseAcquired)
                 return;
 
+            if (_passiveOwner && !force)
+            {
+                await StopSyncQueryLoopLockedAsync();
+                _pendingSyncQueryNonces.Clear();
+                Volatile.Write(ref _eligibleDiscoveryDevices, new Dictionary<Guid, Device>());
+                return; // Keep only the passive responder; no queries, worker starts or background lifetime lease.
+            }
             Exception? failure = null;
 
             try
@@ -286,7 +311,7 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
     {
         try
         {
-            StopAsync(CancellationToken.None).GetAwaiter().GetResult();
+            StopPassiveAsync(CancellationToken.None).GetAwaiter().GetResult();
         }
         catch
         {
@@ -481,16 +506,25 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
 
     private async Task HandleSyncQueryAsync(LocalDiscoveryDatagram datagram, CancellationToken ct)
     {
-        if (!_identity.IsSyncOn ||
-            !LocalDiscoveryPacketCodec.TryDecodeSyncQuery(datagram.Payload, out var query) ||
+        if (!LocalDiscoveryPacketCodec.TryDecodeSyncQuery(datagram.Payload, out var query) ||
             !LocalDiscoveryAuthenticator.IsFresh(query.UnixTimeSeconds, DateTimeOffset.UtcNow) ||
             query.RequesterDeviceId == Guid.Empty ||
             query.RequesterDeviceId == _identity.LocalDeviceId)
             return;
 
         var requester = ResolveEligibleSyncDevice(query.RequesterDeviceId);
-        if (requester is null)
-            return;
+        var activeRoute = requester is not null && _identity.IsSyncOn;
+        if (requester is null && _passiveOwner && _scopeFactory is not null)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var candidate = await scope.ServiceProvider.GetRequiredService<IDeviceRepository>().GetByIdAsync(query.RequesterDeviceId, ct);
+            var history = scope.ServiceProvider.GetRequiredService<IUserMembershipAuthorizationRepository>();
+            if (CanUseForAuthenticatedDiscovery(candidate) && (await history.ListUserIdsForDeviceAsync(query.RequesterDeviceId, ct)).Count != 0)
+            {
+                try { candidate!.VerifyIntegrity(); requester = candidate; } catch { return; }
+            }
+        }
+        if (requester is null) return;
 
         if (!LocalDiscoveryAuthenticator.VerifySignature(requester.SignPublicKey, query.AuthenticatedBytes, query.Signature))
             return;
@@ -509,7 +543,7 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
         var requesterEndpoint = BuildObservedSyncEndpoint(
             datagram.RemoteEndpoint.Address,
             requester.TlsCertFingerprint);
-        if (requesterEndpoint is not null)
+        if (activeRoute && requesterEndpoint is not null)
         {
             _endpointRegistry.AddOrUpdate(requesterEndpoint);
             _presenceProbeService?.OnEndpointDiscovered(requester, requesterEndpoint);
@@ -581,7 +615,7 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
 
     private Device? ResolveEligibleSyncDevice(Guid deviceId)
     {
-        if (_syncDeviceIdentities.TryGetById(deviceId, out var cachedDevice) && cachedDevice is not null)
+        if (_scopeFactory is null && _syncDeviceIdentities.TryGetById(deviceId, out var cachedDevice) && cachedDevice is not null)
             return cachedDevice;
 
         var eligibleDevices = Volatile.Read(ref _eligibleDiscoveryDevices);
@@ -599,10 +633,10 @@ internal sealed class LocalDiscoveryHostedService : ISyncControlledHostedService
         using var scope = _scopeFactory.CreateScope();
         var localUsers = scope.ServiceProvider.GetRequiredService<ILocalUserDeviceRepository>();
         var enabledUserIds = await localUsers.ListSyncOnUserIdsAsync(ct);
-        var operations = scope.ServiceProvider.GetService<IUserControlOperationRepository>();
+        var delivery = scope.ServiceProvider.GetService<IRevocationDeliveryService>();
         var membership = scope.ServiceProvider.GetService<IUserMembershipAuthorizationRepository>();
-        var revokedUserIds = operations is null ? Array.Empty<Guid>() :
-            (await operations.ListAppliedRevocationUserIdsAsync(ct)).ToArray();
+        var revokedUserIds = delivery is null ? Array.Empty<Guid>() :
+            (await delivery.ListPendingUserIdsAsync(ct)).ToArray();
         if (enabledUserIds.Count == 0 && revokedUserIds.Length == 0)
         {
             Volatile.Write(ref _eligibleDiscoveryDevices, new Dictionary<Guid, Device>());

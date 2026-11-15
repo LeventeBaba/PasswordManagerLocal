@@ -31,6 +31,8 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
     private readonly ISyncRuntimeService _syncRuntime;
     private bool _historyResetCommitted;
 
+    private readonly IRevocationDeliveryService? _revocationDelivery;
+
     public SelfDiagnosticsService(
         IUserLookupService users,
         IUserLifecycleCoordinator lifecycle,
@@ -60,8 +62,10 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
         IUserSnapshotMergeCoordinator snapshotMerge,
         IUserMembershipAuthorizationService membershipVerifier,
         ICredentialVerificationService credentialVerification,
-        ISyncRuntimeService syncRuntime)
+        ISyncRuntimeService syncRuntime,
+        IRevocationDeliveryService? revocationDelivery = null)
     {
+        _revocationDelivery = revocationDelivery;
         _users = users;
         _lifecycle = lifecycle;
         _identity = identity;

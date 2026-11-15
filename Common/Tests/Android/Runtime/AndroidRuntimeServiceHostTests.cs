@@ -4,6 +4,7 @@ using PasswordManagerLocal.Android.Runtime;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Hosting;
+using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 using PasswordManagerLocal.Common.Contracts.Notifications;
@@ -1363,6 +1364,40 @@ public sealed class AndroidRuntimeServiceHostTests
         Assert.IsFalse(host.Snapshot.AcceptsInteractiveAttachments);
     }
 
+    [TestMethod]
+    public async Task EnabledBackgroundPreference_WithNoSyncWork_ReleasesForegroundAndLease()
+    {
+        using var fixture = CreateFixture(backgroundEnabled: true);
+        await using var host = fixture.Host;
+        fixture.Runtime.SetSyncSnapshot(new SyncRuntimeSnapshot(SyncRuntimeState.Disabled, null));
+        var state = await host.RestoreBackgroundStateAsync();
+        Assert.IsTrue(fixture.Settings.Current.IsEnabled);
+        Assert.IsTrue(state.IsEnabled);
+        Assert.IsFalse(host.Snapshot.HasBackgroundLease);
+        Assert.IsFalse(host.Snapshot.IsForeground);
+        Assert.AreEqual(BackendLifetimeReason.None, fixture.Coordinator.ActiveReasons);
+    }
+
+    [TestMethod]
+    public async Task DeliveryCompletionReleasesForeground_AndNewWorkReacquiresItWithoutChangingPreference()
+    {
+        using var fixture = CreateFixture(backgroundEnabled: true);
+        await using var host = fixture.Host;
+        await host.RestoreBackgroundStateAsync();
+        await using var client = await host.AttachInteractiveClientAsync();
+        fixture.Runtime.SetSyncSnapshot(new SyncRuntimeSnapshot(SyncRuntimeState.Disabled, null));
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (host.Snapshot.HasBackgroundLease) await Task.Delay(10, deadline.Token);
+        Assert.IsFalse(host.Snapshot.IsForeground);
+        Assert.IsTrue(host.Snapshot.HasInteractiveAttachment);
+        Assert.IsTrue(fixture.Settings.Current.IsEnabled);
+        fixture.Runtime.SetSyncSnapshot(new SyncRuntimeSnapshot(SyncRuntimeState.Running, null));
+        while (!host.Snapshot.HasBackgroundLease) await Task.Delay(10, deadline.Token);
+        Assert.IsTrue(host.Snapshot.IsForeground);
+        Assert.IsTrue(fixture.Settings.Current.IsEnabled);
+        Assert.AreEqual(BackendLifetimeReason.InteractiveUi | BackendLifetimeReason.BackgroundSync, fixture.Coordinator.ActiveReasons);
+    }
+
     private static AndroidRuntimeServiceHostFixture CreateFixture(
         bool backgroundEnabled,
         bool secureStorageAvailable = true,
@@ -1372,6 +1407,7 @@ public sealed class AndroidRuntimeServiceHostTests
         var backendTestHost = new BackendTestHost();
         var endpoints = backendTestHost.Services.GetRequiredService<IEndpoints>();
         var runtime = new FakeBackendRuntime(endpointOverride ?? endpoints);
+        runtime.SetSyncSnapshot(new SyncRuntimeSnapshot(SyncRuntimeState.Running, null)); // The ordinary fixture models active synchronization work.
         var changeSource = changeSourceOverride ?? new FakeBackendChangeSource();
         runtime.ChangeSource = changeSource;
         var coordinator = new BackendRuntimeLifetimeCoordinator(runtime);

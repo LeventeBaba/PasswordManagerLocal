@@ -11,6 +11,12 @@ public interface IUserControlOperationAntiEntropyService
         UserControlOperationInventoryExchangeRequest remoteInventory,
         CancellationToken ct = default);
 
+    Task<UserControlOperationInventoryExchangeRequest?> BuildReceiptFollowUpAsync(
+        Guid peerDeviceId, UserControlOperationInventoryExchangeReply remote, CancellationToken ct = default);
+
+    Task AcceptReceiptReplyAsync(Guid peerDeviceId, UserControlOperationInventoryExchangeRequest request,
+        UserControlOperationInventoryExchangeReply reply, CancellationToken ct = default);
+
     IReadOnlyList<UserControlOperationRequest> FindMissingOperations(
         UserControlOperationInventoryExchangeRequest localInventory,
         IEnumerable<UserControlOperationUserInventory> remoteInventory);

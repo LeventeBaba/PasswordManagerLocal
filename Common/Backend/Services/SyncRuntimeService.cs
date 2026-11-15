@@ -24,7 +24,9 @@ public sealed class SyncRuntimeService : ISyncRuntimeService
     private readonly List<ISyncControlledHostedService> _activeServices = [];
     private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
     private readonly object _stateLock = new();
-    private SyncRuntimeSnapshot _snapshot = new(SyncRuntimeState.Disabled, null);
+    // Disabled means an authoritative work decision has completed. Android must not
+    // release its startup lease before the first asynchronous decision has run.
+    private SyncRuntimeSnapshot _snapshot = new(SyncRuntimeState.Starting, null);
     private bool _running;
 
     public SyncRuntimeService(
@@ -70,26 +72,26 @@ public sealed class SyncRuntimeService : ISyncRuntimeService
 
         try
         {
+            await _lifecycleLock.WaitAsync(ct);
+            lifecycleLockTaken = true;
             bool shouldEnable;
             using (var scope = _scopeFactory.CreateScope())
             {
                 var localUsers = scope.ServiceProvider.GetRequiredService<ILocalUserDeviceRepository>();
-                var controlOperations = scope.ServiceProvider.GetService<IUserControlOperationRepository>();
-                shouldEnable = await localUsers.AnySyncOnAsync(ct) ||
-                               (controlOperations is not null &&
-                                await controlOperations.HasAppliedRevocationAsync(ct));
+                var delivery = scope.ServiceProvider.GetService<IRevocationDeliveryService>();
+                var activity = scope.ServiceProvider.GetService<IRevocationDeliveryActivity>();
+                shouldEnable = (activity?.HasActiveWork == true && _identity.IsSyncOn) || await localUsers.AnySyncOnAsync(ct) ||
+                               (delivery is not null && await delivery.HasPendingDeliveryAsync(ct));
             }
 
-            await _lifecycleLock.WaitAsync(ct);
-            lifecycleLockTaken = true;
-
+            var wasSyncOn = _identity.IsSyncOn;
             if (_identity.IsSyncOn != shouldEnable)
                 await _identity.SetSyncOnAsync(shouldEnable, ct);
 
             if (shouldEnable || _enrollmentState.IsActive)
                 await StartCoreAsync(stateChanges, ct);
             else
-                await StopCoreAsync(stateChanges, ct, reconcileAll: true);
+                await StopCoreAsync(stateChanges, ct, reconcileAll: wasSyncOn || Snapshot.State != SyncRuntimeState.Disabled);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

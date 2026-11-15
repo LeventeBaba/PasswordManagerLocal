@@ -27,6 +27,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
     private readonly IDeviceIdentityService _identity;
     private readonly IBackendExecutionProfileProvider? _executionProfile;
     private readonly TimeProvider _clock;
+    private readonly IRevocationDeliveryActivity? _deliveryActivity;
     // A successful full reconciliation allows a short, bounded discovery-only quiet period.
     // This is process-local: agent restarts and network-service restarts always recheck peers.
     private static readonly TimeSpan InteractiveReconciliationInterval = TimeSpan.FromSeconds(60);
@@ -47,8 +48,10 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         IDiscoveredDeviceEndpointRegistry endpointRegistry,
         IDeviceIdentityService identity,
         IBackendExecutionProfileProvider? executionProfile = null,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        IRevocationDeliveryActivity? deliveryActivity = null)
     {
+        _deliveryActivity = deliveryActivity;
         _executionProfile = executionProfile;
         _clock = clock ?? TimeProvider.System;
         _scopeFactory = scopeFactory;
@@ -212,6 +215,7 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
 
     private async Task RunAsync(DiscoveredDeviceEndpoint endpoint, Device targetDevice, bool discoveryOnly, CancellationToken ct, CancellationTokenSource runtime)
     {
+        using var deliveryLease = _deliveryActivity?.Enter();
         var completedFullReconciliation = false;
         var attemptedFullReconciliation = false;
         BackendDebugLog.Info(
@@ -236,6 +240,16 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
                 !await TryRunControlOperationAntiEntropyAsync(endpoint, targetDevice, ct))
             {
                 return;
+            }
+
+            using (var routeScope = _scopeFactory.CreateScope())
+            {
+                var routes = routeScope.ServiceProvider.GetService<ISyncRouteRepository>();
+                if (routes is not null && !await routes.HasEligibleUserForDeviceAsync(targetDevice.Id, ct))
+                {
+                    completedFullReconciliation = true;
+                    return; // A control-only session must not fall through to ordinary encrypted data exchange.
+                }
             }
 
             while (!ct.IsCancellationRequested && _identity.IsSyncOn &&
@@ -538,6 +552,8 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             localInventory,
             ct);
 
+        await antiEntropy.AcceptReceiptReplyAsync(targetDevice.Id, localInventory, exchange, ct);
+
         if (exchange.RequestedOperations.Count > 0)
         {
             var requestedDeltas = await antiEntropy.BuildRequestedOperationDeltasAsync(
@@ -574,14 +590,12 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
             if (removal.RemovedDeviceId == targetDevice.Id || removal.RemovedDeviceId == _identity.LocalDeviceId)
                 revokedHere.Add(operation.UserId);
         }
-        var routes = scope.ServiceProvider.GetRequiredService<ISyncRouteRepository>();
-        var activeUsers = (await routes.ListAllEligibleUserIdsAsync(targetDevice.Id, ct)).ToHashSet();
-        missing = missing.Where(request =>
-            !revokedHere.Contains(Guid.Parse(request.UserId)) &&
-            (activeUsers.Contains(Guid.Parse(request.UserId)) ||
-             request.OperationType == (int)UserControlOperationType.AccountDeletion)).ToList();
+        // Historical peer authentication permits the missing signed predecessor chain even
+        // when ordinary profile sync is off. Never accept post-cutoff control from a removed peer.
+        missing = missing.Where(request => !revokedHere.Contains(Guid.Parse(request.UserId)) ||
+            request.OperationType == (int)UserControlOperationType.AccountDeletion).ToList();
         if (missing.Count == 0)
-            return true;
+            return await ExchangeRevocationReceiptsAsync(antiEntropy, endpoint, targetDevice, exchange, ct, exchange.RequestedOperations.Count > 0);
 
         var requestBatch = new UserControlOperationRequestBatch();
         requestBatch.Requests.AddRange(missing);
@@ -615,7 +629,27 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
                 throw new InvalidDataException("The relay returned the same requested control operation more than once.");
         }
 
-        return fulfilled.Count == expected.Count;
+        if (fulfilled.Count != expected.Count) return false;
+        return await ExchangeRevocationReceiptsAsync(antiEntropy, endpoint, targetDevice, exchange, ct, refreshInventory: true);
+    }
+
+    private async Task<bool> ExchangeRevocationReceiptsAsync(IUserControlOperationAntiEntropyService antiEntropy,
+        DiscoveredDeviceEndpoint endpoint, Device targetDevice, UserControlOperationInventoryExchangeReply reply,
+        CancellationToken ct, bool refreshInventory)
+    {
+        // Bounded reciprocal inventory rounds send only requested signed evidence. More work
+        // remains restart-safe in SQLite and is discovered by the next ordinary reconciliation.
+        for (var round = 0; round < 6; round++)
+        {
+            var request = await antiEntropy.BuildReceiptFollowUpAsync(targetDevice.Id, reply, ct);
+            if (request is null && round == 0 && refreshInventory)
+                request = await antiEntropy.BuildInventoryAsync(targetDevice.Id, ct);
+            if (request is null) return true;
+            reply = await _syncTransport.ExchangeUserControlOperationInventoryAsync(
+                endpoint.Host, endpoint.Port, targetDevice.TlsCertFingerprint, request, ct);
+            await antiEntropy.AcceptReceiptReplyAsync(targetDevice.Id, request, reply, ct);
+        }
+        return true;
     }
 
     private Guid ParseControlRequestKey(UserControlOperationRequest request)
@@ -919,16 +953,8 @@ public sealed class DeviceSyncTaskService : IDeviceSyncTaskService, IDisposable
         if (await queue.HasPendingForDeviceAsync(deviceId, ct))
             return true;
 
-        var operations = scope.ServiceProvider.GetService<IUserControlOperationRepository>();
-        var membership = scope.ServiceProvider.GetService<IUserMembershipAuthorizationRepository>();
-        if (operations is null || membership is null)
-            return false;
-        var revokedUserIds = await operations.ListAppliedRevocationUserIdsAsync(ct);
-        if (revokedUserIds.Count == 0)
-            return false;
-
-        var historicallyAuthorizedUsers = await membership.ListUserIdsForDeviceAsync(deviceId, ct);
-        return historicallyAuthorizedUsers.Any(userId => revokedUserIds.Contains(userId));
+        var delivery = scope.ServiceProvider.GetService<IRevocationDeliveryService>();
+        return delivery is not null && await delivery.HasPendingForPeerAsync(deviceId, ct);
     }
 
 

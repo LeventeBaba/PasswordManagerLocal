@@ -15,6 +15,10 @@ public sealed class UserControlOperationEnvelope
     public long PreviousMembershipEpoch { get; set; }
     public long ResultingMembershipEpoch { get; set; }
     public DateTimeOffset CreatedAtUtc { get; set; }
+    // Auxiliary independently signed proof envelopes. Their exact hashes are bound by RevocationMembers.
+    // Nested auxiliary lists are forbidden; relays may add valid proofs without changing the operation identity.
+    public List<UserControlOperationEnvelope> RevocationHistoryProofs { get; set; } = [];
+    public List<AccountDeletionKnownMember> RevocationMembers { get; set; } = [];
     public byte[] OperationPayload { get; set; } = [];
     public byte[] PayloadHash { get; set; } = [];
     public byte[] OperationHash { get; set; } = [];

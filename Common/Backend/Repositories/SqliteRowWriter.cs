@@ -35,7 +35,7 @@ internal sealed class SqliteRowWriter<T>(
 
         _originals.TryGetValue(row, out var original);
         var values = ReadValues(row);
-        if (original is not null && !original.Take(keyCount).SequenceEqual(values.Take(keyCount)))
+        if (original is not null && Enumerable.Range(0, keyCount).Any(index => !SameValue(original[index], values[index])))
             throw new InvalidOperationException("A persisted row's key cannot be changed.");
 
         var bindings = new List<(string Name, object? Value)>();

@@ -30,6 +30,7 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
     private Task? _pollTask;
     private NetworkSignatureChangeTracker? _networkSignatureTracker;
     private bool _started;
+    private bool _passiveOwner;
 
     public SyncNetworkRefreshHostedService(
         IDeviceIdentityService identity,
@@ -69,30 +70,44 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
     internal void NotifyNetworkChange() =>
         ScheduleRefresh(captureCurrentSignature: true);
 
+    internal Task StartPassiveAsync(CancellationToken ct)
+    {
+        _passiveOwner = true;
+        try { return StartAsync(ct); } catch { _passiveOwner = false; throw; }
+    }
+
+    internal async Task StopPassiveAsync(CancellationToken ct)
+    {
+        _passiveOwner = false;
+        await StopAsync(ct);
+        // A debounced refresh may already be rebinding. Drain it before its backend
+        // owner closes UDP/TCP, so no late refresh can reopen a stopped listener.
+        await _refreshLock.WaitAsync(ct);
+        _refreshLock.Release();
+    }
+
     public Task StartAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-
-        if (_started || !IsNetworkRuntimeActive())
-            return Task.CompletedTask;
-
-        var pollCancellation = new CancellationTokenSource();
+        if (!IsNetworkRuntimeActive()) return Task.CompletedTask;
         lock (_lock)
         {
-            _networkSignatureTracker = new NetworkSignatureChangeTracker(
-                BuildNetworkSignature(), NetworkInterface.GetIsNetworkAvailable());
-            _pollCancellation = pollCancellation;
-            _started = true;
+            if (!_started)
+            {
+                _networkSignatureTracker = new NetworkSignatureChangeTracker(
+                    BuildNetworkSignature(), NetworkInterface.GetIsNetworkAvailable());
+                _started = true;
+                NetworkChange.NetworkAddressChanged += OnNetworkChanged;
+                NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
+            }
+            if (_pollCancellation is null && (_identity.IsSyncOn || _enrollmentState.IsActive))
+            {
+                var pollCancellation = new CancellationTokenSource();
+                _pollCancellation = pollCancellation;
+                _pollTask = IndependentBackgroundWork.Run(
+                    () => PollNetworkConfigurationAsync(pollCancellation.Token), CancellationToken.None);
+            }
         }
-
-        NetworkChange.NetworkAddressChanged += OnNetworkChanged;
-        NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
-
-        _pollTask = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(
-            () => PollNetworkConfigurationAsync(pollCancellation.Token),
-            CancellationToken.None);
-
-        BackendDebugLog.Info("Network-change monitoring started for synchronization/enrollment.");
         return Task.CompletedTask;
     }
 
@@ -101,22 +116,25 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
         if (!_started)
             return;
 
-        NetworkChange.NetworkAddressChanged -= OnNetworkChanged;
-        NetworkChange.NetworkAvailabilityChanged -= OnNetworkAvailabilityChanged;
+        if (!_passiveOwner)
+        {
+            NetworkChange.NetworkAddressChanged -= OnNetworkChanged;
+            NetworkChange.NetworkAvailabilityChanged -= OnNetworkAvailabilityChanged;
+        }
 
         CancellationTokenSource? debounceCancellation;
         CancellationTokenSource? pollCancellation;
         Task? pollTask;
         lock (_lock)
         {
-            _started = false;
-            debounceCancellation = _debounceCancellation;
-            _debounceCancellation = null;
+            _started = _passiveOwner;
+            debounceCancellation = _passiveOwner ? null : _debounceCancellation;
+            if (!_passiveOwner) _debounceCancellation = null;
             pollCancellation = _pollCancellation;
             _pollCancellation = null;
             pollTask = _pollTask;
             _pollTask = null;
-            _networkSignatureTracker = null;
+            if (!_passiveOwner) _networkSignatureTracker = null;
         }
 
         debounceCancellation?.Cancel();
@@ -144,7 +162,7 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
     {
         try
         {
-            StopAsync(CancellationToken.None).GetAwaiter().GetResult();
+            StopPassiveAsync(CancellationToken.None).GetAwaiter().GetResult();
         }
         catch
         {
@@ -155,7 +173,7 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
     }
 
     private bool IsNetworkRuntimeActive() =>
-        _identity.IsSyncOn || _enrollmentState.IsActive;
+        _passiveOwner || _identity.IsSyncOn || _enrollmentState.IsActive;
 
     private void OnNetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e) =>
         ScheduleRefresh(captureCurrentSignature: true, reportedAvailability: e.IsAvailable);
@@ -304,7 +322,7 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
             _presenceRegistry?.InvalidateAll("network configuration changed");
             _endpointRegistry.Clear();
 
-            await _discovery.StopAsync(ct);
+            await _discovery.StopForNetworkRefreshAsync(ct);
             await _tcpServer.StopAsync(ct);
 
             if (!IsNetworkRuntimeActive())
@@ -326,7 +344,12 @@ internal sealed class SyncNetworkRefreshHostedService : ISyncControlledHostedSer
         }
         finally
         {
-            _refreshLock.Release();
+            try
+            {
+                await _tcpServer.RestorePassiveAsync(CancellationToken.None);
+                await _discovery.RestorePassiveAsync(CancellationToken.None);
+            }
+            finally { _refreshLock.Release(); }
         }
     }
 

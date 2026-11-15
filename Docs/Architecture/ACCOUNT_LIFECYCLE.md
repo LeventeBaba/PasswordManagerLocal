@@ -33,3 +33,7 @@ Projection selection uses the deterministic general-data version, current epochs
 [Cleanup](../../Common/Backend/Services/UserAccountDeletionCleanupService.cs) removes mutable account data and local access, including snapshots, queue work, and recovery journals. The deletion operation, barrier, and the authority evidence needed for historical relay survive. Account deletion can therefore propagate even after the local account row is gone. Offline copies remain until the deletion reaches them.
 
 The barrier prevents stale snapshots, recovery, or enrollment from recreating that user ID. Registration can use the same username with a new user ID.
+
+## Authenticated application evidence
+
+[Revocation receipts](SYNC_REVOCATION_DELIVERY_COMPLETION.md) bind a removal or deletion to the acknowledging device, installation, authorization and signed operation hash. They commit with application and survive account cleanup. Frozen public signing history preserves receipt verification through device-history reset, without authorizing messages in the replacement history. Historically verified remaining peers are required recipients; the removed target is best-effort only with exact signed cutoffs. Completed later removal/deletion can discharge older obligations without fabricating receipts. Completion requires application signatures, signed custody and cleared known evidence debt; permanent barriers/cutoffs survive active-delivery shutdown.

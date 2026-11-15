@@ -122,12 +122,14 @@ public sealed class NetworkDeltaService : INetworkDeltaService
 
     private async Task<NetworkDeltaApplyResult> ApplyCoreAsync(NetworkDelta delta, CancellationToken ct)
     {
-        if (!_identity.IsSyncOn)
+        if (!_identity.IsSyncOn && delta.Payload.Length == 0)
             throw new SyncRouteDisabledException("Local synchronization is disabled.");
 
         var validated = await _protocol.ValidateAndReadAsync(delta, ct);
         var sourceDevice = validated.SourceDevice;
         var payload = validated.Payload;
+        if (!_identity.IsSyncOn && payload.UserControlOperation is null)
+            throw new SyncRouteDisabledException("Ordinary synchronization is disabled; authenticated control evidence remains available.");
 
         await _protocol.ValidateSourceAuthorizationAsync(sourceDevice, payload, ct);
 

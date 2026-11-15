@@ -6,6 +6,7 @@
 | --- | --- |
 | [Application architecture](Architecture/APPLICATION.md) | Project boundaries, Windows and Android runtime ownership, vault persistence, frontend state, and Windows IPC |
 | [Synchronization](Architecture/SYNCHRONIZATION.md) | Peer discovery, authenticated exchange, snapshot relay, deterministic merging, and tombstone collection |
+| [Revocation delivery completion](Architecture/SYNC_REVOCATION_DELIVERY_COMPLETION.md) | Historical recipient rules, signed application/custody evidence, durable relay, completion, idle lifecycle and reset blockers |
 | [Account and device lifecycle](Architecture/ACCOUNT_LIFECYCLE.md) | Enrollment, removal cutoffs, key rotation, username resolution, and account deletion |
 | [Integrity and recovery](Architecture/RECOVERY.md) | Signed checkpoints, fault isolation, canonical reconstruction, and confirmed device-history repair |
 | [Interactive project map](SOLUTION_PROJECT_ARCHITECTURE.html) | Default solution project references and runtime process diagrams |

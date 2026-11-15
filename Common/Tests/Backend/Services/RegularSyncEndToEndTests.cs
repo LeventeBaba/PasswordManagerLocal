@@ -64,7 +64,8 @@ public sealed partial class RegularSyncEndToEndTests
             async () => await HasAppliedLifecycleOperationAsync(
                 setup.Middle, removalOperationId, UserControlOperationType.DeviceRemoval) &&
                 !setup.Middle.Services.GetRequiredService<ITokenService>()
-                    .TryGetUid(setup.MiddleToken, out _));
+                    .TryGetUid(setup.MiddleToken, out _) &&
+                await HasRevocationReceiptFromAsync(setup.Original, removalOperationId, setup.Middle));
 
         await AssertSessionInvalidatedAsync(
             setup.Middle, setup.MiddleToken, AuthSessionInvalidationReason.ProfileRemoved);
@@ -73,8 +74,16 @@ public sealed partial class RegularSyncEndToEndTests
         await SynchronizeOneWayUntilAsync(
             setup.Middle, setup.NewDevice,
             "removed installation relays signed revocation to third device",
-            () => HasAppliedLifecycleOperationAsync(
-                setup.NewDevice, removalOperationId, UserControlOperationType.DeviceRemoval));
+            async () => await HasAppliedLifecycleOperationAsync(
+                setup.NewDevice, removalOperationId, UserControlOperationType.DeviceRemoval) &&
+                await HasRevocationReceiptFromAsync(setup.Middle, removalOperationId, setup.NewDevice));
+
+        setup.Original.Transport.Disconnect();
+        setup.Original.ConnectTo(setup.Middle);
+        setup.Middle.ConnectTo(setup.Original);
+        await SynchronizeOneWayUntilAsync(setup.Middle, setup.Original,
+            "original receives the third installation's unchanged signed receipt through the removed relay",
+            () => HasRevocationReceiptFromAsync(setup.Original, removalOperationId, setup.NewDevice));
 
         AssertDeviceIds(
             (await setup.NewDevice.Endpoints.GetUserDevicesAsync(setup.NewDeviceToken)).Select(device => device.DeviceId),

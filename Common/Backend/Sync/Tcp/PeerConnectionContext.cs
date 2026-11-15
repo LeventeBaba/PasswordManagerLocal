@@ -6,5 +6,6 @@ public sealed class PeerConnectionContext
     public string? ClientCertificateFingerprint { get; init; }
     public int? RemoteDatabaseVersion { get; set; }
     public int? RemoteProtocolVersion { get; set; }
+    public bool ControlOnly { get; set; }
     public bool SyncHelloAccepted { get; set; }
 }

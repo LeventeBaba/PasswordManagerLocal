@@ -85,6 +85,11 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<IUserSyncSnapshotRepository, UserSyncSnapshotRepository>();
         services.AddScoped<IUserSyncStateRepository, UserSyncStateRepository>();
         services.AddScoped<IUserRevisionKnowledgeRepository, UserRevisionKnowledgeRepository>();
+        services.AddScoped<IRevocationReceiptRepository, RevocationReceiptRepository>();
+        services.AddScoped<IRevocationReceiptService, RevocationReceiptService>();
+        services.AddScoped<IRevocationDeliveryService, RevocationDeliveryService>();
+        services.AddSingleton<IRevocationDeliveryActivity, RevocationDeliveryActivity>();
+        services.AddSingleton<RevocationDeliveryRuntimeHostedService>();
         services.AddScoped<IUserControlOperationRepository, UserControlOperationRepository>();
         services.AddScoped<IUserControlStateRepository, UserControlStateRepository>();
         services.AddScoped<IUserMembershipAuthorizationRepository, UserMembershipAuthorizationRepository>();
@@ -201,9 +206,12 @@ public static class BackendServiceCollectionExtensions
         services.AddSingleton<TcpSyncServerHostedService>();
         services.AddSingleton<SyncNetworkRefreshHostedService>();
         services.AddSingleton<ISyncControlledHostedService>(sp => sp.GetRequiredService<SyncDeviceIdentityWarmupHostedService>());
-        services.AddSingleton<ISyncControlledHostedService>(sp => sp.GetRequiredService<TcpSyncServerHostedService>());
+        // The passive authenticated control listener belongs to backend lifetime, independently of active discovery.
+        services.AddSingleton<PassiveDiscoveryHostedService>();
+        services.AddSingleton<IBackendHostedService>(sp => sp.GetRequiredService<PassiveDiscoveryHostedService>());
         services.AddSingleton<ISyncControlledHostedService>(sp => sp.GetRequiredService<LocalDiscoveryHostedService>());
         services.AddSingleton<ISyncControlledHostedService>(sp => sp.GetRequiredService<SyncNetworkRefreshHostedService>());
+        services.AddSingleton<IBackendHostedService>(sp => sp.GetRequiredService<RevocationDeliveryRuntimeHostedService>());
 
         return services;
     }

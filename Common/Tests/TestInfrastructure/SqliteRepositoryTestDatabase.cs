@@ -26,6 +26,7 @@ internal sealed class SqliteRepositoryTestDatabase : IAsyncDisposable
         UserSyncSnapshots = new UserSyncSnapshotRepository(UnitOfWork);
         UserSyncStates = new UserSyncStateRepository(UnitOfWork);
         UserRevisionKnowledge = new UserRevisionKnowledgeRepository(UnitOfWork);
+        RevocationReceipts = new RevocationReceiptRepository(UnitOfWork);
         UserControlOperations = new UserControlOperationRepository(UnitOfWork);
         UserControlStates = new UserControlStateRepository(UnitOfWork);
         UserMembershipAuthorizations = new UserMembershipAuthorizationRepository(UnitOfWork);
@@ -50,6 +51,7 @@ internal sealed class SqliteRepositoryTestDatabase : IAsyncDisposable
     public UserSyncSnapshotRepository UserSyncSnapshots { get; }
     public UserSyncStateRepository UserSyncStates { get; }
     public UserRevisionKnowledgeRepository UserRevisionKnowledge { get; }
+    public RevocationReceiptRepository RevocationReceipts { get; }
     public UserControlOperationRepository UserControlOperations { get; }
     public UserControlStateRepository UserControlStates { get; }
     public UserMembershipAuthorizationRepository UserMembershipAuthorizations { get; }

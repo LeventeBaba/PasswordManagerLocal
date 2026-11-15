@@ -20,24 +20,26 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
 {
     private readonly IDeviceIdentityService _identity;
     private readonly SyncPeerProtocolHandler _handler;
-    private readonly IEnrollmentRuntimeState _enrollmentState;
     private readonly IBackendExecutionProfileProvider? _executionProfileProvider;
+    private readonly IRevocationDeliveryActivity? _deliveryActivity;
     private readonly SemaphoreSlim _connectionSlots = new(SyncConstants.MaxConcurrentSyncConnections, SyncConstants.MaxConcurrentSyncConnections);
     private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
     private readonly ConcurrentDictionary<string, int> _connectionsByRemoteIp = new(StringComparer.OrdinalIgnoreCase);
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
     private Task? _acceptLoopTask;
+    private bool _passiveOwner;
 
     public TcpSyncServerHostedService(
         IDeviceIdentityService identity,
         SyncPeerProtocolHandler handler,
         IEnrollmentRuntimeState enrollmentState,
-        IBackendExecutionProfileProvider? executionProfileProvider = null)
+        IBackendExecutionProfileProvider? executionProfileProvider = null,
+        IRevocationDeliveryActivity? deliveryActivity = null)
     {
+        _deliveryActivity = deliveryActivity;
         _identity = identity;
         _handler = handler;
-        _enrollmentState = enrollmentState;
         _executionProfileProvider = executionProfileProvider;
     }
 
@@ -59,12 +61,6 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
         await _lifecycleLock.WaitAsync(cancellationToken);
         try
         {
-            if (!_identity.IsSyncOn && !_enrollmentState.IsActive)
-            {
-                BackendDebugLog.Info("TCP sync server was not started because synchronization is disabled on this device.");
-                return;
-            }
-
             if (_listener is not null)
                 return;
 
@@ -103,6 +99,18 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
         }
     }
 
+
+    internal async Task StartPassiveAsync(CancellationToken ct)
+    {
+        _passiveOwner = true;
+        try { await StartAsync(ct); } catch { _passiveOwner = false; throw; }
+    }
+    internal async Task StopPassiveAsync(CancellationToken ct)
+    {
+        _passiveOwner = false;
+        await StopAsync(ct);
+    }
+    internal Task RestorePassiveAsync(CancellationToken ct) => _passiveOwner ? StartAsync(ct) : Task.CompletedTask;
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
@@ -245,6 +253,7 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
             if (frame is null)
                 return;
 
+            using var deliveryLease = context.SyncHelloAccepted ? _deliveryActivity?.Enter() : null;
             try
             {
                 switch (frame.Type)

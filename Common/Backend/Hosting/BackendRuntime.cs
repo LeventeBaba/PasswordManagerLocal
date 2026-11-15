@@ -1017,6 +1017,23 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
             failures.Add(exception);
         }
 
+        // Stop asynchronous post-commit refreshes before draining workers: their final
+        // lease releases must not restart networking while this host is shutting down.
+        if (host is not null)
+        {
+            try
+            {
+                var deliveryRuntime = host.Services.GetService<PasswordManagerLocal.Common.Backend.Services.Hosted.RevocationDeliveryRuntimeHostedService>();
+                if (deliveryRuntime is not null)
+                    await deliveryRuntime.StopAsync(CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                failures.Add(exception);
+                unsafeRestartFailure = exception;
+            }
+        }
+
         if (syncRuntime is not null)
         {
             try

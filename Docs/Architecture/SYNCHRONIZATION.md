@@ -20,6 +20,10 @@ When a user key is available, [the merge coordinator](../../Common/Backend/Servi
 
 A repeated revision with the same hash is idempotent. Different hashes for the same origin, key epoch, and revision are evidence of a fork. Control operations have their own inventory and are delivered ahead of dependent snapshots. Missing control predecessors remain pending until the necessary signed history arrives. See [fault isolation](RECOVERY.md#fault-isolation).
 
+## Revocation application receipts
+
+Control anti-entropy also exchanges [authenticated revocation receipts](SYNC_REVOCATION_DELIVERY_COMPLETION.md). Each receipt is signed by the acknowledging historical installation and committed with application. Exact receipt inventories and requests let intermediaries relay evidence after account cleanup. Delivery completion now derives from verified historical recipient obligations, Applied signatures, signed receipt custody and cleared peer evidence debt. Completed historical operations remain stored while active discovery can stop. Backend-owned passive control ingress preserves authenticated catch-up while the backend is alive; ordinary profile synchronization retains its own lifecycle.
+
 ## Deterministic item merge
 
 Each independently mergeable item and item tombstone carries a `SyncVersionStamp`. The comparison order is UTC milliseconds, logical counter, device ID, and installation origin ID. The [persistent clock](../../Common/Backend/Services/SyncVersionClockService.cs) advances from local writes and observed remote stamps, so restart or clock rollback does not make a later local mutation sort before observed state.

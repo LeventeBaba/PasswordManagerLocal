@@ -1,10 +1,11 @@
 using System.Reflection;
-using System.Windows.Input;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Contracts.Preferences;
 using PasswordManagerLocal.Common.Frontend.Localization;
 using PasswordManagerLocal.Common.Frontend.ViewModels;
 using PasswordManagerLocal.Common.Tests.Fakes;
+using ReactiveUI;
+using ReactiveUI.Primitives;
 
 namespace PasswordManagerLocal.Common.Tests.Frontend.ViewModels;
 
@@ -39,18 +40,18 @@ public sealed class DatabaseRecoveryTests
         Assert.AreEqual(0, runtime.ResetCalls);
         var originalMessage = shell.DatabaseRecoveryMessage;
 
-        await ExecuteWhenReadyAsync(shell.DatabaseRecoveryPrimaryCommand);
+        await ExecuteAndWaitAsync(shell.DatabaseRecoveryPrimaryCommand);
         Assert.AreEqual(0, runtime.ResetCalls, "The first action must only show permanent-erasure confirmation.");
-        await ExecuteWhenReadyAsync(shell.DatabaseRecoverySecondaryCommand);
+        await ExecuteAndWaitAsync(shell.DatabaseRecoverySecondaryCommand);
         Assert.AreEqual(title, shell.DatabaseRecoveryTitle);
         Assert.AreEqual(originalMessage, shell.DatabaseRecoveryMessage);
 
-        await ExecuteWhenReadyAsync(shell.DatabaseRecoveryPrimaryCommand);
-        await ExecuteWhenReadyAsync(shell.DatabaseRecoveryPrimaryCommand);
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        while (runtime.ResetCalls != 1 || shell.IsDatabaseRecoveryDialogOpen)
-            await Task.Delay(10, timeout.Token);
+        await ExecuteAndWaitAsync(shell.DatabaseRecoveryPrimaryCommand);
+        Assert.AreEqual(0, runtime.ResetCalls, "Returning from cancellation must require a new confirmation action.");
+        await ExecuteAndWaitAsync(shell.DatabaseRecoveryPrimaryCommand);
 
+        Assert.AreEqual(1, runtime.ResetCalls);
+        Assert.IsFalse(shell.IsDatabaseRecoveryDialogOpen);
         Assert.IsTrue(shell.IsApplicationInteractionEnabled);
         Assert.AreEqual(0, ((RejectAllEndpoints)(object)endpoints).Calls);
     }
@@ -71,12 +72,20 @@ public sealed class DatabaseRecoveryTests
         Assert.AreEqual(0, runtime.ResetCalls);
     }
 
-    private static async Task ExecuteWhenReadyAsync(ICommand command)
+    private static async Task ExecuteAndWaitAsync(ReactiveCommand<RxVoid, RxVoid> command)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        while (!command.CanExecute(null))
-            await Task.Delay(10, timeout.Token);
-        command.Execute(null);
+        // Await this invocation's completion instead of polling asynchronously
+        // scheduled ICommand readiness between fire-and-forget executions.
+        var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var execution = command.Execute().Subscribe(new CommandCompletionObserver(completed));
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
+    private sealed class CommandCompletionObserver(TaskCompletionSource completed) : IObserver<RxVoid>
+    {
+        public void OnNext(RxVoid value) { }
+        public void OnError(Exception error) => completed.TrySetException(error);
+        public void OnCompleted() => completed.TrySetResult();
     }
 
     private static (DatabaseRecoveryRequiredException Failure, BackendRuntimeFailureKind Kind) CreateFailure(int value) => value switch
