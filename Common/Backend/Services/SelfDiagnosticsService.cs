@@ -114,6 +114,7 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
         foreach (var fault in (await _faults.ListActiveForUserAsync(user.UId, lifecycleToken))
                      .Where(fault => fault.Status != UserSyncHealthStatus.Healthy))
         {
+            if (UserSyncFaultPolicy.IsTerminal(fault)) findings.Add("RecoveryBlockedTerminalConflict");
             if (fault.Scope == UserSyncFaultScope.Database) findings.Add("RecoveryBlockedDatabase");
             else if (fault.Scope == UserSyncFaultScope.ControlPlane) findings.Add("ControlStateInvalid");
             else if (fault.BlocksPublishing || fault.BlocksMerge || fault.BlocksLogin || fault.BlocksGarbageCollection || fault.BlocksLifecycle)
@@ -144,6 +145,14 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
             (own[0].MaximumKeyEpoch is not long localMaximum || localMaximum >= user.KeyEpoch);
         if (!localIdentityMatches)
             findings.Add("LocalMembershipInvalid");
+        try
+        {
+            await _membershipVerifier.VerifyLocalInstallationAsync(user.UId, user.KeyEpoch, user.MembershipEpoch, lifecycleToken);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidDataException or ArgumentException)
+        {
+            findings.Add("RecoveryBlockedLocalAuthorization");
+        }
 
         if (rows.Count(row => row.IsGenesis && row.StartedMembershipEpoch == 1) != 1)
             findings.Add("GenesisHistoryInvalid");
@@ -454,9 +463,13 @@ public sealed partial class SelfDiagnosticsService : ISelfDiagnosticsService
             operation.Status != UserControlOperationStatus.Rejected)) findings.Add("RecoveryBlockedAccountDeletion");
         if (operations.Any(operation => operation.Status == UserControlOperationStatus.StoredPending))
             findings.Add("RecoveryRiskPendingOperations");
-        if ((await _snapshots.ListForUserAsync(user.UId, lifecycleToken)).Any(snapshot => snapshot.Status is
+        var snapshotEvidence = await _snapshots.ListForUserAsync(user.UId, lifecycleToken);
+        if (snapshotEvidence.Any(snapshot => snapshot.Status is
                 UserSyncSnapshotStatus.Pending or UserSyncSnapshotStatus.RecoveryCandidate or UserSyncSnapshotStatus.IsolatedFork) ||
-            (await _knowledge.ListForUserAsync(user.UId, lifecycleToken)).Any(row => row.HighestStoredRevision > row.HighestMergedRevision))
+            (await _knowledge.ListForUserAsync(user.UId, lifecycleToken)).Any(row => row.HighestStoredRevision > row.HighestMergedRevision &&
+                !snapshotEvidence.Any(snapshot => snapshot.Status == UserSyncSnapshotStatus.RetiredForkEvidence &&
+                    snapshot.OriginDeviceId == row.OriginDeviceId && snapshot.OriginInstanceId == row.OriginInstanceId &&
+                    snapshot.UserKeyEpoch == row.UserKeyEpoch)))
             findings.Add("RecoveryRiskUnmergedData");
         var recoveryLinks = await _userDevices.ListByUserAsync(user.UId, lifecycleToken);
         if ((await _enrollmentCommits.ListForUserAsync(user.UId, lifecycleToken)).Any(commit =>

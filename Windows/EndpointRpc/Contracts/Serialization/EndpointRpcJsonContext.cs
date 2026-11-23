@@ -25,6 +25,7 @@ namespace PasswordManagerLocal.Windows.EndpointRpc.Serialization;
 [JsonSerializable(typeof(ChangeMasterPasswordEndpointRequest))]
 [JsonSerializable(typeof(GetUserProfileInfoEndpointRequest))]
 [JsonSerializable(typeof(DeleteUserAccountEndpointRequest))]
+[JsonSerializable(typeof(RemoveLocalProfileEndpointRequest))]
 [JsonSerializable(typeof(ChangeUsernameEndpointRequest))]
 [JsonSerializable(typeof(UpdateUserProfileInfoEndpointRequest))]
 [JsonSerializable(typeof(EmptyEndpointRequest))]

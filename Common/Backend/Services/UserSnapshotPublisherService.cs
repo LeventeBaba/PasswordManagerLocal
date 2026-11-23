@@ -2,6 +2,7 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Backend.Utils;
@@ -244,6 +245,11 @@ public sealed class UserSnapshotPublisherService : IUserSnapshotPublisherService
         UserSyncKeyConfidence suppliedKeyConfidence,
         CancellationToken ct)
     {
+        // Canonical health cannot settle competing signed histories. Do not reschedule
+        // futile recovery, rewrite the prior publication, or advance counters on a replay.
+        if ((_syncFaults is not null && await _syncFaults.HasTerminalFaultAsync(user.UId, ct)) ||
+            await _snapshots.HasIsolatedForkAsync(user.UId, ct))
+            throw new SyncStateUnavailableException("Unresolved synchronization authority prevents publication.");
         if (_canonicalHealth is null)
         {
             // Test-only/legacy construction remains source compatible, but production DI always
@@ -271,10 +277,10 @@ public sealed class UserSnapshotPublisherService : IUserSnapshotPublisherService
             if (health.FullyVerified && _syncFaults is not null)
             {
                 await _syncFaults.MarkLocalCanonicalRecoveredAsync(user.UId, ct);
-                previouslyBlocked = false;
+                previouslyBlocked = await _syncFaults.IsPublishingBlockedAsync(user.UId, ct);
             }
 
-            if (!health.IsPublishable || (previouslyBlocked && !health.FullyVerified))
+            if (!health.IsPublishable || previouslyBlocked)
             {
                 var stale = await GetLatestAsync(user.UId, user.KeyEpoch, ct);
                 if (stale is not null)

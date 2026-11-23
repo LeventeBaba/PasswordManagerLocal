@@ -13,15 +13,58 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
     private readonly IUserMembershipAuthorizationRepository _authorizations;
     private readonly IUserOriginRemovalCutoffRepository _cutoffs;
     private readonly IDeviceIdentityService _identity;
+    private readonly IUserControlOperationRepository? _operations;
 
     public UserMembershipAuthorizationService(
         IUserMembershipAuthorizationRepository authorizations,
         IUserOriginRemovalCutoffRepository cutoffs,
-        IDeviceIdentityService identity)
+        IDeviceIdentityService identity,
+        IUserControlOperationRepository? operations = null)
     {
         _authorizations = authorizations;
         _cutoffs = cutoffs;
         _identity = identity;
+        _operations = operations;
+    }
+
+    public async Task<UserMembershipAuthorization> VerifyLocalInstallationAsync(
+        Guid userId, long keyEpoch, long membershipEpoch, CancellationToken ct = default)
+    {
+        if (userId == Guid.Empty || keyEpoch <= 0 || membershipEpoch <= 0 || !_identity.IsInitialized ||
+            _identity.LocalDeviceId == Guid.Empty || _identity.OriginInstanceId == Guid.Empty ||
+            _identity.SignPublicKey.Length != 32 || _identity.AgreementPublicKey.Length != 32)
+            throw new UnauthorizedAccessException("The current installation authority is unavailable.");
+
+        var active = await _authorizations.ListActiveForDeviceAsync(userId, _identity.LocalDeviceId, ct);
+        if (active.Count != 1)
+            throw new UnauthorizedAccessException("The current installation authority is ambiguous or absent.");
+        var authorization = active[0];
+        if (authorization.UserId != userId || authorization.DeviceId != _identity.LocalDeviceId ||
+            authorization.OriginInstanceId != _identity.OriginInstanceId ||
+            authorization.AuthorizationId == Guid.Empty || !authorization.IsActive ||
+            authorization.EndedMembershipEpoch is not null || authorization.RemovalOperationId is not null ||
+            authorization.RemovalOperationHash is not null || authorization.EndedAtUtc is not null ||
+            authorization.StartedMembershipEpoch <= 0 || authorization.StartedMembershipEpoch > membershipEpoch ||
+            authorization.MinimumKeyEpoch <= 0 || keyEpoch < authorization.MinimumKeyEpoch ||
+            (authorization.MaximumKeyEpoch is long maximum && keyEpoch > maximum) ||
+            !Hashing.Verify(authorization.SignPublicKey, _identity.SignPublicKey) ||
+            !Hashing.Verify(authorization.SignPublicKeyHash, Hashing.SHA256Hash(_identity.SignPublicKey)) ||
+            !Hashing.Verify(authorization.AgreementPublicKeyHash, Hashing.SHA256Hash(_identity.AgreementPublicKey)) ||
+            !string.Equals(SyncIdentityUtil.NormalizeFingerprint(authorization.TlsCertFingerprint),
+                SyncIdentityUtil.NormalizeFingerprint(_identity.FingerprintHex), StringComparison.Ordinal) ||
+            authorization.DeviceType != _identity.DeviceType ||
+            (authorization.IsGenesis
+                ? authorization.StartedMembershipEpoch != 1 || authorization.AdditionOperationId is not null ||
+                  authorization.AdditionOperationHash is not null
+                : authorization.StartedMembershipEpoch <= 1 || authorization.AdditionOperationId != authorization.AuthorizationId ||
+                  authorization.AdditionOperationHash is not { Length: SyncConstants.SyncDeltaPayloadHashBytes }))
+            throw new UnauthorizedAccessException("The current installation does not hold valid account authority.");
+
+        var historical = await GetAuthorizationAsync(userId, _identity.LocalDeviceId, _identity.OriginInstanceId,
+            membershipEpoch, keyEpoch, ct);
+        if (historical.AuthorizationId != authorization.AuthorizationId || !historical.IsActive)
+            throw new UnauthorizedAccessException("Current and historical installation authority disagree.");
+        return authorization;
     }
 
     public async Task<UserMembershipAuthorization> CreateGenesisAsync(User user, CancellationToken ct = default)
@@ -248,6 +291,32 @@ public sealed class UserMembershipAuthorizationService : IUserMembershipAuthoriz
                 ?? throw new UnauthorizedAccessException("The removed origin has no authenticated snapshot cutoff.");
             if (envelope.OriginRevision > cutoff.HighestAcceptedSnapshotRevision)
                 throw new UnauthorizedAccessException("The snapshot revision is above the authenticated removal cutoff.");
+        }
+        if (envelope.Coverage.Count != 0)
+        {
+            var retainedHistory = await _authorizations.ListForUserAsync(envelope.UserId, ct);
+            foreach (var covered in envelope.Coverage)
+            {
+                var history = retainedHistory.SingleOrDefault(row =>
+                    row.DeviceId == covered.OriginDeviceId && row.OriginInstanceId == covered.OriginInstanceId);
+                if (history?.RemovalOperationId is not Guid removalId) continue;
+                if (_operations is null)
+                    throw new UnauthorizedAccessException("Signed removal verification is unavailable for the covered origin.");
+                var stored = await _operations.GetByIdAsync(removalId, ct);
+                if (stored is null || stored.Status != UserControlOperationStatus.Applied)
+                    throw new UnauthorizedAccessException("The covered origin has incomplete signed removal evidence.");
+                var removalEnvelope = UserControlOperationEnvelopeUtil.Deserialize(stored.EnvelopePayload);
+                if (removalEnvelope.UserId != envelope.UserId || removalEnvelope.OperationType != UserControlOperationType.DeviceRemoval ||
+                    history.RemovalOperationHash is null || !Hashing.Verify(history.RemovalOperationHash, removalEnvelope.OperationHash))
+                    throw new UnauthorizedAccessException("The excluded-origin removal reference is inconsistent.");
+                await VerifyControlAuthorAsync(removalEnvelope, ct);
+                var removal = UserControlOperationEnvelopeUtil.DeserializeDeviceRemovalPayload(removalEnvelope.OperationPayload);
+                DeviceRemovalEvidenceUtil.ValidateAuthorization(removal, history);
+                if (removal.ForkExclusion is null) continue;
+                DeviceRemovalForkProofUtil.VerifyAuthorization(removal, history);
+                if (covered.OriginRevision > 0)
+                    throw new UnauthorizedAccessException("The snapshot contains history from an origin excluded by signed removal.");
+            }
         }
         return authorization;
     }

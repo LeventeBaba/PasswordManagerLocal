@@ -26,6 +26,7 @@ public class RememberMeService : IRememberMeService
     private readonly IUserCanonicalHealthService? _canonicalHealth;
     private readonly IUserDataRecoveryCoordinator? _recoveryCoordinator;
     private readonly IUserRepository? _users;
+    private readonly IUserForkRecoveryService? _forkRecovery;
 
     private readonly IUserLifecycleCoordinator? _lifecycle;
     private readonly IUserLoginPreparationService? _preparation;
@@ -52,7 +53,8 @@ public class RememberMeService : IRememberMeService
         IUserLoginPreparationService? preparation = null,
         IUserPostLoginWorkScheduler? postLogin = null,
         IAuthenticatedSessionIssuer? sessionIssuer = null,
-        PasswordManagerLocal.Common.Backend.Abstractions.Persistence.ICriticalControlIngressStore? ingress = null)
+        PasswordManagerLocal.Common.Backend.Abstractions.Persistence.ICriticalControlIngressStore? ingress = null,
+        IUserForkRecoveryService? forkRecovery = null)
     {
         _lifecycle = lifecycle;
         _preparation = preparation;
@@ -73,6 +75,7 @@ public class RememberMeService : IRememberMeService
         _canonicalHealth = canonicalHealth;
         _recoveryCoordinator = recoveryCoordinator;
         _users = users;
+        _forkRecovery = forkRecovery;
     }
 
 
@@ -240,6 +243,15 @@ public class RememberMeService : IRememberMeService
                             user, key, UserSyncKeyConfidence.RememberMe, recordFault: true, ct: ct);
                         if (health.State is not (UserDataVerificationState.Healthy or UserDataVerificationState.CheckpointMissing))
                             throw new UnauthorizedAccessException("The local account copy could not be verified.");
+                    }
+
+                    if (_forkRecovery is not null && await _forkRecovery.CanAccessIndependentCanonicalAsync(user, ct))
+                    {
+                        if (_preparation is not null) await _preparation.EnsureAuthorizedAsync(user.UId, ct);
+                        var readToken = _sessionIssuer is not null
+                            ? _sessionIssuer.IssueAuthenticatedSession(user.UId, key, bundle) : _tokens.Issue(user.UId);
+                        if (_sessionIssuer is null) _keys.SetUserKey(readToken, key);
+                        return readToken;
                     }
 
                     UserDeviceLoginUtil.UpdateCurrentDeviceLastLoginDate(

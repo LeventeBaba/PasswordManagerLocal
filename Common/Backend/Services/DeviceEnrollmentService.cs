@@ -520,6 +520,24 @@ public sealed class DeviceEnrollmentService : IDeviceEnrollmentService, IDeviceE
                         var commit = await commits.GetRecoverableAsync(userId, endpoint.DeviceId, endpoint.OriginInstanceId, lifecycleToken);
                         if (commit is not null)
                         {
+                            // A previously committed enrollment is recoverable only while its exact
+                            // installation still holds the authority granted by that addition.
+                            // A signed removal permanently revokes that installation origin; do not
+                            // revive the old commit or turn this safe rejection into a partial commit.
+                            var targetAuthorization = await scope.ServiceProvider
+                                .GetRequiredService<IUserMembershipAuthorizationRepository>()
+                                .GetActiveAsync(userId, endpoint.DeviceId, endpoint.OriginInstanceId, lifecycleToken);
+                            if (targetAuthorization is null || targetAuthorization.IsGenesis ||
+                                targetAuthorization.AuthorizationId != commit.AdditionOperationId ||
+                                targetAuthorization.AdditionOperationId != commit.AdditionOperationId ||
+                                targetAuthorization.AdditionOperationHash is null ||
+                                !Hashing.Verify(targetAuthorization.AdditionOperationHash, commit.AdditionOperationHash))
+                            {
+                                throw new DeviceEnrollmentException(
+                                    DeviceEnrollmentErrorCode.NewDeviceRejected,
+                                    "The target installation no longer holds the authorization for its previous enrollment. A removed installation origin cannot be enrolled again.");
+                            }
+
                             try
                             {
                                 ValidateRecoverableEnrollmentCommit(commit, endpoint);

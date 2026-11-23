@@ -42,6 +42,9 @@ public sealed class FakeUserSyncSnapshotRepository : IUserSyncSnapshotRepository
             .ThenBy(item => Convert.ToHexString(item.SnapshotHash), StringComparer.Ordinal)
             .ToList());
 
+    public Task<bool> HasIsolatedForkAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult(_items.Any(item => item.UserId == userId && item.Status == UserSyncSnapshotStatus.IsolatedFork));
+
     public Task<bool> HasIsolatedForkAsync(Guid userId, long userKeyEpoch, long membershipEpoch, CancellationToken ct = default) =>
         Task.FromResult(_items.Any(item =>
             item.UserId == userId && item.UserKeyEpoch == userKeyEpoch &&

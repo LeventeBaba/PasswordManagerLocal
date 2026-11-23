@@ -182,7 +182,7 @@ internal sealed class SqliteStorageRetentionAnalyzer(SqliteSession session,
             "UserSyncSnapshots" => (UserSyncSnapshotStatus)value switch
             {
                 UserSyncSnapshotStatus.MergedReceipt => StorageRetentionReason.RequiredAsExactSignedReceipt,
-                UserSyncSnapshotStatus.IsolatedFork => StorageRetentionReason.RequiredForForkDetection,
+                UserSyncSnapshotStatus.IsolatedFork or UserSyncSnapshotStatus.RetiredForkEvidence => StorageRetentionReason.RequiredForForkDetection,
                 UserSyncSnapshotStatus.Pending => StorageRetentionReason.BlockedByPendingEvidence,
                 UserSyncSnapshotStatus.RecoveryCandidate or UserSyncSnapshotStatus.IsolatedCorrupt => StorageRetentionReason.RequiredByRecovery,
                 _ => table.Reason

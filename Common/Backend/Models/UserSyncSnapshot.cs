@@ -19,4 +19,6 @@ public sealed class UserSyncSnapshot
     public UserSyncSnapshotStatus Status { get; set; } = UserSyncSnapshotStatus.Pending;
     public string? QuarantineReason { get; set; }
     public byte[]? ConflictingSnapshotHash { get; set; }
+    // One bounded competing original; retries never replace the first retained pair.
+    public byte[]? ConflictingEnvelopePayload { get; set; }
 }

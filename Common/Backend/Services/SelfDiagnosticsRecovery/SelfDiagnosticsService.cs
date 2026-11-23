@@ -129,7 +129,7 @@ public sealed partial class SelfDiagnosticsService
         Guid token, User user, SelfDiagnosticsRecoveryPlan plan, bool confirmed, CancellationToken ct)
     {
         Guid journalId;
-        try { journalId = await ApplyHistoryResetAsync(user, plan, confirmed, ct); }
+        try { journalId = await ApplyHistoryResetAsync(token, user, plan, confirmed, ct); }
         catch (RecoveryJournalPersistenceException ex)
         {
             BackendDebugLog.Warning($"Recovery journal could not be verified. History was not reset. UserId={user.UId}.", ex, "SelfDiagnostics");
@@ -197,13 +197,17 @@ public sealed partial class SelfDiagnosticsService
         }
     }
 
-    private async Task<Guid> ApplyHistoryResetAsync(User user, SelfDiagnosticsRecoveryPlan plan, bool confirmed, CancellationToken ct)
+    private async Task<Guid> ApplyHistoryResetAsync(Guid token, User user, SelfDiagnosticsRecoveryPlan plan, bool confirmed, CancellationToken ct)
     {
         var archive = plan.Archive;
         Guid journalId;
         await using var transaction = await _uow.BeginTransactionAsync(ct);
         try
         {
+            await _membershipVerifier.VerifyLocalInstallationAsync(user.UId, user.KeyEpoch, user.MembershipEpoch, ct);
+            var currentPlan = await AnalyzeRecoveryAsync(token, user, ct);
+            if (!currentPlan.CanRecover || !Hashing.Verify(Convert.FromHexString(plan.PlanId), Convert.FromHexString(currentPlan.PlanId)))
+                throw new UnauthorizedAccessException("The account no longer has sufficient recovery authority.");
             // The recovery record and history reset share this transaction. If either fails,
             // both roll back; the original profile remains the recovery source.
             journalId = await StageRecoveryJournalAsync(archive, checked(plan.MaximumKeyEpoch + 1), confirmed, ct);
@@ -215,7 +219,7 @@ public sealed partial class SelfDiagnosticsService
             _authorizations.DeleteRange(archive.Authorizations);
             _knowledge.DeleteRange(archive.Knowledge);
             await _uow.SaveChangesAsync(ct); // Release exact-installation unique keys before creating the new genesis.
-            foreach (var snapshot in archive.Snapshots)
+            foreach (var snapshot in archive.Snapshots.Where(snapshot => snapshot.Status is not (UserSyncSnapshotStatus.IsolatedFork or UserSyncSnapshotStatus.RetiredForkEvidence)))
             {
                 snapshot.Status = UserSyncSnapshotStatus.SupersededBadEvidence;
                 snapshot.QuarantineReason = "profile-device-history-recovery";
@@ -279,10 +283,9 @@ public sealed partial class SelfDiagnosticsService
                 syncState.LastUpdatedAtUtc = now;
                 _syncStates.Update(syncState);
             }
-            foreach (var fault in archive.Faults.Where(fault => fault.Scope != UserSyncFaultScope.Database))
+            foreach (var fault in archive.Faults.Where(fault => fault.Scope != UserSyncFaultScope.Database && !UserSyncFaultPolicy.IsTerminal(fault)))
             {
-                fault.Status = fault.Scope == UserSyncFaultScope.ControlPlane && fault.Kind == UserSyncFaultKind.MembershipConflict
-                    ? UserSyncHealthStatus.Recovered : UserSyncHealthStatus.Superseded;
+                fault.Status = UserSyncHealthStatus.Superseded;
                 fault.RecoveredAtUtc = now;
                 fault.NextRecoveryAttemptAtUtc = null; fault.BlocksPublishing = false; fault.BlocksMerge = false;
                 fault.BlocksLogin = false; fault.BlocksGarbageCollection = false; fault.BlocksLifecycle = false;

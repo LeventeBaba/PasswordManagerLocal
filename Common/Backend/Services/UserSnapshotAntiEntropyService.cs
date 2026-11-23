@@ -160,7 +160,7 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
                         storedRevision = retained.OriginRevision;
                         storedHash = retained.SnapshotHash;
                     }
-                    else if (retained.Status == UserSyncSnapshotStatus.IsolatedFork)
+                    else if (retained.Status is UserSyncSnapshotStatus.IsolatedFork or UserSyncSnapshotStatus.RetiredForkEvidence)
                     {
                         if (retained.OriginRevision <= 0 || retained.SnapshotHash.Length != SyncConstants.SyncDeltaPayloadHashBytes)
                             throw new SyncStateUnavailableException("A quarantined user snapshot has invalid revision metadata.");

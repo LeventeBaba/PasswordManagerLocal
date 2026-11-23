@@ -19,6 +19,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
     private readonly IInteractiveSessionStateService _interactiveSessions;
     private readonly IUnitOfWork _uow;
     private readonly IUserMembershipAuthorizationService _membershipAuthorization;
+    private readonly IUserForkRecoveryService? _forkRecovery;
     private readonly IUserMembershipAuthorizationRepository _authorizationRows;
     private readonly ILocalUserDeviceRepository _localUsers;
     private readonly IDeviceIdentityService _identity;
@@ -59,7 +60,8 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         IUserSyncFaultService? syncFaults = null,
         IPendingSyncActivationService? pendingSyncActivation = null,
         IRevocationReceiptService? revocationReceipts = null,
-        ICriticalControlIngressStore? criticalIngress = null)
+        ICriticalControlIngressStore? criticalIngress = null,
+        IUserForkRecoveryService? forkRecovery = null)
     {
         _criticalIngress = criticalIngress;
         _revocationReceipts = revocationReceipts;
@@ -73,6 +75,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         _interactiveSessions = interactiveSessions;
         _uow = uow;
         _membershipAuthorization = membershipAuthorization;
+        _forkRecovery = forkRecovery;
         _authorizationRows = authorizationRows;
         _localUsers = localUsers;
         _identity = identity;
@@ -749,7 +752,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         var obsoleteSnapshots = (await _snapshots.ListForUserAsync(user.UId, ct))
             .Where(snapshot =>
                 snapshot.UserKeyEpoch <= envelope.PreviousKeyEpoch &&
-                snapshot.Status != UserSyncSnapshotStatus.IsolatedFork)
+                snapshot.Status is not (UserSyncSnapshotStatus.IsolatedFork or UserSyncSnapshotStatus.RetiredForkEvidence))
             .ToList();
         if (obsoleteSnapshots.Count != 0)
             _snapshots.DeleteRange(obsoleteSnapshots);
@@ -1040,6 +1043,11 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         catch (InvalidDataException ex)
         {
             return await QuarantinePayloadMismatchAsync(row, envelope, state, transaction, ex.Message, ct);
+        }
+        if (payload.ForkExclusion is not null)
+        {
+            if (_forkRecovery is null) throw new InvalidOperationException("Fork-removal verification is unavailable.");
+            await _forkRecovery.StageSignedExclusionAsync(user, payload, envelope, ct);
         }
         foreach (var authorization in active)
             await _membershipAuthorization.EndAuthorizationAsync(authorization, payload, envelope.OperationId, envelope.OperationHash, envelope.CreatedAtUtc, ct);

@@ -335,6 +335,10 @@ public sealed class DeviceServiceTests
         canonical.MembershipEpoch = addition.ResultingMembershipEpoch;
         canonical.GenerateIntegrityHash();
         userRepository.Update(canonical);
+        var controlStates = host.Services.GetRequiredService<IUserControlStateRepository>();
+        var control = await controlStates.GetAsync(userId) ?? throw new AssertFailedException("Registered control state missing.");
+        control.AppliedMembershipEpoch = canonical.MembershipEpoch;
+        controlStates.Update(control);
         await service.GetUserDevicesAsync(token);
 
         await ExpectThrowsAsync<InvalidInputException>(() =>

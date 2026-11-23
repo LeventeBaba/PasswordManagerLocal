@@ -94,6 +94,7 @@ public sealed class BackendTestHost : IDisposable
         sc.AddSingleton<IUserRevisionKnowledgeRepository, FakeUserRevisionKnowledgeRepository>();
         sc.AddSingleton<IUserControlOperationRepository, FakeUserControlOperationRepository>();
         sc.AddSingleton<IUserControlStateRepository, FakeUserControlStateRepository>();
+        sc.AddSingleton<IUserSyncFaultRepository, FakeUserSyncFaultRepository>();
         sc.AddSingleton<FakeUserMembershipAuthorizationRepository>();
         sc.AddSingleton<IUserMembershipAuthorizationRepository>(sp => sp.GetRequiredService<FakeUserMembershipAuthorizationRepository>());
         sc.AddSingleton<IUserOriginRemovalCutoffRepository, FakeUserOriginRemovalCutoffRepository>();
@@ -164,7 +165,6 @@ public sealed class BackendTestHost : IDisposable
         if (enableDeferredLogin)
         {
             sc.AddSingleton<IUserCanonicalCheckpointRepository, FakeUserCanonicalCheckpointRepository>();
-            sc.AddSingleton<IUserSyncFaultRepository, FakeUserSyncFaultRepository>();
             sc.AddSingleton<IUserSyncFaultService, UserSyncFaultService>();
             sc.AddSingleton<IUserDataBundleVerificationService, UserDataBundleVerificationService>();
             sc.AddSingleton<IUserCanonicalHealthService, UserCanonicalHealthService>();

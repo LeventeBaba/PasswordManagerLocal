@@ -125,6 +125,35 @@ public sealed class SqliteSnapshotRecoveryRepositoryTests
         Assert.AreEqual(UserSyncHealthStatus.Recovered, (await baseline.UserSyncFaults.ListForUserAsync(user.UId)).Single().Status);
     }
 
+    [TestMethod]
+    [TestCategory("Recovery")]
+    [TestCategory("Security")]
+    public async Task ForkExistence_IsProfileScopedAcrossEpochsAndIncludesPendingMutations()
+    {
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
+        var user = await AddUserAsync(database);
+        var unaffected = await AddUserAsync(database);
+        var row = Snapshot(user, UserSyncSnapshotStatus.IsolatedFork);
+        await database.UserSyncSnapshots.AddAsync(row);
+        Assert.IsTrue(await database.UserSyncSnapshots.HasIsolatedForkAsync(user.UId));
+        Assert.IsFalse(await database.UserSyncSnapshots.HasIsolatedForkAsync(unaffected.UId));
+        await database.UnitOfWork.SaveChangesAsync();
+        using (var readback = database.OpenSession())
+            Assert.IsTrue(await new UserSyncSnapshotRepository(readback).HasIsolatedForkAsync(user.UId));
+        await using (var transaction = await database.UnitOfWork.BeginTransactionAsync())
+        {
+            row.Status = UserSyncSnapshotStatus.MergedReceipt;
+            database.UserSyncSnapshots.Update(row);
+            Assert.IsFalse(await database.UserSyncSnapshots.HasIsolatedForkAsync(user.UId));
+            await transaction.RollbackAsync();
+        }
+        database.UnitOfWork.ClearTrackedChanges();
+        Assert.IsTrue(await database.UserSyncSnapshots.HasIsolatedForkAsync(user.UId));
+        row = (await database.UserSyncSnapshots.ListForUserAsync(user.UId)).Single();
+        database.UserSyncSnapshots.Delete(row);
+        Assert.IsFalse(await database.UserSyncSnapshots.HasIsolatedForkAsync(user.UId));
+    }
+
     private static async Task<User> AddUserAsync(SqliteRepositoryTestDatabase baseline)
     {
         var user = new User { KeyEpoch = 2, MembershipEpoch = 3 };

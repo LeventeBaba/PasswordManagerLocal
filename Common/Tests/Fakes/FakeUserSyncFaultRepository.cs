@@ -1,5 +1,6 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Sync;
 
 namespace PasswordManagerLocal.Common.Tests.Fakes;
 
@@ -7,7 +8,7 @@ public sealed class FakeUserSyncFaultRepository : IUserSyncFaultRepository
 {
     private readonly List<UserSyncFault> _rows = [];
     private static bool Active(UserSyncFault row) => row.Status is not
-        (UserSyncHealthStatus.Recovered or UserSyncHealthStatus.Superseded);
+        (UserSyncHealthStatus.Recovered or UserSyncHealthStatus.Superseded or UserSyncHealthStatus.RetiredOrigin);
     public Task<UserSyncFault?> GetActiveAsync(Guid userId, UserSyncFaultScope scope, UserSyncFaultKind kind,
         Guid? originDeviceId, Guid? originInstanceId, long? keyEpoch, CancellationToken ct = default) =>
         Task.FromResult(_rows.LastOrDefault(row => Active(row) && row.UserId == userId && row.Scope == scope &&
@@ -18,7 +19,8 @@ public sealed class FakeUserSyncFaultRepository : IUserSyncFaultRepository
         Task.FromResult<IReadOnlyList<UserSyncFault>>(_rows.Where(row => row.UserId == userId && Active(row)).ToArray());
     public Task<IReadOnlyList<UserSyncFault>> ListRecoverableLocalCanonicalAsync(DateTimeOffset nowUtc, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<UserSyncFault>>(_rows.Where(row => Active(row) &&
-            row.Scope == UserSyncFaultScope.LocalCanonical && row.Status != UserSyncHealthStatus.TerminalConflict &&
+            UserSyncFaultPolicy.IsRecoverableCanonical(row) &&
+            !_rows.Any(blocker => blocker.UserId == row.UserId && Active(blocker) && UserSyncFaultPolicy.IsTerminal(blocker)) &&
             (!row.NextRecoveryAttemptAtUtc.HasValue || row.NextRecoveryAttemptAtUtc <= nowUtc)).ToArray());
     public Task<bool> HasBlockingPublishingFaultAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult(_rows.Any(row => row.UserId == userId && Active(row) && row.BlocksPublishing));

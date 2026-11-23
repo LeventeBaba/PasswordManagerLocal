@@ -254,7 +254,7 @@ public sealed class UserRecoveryJournalService : IUserRecoveryJournalService
         // A superseded/quarantined status, a healthy reset, or a new pairing is NOT evidence of a merge.
         foreach (var retained in snapshot.Snapshots)
         {
-            if (retained.Status == UserSyncSnapshotStatus.IsolatedFork) return false;
+            if (retained.Status is UserSyncSnapshotStatus.IsolatedFork or UserSyncSnapshotStatus.RetiredForkEvidence) return false;
             UserSnapshotEnvelope? envelope;
             try
             {

@@ -10,6 +10,8 @@ Registration creates a user ID, initializes key/membership epochs at one, and re
 
 ## Enrollment
 
+Enrollment must be initiated deliberately through the existing interactive Add Device (+) workflow. The authorizing source requires a current authenticated profile session and the target must present a fresh interactive enrollment session/code. Saved codes, synchronization retries, faults, history repair and newly generated local identities are not authorization to enroll or transfer bootstrap data. Applying an already signed addition during synchronization preserves its original user-granted authority; it is not permission to create another addition.
+
 The source authenticates the target device/origin, signing and agreement keys, TLS fingerprint, and device type. It merges eligible pending state, commits the signed addition and enrollment record, then transfers encrypted bootstrap data. A failed transfer can leave a valid committed membership with outstanding transfer work.
 
 The same target identity can retry that transfer. Removing the committed membership requires a signed removal. The bootstrap contains canonical encrypted state, authority history/cutoffs, revision knowledge, retained snapshot evidence, and the signed target addition. Source private keys, remembered local keys, sessions, and decrypted caches are excluded.
@@ -19,6 +21,10 @@ The importer verifies the authority graph before persistence and initializes seq
 ## Device removal
 
 Removal verifies the master password and local author, incorporates eligible pending data, and commits signed cutoffs for the removed installation's covered key epochs. Cutoffs bound accepted snapshot revisions and control sequences. Valid earlier history remains relayable within those bounds. Re-enrollment of a removed origin requires a fresh installation origin.
+
+An unresolved terminal fork or control-plane conflict normally blocks initiating removal, including when only a durable fault record remains. The narrow [fork-exclusion proof](RECOVERY.md#user-authorized-device-recovery) permits an authenticated user to remove one exact remote non-genesis installation only when both original signed branches and a complete uncontested authority chain prove that canonical state is independent of all its history. Key epoch must still be 1, no target revision may have been merged, and no unrelated fault or target-authored control operation is allowed. Session, password and explicit target selection remain necessary.
+
+The existing removal operation carries both signed originals and their authorization ID; its zero cutoffs exclude every target revision/control sequence. Payload hash and operation signature bind that proof. Ordinary removals keep their existing bounded-history semantics. An unaffected receiver retires the fault as historical evidence; an unproven or contaminated receiver keeps its data and terminal blocker. No fork branch is selected, replacement membership minted or installation identity rotated. Applied receipts and completion remain governed by the normal revocation protocol.
 
 A locked installation can apply removal. On the removed installation, application clears saved account access and the local sync link. Session/runtime invalidation follows commit. Unobserved changes held only by an offline removed installation can be lost.
 
@@ -33,6 +39,14 @@ A signed key-epoch replacement re-encrypts canonical data while preserving logic
 Projection selection uses current epochs, deterministic general-data versions, and eligible authenticated evidence. Bundle verification checks signed lookup metadata against the decrypted username/version. Conflicting or isolated evidence can block login. Multiple matching projections are ambiguous; lookup does not fall back to the older canonical username.
 
 [UserLoginService](../../Common/Backend/Services/UserLoginService.cs) resolves effective identity, rechecks it under lifecycle ownership, verifies key/canonical/security state, then resolves identity again before issuing a session. Local rename commits encrypted general data, effective lookup, and publication work together. Deferred post-login reconciliation waits for the initial read gate or its timeout; releasing the gate does not join that work.
+
+## Local profile access
+
+Canonical recovery requires the current installation's exact active authorization. History repair cannot reconstruct missing or ended local membership merely from a password, an old local session or confirmation of a reset. The local device and origin identity belongs to the installation as a whole, so renewing it for one profile would affect other profiles.
+
+The login view exposes explicit local-only erasure after an authenticated signed removal of this exact installation is already applied. Username/master-password verification and a separate warning acknowledgement are required. One transaction removes only the selected mutable local profile while preserving signed controls, membership/cutoffs, receipts and original fork/fault evidence. Session/key invalidation and runtime refresh follow commit. It does not call account deletion, revoke another device or replace remote signed removal. Local-only changes are lost only after that explicit acknowledgement.
+
+Cleanup does not create a fresh identity. The retired installation remains ineligible for enrollment; fresh manual setup is installation-wide and can affect every local profile. [Recovery](RECOVERY.md#explicit-local-profile-cleanup) describes the constraints and separate user-initiated enrollment step.
 
 ## Account deletion
 

@@ -145,6 +145,25 @@
               <PathIcon Classes="smallUiIcon" Data="{StaticResource BackIconGeometry}" />
             </Button>
 
+            <Button Classes="ghost" Command="{Binding ShowLocalProfileRemovalCommand}"
+                    IsEnabled="{Binding CanLogin}" HorizontalContentAlignment="Stretch"
+                    AutomationProperties.Name="{Binding LocalProfileRemovalLabel}">
+              <TextBlock Text="{Binding LocalProfileRemovalLabel}" TextWrapping="Wrap" />
+            </Button>
+            <Border Classes="toolbarGroup" Padding="14" IsVisible="{Binding IsLocalProfileRemovalVisible}">
+              <StackPanel Spacing="12">
+                <TextBlock Text="{Binding LocalProfileRemovalWarning}" TextWrapping="Wrap" />
+                <CheckBox IsChecked="{Binding IsLocalProfileRemovalAcknowledged}"
+                          AutomationProperties.Name="{Binding LocalProfileRemovalAcknowledge}">
+                  <TextBlock Text="{Binding LocalProfileRemovalAcknowledge}" TextWrapping="Wrap" />
+                </CheckBox>
+                <Button Command="{Binding RemoveLocalProfileCommand}" IsEnabled="{Binding CanRemoveLocalProfile}"
+                        Content="{Binding LocalProfileRemovalConfirm}"
+                        AutomationProperties.Name="{Binding LocalProfileRemovalConfirm}" />
+                <Button Classes="ghost" Command="{Binding CancelLocalProfileRemovalCommand}" Content="{Binding CancelLabel}" />
+              </StackPanel>
+            </Border>
+
             <Border Classes="toolbarGroup" Padding="14">
               <StackPanel Spacing="0">
                 <Button

@@ -2,6 +2,8 @@
 
 Enrolled installations exchange encrypted vault snapshots and signed account-control operations over the local network. Transport identity, snapshot authorship, membership authority, and knowledge of merged data are verified separately.
 
+Terminal evidence is scoped by profile. It stops that profile's merge and publication before keyed reconstruction or counter advancement; canonical-health success cannot override it. Unrelated profiles retain their own eligibility and discovery. Ordinary corrupt retained evidence is isolated without promoting an unverifiable record into proof of a signed fork. Recovery never starts interactive enrollment or grants membership. Signed removal/deletion and revocation-receipt verification remain under the existing control protocol; a local publication refusal uses `SyncStateUnavailableException` and is not peer misconduct. See [integrity and recovery](RECOVERY.md).
+
 ## Discovery and transport
 
 [LocalDiscoveryHostedService](../../Common/Backend/Services/Hosted/LocalDiscoveryHostedService.cs) uses UDP multicast queries and unicast responses. [SyncProtocolDefaults](../../Common/Contracts/Sync/SyncProtocolDefaults.cs) defines TCP port 26688 and discovery UDP port 26689. [SyncConstants](../../Common/Backend/Constants/SyncConstants.cs) defines wire versions, multicast addresses, message bounds, timeouts, and replay windows.
@@ -83,7 +85,9 @@ Active networking retains its execution-profile network poller. Passive ingress 
 
 [UserSnapshotMergeCoordinator](../../Common/Backend/Services/UserSnapshotMergeCoordinator.cs) verifies and merges eligible snapshots when a key is available, then updates knowledge and publication state. A publication can identify equivalent recipient-authored content to avoid redundant transfer. Fork detection and acquisition of signed coverage evidence take precedence over that optimization.
 
-The same revision/hash is idempotent. Different hashes for the same origin, key epoch, and revision establish a fork. Control operations arrive before dependent ordinary snapshots; missing predecessors remain pending. [Account lifecycle](ACCOUNT_LIFECYCLE.md#revocation-delivery) defines revocation receipt exchange and completion.
+The same revision/hash is idempotent. Different hashes for the same origin, key epoch, and revision establish a fork. The inbox retains the original competing envelope as bounded evidence alongside the original row. Protocol 17 supports a signed removal carrying the exact pair and authorization ID; [independent canonical proof](RECOVERY.md#user-authorized-device-recovery) is required to initiate that removal and retire the local blocker. Zero cutoffs exclude all publications from that installation, including later relay snapshots reporting its causal coverage. Historical fork evidence is never ordinary transferable/recovery data; authorized enrollment payload 8 retains it with its signed exclusion.
+
+Control operations arrive before dependent ordinary snapshots; missing predecessors remain pending. [Account lifecycle](ACCOUNT_LIFECYCLE.md#revocation-delivery) defines revocation receipt exchange and completion.
 
 ## Deterministic merge
 
@@ -103,7 +107,7 @@ A tombstone's item version orders deletion against edits. Its causal reference i
 - Later-removed installations have complete signed cutoffs and local merged coverage of every accepted revision named by those cutoffs.
 - Later additions start from their enrollment baseline. A later key epoch covers an earlier deletion only through explicit earlier-namespace coverage.
 
-Signed envelopes can serve as coverage receipts after indirect merge. Recovery candidates, isolated corruption, terminal forks, active GC-blocking health faults and control conflicts remain account-wide blockers. Ordinary pending snapshots are evaluated per tombstone after their exact row/envelope identity, original signature, historical membership and removal cutoffs have been verified.
+Signed envelopes can serve as coverage receipts after indirect merge. Recovery candidates, isolated corruption, terminal forks, historical fork evidence, active GC-blocking health faults and control conflicts remain account-wide blockers for tombstone collection. Signed fork exclusion can resume ordinary healthy synchronization without relaxing this conservative GC boundary. Ordinary pending snapshots are evaluated per tombstone after their exact row/envelope identity, original signature, historical membership and removal cutoffs have been verified.
 
 A pending revision is ignorable only when all of the following hold:
 

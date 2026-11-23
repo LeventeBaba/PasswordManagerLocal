@@ -6,6 +6,14 @@ namespace PasswordManagerLocal.Common.Tests.Fakes;
 
 public sealed class FakeUserMembershipAuthorizationService : IUserMembershipAuthorizationService
 {
+    public bool RejectLocalInstallation { get; set; }
+    public Task<UserMembershipAuthorization> VerifyLocalInstallationAsync(Guid userId, long keyEpoch, long membershipEpoch, CancellationToken ct = default)
+    {
+        if (RejectLocalInstallation)
+            throw new UnauthorizedAccessException("The local installation is not authorized.");
+        return Task.FromResult(Create(userId, Guid.NewGuid(), Guid.NewGuid(), keyEpoch, membershipEpoch, []));
+    }
+
     public int ControlAuthorVerificationCalls { get; private set; }
     public Task<UserMembershipAuthorization> CreateGenesisAsync(User user, CancellationToken ct = default) =>
         Task.FromResult(Create(user.UId, Guid.NewGuid(), Guid.NewGuid(), user.KeyEpoch, user.MembershipEpoch, []));

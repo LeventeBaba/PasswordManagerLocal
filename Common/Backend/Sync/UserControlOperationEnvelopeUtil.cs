@@ -377,6 +377,7 @@ public static class UserControlOperationEnvelopeUtil
                 (origin.AdditionOperationHash is not null && origin.AdditionOperationHash.Length != SyncConstants.SyncDeltaPayloadHashBytes)) ||
             payload.Origins.Select(origin => (origin.AuthorizationId, origin.UserKeyEpoch)).Distinct().Count() != payload.Origins.Count)
             throw new InvalidDataException("The device-removal origin cutoffs are invalid or duplicated.");
+        if (payload.ForkExclusion is not null) DeviceRemovalForkProofUtil.Validate(payload);
         if (!Hashing.Verify(payload.IntegrityHash, CalculateDeviceRemovalPayloadIntegrityHash(payload)))
             throw new InvalidDataException("The device-removal payload integrity hash is invalid.");
     }
@@ -453,6 +454,13 @@ public static class UserControlOperationEnvelopeUtil
             writer.Write(origin.AdditionOperationId.HasValue);
             if (origin.AdditionOperationId.HasValue) writer.Write(origin.AdditionOperationId.Value.ToByteArray());
             SyncCryptoUtil.WriteBytes(writer, origin.AdditionOperationHash ?? []);
+        }
+        if (payload.ForkExclusion is { } proof)
+        {
+            writer.Write("PasswordManagerLocal.DeviceRemovalForkExclusion.v1");
+            writer.Write(proof.AuthorizationId.ToByteArray());
+            SyncCryptoUtil.WriteBytes(writer, proof.FirstEnvelope);
+            SyncCryptoUtil.WriteBytes(writer, proof.SecondEnvelope);
         }
         return Hashing.SHA256Hash(stream.ToArray());
     }

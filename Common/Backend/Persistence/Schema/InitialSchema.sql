@@ -137,6 +137,7 @@ CREATE TABLE "SyncVersionClockState" (
 
 CREATE TABLE "UserSyncSnapshots" (
     "Id" TEXT NOT NULL,
+    "ConflictingEnvelopePayload" BLOB NULL,
     "ConflictingSnapshotHash" BLOB NULL,
     "CreatedAtUtc" TEXT NOT NULL,
     "EnvelopePayload" BLOB NOT NULL,
@@ -153,8 +154,7 @@ CREATE TABLE "UserSyncSnapshots" (
     "Status" INTEGER NOT NULL,
     "UserId" TEXT NOT NULL,
     "UserKeyEpoch" INTEGER NOT NULL,
-    CONSTRAINT "PK_UserSyncSnapshots" PRIMARY KEY ("Id"),
-    CONSTRAINT "FK_UserSyncSnapshots_Users_UserId" FOREIGN KEY ("UserId") REFERENCES "Users" ("UId") ON DELETE CASCADE
+    CONSTRAINT "PK_UserSyncSnapshots" PRIMARY KEY ("Id")
 );
 
 CREATE TABLE "UserSyncStates" (
@@ -176,8 +176,7 @@ CREATE TABLE "UserRevisionKnowledge" (
     "HighestStoredRevision" INTEGER NOT NULL,
     "HighestStoredSnapshotHash" BLOB NOT NULL,
     "LastUpdatedAtUtc" TEXT NOT NULL,
-    CONSTRAINT "PK_UserRevisionKnowledge" PRIMARY KEY ("UserId", "OriginDeviceId", "OriginInstanceId", "UserKeyEpoch"),
-    CONSTRAINT "FK_UserRevisionKnowledge_Users_UserId" FOREIGN KEY ("UserId") REFERENCES "Users" ("UId") ON DELETE CASCADE
+    CONSTRAINT "PK_UserRevisionKnowledge" PRIMARY KEY ("UserId", "OriginDeviceId", "OriginInstanceId", "UserKeyEpoch")
 );
 
 CREATE TABLE "UserControlOperations" (
@@ -369,8 +368,7 @@ CREATE TABLE "UserSyncFaults" (
     "Status" INTEGER NOT NULL,
     "SupersedingRevision" INTEGER NULL,
     "UserId" TEXT NOT NULL,
-    CONSTRAINT "PK_UserSyncFaults" PRIMARY KEY ("Id"),
-    CONSTRAINT "FK_UserSyncFaults_Users_UserId" FOREIGN KEY ("UserId") REFERENCES "Users" ("UId") ON DELETE CASCADE
+    CONSTRAINT "PK_UserSyncFaults" PRIMARY KEY ("Id")
 );
 
 CREATE INDEX "IX_Devices_SignPublicKeyHash" ON "Devices" ("SignPublicKeyHash");

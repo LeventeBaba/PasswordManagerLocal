@@ -8,5 +8,6 @@ public sealed class DeviceEnrollmentPendingSnapshot
     public UserSyncSnapshotStatus Status { get; set; }
     public string? QuarantineReason { get; set; }
     public byte[]? ConflictingSnapshotHash { get; set; }
+    public byte[]? ConflictingEnvelopePayload { get; set; }
     public DateTimeOffset ReceivedAtUtc { get; set; }
 }

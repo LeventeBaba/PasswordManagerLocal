@@ -62,7 +62,8 @@ internal sealed class CoordinatorHarness : IDisposable
         bool includeHealthyCandidate,
         IDatabaseHealthService? databaseHealth = null,
         bool failNextQueueWrite = false,
-        bool failNextActivation = false)
+        bool failNextActivation = false,
+        bool localInstallationAuthorized = true)
     {
         var material = new RecoveryTestMaterial();
         var key = EncryptionKey.Create();
@@ -163,7 +164,7 @@ internal sealed class CoordinatorHarness : IDisposable
             database.UserRevisionKnowledge,
             database.UserSyncFaults,
             faults,
-            new FakeUserMembershipAuthorizationService(),
+            new FakeUserMembershipAuthorizationService { RejectLocalInstallation = !localInstallationAuthorized },
             bundleSync,
             canonicalHealth,
             database.UserCanonicalCheckpoints,

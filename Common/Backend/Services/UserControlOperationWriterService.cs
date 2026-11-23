@@ -17,6 +17,7 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
     private readonly IUserDeviceRepository _userDevices;
     private readonly IUserMembershipAuthorizationRepository _authorizationRows;
     private readonly IUserMembershipAuthorizationService _membershipAuthorization;
+    private readonly IUserForkRecoveryService? _forkRecovery;
     private readonly IDeviceIdentityService _identity;
     private readonly IUserLifecycleCoordinator _lifecycle;
     private readonly IUnitOfWork _uow;
@@ -38,7 +39,8 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         IUnitOfWork uow,
         IUserCanonicalHealthService? canonicalHealth = null,
         IUserLoginIdentityProjectionService? loginIdentities = null,
-        IRevocationReceiptService? revocationReceipts = null)
+        IRevocationReceiptService? revocationReceipts = null,
+        IUserForkRecoveryService? forkRecovery = null)
     {
         _revocationReceipts = revocationReceipts;
         _operations = operations;
@@ -48,6 +50,7 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         _userDevices = userDevices;
         _authorizationRows = authorizationRows;
         _membershipAuthorization = membershipAuthorization;
+        _forkRecovery = forkRecovery;
         _identity = identity;
         _lifecycle = lifecycle;
         _uow = uow;
@@ -184,6 +187,15 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         var active = await _authorizationRows.ListActiveForDeviceAsync(user.UId, payload.RemovedDeviceId, ct);
         DeviceRemovalEvidenceUtil.ValidateActiveAuthorizations(payload, active);
 
+        if (payload.ForkExclusion is not null)
+        {
+            if (_forkRecovery is null) throw new InvalidOperationException("Fork-removal verification is unavailable.");
+            var verified = await _forkRecovery.PrepareRemovalAsync(user, payload.RemovedDeviceId, ct);
+            if (verified.AuthorizationId != payload.ForkExclusion.AuthorizationId ||
+                !verified.FirstEnvelope.AsSpan().SequenceEqual(payload.ForkExclusion.FirstEnvelope) ||
+                !verified.SecondEnvelope.AsSpan().SequenceEqual(payload.ForkExclusion.SecondEnvelope))
+                throw new InvalidDataException("The recovery removal evidence changed before signing.");
+        }
         var state = await GetOrCreateStateAsync(user, user.KeyEpoch, user.MembershipEpoch, ct);
         var envelope = CreateEnvelope(
             user,
@@ -196,6 +208,11 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
             UserControlOperationEnvelopeUtil.SerializeDeviceRemovalPayload(payload));
         await PersistAppliedEnvelopeAsync(envelope, state, ct);
 
+        if (payload.ForkExclusion is not null)
+        {
+            if (_forkRecovery is null) throw new InvalidOperationException("Fork-removal verification is unavailable.");
+            await _forkRecovery.StageSignedExclusionAsync(user, payload, envelope, ct);
+        }
         foreach (var authorization in active)
             await _membershipAuthorization.EndAuthorizationAsync(authorization, payload, envelope.OperationId, envelope.OperationHash, envelope.CreatedAtUtc, ct);
 

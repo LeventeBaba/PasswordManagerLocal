@@ -218,6 +218,8 @@
   "Profile_Device_SelfDiagnostics_CanonicalCheckpointInvalid": "The signed profile checkpoint could not be verified. Recovery can offer to trust the verified local copy.",
   "Profile_Device_SelfDiagnostics_RecoveryBlockedAccountDeletion": "Account deletion evidence prevents recovery of this profile identity. A deleted account will not be reactivated.",
   "Profile_Device_SelfDiagnostics_RecoveryBlockedDataVerification": "The encrypted profile could not be decrypted and fully verified. History was not reset; recovery needs a trusted data copy.",
+  "Profile_Device_SelfDiagnostics_RecoveryBlockedLocalAuthorization": "This device’s permission to access the profile could not be verified. Recovery cannot reconnect it or grant access. Your local data has been kept.",
+  "Profile_Device_SelfDiagnostics_RecoveryBlockedTerminalConflict": "Synchronization could not be restored securely. Your local data and conflict evidence have been kept. Changes made only on this device may not have reached your other devices. Disconnecting a device requires verified account authority; connecting it again requires a fresh, manually approved setup.",
   "Profile_Device_SelfDiagnostics_RecoveryBlockedDatabase": "A database-level fault must be resolved before profile recovery can proceed.",
   "Profile_Device_SelfDiagnostics_RecoveryBlockedKeyUnavailable": "The profile encryption key is unavailable. Sign in again before retrying diagnostics.",
   "Profile_Device_SelfDiagnostics_RecoveryBlockedEpochExhausted": "Verified synchronization counters cannot advance safely. Copy verified passwords to a separate profile using the existing export/copy action; this profile identity cannot safely restart its history.",
@@ -700,12 +702,17 @@
   "Passwords_TagPicker_ManagementHint": "Changes saved in tag management are kept even if you cancel tag selection.",
   "Passwords_TagPicker_Back": "Back to tag selection",
   "Search_FieldSelection_LockedHint": "At least one search field must stay on. Enable another field before turning the last one off.",
-  "Profile_Device_SelfDiagnostics_RecoveryRiskSyncFault": "Retained fault records are blocking synchronization or profile operations. Recovery will retire those records using the verified local profile. Necessary recovery evidence stays inside the protected database until resolved.",
+  "Profile_Device_SelfDiagnostics_RecoveryRiskSyncFault": "Retained fault records are blocking synchronization or profile operations. Only faults with verified recovery evidence can be resolved. Conflicting signed history remains blocked.",
   "Profile_Device_SelfDiagnostics_RecoveryBlockedJournal": "Recovery data could not be stored and verified inside the protected database. Profile history was not reset. Check available storage and retry.",
   "Profile_Device_SelfDiagnostics_RecoveryJournalCleaned": "Recovery was verified and its temporary profile copy was removed from the database.",
   "Profile_Device_SelfDiagnostics_RecoveryJournalRetained": "Recovery evidence remains protected inside this device’s database until verification or reconciliation is complete. It is removed when proven unnecessary or when the profile is deleted.",
   "Profile_Device_Recovery_JournalRetained": "Recovery data remains protected inside this device’s encrypted database until verification or evidence review is complete.",
   "Settings_BackgroundSync_Idle": "Background synchronization is enabled and waiting for an eligible linked device.",
   "Settings_BackgroundSync_Retrying": "Background synchronization is temporarily unavailable. Retrying automatically.",
-  "Settings_BackgroundSync_RestartRequired": "Restart the application to restore background synchronization."
+  "Settings_BackgroundSync_RestartRequired": "Restart the application to restore background synchronization.",
+  "Login_LocalProfileRemoval_Action": "Remove a disconnected local profile",
+  "Login_LocalProfileRemoval_Warning": "First disconnect this device from another authorized device and let the disconnection reach this installation. Enter the local profile’s username and master password above. This removes only its local copy; your account and data on other devices remain. Changes saved only here will be lost. Connecting again requires a separate, manually approved setup and may require resetting this installation, which affects its other profiles.",
+  "Login_LocalProfileRemoval_Acknowledge": "I understand that changes saved only on this device will be lost.",
+  "Login_LocalProfileRemoval_Confirm": "Remove this local copy",
+  "Login_LocalProfileRemoval_Completed": "The disconnected local profile was removed. Your other profiles and devices were kept."
 }

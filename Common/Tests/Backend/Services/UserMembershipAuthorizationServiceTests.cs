@@ -127,6 +127,10 @@ public sealed class UserMembershipAuthorizationServiceTests
         await service.EndAuthorizationAsync(authorization, removal, operationId, operationHash, DateTimeOffset.UtcNow);
         await database.UnitOfWork.SaveChangesAsync();
 
+        // Historical snapshots within a valid cutoff remain verifiable, but that
+        // evidence cannot restore the removed installation's current authority.
+        await MSTestAssert.ThrowsExactlyAsync<UnauthorizedAccessException>(() =>
+            service.VerifyLocalInstallationAsync(user.UId, 2, 2));
         await service.VerifySnapshotAuthorAsync(CreateSnapshot(user.UId, identity.LocalDeviceId, identity.OriginInstanceId, 1, 1, 3, signingKey));
         await service.VerifySnapshotAuthorAsync(CreateSnapshot(user.UId, identity.LocalDeviceId, identity.OriginInstanceId, 1, 2, 7, signingKey));
         await MSTestAssert.ThrowsExactlyAsync<UnauthorizedAccessException>(() =>
@@ -298,6 +302,58 @@ public sealed class UserMembershipAuthorizationServiceTests
         MSTestAssert.IsFalse(ended.IsActive);
         MSTestAssert.HasCount(32, ended.RemovalOperationHash!);
         MSTestAssert.HasCount(1, await database.UserOriginRemovalCutoffs.ListForUserAsync(user.UId));
+    }
+
+    [TestMethod]
+    [TestCategory("Recovery")]
+    [TestCategory("EnrollmentSecurity")]
+    [DataRow("healthy")]
+    [DataRow("missing")]
+    [DataRow("removed")]
+    [DataRow("different-origin")]
+    [DataRow("different-signing-key")]
+    [DataRow("different-agreement-key")]
+    [DataRow("different-fingerprint")]
+    [DataRow("future-membership")]
+    [DataRow("wrong-key-epoch")]
+    [DataRow("contradictory-removal")]
+    public async Task LocalRecoveryAuthority_RequiresExactCurrentInstallation(string condition)
+    {
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        var identity = CreateIdentity(signingKey);
+        var user = CreateUser();
+        await database.Users.AddAsync(user);
+        var service = new UserMembershipAuthorizationService(database.UserMembershipAuthorizations,
+            database.UserOriginRemovalCutoffs, identity);
+        var authorization = await service.CreateGenesisAsync(user);
+        await database.UnitOfWork.SaveChangesAsync();
+        var oldOrigin = identity.OriginInstanceId;
+        var oldDevice = identity.LocalDeviceId;
+        switch (condition)
+        {
+            case "missing": database.UserMembershipAuthorizations.DeleteRange([authorization]); break;
+            case "removed": authorization.IsActive = false; authorization.EndedMembershipEpoch = 2; break;
+            case "different-origin": identity.OriginInstanceId = Guid.NewGuid(); break;
+            case "different-signing-key": identity.SignPublicKey = Enumerable.Repeat((byte)0x99, 32).ToArray(); break;
+            case "different-agreement-key": identity.AgreementPublicKey = Enumerable.Repeat((byte)0x99, 32).ToArray(); break;
+            case "different-fingerprint": identity.FingerprintHex = new string('B', 64); break;
+            case "future-membership": authorization.StartedMembershipEpoch = 2; break;
+            case "wrong-key-epoch": authorization.MinimumKeyEpoch = 2; break;
+            case "contradictory-removal": authorization.RemovalOperationId = Guid.NewGuid(); break;
+        }
+        if (condition != "missing") database.UserMembershipAuthorizations.Update(authorization);
+        await database.UnitOfWork.SaveChangesAsync();
+        if (condition == "healthy")
+            MSTestAssert.AreEqual(authorization.AuthorizationId,
+                (await service.VerifyLocalInstallationAsync(user.UId, 1, 1)).AuthorizationId);
+        else
+            await MSTestAssert.ThrowsExactlyAsync<UnauthorizedAccessException>(() => service.VerifyLocalInstallationAsync(user.UId, 1, 1));
+        MSTestAssert.AreEqual(oldDevice, identity.LocalDeviceId);
+        MSTestAssert.AreEqual(condition == "missing" ? 0 : 1,
+            (await database.UserMembershipAuthorizations.ListForUserAsync(user.UId)).Count);
+        MSTestAssert.AreEqual(0, (await database.UserControlOperations.ListForUserAsync(user.UId)).Count);
+        MSTestAssert.AreEqual(condition == "different-origin" ? false : true, oldOrigin == identity.OriginInstanceId);
     }
 
     private static DeviceRemovalOriginCutoffPayload CreateCutoff(UserMembershipAuthorization authorization, long keyEpoch, long snapshotRevision, long controlSequence) =>

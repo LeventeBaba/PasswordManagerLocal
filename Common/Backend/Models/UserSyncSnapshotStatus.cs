@@ -23,5 +23,8 @@ public enum UserSyncSnapshotStatus : byte
     IsolatedCorrupt = 5,
 
     /// <summary>Retained payload evidence that is no longer eligible for sync or recovery.</summary>
-    SupersededBadEvidence = 6
+    SupersededBadEvidence = 6,
+
+    /// <summary>Original fork evidence excluded by a verified signed removal; never relayable.</summary>
+    RetiredForkEvidence = 7
 }

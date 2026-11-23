@@ -8,5 +8,6 @@ public sealed class DeviceRemovalPayload
     public long ResultingMembershipEpoch { get; set; }
     public long KeyEpoch { get; set; }
     public List<DeviceRemovalOriginCutoffPayload> Origins { get; set; } = [];
+    public DeviceRemovalForkProof? ForkExclusion { get; set; }
     public byte[] IntegrityHash { get; set; } = [];
 }

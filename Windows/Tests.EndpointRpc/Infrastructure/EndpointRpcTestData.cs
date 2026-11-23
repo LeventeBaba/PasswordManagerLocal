@@ -49,6 +49,8 @@ public static class EndpointRpcTestData
             }
         },
         EndpointOperationId.GetUserProfileInfo => new GetUserProfileInfoEndpointRequest { Token = Token },
+        EndpointOperationId.RemoveLocalProfile => new RemoveLocalProfileEndpointRequest
+        { Request = new LoginRequest { Username = "ValidUser1", Password = Password() }, AcknowledgeDataLoss = true },
         EndpointOperationId.DeleteUserAccount => new DeleteUserAccountEndpointRequest { Token = Token, Password = Password() },
         EndpointOperationId.ChangeUsername => new ChangeUsernameEndpointRequest { Token = Token, NewUsername = "ValidUser2" },
         EndpointOperationId.UpdateUserProfileInfo => new UpdateUserProfileInfoEndpointRequest

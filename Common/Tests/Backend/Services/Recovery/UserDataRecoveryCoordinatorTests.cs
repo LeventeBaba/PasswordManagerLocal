@@ -106,6 +106,67 @@ public sealed partial class UserDataRecoveryCoordinatorTests
     }
 
     [TestMethod]
+    [TestCategory("Recovery")]
+    [TestCategory("EnrollmentSecurity")]
+    public async Task RecoveryWithoutCurrentLocalAuthority_DoesNotReadmitOrPublishTheInstallation()
+    {
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var harness = await CoordinatorHarness.CreateAsync(database, includeHealthyCandidate: true,
+            localInstallationAuthorized: false);
+        var before = (await database.Users.GetByIdAsync(harness.UserId))!.EncryptedPayload.ToArray();
+        var originalIdentity = harness.LocalIdentity.OriginInstanceId;
+        Assert.IsNull(await harness.Coordinator.TryResolvePasswordSaltAsync(harness.UserId));
+        foreach (var trigger in new[] { UserDataRecoveryTrigger.Login, UserDataRecoveryTrigger.HealthyCandidateReceived,
+                     UserDataRecoveryTrigger.StartupRecoveryScan, UserDataRecoveryTrigger.ManualRetry })
+        {
+            var result = await harness.Coordinator.TryRecoverAsync(harness.UserId, harness.Key,
+                UserSyncKeyConfidence.ExplicitlyTrusted, trigger);
+            Assert.AreEqual(UserDataRecoveryState.LocalInstallationUnauthorized, result.State);
+        }
+        CollectionAssert.AreEqual(before, (await database.Users.GetByIdAsync(harness.UserId))!.EncryptedPayload);
+        Assert.HasCount(0, harness.Queue.EnqueuedItems);
+        Assert.AreEqual(0, harness.Activation.ActivatePendingSyncsCalls);
+        Assert.AreEqual(originalIdentity, harness.LocalIdentity.OriginInstanceId);
+        Assert.HasCount(0, await database.UserMembershipAuthorizations.ListForUserAsync(harness.UserId));
+        Assert.HasCount(0, await database.UserControlOperations.ListForUserAsync(harness.UserId));
+        Assert.HasCount(1, await database.UserSyncSnapshots.ListForUserAsync(harness.UserId));
+    }
+
+    [TestMethod]
+    [TestCategory("Recovery")]
+    [TestCategory("Security")]
+    public async Task TerminalLocalCanonicalFault_RemainsStableAcrossHealthyCandidateAndManualRetries()
+    {
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync();
+        using var harness = await CoordinatorHarness.CreateAsync(database, includeHealthyCandidate: true);
+        var fault = new UserSyncFault
+        {
+            UserId = harness.UserId, Scope = UserSyncFaultScope.LocalCanonical,
+            Kind = UserSyncFaultKind.CanonicalPasswordsBlobFailure, Status = UserSyncHealthStatus.TerminalConflict,
+            DiagnosticCode = "unique-local-data-conflict", BlocksLogin = true, BlocksPublishing = true,
+            ObservedHash = Enumerable.Repeat((byte)0x55, 32).ToArray()
+        };
+        await database.UserSyncFaults.AddAsync(fault);
+        await database.UnitOfWork.SaveChangesAsync();
+        var before = (await database.Users.GetByIdAsync(harness.UserId))!.EncryptedPayload.ToArray();
+        for (var attempt = 0; attempt < 12; attempt++)
+        {
+            var result = await harness.Coordinator.TryRecoverAsync(harness.UserId, harness.Key,
+                UserSyncKeyConfidence.ExplicitlyTrusted, attempt % 2 == 0
+                    ? UserDataRecoveryTrigger.HealthyCandidateReceived : UserDataRecoveryTrigger.ManualRetry);
+            Assert.AreEqual(UserDataRecoveryState.ControlPlaneConflict, result.State);
+        }
+        var after = (await database.UserSyncFaults.ListActiveForUserAsync(harness.UserId)).Single();
+        Assert.AreEqual(UserSyncHealthStatus.TerminalConflict, after.Status);
+        Assert.AreEqual(0, after.RecoveryAttemptCount);
+        Assert.IsNull(after.LastRecoveryAttemptAtUtc);
+        Assert.IsNull(after.NextRecoveryAttemptAtUtc);
+        CollectionAssert.AreEqual(fault.ObservedHash, after.ObservedHash);
+        CollectionAssert.AreEqual(before, (await database.Users.GetByIdAsync(harness.UserId))!.EncryptedPayload);
+        Assert.HasCount(0, harness.Queue.EnqueuedItems);
+    }
+
+    [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
     [TestCategory("Recovery")]

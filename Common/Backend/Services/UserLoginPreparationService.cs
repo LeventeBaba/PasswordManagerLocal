@@ -23,7 +23,8 @@ public sealed class UserLoginPreparationService(
     IDeletedUserBarrierRepository deletions,
     IUserMembershipAuthorizationRepository memberships,
     IDeviceIdentityService identity,
-    IUserControlOperationInboxService controlInbox) : IUserLoginPreparationService
+    IUserControlOperationInboxService controlInbox,
+    IUserForkRecoveryService? forkRecovery = null) : IUserLoginPreparationService
 {
     public async Task ReconcilePendingSecurityOperationsAsync(Guid userId, CancellationToken ct = default)
     {
@@ -77,9 +78,12 @@ public sealed class UserLoginPreparationService(
             throw new UnauthorizedAccessException("This device is no longer authorized for the account.");
         if ((await controlStates.GetAsync(userId, ct))?.HasConflict == true)
             throw new UnauthorizedAccessException("The account control plane contains a conflicting security operation.");
-        if ((await faults.ListActiveForUserAsync(userId, ct)).Any(fault =>
-                fault.Status == UserSyncHealthStatus.TerminalConflict && (fault.BlocksLogin || fault.BlocksLifecycle)))
-            throw new UnauthorizedAccessException("A terminal synchronization conflict prevents signing in.");
+        if ((await faults.ListActiveForUserAsync(userId, ct)).Any(UserSyncFaultPolicy.IsTerminal))
+        {
+            var current = await users.GetByIdAsync(userId, ct);
+            if (current is null || forkRecovery is null || !await forkRecovery.CanAccessIndependentCanonicalAsync(current, ct))
+                throw new UnauthorizedAccessException("A terminal synchronization conflict prevents signing in.");
+        }
     }
 
     private static UnauthorizedAccessException PendingSecurityOperations(IReadOnlyList<UserControlOperation> pending) =>
@@ -119,7 +123,8 @@ public sealed class UserLoginPreparationService(
             return null;
         var activeFaults = await faults.ListActiveForUserAsync(user.UId, ct);
         if (activeFaults.Any(f => f.BlocksLogin || f.BlocksLifecycle || f.BlocksMerge ||
-                                f.Scope is UserSyncFaultScope.LocalCanonical or UserSyncFaultScope.LoginIdentity))
+                                f.Scope is UserSyncFaultScope.LocalCanonical or UserSyncFaultScope.LoginIdentity) &&
+            (forkRecovery is null || !await forkRecovery.CanAccessIndependentCanonicalAsync(user, ct)))
             return null;
 
         // Authenticate the committed encrypted generation without decrypting it twice.

@@ -27,6 +27,7 @@ public sealed class UserLoginIdentityProjectionService : IUserLoginIdentityProje
     private readonly IUnitOfWork _uow;
     private readonly IDeletedUserBarrierRepository? _deletionBarriers;
     private readonly IUserCanonicalHealthService? _canonicalHealth;
+    private readonly IUserForkRecoveryService? _forkRecovery;
 
     public UserLoginIdentityProjectionService(
         IUserRepository users,
@@ -36,7 +37,8 @@ public sealed class UserLoginIdentityProjectionService : IUserLoginIdentityProje
         IUnitOfWork uow,
         IDeletedUserBarrierRepository? deletionBarriers = null,
         IUserCanonicalHealthService? canonicalHealth = null,
-        IUserControlStateRepository? controlStates = null)
+        IUserControlStateRepository? controlStates = null,
+        IUserForkRecoveryService? forkRecovery = null)
     {
         _users = users;
         _controlStates = controlStates;
@@ -46,6 +48,7 @@ public sealed class UserLoginIdentityProjectionService : IUserLoginIdentityProje
         _uow = uow;
         _deletionBarriers = deletionBarriers;
         _canonicalHealth = canonicalHealth;
+        _forkRecovery = forkRecovery;
     }
 
     public async Task<UserLoginIdentityState> SetCanonicalAsync(
@@ -108,7 +111,8 @@ public sealed class UserLoginIdentityProjectionService : IUserLoginIdentityProje
             if (_controlStates is not null && (await _controlStates.GetAsync(id, ct))?.HasConflict == true)
                 continue;
             var snapshots = await _snapshots.ListForUserAsync(id, ct);
-            if (snapshots.Any(row => row.Status == UserSyncSnapshotStatus.IsolatedFork)) continue;
+            if (snapshots.Any(row => row.Status == UserSyncSnapshotStatus.IsolatedFork) &&
+                (_forkRecovery is null || !await _forkRecovery.CanAccessIndependentCanonicalAsync(user, ct))) continue;
             foreach (var row in snapshots)
             {
                 if (row.UserKeyEpoch != user.KeyEpoch || row.MembershipEpoch > user.MembershipEpoch ||
@@ -272,6 +276,7 @@ public sealed class UserLoginIdentityProjectionService : IUserLoginIdentityProje
                 continue;
             if (row.Status == UserSyncSnapshotStatus.IsolatedFork)
             {
+                if (_forkRecovery is not null && await _forkRecovery.CanAccessIndependentCanonicalAsync(user, ct)) continue;
                 return await UpsertInvalidAsync(
                     existing, user, UserLoginIdentityStatus.IntegrityConflict,
                     "A terminal origin fork prevents proving an effective login identity.", ct);
@@ -296,7 +301,7 @@ public sealed class UserLoginIdentityProjectionService : IUserLoginIdentityProje
                 }
                 continue;
             }
-            if (row.Status == UserSyncSnapshotStatus.SupersededBadEvidence)
+            if (row.Status is UserSyncSnapshotStatus.SupersededBadEvidence or UserSyncSnapshotStatus.RetiredForkEvidence)
                 continue;
 
             UserSnapshotEnvelope envelope;

@@ -706,8 +706,8 @@ public sealed class UserSnapshotMergeCoordinatorTests
             OriginInstanceId = originInstanceId,
             SignPublicKey = signingPublicKey.ToArray(),
             SignPublicKeyHash = Hashing.SHA256Hash(signingPublicKey),
-            AgreementPublicKeyHash = Hashing.SHA256Hash([0xA1, 0xA2, 0xA3]),
-            TlsCertFingerprint = deviceId.ToString("N"),
+            AgreementPublicKeyHash = Hashing.SHA256Hash(CreateAgreementPublicKey(deviceId)),
+            TlsCertFingerprint = CreateFingerprint(deviceId),
             DeviceType = DeviceType.WindowsPc,
             StartedMembershipEpoch = user.MembershipEpoch,
             MinimumKeyEpoch = user.KeyEpoch,
@@ -724,8 +724,8 @@ public sealed class UserSnapshotMergeCoordinatorTests
         {
             Id = id,
             SignPublicKey = signingPublicKey.ToArray(),
-            PublicKey = [0x01],
-            TlsCertFingerprint = id.ToString("N"),
+            PublicKey = CreateAgreementPublicKey(id),
+            TlsCertFingerprint = CreateFingerprint(id),
             IsTrusted = true,
             IsBlocked = false
         };
@@ -822,12 +822,22 @@ public sealed class UserSnapshotMergeCoordinatorTests
         return envelope;
     }
 
+    // Each fake installation has distinct, consistently retained 32-byte agreement-key material
+    // and a full-length certificate fingerprint. No key agreement is performed by these tests.
+    private static byte[] CreateAgreementPublicKey(Guid deviceId) =>
+        Hashing.SHA256Hash(deviceId.ToByteArray());
+
+    private static string CreateFingerprint(Guid deviceId) =>
+        Convert.ToHexString(Hashing.SHA256Hash(deviceId.ToByteArray()));
+
     private static FakeDeviceIdentityService CreateIdentity(Guid deviceId, Guid instanceId, Key signingKey) =>
         new()
         {
             LocalDeviceId = deviceId,
             OriginInstanceId = instanceId,
             SignPublicKey = signingKey.PublicKey.Export(KeyBlobFormat.RawPublicKey),
+            AgreementPublicKey = CreateAgreementPublicKey(deviceId),
+            FingerprintHex = CreateFingerprint(deviceId),
             SignHandler = bytes => SignatureAlgorithm.Ed25519.Sign(signingKey, bytes)
         };
 }

@@ -29,7 +29,7 @@ internal static class SqliteStoragePolicy
         new("SyncTombstones", "Work", MaxMetadataRowBytes, TombstoneConstants.MaxSyncTombstones),
         new("SyncVersionClockState", "Work", MaxMetadataRowBytes, 1),
         new("UserSyncStates", "Snapshots", MaxMetadataRowBytes),
-        new("UserSyncSnapshots", "Snapshots", SyncConstants.MaxUserSnapshotEnvelopeBytes + MaxMetadataRowBytes),
+        new("UserSyncSnapshots", "Snapshots", 2L * SyncConstants.MaxUserSnapshotEnvelopeBytes + MaxMetadataRowBytes),
         new("UserRevisionKnowledge", "Snapshots", MaxMetadataRowBytes),
         new("UserCanonicalCheckpoints", "Snapshots", MaxMetadataRowBytes),
         new("UserControlOperations", "Control", SyncConstants.MaxUserControlOperationEnvelopeBytes + MaxMetadataRowBytes),

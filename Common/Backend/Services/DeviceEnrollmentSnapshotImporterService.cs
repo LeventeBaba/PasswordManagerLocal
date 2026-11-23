@@ -211,7 +211,7 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
                 }
                 else
                 {
-                    if (existing.Status == UserSyncSnapshotStatus.IsolatedFork)
+                    if (existing.Status is UserSyncSnapshotStatus.IsolatedFork or UserSyncSnapshotStatus.RetiredForkEvidence)
                         throw new InvalidDataException("The enrollment bootstrap cannot overwrite locally retained snapshot quarantine evidence.");
                     CopySnapshotRow(CreateSnapshotRow(item, envelope), existing);
                     pendingSnapshots.Update(existing);
@@ -454,7 +454,7 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         {
             if (!Enum.IsDefined(pending.Status))
                 throw new InvalidDataException("A retained user snapshot has an invalid status.");
-            if (pending.Status == UserSyncSnapshotStatus.IsolatedFork)
+            if (pending.Status is UserSyncSnapshotStatus.IsolatedFork or UserSyncSnapshotStatus.RetiredForkEvidence)
             {
                 if (string.IsNullOrWhiteSpace(pending.QuarantineReason) ||
                     pending.ConflictingSnapshotHash is { Length: not CryptographyConstants.Sha256HashSizeInBytes })
@@ -466,7 +466,7 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             {
                 var hasQuarantineReason = !string.IsNullOrWhiteSpace(pending.QuarantineReason);
                 var hasConflictingSnapshotHash = pending.ConflictingSnapshotHash is { Length: > 0 };
-                if (hasQuarantineReason || hasConflictingSnapshotHash)
+                if (hasQuarantineReason || hasConflictingSnapshotHash || pending.ConflictingEnvelopePayload is { Length: > 0 })
                     throw new InvalidDataException("Non-quarantined snapshot evidence contains quarantine metadata.");
 
                 // Treat empty strings and zero-length byte arrays as the same absence value as null.
@@ -483,17 +483,50 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
                 throw new InvalidDataException("A retained user snapshot belongs to another user.");
             var authorization = FindAuthorization(snapshot.MembershipAuthorizations, envelope.OriginDeviceId, envelope.OriginInstanceId, envelope.MembershipEpoch, envelope.UserKeyEpoch);
             UserSnapshotEnvelopeUtil.VerifyWithSigningKey(envelope, authorization.SignPublicKey);
-            if (!authorization.IsActive)
+            var exclusions = controlItems.Where(item => item.Snapshot.Status == UserControlOperationStatus.Applied &&
+                    item.Envelope.OperationType == UserControlOperationType.DeviceRemoval)
+                .Select(item => UserControlOperationEnvelopeUtil.DeserializeDeviceRemovalPayload(item.Envelope.OperationPayload))
+                .Where(removal => removal.ForkExclusion is not null).ToArray();
+            var historicalExclusion = exclusions.SingleOrDefault(removal => removal.ForkExclusion!.AuthorizationId == authorization.AuthorizationId);
+            if (pending.Status == UserSyncSnapshotStatus.RetiredForkEvidence)
+            {
+                if (authorization.IsActive || historicalExclusion is null)
+                    throw new InvalidDataException("Historical fork evidence lacks its signed exclusion.");
+                DeviceRemovalForkProofUtil.VerifyAuthorization(historicalExclusion, authorization);
+            }
+            else if (!authorization.IsActive)
             {
                 if (!cutoffByNamespace.TryGetValue((envelope.UserId, envelope.OriginDeviceId, envelope.OriginInstanceId, envelope.UserKeyEpoch), out var cutoff) ||
                     envelope.OriginRevision > cutoff.HighestAcceptedSnapshotRevision)
                     throw new InvalidDataException("A retained user snapshot exceeds its removal cutoff.");
             }
+            if (pending.ConflictingEnvelopePayload is { Length: > 0 } competing)
+            {
+                if (competing.Length > SyncConstants.MaxUserSnapshotEnvelopeBytes)
+                    throw new InvalidDataException("The competing retained envelope is too large.");
+                var competingEnvelope = JsonSerializer.Deserialize(competing, BackendJsonSerializerContext.Default.UserSnapshotEnvelope)
+                    ?? throw new InvalidDataException("The competing retained envelope is missing.");
+                UserSnapshotEnvelopeUtil.VerifyWithSigningKey(competingEnvelope, authorization.SignPublicKey);
+                if (competingEnvelope.UserId != envelope.UserId || competingEnvelope.OriginDeviceId != envelope.OriginDeviceId ||
+                    competingEnvelope.OriginInstanceId != envelope.OriginInstanceId || competingEnvelope.UserKeyEpoch != envelope.UserKeyEpoch ||
+                    pending.ConflictingSnapshotHash is null || !Hashing.Verify(pending.ConflictingSnapshotHash, competingEnvelope.SnapshotHash))
+                    throw new InvalidDataException("The competing retained envelope is outside its evidence namespace.");
+            }
+            if (pending.Status != UserSyncSnapshotStatus.RetiredForkEvidence && exclusions.Any(removal =>
+                    envelope.Coverage.Any(entry => entry.OriginDeviceId == removal.RemovedDeviceId &&
+                        entry.OriginInstanceId == removal.Origins[0].OriginInstanceId && entry.OriginRevision > 0)))
+                throw new InvalidDataException("Enrollment contains canonical evidence from an excluded origin.");
             pendingItems.Add(new ValidatedPendingSnapshot(pending, envelope));
         }
 
         foreach (var knowledge in snapshot.RevisionKnowledge)
         {
+            if (knowledge.HighestMergedRevision > 0 && controlItems.Where(item => item.Snapshot.Status == UserControlOperationStatus.Applied &&
+                    item.Envelope.OperationType == UserControlOperationType.DeviceRemoval)
+                .Select(item => UserControlOperationEnvelopeUtil.DeserializeDeviceRemovalPayload(item.Envelope.OperationPayload))
+                .Any(removal => removal.ForkExclusion is not null && removal.RemovedDeviceId == knowledge.OriginDeviceId &&
+                    removal.Origins.Any(origin => origin.OriginInstanceId == knowledge.OriginInstanceId)))
+                throw new InvalidDataException("Enrollment canonical history includes a signed-excluded origin.");
             if (knowledge.UserId != snapshot.PrimaryUserId || knowledge.OriginDeviceId == Guid.Empty || knowledge.OriginInstanceId == Guid.Empty ||
                 knowledge.UserKeyEpoch <= 0 || knowledge.HighestStoredRevision < 0 || knowledge.HighestMergedRevision < 0 ||
                 (knowledge.HighestStoredRevision > 0 && knowledge.HighestStoredSnapshotHash.Length != CryptographyConstants.Sha256HashSizeInBytes))
@@ -650,6 +683,8 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
                     if (!authorizations.TryGetValue(authorizationId, out var target))
                         throw new InvalidDataException("The removal references a missing installation authorization.");
                     DeviceRemovalEvidenceUtil.ValidateAuthorization(payload, ToAuthorization(target));
+                    if (payload.ForkExclusion is not null)
+                        DeviceRemovalForkProofUtil.VerifyAuthorization(payload, ToAuthorization(target));
                 }
                 foreach (var origin in payload.Origins)
                 {
@@ -765,7 +800,8 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
             ? UserSyncSnapshotStatus.MergedReceipt
             : item.Snapshot.Status,
         QuarantineReason = item.Snapshot.QuarantineReason,
-        ConflictingSnapshotHash = item.Snapshot.ConflictingSnapshotHash?.ToArray()
+        ConflictingSnapshotHash = item.Snapshot.ConflictingSnapshotHash?.ToArray(),
+        ConflictingEnvelopePayload = item.Snapshot.ConflictingEnvelopePayload?.ToArray()
     };
 
     private void CopySnapshotRow(UserSyncSnapshot source, UserSyncSnapshot target)
@@ -781,6 +817,7 @@ public sealed class DeviceEnrollmentSnapshotImporterService : IDeviceEnrollmentS
         target.Status = source.Status;
         target.QuarantineReason = source.QuarantineReason;
         target.ConflictingSnapshotHash = source.ConflictingSnapshotHash;
+        target.ConflictingEnvelopePayload = source.ConflictingEnvelopePayload;
     }
 
     private bool HashesEqual(byte[]? left, byte[]? right)

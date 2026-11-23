@@ -134,7 +134,8 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
             return null;
 
         var faults = await _faultRepository.ListActiveForUserAsync(userId, ct);
-        if (faults.Any(IsTerminalFork) || faults.Any(IsControlPlaneConflict))
+        if (faults.Any(UserSyncFaultPolicy.IsTerminal) ||
+            await _snapshots.HasIsolatedForkAsync(userId, ct))
             return null;
 
         var epochs = await ResolveAuthoritativeEpochsAsync(user, ct);
@@ -218,7 +219,8 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
             }
 
             var activeFaults = await _faultRepository.ListActiveForUserAsync(userId, ct);
-            if (activeFaults.Any(IsTerminalFork))
+            if (activeFaults.Any(IsTerminalFork) ||
+                await _snapshots.HasIsolatedForkAsync(userId, ct))
             {
                 await transaction.RollbackAsync(ct);
                 return new UserDataRecoveryResult(UserDataRecoveryState.TerminalFork, DiagnosticCode: "terminal-origin-fork");
@@ -528,6 +530,7 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
                 throw new StorageWriteException(StorageWriteException.FailureKind.StaleRow, typeof(UserControlState));
             }
 
+            await _membershipAuthorization.VerifyLocalInstallationAsync(user.UId, user.KeyEpoch, user.MembershipEpoch, ct);
             await _uow.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
 
@@ -645,6 +648,14 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
             return EpochResolution.Failed(UserDataRecoveryState.ControlPlaneConflict, "checkpoint-control-epoch-conflict");
         }
 
+        try
+        {
+            await _membershipAuthorization.VerifyLocalInstallationAsync(user.UId, keyEpoch, membershipEpoch, ct);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidDataException or ArgumentException)
+        {
+            return EpochResolution.Failed(UserDataRecoveryState.LocalInstallationUnauthorized, "local-installation-unauthorized");
+        }
         return new EpochResolution(true, keyEpoch, membershipEpoch, UserDataRecoveryState.NothingToRecover, null);
     }
 
@@ -836,7 +847,7 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
         {
             var faults = await _faultRepository.ListActiveForUserAsync(userId, ct);
             var now = _timeProvider.GetUtcNow();
-            foreach (var fault in faults.Where(fault => fault.Scope == UserSyncFaultScope.LocalCanonical))
+            foreach (var fault in faults.Where(UserSyncFaultPolicy.IsRecoverableCanonical))
             {
                 fault.Status = UserSyncHealthStatus.AwaitingEvidence;
                 fault.LastRecoveryAttemptAtUtc ??= now;
@@ -875,7 +886,7 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
             }, ct);
 
             var faults = await _faultRepository.ListActiveForUserAsync(userId, ct);
-            foreach (var fault in faults.Where(fault => fault.Scope == UserSyncFaultScope.LocalCanonical))
+            foreach (var fault in faults.Where(UserSyncFaultPolicy.IsRecoverableCanonical))
             {
                 fault.Status = UserSyncHealthStatus.TerminalConflict;
                 fault.DiagnosticCode = diagnosticCode;
@@ -896,7 +907,7 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
         try
         {
             var faults = await _faultRepository.ListActiveForUserAsync(userId, ct);
-            foreach (var fault in faults.Where(fault => fault.Scope == UserSyncFaultScope.LocalCanonical))
+            foreach (var fault in faults.Where(UserSyncFaultPolicy.IsRecoverableCanonical))
             {
                 fault.Status = UserSyncHealthStatus.TerminalConflict;
                 fault.DiagnosticCode = diagnosticCode;
@@ -938,19 +949,14 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
         confidence != UserSyncKeyConfidence.UnconfirmedPassword;
 
     private bool IsTerminalFork(UserSyncFault fault) =>
-        fault.Status == UserSyncHealthStatus.TerminalConflict &&
+        UserSyncFaultPolicy.IsTerminal(fault) &&
         (fault.Scope == UserSyncFaultScope.SnapshotFork ||
          fault.Kind is UserSyncFaultKind.SameRevisionFork or
              UserSyncFaultKind.RevisionRollback or
              UserSyncFaultKind.DuplicateOriginInstallation);
 
     private bool IsControlPlaneConflict(UserSyncFault fault) =>
-        fault.Status == UserSyncHealthStatus.TerminalConflict &&
-        (fault.Scope is UserSyncFaultScope.ControlPlane or UserSyncFaultScope.DeterministicItem ||
-         fault.Kind is UserSyncFaultKind.KeyEpochConflict or
-             UserSyncFaultKind.MembershipConflict or
-             UserSyncFaultKind.ControlOperationFork or
-             UserSyncFaultKind.DeterministicItemConflict);
+        UserSyncFaultPolicy.IsTerminal(fault) && !IsTerminalFork(fault);
 
     private UserSyncFaultKind CanonicalFaultKind(UserDataVerificationState state) => state switch
     {

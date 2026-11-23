@@ -218,6 +218,8 @@
   "Profile_Device_SelfDiagnostics_CanonicalCheckpointInvalid": "A profil aláírt ellenőrzőpontja nem ellenőrizhető. A helyreállítás felajánlhatja az ellenőrzött helyi másolat használatát.",
   "Profile_Device_SelfDiagnostics_RecoveryBlockedAccountDeletion": "A fióktörlés bizonyítéka megakadályozza ennek a profilazonosítónak a helyreállítását. Törölt fiók nem aktiválható újra.",
   "Profile_Device_SelfDiagnostics_RecoveryBlockedDataVerification": "A titkosított profil nem fejthető vissza és nem ellenőrizhető teljesen. Az előzmények nem változtak; megbízható adatmásolatra van szükség.",
+  "Profile_Device_SelfDiagnostics_RecoveryBlockedLocalAuthorization": "Nem sikerült ellenőrizni, hogy ez az eszköz jogosult-e a profil elérésére. A helyreállítás nem csatlakoztathatja újra, és nem adhat hozzáférést. A helyi adatok megmaradtak.",
+  "Profile_Device_SelfDiagnostics_RecoveryBlockedTerminalConflict": "A szinkronizációt nem sikerült biztonságosan helyreállítani. A helyi adatok és a hiba bizonyítékai megmaradtak. Az ezen az eszközön végzett módosítások egy része lehet, hogy még nem jutott el a többi eszközre. Eszköz leválasztásához ellenőrzött fiókjogosultság szükséges; az újbóli csatlakoztatást külön, kézzel kell jóváhagyni.",
   "Profile_Device_SelfDiagnostics_RecoveryBlockedDatabase": "A profil helyreállítása előtt meg kell oldani az adatbázis szintű hibát.",
   "Profile_Device_SelfDiagnostics_RecoveryBlockedKeyUnavailable": "A profil titkosítási kulcsa nem érhető el. A diagnosztika újrapróbálása előtt jelentkezzen be újra.",
   "Profile_Device_SelfDiagnostics_RecoveryBlockedEpochExhausted": "Az ellenőrzött szinkronizációs számlálók nem növelhetők biztonságosan. Másolja az ellenőrzött jelszavakat külön profilba a meglévő exportálási/másolási művelettel; ennek a profilazonosítónak az előzményei nem indíthatók újra biztonságosan.",
@@ -700,12 +702,17 @@
   "Passwords_TagPicker_ManagementHint": "A címkekezelésben mentett módosítások a címkekiválasztás megszakítása után is megmaradnak.",
   "Passwords_TagPicker_Back": "Vissza a címkekiválasztáshoz",
   "Search_FieldSelection_LockedHint": "Legalább egy keresési mezőnek bekapcsolva kell maradnia. Az utolsó kikapcsolása előtt kapcsoljon be egy másik mezőt.",
-  "Profile_Device_SelfDiagnostics_RecoveryRiskSyncFault": "A megőrzött hibarekordok blokkolják a szinkronizációt vagy a profilműveleteket. A helyreállítás az ellenőrzött helyi profil alapján lezárja ezeket. A szükséges helyreállítási bizonyítékok rendezésükig a védett adatbázisban maradnak.",
+  "Profile_Device_SelfDiagnostics_RecoveryRiskSyncFault": "A megőrzött hibarekordok blokkolják a szinkronizációt vagy a profilműveleteket. Csak az ellenőrzött helyreállítási bizonyítékkal rendelkező hibák oldhatók fel. Az ellentmondó aláírt előzmények továbbra is blokkolva maradnak.",
   "Profile_Device_SelfDiagnostics_RecoveryBlockedJournal": "A helyreállítási adatok nem tárolhatók és nem ellenőrizhetők a védett adatbázisban. A profil előzményei nem álltak vissza. Ellenőrizze a szabad tárhelyet, majd próbálja újra.",
   "Profile_Device_SelfDiagnostics_RecoveryJournalCleaned": "A helyreállítás ellenőrzése sikeres volt, az ideiglenes profilmásolat törlődött az adatbázisból.",
   "Profile_Device_SelfDiagnostics_RecoveryJournalRetained": "A helyreállítási bizonyítékok az ellenőrzés vagy a rendezés befejezéséig az eszköz védett adatbázisában maradnak. Ha igazoltan nincs rájuk szükség, vagy a profil törlődik, ezek is törlődnek.",
   "Profile_Device_Recovery_JournalRetained": "A helyreállítási adatok az ellenőrzés vagy a bizonyítékok rendezésének befejezéséig az eszköz titkosított adatbázisában maradnak védetten.",
   "Settings_BackgroundSync_Idle": "A háttérbeli szinkronizálás engedélyezve van, és megfelelő kapcsolt eszközre vár.",
   "Settings_BackgroundSync_Retrying": "A háttérbeli szinkronizálás átmenetileg nem érhető el. Automatikus újrapróbálkozás.",
-  "Settings_BackgroundSync_RestartRequired": "A háttérbeli szinkronizálás helyreállításához indítsd újra az alkalmazást."
+  "Settings_BackgroundSync_RestartRequired": "A háttérbeli szinkronizálás helyreállításához indítsd újra az alkalmazást.",
+  "Login_LocalProfileRemoval_Action": "Leválasztott helyi profil eltávolítása",
+  "Login_LocalProfileRemoval_Warning": "Először válassza le ezt az eszközt egy másik, jogosult eszközről, majd várja meg, amíg a leválasztás ide is eljut. Adja meg fent a helyi profil felhasználónevét és mesterjelszavát. Csak a helyi másolat törlődik; a fiók és a többi eszköz adatai megmaradnak. A kizárólag itt tárolt módosítások elvesznek. Az újbóli csatlakozást külön, kézzel kell jóváhagyni, és szükség lehet a teljes helyi telepítés alaphelyzetbe állítására, ami a többi helyi profilt is érinti.",
+  "Login_LocalProfileRemoval_Acknowledge": "Megértettem, hogy az egyedül ezen az eszközön tárolt módosítások elvesznek.",
+  "Login_LocalProfileRemoval_Confirm": "Helyi másolat eltávolítása",
+  "Login_LocalProfileRemoval_Completed": "A leválasztott helyi profil törlődött. A többi profil és eszköz megmaradt."
 }

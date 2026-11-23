@@ -125,18 +125,6 @@ public sealed class DeviceRemovalHistoryRecoveryTests
         var deviceId = source.Identity.LocalDeviceId;
         var originId = source.Identity.OriginInstanceId;
         await CorruptRemovalAsync(source, before.UId);
-        using (var scope = source.Services.CreateScope())
-        {
-            await scope.ServiceProvider.GetRequiredService<IUserSyncFaultService>().RecordAsync(new UserSyncFaultDescriptor
-            {
-                UserId = before.UId, Scope = UserSyncFaultScope.ControlPlane,
-                Kind = UserSyncFaultKind.MembershipConflict, Status = UserSyncHealthStatus.TerminalConflict,
-                KeyEpoch = before.KeyEpoch, MembershipEpoch = before.MembershipEpoch,
-                DiagnosticCode = "invalid-removal-history", BlocksLifecycle = true
-            });
-            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
-        }
-
         var result = await source.Endpoints.RunSelfDiagnosticsAndRepairAsync(token);
         Assert.IsTrue(result.Healthy, string.Join(", ", result.Findings));
         CollectionAssert.Contains(result.Findings.ToArray(), "SingleDeviceHistoryReset");

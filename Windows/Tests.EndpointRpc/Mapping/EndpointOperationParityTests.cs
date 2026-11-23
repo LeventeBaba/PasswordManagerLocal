@@ -107,6 +107,7 @@ public sealed class EndpointOperationParityTests
                 EndpointOperationId.ExportPasswordsToUser,
                 EndpointOperationId.Logout,
                 EndpointOperationId.RemovePasswords,
+                EndpointOperationId.RemoveLocalProfile,
                 EndpointOperationId.SetLocalDeviceName,
                 EndpointOperationId.SetLocalUserSyncOn,
                 EndpointOperationId.SetRememberMe,

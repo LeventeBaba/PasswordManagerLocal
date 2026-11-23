@@ -22,10 +22,16 @@ internal sealed class UserAccountDeletionStore(
         OR ("ModelType" = $deviceType AND "ModelId" IN ({ExclusiveLinkedDeviceIds}))
         """;
 
-    public async Task DeleteDependentStateAsync(Guid userId, CancellationToken ct)
+    public Task DeleteDependentStateAsync(Guid userId, CancellationToken ct) =>
+        DeleteMutableStateAsync(userId, preserveFaultEvidence: false, ct);
+
+    public Task DeleteLocalProfileStateAsync(Guid userId, CancellationToken ct) =>
+        DeleteMutableStateAsync(userId, preserveFaultEvidence: true, ct);
+
+    private async Task DeleteMutableStateAsync(Guid userId, bool preserveFaultEvidence, CancellationToken ct)
     {
         if (!session.HasActiveTransaction)
-            throw new InvalidOperationException("Account cleanup requires the authoritative deletion transaction.");
+            throw new InvalidOperationException("Account cleanup requires its caller's authenticated writer transaction.");
 
         // The caller's writer transaction fixes the ownership view until commit.
         // Clear model bookkeeping before removing the links that identify its scope.
@@ -47,14 +53,18 @@ internal sealed class UserAccountDeletionStore(
         // Signed control operations, control state, membership history and cutoffs survive.
         using (var command = await session.CreateCommandAsync("""
             DELETE FROM "UserRecoveryJournals" WHERE "UserId" = $user;
-            DELETE FROM "UserSyncSnapshots" WHERE "UserId" = $user;
-            DELETE FROM "UserRevisionKnowledge" WHERE "UserId" = $user;
+            DELETE FROM "UserSyncSnapshots" WHERE "UserId" = $user
+                AND ($preserve = 0 OR "Status" NOT IN ($fork, $retired));
+            DELETE FROM "UserRevisionKnowledge" WHERE "UserId" = $user AND $preserve = 0;
             DELETE FROM "UserSyncStates" WHERE "UserId" = $user;
             DELETE FROM "UserCanonicalCheckpoints" WHERE "UserId" = $user;
-            DELETE FROM "UserSyncFaults" WHERE "UserId" = $user;
+            DELETE FROM "UserSyncFaults" WHERE "UserId" = $user AND $preserve = 0;
             """, ct))
         {
             command.Parameters.AddWithValue("$user", userId);
+            command.Parameters.AddWithValue("$preserve", preserveFaultEvidence ? 1 : 0);
+            command.Parameters.AddWithValue("$fork", (byte)UserSyncSnapshotStatus.IsolatedFork);
+            command.Parameters.AddWithValue("$retired", (byte)UserSyncSnapshotStatus.RetiredForkEvidence);
             await command.ExecuteNonQueryAsync(ct);
         }
 

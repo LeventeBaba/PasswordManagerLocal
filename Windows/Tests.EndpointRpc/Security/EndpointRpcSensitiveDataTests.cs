@@ -75,6 +75,19 @@ public sealed class EndpointRpcSensitiveDataTests
     }
 
     [TestMethod]
+    public void LocalCleanupCredentials_AreRecognizedBySensitiveRequestCleanup()
+    {
+        var request = new RemoveLocalProfileEndpointRequest
+        {
+            Request = new PasswordManagerLocal.Common.Contracts.Requests.LoginRequest
+            { Username = "cleanup_profile", Password = EndpointRpcTestData.Password() },
+            AcknowledgeDataLoss = true
+        };
+        EndpointSensitiveData.ClearRequest(EndpointOperationId.RemoveLocalProfile, request);
+        Assert.IsTrue(request.Request.Password.All(value => value == 0));
+    }
+
+    [TestMethod]
     public void UntransferredSensitiveResponseBufferIsCleared()
     {
         var response = new GetUnsecurePasswordEndpointResponse

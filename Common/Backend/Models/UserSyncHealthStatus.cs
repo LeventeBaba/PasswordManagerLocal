@@ -9,5 +9,7 @@ public enum UserSyncHealthStatus : byte
     Recovering = 4,
     Recovered = 5,
     Superseded = 6,
-    TerminalConflict = 7
+    TerminalConflict = 7,
+    // Terminal history remains retained; this is not authenticated repair or supersession.
+    RetiredOrigin = 8
 }

@@ -102,6 +102,22 @@ public sealed class UserSnapshotMergeCoordinator : IUserSnapshotMergeCoordinator
             return false;
         }
 
+        if ((_syncFaults is not null && await _syncFaults.HasTerminalFaultAsync(userId, ct)) ||
+            await _snapshots.HasIsolatedForkAsync(userId, ct))
+        {
+            await transaction.RollbackAsync(ct);
+            return false;
+        }
+        try
+        {
+            await _membershipAuthorization.VerifyLocalInstallationAsync(userId, user.KeyEpoch, user.MembershipEpoch, ct);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidDataException or ArgumentException)
+        {
+            await transaction.RollbackAsync(ct);
+            return false;
+        }
+
         var captured = await _snapshots.ListPendingForKeyEpochAsync(userId, user.KeyEpoch, ct);
         if (captured.Count == 0)
         {

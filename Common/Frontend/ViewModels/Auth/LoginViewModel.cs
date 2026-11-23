@@ -24,6 +24,8 @@ public sealed class LoginViewModel : ViewModelBase
     private string _username = string.Empty;
     private string _password = string.Empty;
     private bool _rememberMe;
+    private bool _isLocalProfileRemovalVisible;
+    private bool _isLocalProfileRemovalAcknowledged;
     private bool _isPasswordVisible;
     private bool _isBusy;
     private bool _isBackendInitialized;
@@ -54,6 +56,17 @@ public sealed class LoginViewModel : ViewModelBase
         _onAuthenticationSucceededAsync = onAuthenticationSucceededAsync;
         _deadlineScheduler = deadlineScheduler ?? new AvaloniaFrontendDeadlineScheduler();
 
+        ShowLocalProfileRemovalCommand = Own(ReactiveCommand.Create(() =>
+        {
+            IsLocalProfileRemovalVisible = true;
+            IsLocalProfileRemovalAcknowledged = false;
+        }));
+        CancelLocalProfileRemovalCommand = Own(ReactiveCommand.Create(() =>
+        {
+            IsLocalProfileRemovalVisible = false;
+            IsLocalProfileRemovalAcknowledged = false;
+        }));
+        RemoveLocalProfileCommand = Own(ReactiveCommand.CreateFromTask(RemoveLocalProfileAsync));
         LoginCommand = Own(ReactiveCommand.CreateFromTask(LoginAsync));
         ExecutePrimaryActionCommand = Own(ReactiveCommand.CreateFromTask(ExecutePrimaryActionAsync));
         NavigateToRegistrationCommand = Own(ReactiveCommand.Create(_navigateToRegistration));
@@ -73,7 +86,9 @@ public sealed class LoginViewModel : ViewModelBase
         set
         {
             this.RaiseAndSetIfChanged(ref _username, value);
+            IsLocalProfileRemovalAcknowledged = false;
             this.RaisePropertyChanged(nameof(CanLogin));
+            this.RaisePropertyChanged(nameof(CanRemoveLocalProfile));
         }
     }
 
@@ -83,7 +98,9 @@ public sealed class LoginViewModel : ViewModelBase
         set
         {
             this.RaiseAndSetIfChanged(ref _password, value);
+            IsLocalProfileRemovalAcknowledged = false;
             this.RaisePropertyChanged(nameof(CanLogin));
+            this.RaisePropertyChanged(nameof(CanRemoveLocalProfile));
         }
     }
 
@@ -111,6 +128,7 @@ public sealed class LoginViewModel : ViewModelBase
         {
             this.RaiseAndSetIfChanged(ref _isBusy, value);
             this.RaisePropertyChanged(nameof(CanLogin));
+            this.RaisePropertyChanged(nameof(CanRemoveLocalProfile));
             this.RaisePropertyChanged(nameof(CanStartDeviceTransfer));
             this.RaisePropertyChanged(nameof(CanAutomaticallyRefreshEnrollment));
         }
@@ -123,6 +141,7 @@ public sealed class LoginViewModel : ViewModelBase
         {
             this.RaiseAndSetIfChanged(ref _isBackendInitialized, value);
             this.RaisePropertyChanged(nameof(CanLogin));
+            this.RaisePropertyChanged(nameof(CanRemoveLocalProfile));
             this.RaisePropertyChanged(nameof(CanStartDeviceTransfer));
         }
     }
@@ -246,6 +265,33 @@ public sealed class LoginViewModel : ViewModelBase
 
     public char PasswordMaskCharacter => IsPasswordVisible ? '\0' : '●';
 
+    public ReactiveCommand<RxVoid, RxVoid> ShowLocalProfileRemovalCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> CancelLocalProfileRemovalCommand { get; }
+    public ReactiveCommand<RxVoid, RxVoid> RemoveLocalProfileCommand { get; }
+    public string LocalProfileRemovalLabel => GetTranslation("Login_LocalProfileRemoval_Action");
+    public string LocalProfileRemovalWarning => GetTranslation("Login_LocalProfileRemoval_Warning");
+    public string LocalProfileRemovalAcknowledge => GetTranslation("Login_LocalProfileRemoval_Acknowledge");
+    public string LocalProfileRemovalConfirm => GetTranslation("Login_LocalProfileRemoval_Confirm");
+    public bool IsLocalProfileRemovalVisible
+    {
+        get => _isLocalProfileRemovalVisible;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _isLocalProfileRemovalVisible, value);
+            this.RaisePropertyChanged(nameof(CanRemoveLocalProfile));
+        }
+    }
+    public bool IsLocalProfileRemovalAcknowledged
+    {
+        get => _isLocalProfileRemovalAcknowledged;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _isLocalProfileRemovalAcknowledged, value);
+            this.RaisePropertyChanged(nameof(CanRemoveLocalProfile));
+        }
+    }
+    public bool CanRemoveLocalProfile => CanLogin && IsLocalProfileRemovalVisible && IsLocalProfileRemovalAcknowledged;
+
     public ReactiveCommand<RxVoid, RxVoid> LoginCommand { get; }
 
     public ReactiveCommand<RxVoid, RxVoid> ExecutePrimaryActionCommand { get; }
@@ -362,6 +408,10 @@ public sealed class LoginViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(RememberMeWarningText));
         this.RaisePropertyChanged(nameof(RememberMeOnLabel));
         this.RaisePropertyChanged(nameof(RememberMeOffLabel));
+        this.RaisePropertyChanged(nameof(LocalProfileRemovalLabel));
+        this.RaisePropertyChanged(nameof(LocalProfileRemovalWarning));
+        this.RaisePropertyChanged(nameof(LocalProfileRemovalAcknowledge));
+        this.RaisePropertyChanged(nameof(LocalProfileRemovalConfirm));
         this.RaisePropertyChanged(nameof(LoginButtonLabel));
         this.RaisePropertyChanged(nameof(NavigateToRegisterLabel));
         this.RaisePropertyChanged(nameof(NoAccountText));
@@ -385,6 +435,8 @@ public sealed class LoginViewModel : ViewModelBase
     public override void OnNavigatedFrom()
     {
         base.OnNavigatedFrom();
+        IsLocalProfileRemovalVisible = false;
+        IsLocalProfileRemovalAcknowledged = false;
         AbandonActiveDeviceTransfer();
         ResetDeviceTransferState(true);
     }
@@ -392,6 +444,8 @@ public sealed class LoginViewModel : ViewModelBase
     public void Reset()
     {
         AbandonActiveDeviceTransfer();
+        IsLocalProfileRemovalVisible = false;
+        IsLocalProfileRemovalAcknowledged = false;
         Username = string.Empty;
         Password = string.Empty;
         RememberMe = false;
@@ -478,8 +532,33 @@ public sealed class LoginViewModel : ViewModelBase
     }
 
 
+    private async Task RemoveLocalProfileAsync()
+    {
+        if (!CanRemoveLocalProfile) return;
+        var passwordHash = SecretTransform.HashPassword(Password);
+        var username = Username.Trim();
+        Password = string.Empty;
+        IsLocalProfileRemovalAcknowledged = false;
+        try
+        {
+            IsBusy = true;
+            await _endpoints.RemoveLocalProfileAsync(new LoginRequest { Username = username, Password = passwordHash }, true);
+            IsLocalProfileRemovalVisible = false;
+            Username = string.Empty;
+            RememberMe = false;
+            ShowLocalizedSuccessMessage("Login_LocalProfileRemoval_Completed");
+        }
+        catch (Exception ex) { ShowSafeErrorMessage(ex); }
+        finally
+        {
+            IsBusy = false;
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(passwordHash);
+        }
+    }
+
     private async Task LoginAsync()
     {
+        if (IsLocalProfileRemovalVisible) return;
         if (!CanLogin)
             return;
 
@@ -791,6 +870,7 @@ public sealed class LoginViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(Title));
         this.RaisePropertyChanged(nameof(Subtitle));
         this.RaisePropertyChanged(nameof(CanLogin));
+            this.RaisePropertyChanged(nameof(CanRemoveLocalProfile));
     }
 
     private static string BuildReadableCode(string code) =>

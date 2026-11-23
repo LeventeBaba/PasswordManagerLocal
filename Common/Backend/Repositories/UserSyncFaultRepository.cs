@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
+using PasswordManagerLocal.Common.Backend.Sync;
 
 namespace PasswordManagerLocal.Common.Backend.Repositories;
 
@@ -15,7 +16,7 @@ internal sealed class UserSyncFaultRepository(SqliteSession session) : IUserSync
                "RecoveryAttemptCount", "Scope", "Status", "SupersedingRevision", "UserId"
         FROM "UserSyncFaults"
         """;
-    private const string Active = """ "Status" NOT IN ($recovered, $superseded) """;
+    private static readonly string Active = $""" "Status" NOT IN ($recovered, $superseded, {(byte)UserSyncHealthStatus.RetiredOrigin}) """;
     private const string Origin = """ "OriginDeviceId" IS $device AND "OriginInstanceId" IS $instance AND "KeyEpoch" IS $epoch """;
 
     private readonly SqliteRowWriter<UserSyncFault> _rows = new(session, "UserSyncFaults", 1,
@@ -81,7 +82,23 @@ internal sealed class UserSyncFaultRepository(SqliteSession session) : IUserSync
             row => row.Scope == UserSyncFaultScope.LocalCanonical && IsActive(row) && row.Status != UserSyncHealthStatus.TerminalConflict,
             ct, ("$local", (byte)UserSyncFaultScope.LocalCanonical), ("$recovered", (byte)UserSyncHealthStatus.Recovered),
             ("$superseded", (byte)UserSyncHealthStatus.Superseded), ("$terminal", (byte)UserSyncHealthStatus.TerminalConflict));
-        return rows.Where(row => row.NextRecoveryAttemptAtUtc is null || row.NextRecoveryAttemptAtUtc <= nowUtc)
+        var due = rows.Where(row => UserSyncFaultPolicy.IsRecoverableCanonical(row) &&
+            (row.NextRecoveryAttemptAtUtc is null || row.NextRecoveryAttemptAtUtc <= nowUtc)).ToArray();
+        var blockedUsers = new HashSet<Guid>();
+        foreach (var userId in due.Select(row => row.UserId).Distinct())
+        {
+            // Public fault metadata can outlive explicit local profile erasure.
+            // Such retained evidence must not schedule futile canonical recovery.
+            if (!await session.ExistsAsync("""SELECT 1 FROM "Users" WHERE "UId" = $user""", ct, ("$user", userId)))
+            {
+                blockedUsers.Add(userId);
+                continue;
+            }
+            if ((await ListActiveForUserAsync(userId, ct)).Any(UserSyncFaultPolicy.IsTerminal) ||
+                await new UserSyncSnapshotRepository(session).HasIsolatedForkAsync(userId, ct))
+                blockedUsers.Add(userId);
+        }
+        return due.Where(row => !blockedUsers.Contains(row.UserId))
             .OrderBy(row => row.NextRecoveryAttemptAtUtc ?? DateTimeOffset.MinValue).ThenBy(row => row.UserId).ToArray();
     }
 
@@ -187,7 +204,7 @@ internal sealed class UserSyncFaultRepository(SqliteSession session) : IUserSync
     }
 
     private static bool IsActive(UserSyncFault row) =>
-        row.Status is not (UserSyncHealthStatus.Recovered or UserSyncHealthStatus.Superseded);
+        row.Status is not (UserSyncHealthStatus.Recovered or UserSyncHealthStatus.Superseded or UserSyncHealthStatus.RetiredOrigin);
 
     private UserSyncFault ReadForWrite(SqliteDataReader row) => _rows.Remember(new UserSyncFault
     {

@@ -85,6 +85,9 @@ public static class EndpointSensitiveData
                 Clear(request.Request?.Password);
                 Clear(request.Request?.NewPassword);
                 break;
+            case EndpointOperationId.RemoveLocalProfile when value is RemoveLocalProfileEndpointRequest request:
+                Clear(request.Request?.Password);
+                break;
             case EndpointOperationId.DeleteUserAccount when value is DeleteUserAccountEndpointRequest request:
                 Clear(request.Password);
                 break;

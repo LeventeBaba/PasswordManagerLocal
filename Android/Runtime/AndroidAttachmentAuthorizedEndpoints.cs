@@ -41,6 +41,9 @@ public sealed class AndroidAttachmentAuthorizedEndpoints : IEndpoints
     public Task<UserProfileInfoResponse> GetUserProfileInfoAsync(Guid token, CancellationToken ct = default) =>
         InvokeAsync(() => _inner.GetUserProfileInfoAsync(token, ct));
 
+    public Task RemoveLocalProfileAsync(LoginRequest request, bool acknowledgeDataLoss, CancellationToken ct = default) =>
+        InvokeAsync(() => _inner.RemoveLocalProfileAsync(request, acknowledgeDataLoss, ct));
+
     public Task DeleteUserAccountAsync(Guid token, byte[] password, CancellationToken ct = default) =>
         InvokeAsync(() => _inner.DeleteUserAccountAsync(token, password, ct));
 

@@ -253,6 +253,8 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<ILocalDeviceSettingsService, LocalDeviceSettingsService>();
         services.AddScoped<IUserDeviceQueryService, UserDeviceQueryService>();
         services.AddScoped<IUserDeviceSettingsService, UserDeviceSettingsService>();
+        services.AddScoped<IUserLocalProfileService, UserLocalProfileService>();
+        services.AddScoped<IUserForkRecoveryService, UserForkRecoveryService>();
         services.AddScoped<IUserDeviceDisconnectionService, UserDeviceDisconnectionService>();
         services.AddScoped<IUserRecoveryJournalService, UserRecoveryJournalService>();
         services.AddSingleton<UserRecoveryJournalHostedService>();

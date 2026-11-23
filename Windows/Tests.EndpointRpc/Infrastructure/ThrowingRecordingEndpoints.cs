@@ -30,6 +30,7 @@ public class ThrowingRecordingEndpoints : IEndpoints
     public virtual Task<AuthSessionStatusResponse> GetAuthSessionStatusAsync(Guid token, CancellationToken ct = default) => Throw<AuthSessionStatusResponse>(nameof(GetAuthSessionStatusAsync), ct);
     public virtual Task ChangeMasterPasswordAsync(MasterPasswordChangeRequest request, CancellationToken ct = default) => Throw(nameof(ChangeMasterPasswordAsync), ct);
     public virtual Task<UserProfileInfoResponse> GetUserProfileInfoAsync(Guid token, CancellationToken ct = default) => Throw<UserProfileInfoResponse>(nameof(GetUserProfileInfoAsync), ct);
+    public virtual Task RemoveLocalProfileAsync(LoginRequest request, bool acknowledgeDataLoss, CancellationToken ct = default) => Throw(nameof(RemoveLocalProfileAsync), ct);
     public virtual Task DeleteUserAccountAsync(Guid token, byte[] password, CancellationToken ct = default) => Throw(nameof(DeleteUserAccountAsync), ct);
     public virtual Task ChangeUsernameAsync(Guid token, string newUsername, CancellationToken ct = default) => Throw(nameof(ChangeUsernameAsync), ct);
     public virtual Task UpdateUserProfileInfoAsync(UpdateUserProfileRequest request, CancellationToken ct = default) => Throw(nameof(UpdateUserProfileInfoAsync), ct);

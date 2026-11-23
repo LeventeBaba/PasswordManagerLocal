@@ -130,7 +130,7 @@ public sealed class UserTombstoneGarbageCollector : IUserTombstoneGarbageCollect
                 return await RollbackBlockedAsync(transaction, userId, TombstoneGarbageCollectionReason.EvidenceLimitExceeded, ct);
             if (retainedSnapshots.Any(row => row.Status == UserSyncSnapshotStatus.RecoveryCandidate))
                 return await RollbackBlockedAsync(transaction, userId, TombstoneGarbageCollectionReason.PendingSnapshotMerge, ct);
-            if (retainedSnapshots.Any(row => row.Status is UserSyncSnapshotStatus.IsolatedFork or UserSyncSnapshotStatus.IsolatedCorrupt))
+            if (retainedSnapshots.Any(row => row.Status is UserSyncSnapshotStatus.IsolatedFork or UserSyncSnapshotStatus.RetiredForkEvidence or UserSyncSnapshotStatus.IsolatedCorrupt))
                 return await RollbackBlockedAsync(transaction, userId, TombstoneGarbageCollectionReason.QuarantinedEvidence, ct);
 
             var faultRepository = _services.GetService<IUserSyncFaultRepository>();
