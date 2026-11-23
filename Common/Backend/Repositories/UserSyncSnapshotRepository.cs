@@ -38,7 +38,8 @@ internal sealed class UserSyncSnapshotRepository(SqliteSession session) : IUserS
         (nameof(UserSyncSnapshot.UserId), row => row.UserId),
         (nameof(UserSyncSnapshot.UserKeyEpoch), row => row.UserKeyEpoch)
     ], concurrencyColumns: [nameof(UserSyncSnapshot.OriginRevision), nameof(UserSyncSnapshot.SnapshotHash)],
-        trackChanges: false);
+        trackChanges: false, maintenanceColumns:
+        [nameof(UserSyncSnapshot.Status), nameof(UserSyncSnapshot.OriginRevision), nameof(UserSyncSnapshot.SnapshotHash)]);
 
     public Task<UserSyncSnapshot?> GetAsync(Guid userId, Guid originDeviceId, Guid originInstanceId, long userKeyEpoch,
         CancellationToken ct = default) =>

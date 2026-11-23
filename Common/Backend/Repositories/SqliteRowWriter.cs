@@ -12,7 +12,9 @@ internal sealed class SqliteRowWriter<T>(
     string[]? concurrencyColumns = null,
     Func<T, Guid?>? userId = null,
     string? targetedColumn = null,
-    bool trackChanges = true) where T : class
+    bool trackChanges = true,
+    string[]? maintenanceColumns = null,
+    bool requestMaintenanceOnChange = false) where T : class
 {
     private readonly ConditionalWeakTable<T, object?[]> _originals = new();
 
@@ -82,14 +84,18 @@ internal sealed class SqliteRowWriter<T>(
         }
 
         BackendChangeSet? changes = null;
-        if (trackChanges)
+        if (trackChanges || maintenanceColumns is not null)
         {
             changes = new BackendChangeSet();
-            changes.AddEntityMutation(row, operation != SqliteMutation.Operation.Update, property =>
+            bool Changed(string property)
             {
                 var index = Array.FindIndex(fields, field => field.Column == property);
                 return index >= 0 && (original is null || !SameValue(original[index], values[index]));
-            });
+            }
+            if (trackChanges) changes.AddEntityMutation(row, operation != SqliteMutation.Operation.Update, Changed);
+            if (maintenanceColumns is not null &&
+                (operation != SqliteMutation.Operation.Update || maintenanceColumns.Any(Changed)))
+                changes.ObserveEvidenceChange(requestMaintenanceOnChange);
         }
 
         var accepted = operation == SqliteMutation.Operation.Delete ? null : SnapshotOriginal(values);
@@ -116,7 +122,8 @@ internal sealed class SqliteRowWriter<T>(
         var snapshot = new object?[values.Length];
         for (var index = 0; index < values.Length; index++)
         {
-            if (trackChanges || index < keyCount || concurrencyColumns?.Contains(fields[index].Column) == true)
+            if (trackChanges || index < keyCount || concurrencyColumns?.Contains(fields[index].Column) == true ||
+                maintenanceColumns?.Contains(fields[index].Column) == true)
                 snapshot[index] = values[index] is byte[] blob ? blob.ToArray() : values[index];
         }
         return snapshot;

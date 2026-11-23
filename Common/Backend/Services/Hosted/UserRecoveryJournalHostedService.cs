@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Diagnostics;
+using PasswordManagerLocal.Common.Backend.Persistence;
 
 namespace PasswordManagerLocal.Common.Backend.Services.Hosted;
 
@@ -35,12 +36,17 @@ public sealed class UserRecoveryJournalHostedService(IServiceScopeFactory scopes
 
     private async Task ExecuteAsync(CancellationToken ct)
     {
+        // Restart is a meaningful opportunity even if an earlier backend lifetime failed
+        // at physical capacity. Continuations otherwise advance only while work is pending.
+        await using (var scope = scopes.CreateAsyncScope())
+            scope.ServiceProvider.GetService<SynchronizationEvidenceMaintenanceState>()?.ProofChanged();
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
         do
         {
             try
             {
                 await using var scope = scopes.CreateAsyncScope();
+                await MaintainEvidenceAsync(scope.ServiceProvider, ct);
                 await scope.ServiceProvider.GetRequiredService<IUserRecoveryJournalService>().MaintainAsync(ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -49,4 +55,21 @@ public sealed class UserRecoveryJournalHostedService(IServiceScopeFactory scopes
             }
         } while (await timer.WaitForNextTickAsync(ct));
     }
+    private static async Task MaintainEvidenceAsync(IServiceProvider services, CancellationToken ct)
+    {
+        var progress = services.GetService<SynchronizationEvidenceMaintenanceState>();
+        if (progress is null || !progress.TryBeginBatch(out var cursor)) return;
+        try
+        {
+            var batch = await services.GetRequiredService<SqliteSynchronizationEvidenceCompactor>().CompactBatchAsync(cursor, ct: ct);
+            progress.CompleteBatch(batch.Next);
+        }
+        catch (Exception ex)
+        {
+            progress.FailBatch();
+            if (ex is OperationCanceledException) throw;
+            BackendDebugLog.Warning("Evidence maintenance was postponed; retained proofs remain authoritative.", ex, "Synchronization");
+        }
+    }
+
 }

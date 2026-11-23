@@ -6,6 +6,41 @@ namespace PasswordManagerLocal.Common.Backend.Repositories;
 
 internal sealed class RevocationReceiptRepository(SqliteSession session) : IRevocationReceiptRepository
 {
+    // A maintenance opportunity is bounded by both row count and materialized bytes.
+    internal async Task<RevocationEvidenceCompactionPage> ReadCompactionPageAsync(
+        Guid? userId, string? afterKey, CancellationToken ct)
+    {
+        var ids = await session.ReadAsync("""
+            SELECT "OperationId", length("EnvelopePayload") + length("AuthorizationPayload") + length("MembershipProofPayload"),
+                   CASE WHEN json_valid(CAST("EnvelopePayload" AS TEXT))
+                        THEN json_array_length(CAST("EnvelopePayload" AS TEXT), '$.RevocationHistoryProofs') > 0
+                   ELSE 0 END
+            FROM "RevocationReceiptEvidence"
+            WHERE ($user IS NULL OR "UserId" = $user)
+              AND ($after IS NULL OR "OperationId" > $after)
+            ORDER BY "OperationId" LIMIT 9;
+            """, row => (Key: row.GetString(0), Id: row.GetGuid(0), Bytes: row.GetInt64(1),
+                HasProofs: !row.IsDBNull(2) && row.GetInt64(2) != 0), ct, ("$user", userId), ("$after", afterKey));
+        var result = new List<RevocationReceiptEvidence>();
+        long capturedBytes = 0;
+        foreach (var candidate in ids.Take(8))
+        {
+            if (!candidate.HasProofs) continue;
+            if (candidate.Bytes < 0 || candidate.Bytes > 16 * 1024 * 1024 - capturedBytes) continue;
+            try
+            {
+                if (await GetEvidenceAsync(candidate.Id, ct) is not { } evidence) continue;
+                capturedBytes += candidate.Bytes;
+                result.Add(evidence);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or FormatException or OverflowException or InvalidCastException)
+            {
+                // Retain malformed local metadata while advancing its immutable cursor key.
+            }
+        }
+        return new(result, ids.Count > 8 ? ids[7].Key : null);
+    }
+
     private readonly SqliteRowWriter<RevocationReceiptEvidence> _evidence = new(session, "RevocationReceiptEvidence", 1,
     [
         (nameof(RevocationReceiptEvidence.OperationId), r => r.OperationId),
@@ -74,6 +109,21 @@ internal sealed class RevocationReceiptRepository(SqliteSession session) : IRevo
     {
         RequireTransaction(default);
         _evidence.Stage(evidence, SqliteMutation.Operation.Update);
+    }
+
+    internal void StageCompactedEnvelope(RevocationReceiptEvidence original, byte[] compact)
+    {
+        RequireTransaction(default);
+        // Representation-only maintenance: all logical evidence and runtime eligibility
+        // remain identical, so there is no frontend or reconciliation notification.
+        session.Stage<RevocationReceiptEvidence>(SqliteMutation.Operation.Update, """
+            UPDATE "RevocationReceiptEvidence" SET "EnvelopePayload" = $compact
+            WHERE "OperationId" = $id AND "UserId" = $user AND "OperationHash" = $hash
+              AND "EnvelopePayload" = $old AND "AuthorizationPayload" = $authorizations
+              AND "MembershipProofPayload" = $proofs AND "HistoryResetBlocked" = 0 AND "HasReceiptConflict" = 0;
+            """, original.UserId, null, ("$compact", compact), ("$id", original.OperationId),
+            ("$user", original.UserId), ("$hash", original.OperationHash), ("$old", original.EnvelopePayload),
+            ("$authorizations", original.AuthorizationPayload), ("$proofs", original.MembershipProofPayload));
     }
 
     public async Task<RevocationReceiptEvidence?> GetEvidenceAsync(Guid operationId, CancellationToken ct = default) =>

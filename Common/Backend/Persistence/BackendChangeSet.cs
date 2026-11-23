@@ -13,8 +13,17 @@ internal sealed class BackendChangeSet
 
     private bool _deliveryStateChanged;
     private bool _eligibilityStateChanged;
+    private bool _evidenceMaintenanceRequested;
+    private bool _evidenceChanged;
 
-    public bool IsEmpty => !_deliveryStateChanged && !_eligibilityStateChanged && _globalScope == FrontendChangeScope.None && _userChanges.Count == 0;
+    public bool IsEmpty => !_deliveryStateChanged && !_eligibilityStateChanged && !_evidenceChanged &&
+        _globalScope == FrontendChangeScope.None && _userChanges.Count == 0;
+
+    public void ObserveEvidenceChange(bool requestMaintenance)
+    {
+        _evidenceChanged = true;
+        _evidenceMaintenanceRequested |= requestMaintenance;
+    }
 
     public void Add(Guid? userId, FrontendChangeScope scope)
     {
@@ -35,13 +44,18 @@ internal sealed class BackendChangeSet
     {
         _deliveryStateChanged |= other._deliveryStateChanged;
         _eligibilityStateChanged |= other._eligibilityStateChanged;
+        _evidenceMaintenanceRequested |= other._evidenceMaintenanceRequested;
+        _evidenceChanged |= other._evidenceChanged;
         Add(null, other._globalScope);
         foreach (var change in other._userChanges)
             Add(change.Key, change.Value);
     }
 
-    public void Publish(IBackendChangePublisher? publisher, IRevocationDeliveryActivity? activity = null)
+    public void Publish(IBackendChangePublisher? publisher, IRevocationDeliveryActivity? activity = null,
+        SynchronizationEvidenceMaintenanceState? evidenceMaintenance = null)
     {
+        if (_deliveryStateChanged || _evidenceChanged)
+            evidenceMaintenance?.ProofChanged(requestMaintenance: _deliveryStateChanged || _evidenceMaintenanceRequested);
         if (_deliveryStateChanged) activity?.NotifyCommittedChange();
         else if (_eligibilityStateChanged) activity?.RequestRefresh();
         if (publisher is null)

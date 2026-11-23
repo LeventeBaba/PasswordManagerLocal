@@ -67,7 +67,8 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
         ILocalDiscoveryTransport? discoveryTransport = null,
         string localAddress = "127.0.0.1",
         DeviceType deviceType = DeviceType.WindowsPc,
-        string? existingDirectory = null)
+        string? existingDirectory = null,
+        Action<IServiceCollection>? configureServices = null)
     {
         var rootDirectory = existingDirectory ?? Path.Combine(
             Path.GetTempPath(),
@@ -110,6 +111,7 @@ public sealed class ProductionSyncTestHost : IAsyncDisposable
         services.AddScoped<DeviceSecurityService>();
         services.Replace(ServiceDescriptor.Scoped<IDeviceSecurityService, RecordingDeviceSecurityService>());
 
+        configureServices?.Invoke(services);
         var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateOnBuild = true,

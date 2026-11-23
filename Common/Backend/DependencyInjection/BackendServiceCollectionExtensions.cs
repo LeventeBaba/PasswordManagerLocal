@@ -71,7 +71,9 @@ public static class BackendServiceCollectionExtensions
         services.AddSingleton<ICriticalControlIngressStore, CriticalControlIngressStore>();
         services.AddSingleton<IBackendInitializationService, BackendInitializationService>();
         services.AddScoped<SqliteSession>();
+        services.AddSingleton<SynchronizationEvidenceMaintenanceState>();
         services.AddScoped<SqliteStorageRetentionAnalyzer>();
+        services.AddScoped<SqliteSynchronizationEvidenceCompactor>();
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<SqliteSession>());
         services.AddScoped<IUserAccountDeletionStore, UserAccountDeletionStore>();
         services.AddScoped<IUserRecoveryJournalStore, UserRecoveryJournalStore>();

@@ -57,6 +57,7 @@ public sealed class RevocationReceiptService(
                     BackendJsonSerializerContext.Default.RevocationReceiptAuthorizations),
                 MembershipProofPayload = retirementPayload
             };
+            CompactDuplicateProofs(evidence);
             await receipts.AddEvidenceAsync(evidence, ct);
         }
         else
@@ -76,6 +77,7 @@ public sealed class RevocationReceiptService(
                 {
                     evidence.MembershipProofPayload = payload;
                     evidence.EnvelopePayload = UserControlOperationEnvelopeUtil.Serialize(merged);
+                    CompactDuplicateProofs(evidence);
                     receipts.UpdateEvidence(evidence);
                 }
             }
@@ -276,6 +278,7 @@ public sealed class RevocationReceiptService(
                 if (payload.Length > SyncConstants.MaxIncomingDeltaTotalBytesPerCall || payload.SequenceEqual(context.MembershipProofPayload)) continue;
                 context.MembershipProofPayload = payload;
                 context.EnvelopePayload = UserControlOperationEnvelopeUtil.Serialize(merged);
+                CompactDuplicateProofs(context);
                 receipts.UpdateEvidence(context);
             }
             catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or JsonException or ArgumentException)
@@ -383,6 +386,13 @@ public sealed class RevocationReceiptService(
             Kind = receipt.Kind, AttestedReceiptHash = receipt.AttestedReceiptHash.ToArray(), ReceiptHash = hash, Payload = RevocationDeliveryReceiptUtil.Serialize(receipt)
         }, ct);
         return false;
+    }
+
+    private static void CompactDuplicateProofs(RevocationReceiptEvidence evidence)
+    {
+        var (reason, compact) = RevocationEvidenceCompactionPolicy.Analyze(evidence);
+        if (reason == Persistence.StorageRetentionReason.SafeToCompact && compact is not null)
+            evidence.EnvelopePayload = compact;
     }
 
     internal static (UserControlOperationEnvelope Operation, UserMembershipAuthorization[] Members) ReadEvidence(RevocationReceiptEvidence evidence)

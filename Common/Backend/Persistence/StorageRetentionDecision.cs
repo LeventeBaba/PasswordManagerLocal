@@ -4,5 +4,6 @@ namespace PasswordManagerLocal.Common.Backend.Persistence;
 internal sealed record StorageRetentionDecision(string TableName, long RowCount, long ChargedBytes,
     StorageRetentionReason Reason)
 {
-    public long ReclaimableBytes => 0;
+    // A lower-bound estimate from the bounded supported-evidence batch, not a deletion permit.
+    public long ReclaimableBytes { get; init; }
 }

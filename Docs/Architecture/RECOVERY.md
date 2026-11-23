@@ -1,6 +1,6 @@
 # Integrity and recovery
 
-The backend separates structural database failure, damaged local canonical data, invalid snapshot-origin evidence, and conflicting signed authority. Each condition has its own admission and recovery boundary. Fault diagnostics retain identifiers, hashes, affected scopes, and recovery state rather than plaintext vault content or keys.
+The backend separates structural database failure, damaged local canonical data, invalid snapshot-origin evidence, and conflicting signed authority. Each condition has its own admission and recovery boundary. Fault diagnostics retain identifiers, hashes, affected scopes, and recovery state rather than plaintext vault content or keys. Superseded ordinary origin faults may reduce their free-form diagnostic code after exact authenticated replacement and merged-knowledge verification; IDs, hashes, affected components, categories and recovery identities remain. Unresolved journals and terminal conflicts block that reduction. See [authenticated evidence compaction](APPLICATION.md#authenticated-evidence-compaction).
 
 ## Integrity boundaries
 

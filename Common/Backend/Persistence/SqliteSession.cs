@@ -15,20 +15,24 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
     private readonly SqliteConnectionFactory _connections;
     private readonly IBackendChangePublisher? _publisher;
     private readonly IRevocationDeliveryActivity? _deliveryActivity;
+    private readonly SynchronizationEvidenceMaintenanceState? _evidenceMaintenance;
     private readonly List<SqliteMutation> _pending = [];
     private SessionTransaction? _active;
     private SqliteTransaction? _readSnapshot;
     private bool _disposed;
 
-    public SqliteSession(SqliteConnectionFactory connections, IBackendChangePublisher? publisher = null, IRevocationDeliveryActivity? deliveryActivity = null)
+    public SqliteSession(SqliteConnectionFactory connections, IBackendChangePublisher? publisher = null,
+        IRevocationDeliveryActivity? deliveryActivity = null, SynchronizationEvidenceMaintenanceState? evidenceMaintenance = null)
     {
         _connections = connections;
         _connection = connections.CreateConnection(enforceForeignKeys: true);
         _publisher = publisher;
         _deliveryActivity = deliveryActivity;
+        _evidenceMaintenance = evidenceMaintenance;
     }
 
     public bool HasActiveTransaction => _active is not null;
+    internal bool HasPendingChanges => _pending.Count != 0;
 
     // Repository reads and audited immediate operations use the scope's transaction.
     public async Task<SqliteCommand> CreateCommandAsync(string sql, CancellationToken ct = default)
@@ -137,12 +141,18 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
                     await transaction.CommitAsync(ct);
                     AcceptPending(transaction: null);
                 }
-                changes.Publish(_publisher, _deliveryActivity);
+                changes.Publish(_publisher, _deliveryActivity, _evidenceMaintenance);
             }
         }
         catch (SqliteException exception) when (SqliteCapacityError.IsCapacityFailure(exception))
         {
+            _evidenceMaintenance?.CapacityPressure();
             throw SqliteCapacityError.Wrap(exception);
+        }
+        catch (PasswordManagerLocal.Common.Contracts.Errors.StorageCapacityExceededException)
+        {
+            _evidenceMaintenance?.CapacityPressure();
+            throw;
         }
         catch (SqliteException exception) when (IsBusy(exception))
         {
@@ -192,6 +202,7 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
         }
         catch (SqliteException exception) when (SqliteCapacityError.IsCapacityFailure(exception))
         {
+            _evidenceMaintenance?.CapacityPressure();
             throw SqliteCapacityError.Wrap(exception);
         }
         catch (SqliteException exception) when (IsBusy(exception))
@@ -347,6 +358,7 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
             }
             catch (SqliteException exception) when (SqliteCapacityError.IsCapacityFailure(exception))
             {
+                owner._evidenceMaintenance?.CapacityPressure();
                 throw SqliteCapacityError.Wrap(exception);
             }
             catch (SqliteException exception) when (IsBusy(exception))
@@ -407,7 +419,7 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
                 }
                 _rollbackActions.Clear();
                 if (committed)
-                    Changes.Publish(owner._publisher, owner._deliveryActivity);
+                    Changes.Publish(owner._publisher, owner._deliveryActivity, owner._evidenceMaintenance);
             }
         }
     }

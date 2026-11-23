@@ -103,4 +103,15 @@ A tombstone's item version orders deletion against edits. Its causal reference i
 - Later-removed installations have complete signed cutoffs and local merged coverage of every accepted revision named by those cutoffs.
 - Later additions start from their enrollment baseline. A later key epoch covers an earlier deletion only through explicit earlier-namespace coverage.
 
-Signed envelopes can serve as coverage receipts after indirect merge. Missing/conflicting authority, pending/quarantined evidence, and safety limits retain the tombstone. Collection uses per-user lifecycle ownership and a transaction, preserves surviving logical versions, and atomically publishes and queues the compacted state. Account deletion takes precedence.
+Signed envelopes can serve as coverage receipts after indirect merge. Recovery candidates, isolated corruption, terminal forks, active GC-blocking health faults and control conflicts remain account-wide blockers. Ordinary pending snapshots are evaluated per tombstone after their exact row/envelope identity, original signature, historical membership and removal cutoffs have been verified.
+
+A pending revision is ignorable only when all of the following hold:
+
+- The exact signed deletion-anchor publication is still retained as a local publication or merged receipt. A newer reporting snapshot cannot stand in for that exact anchor.
+- Local knowledge truly merged the pending revision, and its highest stored revision/hash matches the retained pending envelope exactly. Stored-only knowledge is insufficient.
+- The deletion publication's signed coverage includes that pending origin/key/revision and dominates its entire signed coverage vector. The pending membership/key epochs cannot follow the anchor's epochs.
+- The existing all-member signed receipt/removal-cutoff stability check succeeds for this particular deletion.
+
+This proves causal ancestry under the cumulative snapshot contract; it does not infer item absence from encrypted ciphertext. A pending snapshot that only reports having observed the deletion could contain a later competing edit and continues to block. Missing anchor, incomplete causal proof, unknown authority, invalid signatures and safety limits retain the affected deletion. Enumeration order does not change the decision. The unresolved payload and its exact signed evidence remain stored even when an independently stable tombstone is collected. Pending evidence is sorted once, and decisions for a shared deletion anchor are reused only within the same lifecycle-owned write transaction. No cached causal proof survives a later mutation.
+
+Collection uses per-user lifecycle ownership and a transaction, preserves surviving logical versions, and atomically publishes and queues the compacted state. Account deletion takes precedence. Evidence compaction uses the same lifecycle coordinator and SQLite writer ownership, retains every snapshot/receipt used by GC, and changes only authenticated duplicate revocation-proof representation; see [storage retention](APPLICATION.md#authenticated-evidence-compaction). Neither maintenance operation schedules the other.
