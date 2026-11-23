@@ -21,6 +21,37 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 public sealed class UserSnapshotInboxServiceTests
 {
     [TestMethod]
+    [TestCategory("StorageBudget")]
+    public async Task StoreAsync_AtCapacity_DoesNotAcknowledgeAdvanceKnowledgeOrChangeCanonicalData()
+    {
+        using var hub = new BackendChangeEventHub(TimeProvider.System);
+        await using var database = await SqliteRepositoryTestDatabase.CreateAsync(hub);
+        var user = await AddCanonicalUserAsync(database);
+        var original = user.EncryptedPayload.ToArray();
+        var position = hub.CurrentPosition.Sequence;
+        var scheduler = new FakeUserDataRecoveryScheduler();
+        var service = new UserSnapshotInboxService(database.Users, database.UserSyncSnapshots,
+            database.UserRevisionKnowledge, CreateUnsignedIdentity(Guid.NewGuid(), Guid.NewGuid()),
+            database.UnitOfWork, new UserLifecycleCoordinator(), new FakeUserMembershipAuthorizationService(),
+            recoveryScheduler: scheduler);
+        await using var connection = database.Connections.CreateConnection();
+        await connection.OpenAsync();
+        await PasswordManagerLocal.Common.Tests.TestInfrastructure.Storage.SqliteStorageTestCommands.SetBudgetAsync(connection, "Snapshots", 1);
+        using var originKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        var device = Guid.NewGuid(); var instance = Guid.NewGuid();
+        var envelope = CreateSignedEnvelope(user, device, instance, 1, originKey, marker: 0x44);
+        for (var attempt = 0; attempt < 3; attempt++)
+            await MSTestAssert.ThrowsExactlyAsync<PasswordManagerLocal.Common.Contracts.Errors.StorageCapacityExceededException>(() =>
+                service.StoreAsync(envelope, Guid.NewGuid()));
+        using var readback = database.OpenSession();
+        MSTestAssert.IsNull(await new UserSyncSnapshotRepository(readback).GetAsync(user.UId, device, instance, user.KeyEpoch));
+        MSTestAssert.IsNull(await new UserRevisionKnowledgeRepository(readback).GetAsync(user.UId, device, instance, user.KeyEpoch));
+        CollectionAssert.AreEqual(original, (await new UserRepository(readback).GetByIdAsNoTrackingAsync(user.UId))!.EncryptedPayload);
+        MSTestAssert.AreEqual(position, hub.CurrentPosition.Sequence);
+        MSTestAssert.AreEqual(0, scheduler.Calls.Count);
+    }
+
+    [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Integration")]
     public async Task StoreAsync_WithoutActiveKey_DurablyStoresPendingAndDoesNotReplaceCanonicalBlobs()

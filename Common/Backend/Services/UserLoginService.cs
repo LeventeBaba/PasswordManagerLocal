@@ -86,7 +86,8 @@ public sealed class UserLoginService : IUserLoginService
         {
             return await ResolveAndLoginAsync(request, DerivePasswordKey, ct);
         }
-        catch (Exception ex) when (ex is UserNotFoundException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is UserNotFoundException or UnauthorizedAccessException or
+            PasswordManagerLocal.Common.Contracts.Errors.PendingSecurityOperationException)
         {
             ct.ThrowIfCancellationRequested();
             if (!passwordDerivationStarted)

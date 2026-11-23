@@ -15,4 +15,11 @@ public interface IUserLifecycleCoordinator
         Guid userId,
         Func<CancellationToken, Task<T>> action,
         CancellationToken ct = default);
+
+    // Only authenticated control ingress/replay may use this path. Nested canonical work
+    // stays under the same per-user lock while ordinary callers observe the durable fence.
+    Task<T> ExecuteControlAsync<T>(Guid userId, Func<CancellationToken, Task<T>> action, CancellationToken ct = default) =>
+        ExecuteAsync(userId, action, ct);
+
+    bool IsControlOperation(Guid userId) => false;
 }

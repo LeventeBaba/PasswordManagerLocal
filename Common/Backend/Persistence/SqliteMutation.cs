@@ -1,7 +1,10 @@
 using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Data.Sqlite;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Utils;
+using PasswordManagerLocal.Common.Backend.Constants;
+using PasswordManagerLocal.Common.Contracts.Errors;
 
 namespace PasswordManagerLocal.Common.Backend.Persistence;
 
@@ -30,6 +33,9 @@ internal sealed class SqliteMutation : IDisposable
         Kind = operation;
         UserId = userId;
         _sql = sql;
+        // Validate all inputs before making any owned copies of sensitive buffers.
+        foreach (var (_, value) in parameters)
+            ValidateValueSize(value);
         _parameters = parameters.Select(parameter => (parameter.Name, Snapshot(parameter.Value))).ToArray();
         if (changes is { IsEmpty: false })
         {
@@ -68,6 +74,10 @@ internal sealed class SqliteMutation : IDisposable
             if (affectedRows != 1)
                 throw new InvalidOperationException("A staged row mutation must affect exactly one row.");
         }
+        catch (SqliteException exception) when (SqliteCapacityError.IsCapacityFailure(exception))
+        {
+            throw SqliteCapacityError.Wrap(exception);
+        }
         catch (SqliteException exception) when (exception.SqliteExtendedErrorCode is 1555 or 2067 or 2579)
         {
             // PRIMARYKEY, UNIQUE, ROWID. The caller decides whether this is a recoverable race.
@@ -96,4 +106,12 @@ internal sealed class SqliteMutation : IDisposable
             DateTimeOffset timestamp => UtcDateTimeUtil.ToUtc(timestamp),
             _ => value
         };
+
+    private static void ValidateValueSize(object? value)
+    {
+        if (value is byte[] bytes && bytes.Length > StorageCapacityConstants.MaxLargeRowBytes ||
+            value is string text && (text.Length > StorageCapacityConstants.MaxLargeRowBytes ||
+                Encoding.UTF8.GetByteCount(text) > StorageCapacityConstants.MaxLargeRowBytes))
+            throw new StorageCapacityExceededException();
+    }
 }

@@ -12,6 +12,7 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
 {
     private const string FlushSavepoint = "pml_flush";
     private readonly SqliteConnection _connection;
+    private readonly SqliteConnectionFactory _connections;
     private readonly IBackendChangePublisher? _publisher;
     private readonly IRevocationDeliveryActivity? _deliveryActivity;
     private readonly List<SqliteMutation> _pending = [];
@@ -21,6 +22,7 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
 
     public SqliteSession(SqliteConnectionFactory connections, IBackendChangePublisher? publisher = null, IRevocationDeliveryActivity? deliveryActivity = null)
     {
+        _connections = connections;
         _connection = connections.CreateConnection(enforceForeignKeys: true);
         _publisher = publisher;
         _deliveryActivity = deliveryActivity;
@@ -138,6 +140,10 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
                 changes.Publish(_publisher, _deliveryActivity);
             }
         }
+        catch (SqliteException exception) when (SqliteCapacityError.IsCapacityFailure(exception))
+        {
+            throw SqliteCapacityError.Wrap(exception);
+        }
         catch (SqliteException exception) when (IsBusy(exception))
         {
             throw new StorageWriteException(StorageWriteException.FailureKind.Busy, innerException: exception);
@@ -183,6 +189,10 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
             _active = new SessionTransaction(this, transaction, lease, discardPendingOnRollback);
             lease = null;
             return _active;
+        }
+        catch (SqliteException exception) when (SqliteCapacityError.IsCapacityFailure(exception))
+        {
+            throw SqliteCapacityError.Wrap(exception);
         }
         catch (SqliteException exception) when (IsBusy(exception))
         {
@@ -276,6 +286,8 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
         ct.ThrowIfCancellationRequested();
         if (_connection.State != ConnectionState.Open)
             await _connection.OpenAsync(ct);
+        else if (_active is null && _readSnapshot is null)
+            _connections.TryRelieveWalPressure(_connection);
         ct.ThrowIfCancellationRequested();
     }
 
@@ -332,6 +344,10 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
             try
             {
                 await transaction.CommitAsync(ct);
+            }
+            catch (SqliteException exception) when (SqliteCapacityError.IsCapacityFailure(exception))
+            {
+                throw SqliteCapacityError.Wrap(exception);
             }
             catch (SqliteException exception) when (IsBusy(exception))
             {

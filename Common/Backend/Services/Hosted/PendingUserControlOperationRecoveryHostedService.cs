@@ -1,5 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
+using PasswordManagerLocal.Common.Backend.Utils;
+using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 
 namespace PasswordManagerLocal.Common.Backend.Services.Hosted;
@@ -18,6 +21,26 @@ public sealed class PendingUserControlOperationRecoveryHostedService : IBackendH
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
         await using var inventoryScope = _scopeFactory.CreateAsyncScope();
+        var ingress = inventoryScope.ServiceProvider.GetService<ICriticalControlIngressStore>();
+        if (ingress is not null)
+        {
+            // Reuse this existing startup recovery boundary. A failed replay retains the
+            // original envelope and profile fence; no repeated timer or success receipt is created.
+            foreach (var key in await ingress.ListKeysAsync(cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    var entry = await ingress.ReadAsync(key, cancellationToken);
+                    if (entry is null) continue;
+                    await using var resumeScope = _scopeFactory.CreateAsyncScope();
+                    await resumeScope.ServiceProvider.GetRequiredService<IUserControlOperationInboxService>()
+                        .StoreAndApplyAsync(UserControlOperationEnvelopeUtil.Deserialize(entry.EnvelopePayload),
+                            entry.TransportPeerDeviceId, cancellationToken);
+                }
+                catch when (!cancellationToken.IsCancellationRequested) { }
+            }
+        }
         var pending = await inventoryScope.ServiceProvider
             .GetRequiredService<IUserControlOperationRepository>()
             .ListPendingAsync(cancellationToken);

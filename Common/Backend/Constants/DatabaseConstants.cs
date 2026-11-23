@@ -2,8 +2,8 @@ namespace PasswordManagerLocal.Common.Backend.Constants;
 
 public static class DatabaseConstants
 {
-    public const int CurrentDbVersion = 14;
-    public const int OldestSupportedDbVersion = 14;
+    public const int CurrentDbVersion = 17;
+    public const int OldestSupportedDbVersion = 17;
     public const int DbConfigHeaderLength = 16;
     public const int DbConfigMagicLength = 2;
     public const int DbConfigVersionOffset = 8;

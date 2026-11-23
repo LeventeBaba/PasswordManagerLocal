@@ -26,45 +26,80 @@ internal static class DatabaseEncryptionMigrator
     internal static async Task<bool> MigrateIfRequiredAsync(
         BackendStoragePaths paths,
         string password,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DatabaseMigrationStoragePolicy? storagePolicy = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentException.ThrowIfNullOrWhiteSpace(password);
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            return await MigrateCoreAsync(paths, password, storagePolicy ?? new(), cancellationToken);
+        }
+        catch (SqliteException exception) when (SqliteCapacityError.IsCapacityFailure(exception))
+        {
+            throw SqliteCapacityError.Wrap(exception);
+        }
+    }
 
+    private static async Task<bool> MigrateCoreAsync(BackendStoragePaths paths, string password,
+        DatabaseMigrationStoragePolicy storage, CancellationToken cancellationToken)
+    {
         var databasePath = paths.DatabasePath;
         var temporaryPath = paths.DatabaseMigrationTempPath;
         var backupPath = paths.DatabaseMigrationBackupPath;
 
         SqliteConnection.ClearAllPools();
-        RecoverMissingDatabaseFromBackup(databasePath, backupPath);
+        await RecoverMissingDatabaseFromBackupAsync(databasePath, backupPath, password, storage, cancellationToken);
 
         if (!File.Exists(databasePath))
         {
-            DeleteDatabaseArtifacts(temporaryPath, backupPath);
+            if (HasArtifacts(temporaryPath) || HasArtifacts(backupPath) || HasSidecars(databasePath))
+                throw new DatabaseUnreadableException(new InvalidDataException(
+                    "The main database is missing while migration or journal recovery artifacts remain. Existing files were preserved."));
             return false;
         }
 
-        if (await IsReadableAsync(databasePath, password, $"cipher={TargetCipher}", cancellationToken))
+        if ((HasArtifacts(temporaryPath) || HasArtifacts(backupPath)) && storage.RequireFileWithinLimit(databasePath) == 0)
+            throw new DatabaseUnreadableException(new InvalidDataException(
+                "An empty main image cannot authorize discarding recovery candidates. Existing files were preserved."));
+
+        if (await IsReadableAsync(databasePath, password, $"cipher={TargetCipher}", storage, cancellationToken))
         {
-            DeleteDatabaseArtifacts(temporaryPath, backupPath);
+            if (HasArtifacts(temporaryPath) || HasArtifacts(backupPath))
+            {
+                // A readable header is not sufficient proof that a backup is redundant.
+                await VerifyDatabaseAsync(databasePath, password, $"cipher={TargetCipher}", storage, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                DeleteDatabaseArtifacts(temporaryPath, backupPath);
+            }
             return false;
         }
 
         var legacyVersion = await DetectSqlCipherLegacyVersionAsync(
             databasePath,
             password,
+            storage,
             cancellationToken);
 
         if (legacyVersion is null && File.Exists(backupPath))
         {
+            if (HasSidecars(databasePath))
+                throw new DatabaseUnreadableException(new InvalidDataException(
+                    "The unreadable database has journal recovery artifacts. Existing files were preserved."));
             legacyVersion = await DetectSqlCipherLegacyVersionAsync(
                 backupPath,
                 password,
+                storage,
                 cancellationToken);
             if (legacyVersion is not null)
             {
+                await VerifyDatabaseAsync(backupPath, password, $"cipher=sqlcipher&legacy={legacyVersion}", storage, cancellationToken);
+                storage.RequireWorkingSpace(paths.RootDirectory, storage.RequireFileWithinLimit(backupPath));
+                cancellationToken.ThrowIfCancellationRequested();
                 File.Move(backupPath, databasePath, overwrite: true);
                 DeleteSidecars(databasePath);
+                DeleteSidecars(backupPath);
             }
         }
 
@@ -75,27 +110,32 @@ internal static class DatabaseEncryptionMigrator
                 "The original database was not modified."));
         }
 
-        // A previous interrupted attempt may have left a partial staged database. The source
-        // has now been validated, so discard staged artifacts and start from a fresh copy.
-        DeleteDatabaseArtifacts(temporaryPath, backupPath);
-
-        await using (var source = CreateConnection(databasePath, password, $"cipher=sqlcipher&legacy={legacyVersion}"))
+        await using (var source = CreateConnection(databasePath, password, $"cipher=sqlcipher&legacy={legacyVersion}", storage))
         {
             await source.OpenAsync(cancellationToken);
             await VerifyQuickCheckAsync(source, cancellationToken);
+            await RequireDatabaseSchemaAsync(source, cancellationToken);
             await CheckpointWalAsync(source, cancellationToken);
         }
 
         SqliteConnection.ClearAllPools();
+        var sourceBytes = storage.RequireFileWithinLimit(databasePath);
+        storage.RequireWorkingSpace(paths.RootDirectory, sourceBytes);
+        cancellationToken.ThrowIfCancellationRequested();
+        // Only complete structural verification, checkpoint and workspace admission permit
+        // retiring an earlier attempt's copies. Failed admission leaves all recovery files intact.
+        DeleteDatabaseArtifacts(temporaryPath, backupPath);
         DeleteSidecars(databasePath);
-        File.Copy(databasePath, temporaryPath, overwrite: true);
 
         try
         {
+            await BoundedDatabaseFileCopy.CopyAndFlushAsync(databasePath, temporaryPath,
+                storage.MaximumDatabaseBytes, cancellationToken);
             await RekeyStagedDatabaseAsync(
                 temporaryPath,
                 password,
                 legacyVersion.Value,
+                storage,
                 cancellationToken);
 
             // Confirm the staged file is readable using the exact connection configuration the
@@ -104,21 +144,25 @@ internal static class DatabaseEncryptionMigrator
                 temporaryPath,
                 password,
                 $"cipher={TargetCipher}",
+                storage,
                 cancellationToken);
             DeleteSidecars(temporaryPath);
             FlushFile(temporaryPath);
 
-            CopyAndFlush(databasePath, backupPath);
+            await BoundedDatabaseFileCopy.CopyAndFlushAsync(databasePath, backupPath,
+                storage.MaximumDatabaseBytes, cancellationToken);
+            await VerifyDatabaseAsync(backupPath, password, $"cipher=sqlcipher&legacy={legacyVersion}", storage, cancellationToken);
             try
             {
                 // Both files are in the same directory. This replacement is a same-volume rename;
                 // the encrypted original is also retained until the new file passes a final check.
                 File.Move(temporaryPath, databasePath, overwrite: true);
                 DeleteSidecars(databasePath);
-                await EnsureReadableAsync(
+                await VerifyDatabaseAsync(
                     databasePath,
                     password,
                     $"cipher={TargetCipher}",
+                    storage,
                     cancellationToken);
             }
             catch (Exception replacementFailure)
@@ -127,10 +171,11 @@ internal static class DatabaseEncryptionMigrator
                 {
                     DeleteSidecars(databasePath);
                     File.Move(backupPath, databasePath, overwrite: true);
-                    await EnsureReadableAsync(
+                    await VerifyDatabaseAsync(
                         databasePath,
                         password,
                         $"cipher=sqlcipher&legacy={legacyVersion}",
+                        storage,
                         CancellationToken.None);
                 }
                 catch (Exception restoreFailure)
@@ -160,12 +205,13 @@ internal static class DatabaseEncryptionMigrator
         string databasePath,
         string password,
         int legacyVersion,
+        DatabaseMigrationStoragePolicy storage,
         CancellationToken cancellationToken)
     {
         await using var connection = CreateConnection(
             databasePath,
             password,
-            $"cipher=sqlcipher&legacy={legacyVersion}");
+            $"cipher=sqlcipher&legacy={legacyVersion}", storage);
         await connection.OpenAsync(cancellationToken);
         await VerifyQuickCheckAsync(connection, cancellationToken);
 
@@ -175,6 +221,8 @@ internal static class DatabaseEncryptionMigrator
             $"PRAGMA rekey = '{EscapeSqlLiteral(password)}';",
             cancellationToken);
 
+        // Reapply using the resulting cipher's actual page size, then verify before promotion.
+        SqliteStorageMaintenance.ConfigureConnection(connection, storage.MaximumDatabaseBytes);
         await VerifyQuickCheckAsync(connection, cancellationToken);
         await CheckpointWalAsync(connection, cancellationToken);
     }
@@ -182,6 +230,7 @@ internal static class DatabaseEncryptionMigrator
     private static async Task<int?> DetectSqlCipherLegacyVersionAsync(
         string databasePath,
         string password,
+        DatabaseMigrationStoragePolicy storage,
         CancellationToken cancellationToken)
     {
         foreach (var legacyVersion in SqlCipherLegacyVersions)
@@ -190,6 +239,7 @@ internal static class DatabaseEncryptionMigrator
                     databasePath,
                     password,
                     $"cipher=sqlcipher&legacy={legacyVersion}",
+                    storage,
                     cancellationToken))
             {
                 return legacyVersion;
@@ -203,11 +253,12 @@ internal static class DatabaseEncryptionMigrator
         string databasePath,
         string password,
         string cipherOptions,
+        DatabaseMigrationStoragePolicy storage,
         CancellationToken cancellationToken)
     {
         try
         {
-            await EnsureReadableAsync(databasePath, password, cipherOptions, cancellationToken);
+            await EnsureReadableAsync(databasePath, password, cipherOptions, storage, cancellationToken);
             return true;
         }
         catch (SqliteException exception) when (IsUnreadableWithCipher(exception))
@@ -220,11 +271,34 @@ internal static class DatabaseEncryptionMigrator
         string databasePath,
         string password,
         string cipherOptions,
+        DatabaseMigrationStoragePolicy storage,
         CancellationToken cancellationToken)
     {
-        await using var connection = CreateConnection(databasePath, password, cipherOptions);
+        await using var connection = CreateConnection(databasePath, password, cipherOptions, storage);
         await connection.OpenAsync(cancellationToken);
         await ProbeReadableAsync(connection, cancellationToken);
+    }
+
+    private static async Task VerifyDatabaseAsync(string databasePath, string password, string cipherOptions,
+        DatabaseMigrationStoragePolicy storage, CancellationToken cancellationToken)
+    {
+        await using var connection = CreateConnection(databasePath, password, cipherOptions, storage);
+        await connection.OpenAsync(cancellationToken);
+        await VerifyQuickCheckAsync(connection, cancellationToken);
+        await RequireDatabaseSchemaAsync(connection, cancellationToken);
+        await CheckpointWalAsync(connection, cancellationToken);
+        storage.RequireFileWithinLimit(databasePath);
+    }
+
+    private static async Task RequireDatabaseSchemaAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        // SQLite considers an empty file structurally valid. It cannot dominate an existing
+        // staged/backup vault or authorize replacing a missing database with an empty image.
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND rootpage > 0);";
+        if (Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) != 1)
+            throw new DatabaseUnreadableException(new InvalidDataException(
+                "The database image has no application schema. Existing recovery files were preserved."));
     }
 
     private static async Task ProbeReadableAsync(
@@ -290,15 +364,20 @@ internal static class DatabaseEncryptionMigrator
     private static SqliteConnection CreateConnection(
         string databasePath,
         string password,
-        string cipherOptions)
+        string cipherOptions,
+        DatabaseMigrationStoragePolicy storage)
     {
+        storage.RequireFileWithinLimit(databasePath);
         var connectionString = CreateConnectionString(
             databasePath,
             password,
             cipherOptions,
             SqliteOpenMode.ReadWrite,
             pooling: false);
-        return new SqliteConnection(connectionString);
+        var options = new SqliteConnectionStringBuilder(connectionString) { DefaultTimeout = 1 };
+        return new SqliteConnectionFactory(options.ToString(), maximumDatabaseBytes: storage.MaximumDatabaseBytes,
+            physicalLimits: storage.PhysicalLimits)
+            .CreateConnection();
     }
 
     private static string CreateConnectionString(
@@ -324,14 +403,33 @@ internal static class DatabaseEncryptionMigrator
     private static bool IsUnreadableWithCipher(SqliteException exception) =>
         exception.SqliteErrorCode is SqliteCorruptErrorCode or SqliteNotADatabaseErrorCode;
 
-    private static void RecoverMissingDatabaseFromBackup(string databasePath, string backupPath)
+    private static async Task RecoverMissingDatabaseFromBackupAsync(string databasePath, string backupPath,
+        string password, DatabaseMigrationStoragePolicy storage, CancellationToken cancellationToken)
     {
         if (!File.Exists(databasePath) && File.Exists(backupPath))
         {
+            if (storage.RequireFileWithinLimit(backupPath) == 0)
+                throw new DatabaseUnreadableException(new InvalidDataException(
+                    "An empty migration backup cannot replace the missing database. Existing files were preserved."));
+            if (HasSidecars(databasePath))
+                throw new DatabaseUnreadableException(new InvalidDataException(
+                    "The missing database has journal recovery artifacts. Existing files were preserved."));
+            string cipherOptions;
+            if (await IsReadableAsync(backupPath, password, $"cipher={TargetCipher}", storage, cancellationToken))
+                cipherOptions = $"cipher={TargetCipher}";
+            else if (await DetectSqlCipherLegacyVersionAsync(backupPath, password, storage, cancellationToken) is int legacy)
+                cipherOptions = $"cipher=sqlcipher&legacy={legacy}";
+            else
+                throw new DatabaseUnreadableException(new InvalidDataException("The migration backup could not be verified. Existing files were preserved."));
+            await VerifyDatabaseAsync(backupPath, password, cipherOptions, storage, cancellationToken);
             File.Move(backupPath, databasePath);
-            DeleteSidecars(databasePath);
+            DeleteSidecars(backupPath);
         }
     }
+
+    private static bool HasArtifacts(string path) => File.Exists(path) || HasSidecars(path);
+    private static bool HasSidecars(string path) => File.Exists($"{path}-wal") ||
+        File.Exists($"{path}-shm") || File.Exists($"{path}-journal");
 
     private static void DeleteDatabaseArtifacts(string temporaryPath, string backupPath)
     {
@@ -354,12 +452,6 @@ internal static class DatabaseEncryptionMigrator
     {
         if (File.Exists(path))
             File.Delete(path);
-    }
-
-    private static void CopyAndFlush(string sourcePath, string destinationPath)
-    {
-        File.Copy(sourcePath, destinationPath, overwrite: true);
-        FlushFile(destinationPath);
     }
 
     private static void FlushFile(string path)

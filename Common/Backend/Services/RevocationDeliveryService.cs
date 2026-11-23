@@ -2,6 +2,7 @@ using System.Text.Json;
 using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Sync;
@@ -12,13 +13,14 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 /// <summary>Derives delivery obligations from the original signed historical declaration, never current links or transport ACKs.</summary>
 public sealed class RevocationDeliveryService(IRevocationReceiptRepository evidence, IUserControlOperationRepository operations,
     IUserControlStateRepository states, IDeletedUserBarrierRepository barriers,
-    IUserMembershipAuthorizationRepository membership) : IRevocationDeliveryService
+    IUserMembershipAuthorizationRepository membership, ICriticalControlIngressStore? ingress = null) : IRevocationDeliveryService
 {
     public async Task<bool> HasPendingDeliveryAsync(CancellationToken ct = default) =>
-        (await GetSnapshotsAsync(ct)).Any(s => s.RequiresNetworking);
+        ingress?.HasPendingOrUncertain == true || (await GetSnapshotsAsync(ct)).Any(s => s.RequiresNetworking);
 
     public async Task<IReadOnlyList<Guid>> ListPendingUserIdsAsync(CancellationToken ct = default) =>
-        (await GetSnapshotsAsync(ct)).Where(s => s.RequiresNetworking).Select(s => s.UserId).Distinct().Order().ToArray();
+        (await GetSnapshotsAsync(ct)).Where(s => s.RequiresNetworking).Select(s => s.UserId)
+            .Concat(ingress?.SuspendedUserIds ?? []).Distinct().Order().ToArray();
 
     public async Task<bool> HasPendingForPeerAsync(Guid deviceId, CancellationToken ct = default)
     {

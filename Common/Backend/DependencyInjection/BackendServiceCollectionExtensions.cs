@@ -68,8 +68,10 @@ public static class BackendServiceCollectionExtensions
         services.AddSingleton<IKeyProtector>(keyProtector);
         services.AddSingleton<ILocalDiscoveryNetworkLease>(discoveryNetworkLease);
         services.AddSingleton<SqliteConnectionFactory>();
+        services.AddSingleton<ICriticalControlIngressStore, CriticalControlIngressStore>();
         services.AddSingleton<IBackendInitializationService, BackendInitializationService>();
         services.AddScoped<SqliteSession>();
+        services.AddScoped<SqliteStorageRetentionAnalyzer>();
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<SqliteSession>());
         services.AddScoped<IUserAccountDeletionStore, UserAccountDeletionStore>();
         services.AddScoped<IUserRecoveryJournalStore, UserRecoveryJournalStore>();

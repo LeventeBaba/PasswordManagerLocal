@@ -14,10 +14,12 @@ using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
+using PasswordManagerLocal.Common.Backend.Services.Hosted;
 using PasswordManagerLocal.Common.Backend.Utils;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Tests.Fakes;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
+using PasswordManagerLocal.Common.Tests.TestInfrastructure.Storage;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 
@@ -604,11 +606,36 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
         await using var source = await ProductionSyncTestHost.CreateAsync();
         var token = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest("journal_schema"));
         var before = await ReadUserAsync(source, token);
+        await source.Services.GetRequiredService<UserPostLoginWorkHostedService>().StopAsync();
         using (var scope = source.Services.CreateScope())
         {
             var services = scope.ServiceProvider;
-            await services.ExecuteFixtureSqlAsync("""DROP TABLE "UserRecoveryJournals";""");
             await using var connection = services.GetRequiredService<SqliteConnectionFactory>().CreateConnection();
+            await connection.OpenAsync();
+            // Model the older image before journals AND storage admission existed. Dropping
+            // only a guarded table from today's schema is corruption, which startup must reject.
+            // Quiesce the fixture worker above and perform the fixture downgrade atomically.
+            using (var legacy = connection.BeginTransaction(deferred: false))
+            {
+                using var command = connection.CreateCommand();
+                command.Transaction = legacy;
+                var operations = new[] { "INSERT", "UPDATE", "DELETE" };
+                var triggers = SqliteStoragePolicy.Tables.SelectMany(table => operations.Select(operation =>
+                        $"Storage_{table.TableName}_{operation}"))
+                    .Concat(SqliteStoragePolicy.WalGuardedTables.SelectMany(table => operations.Select(operation =>
+                        $"WalPressure_{table}_{operation}")));
+                command.CommandText = string.Join("\n", triggers.Select(name =>
+                    "DROP TRIGGER " + SqliteStorageTestCommands.Quote(name) + ";")) + """
+
+                    DROP TABLE "StorageUsage";
+                    DROP TABLE "StorageBudgets";
+                    DROP TABLE "UserRecoveryJournals";
+                    """;
+                await command.ExecuteNonQueryAsync();
+                await legacy.CommitAsync();
+            }
+            Assert.AreEqual(0L, await SqliteStorageTestCommands.ScalarAsync(connection,
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('UserRecoveryJournals', 'StorageUsage', 'StorageBudgets');"));
             await AppDatabaseInitializer.InitializeAsync(connection);
             var journals = services.GetRequiredService<IUserRecoveryJournalStore>();
             journals.Add(new UserRecoveryJournal
@@ -617,10 +644,18 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
                 CreatedAtUtc = DateTimeOffset.UtcNow, ProtectedKey = [1], EncryptedPayload = [2], PayloadHash = new byte[32]
             });
             await services.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+            var retainedUsage = await SqliteStorageTestCommands.ScalarAsync(connection,
+                "SELECT UsedBytes FROM StorageUsage WHERE TableName = 'UserRecoveryJournals';");
             await AppDatabaseInitializer.InitializeAsync(connection);
             Assert.HasCount(1, await journals.ListIdsAsync(default));
+            Assert.AreEqual(1L, await SqliteStorageTestCommands.ScalarAsync(connection,
+                "SELECT RowCount FROM StorageUsage WHERE TableName = 'UserRecoveryJournals';"));
+            Assert.AreEqual(retainedUsage, await SqliteStorageTestCommands.ScalarAsync(connection,
+                "SELECT UsedBytes FROM StorageUsage WHERE TableName = 'UserRecoveryJournals';"));
         }
-        CollectionAssert.AreEqual(before.IntegrityHash, (await ReadUserAsync(source, token)).IntegrityHash);
+        var after = await ReadUserAsync(source, token);
+        CollectionAssert.AreEqual(before.IntegrityHash, after.IntegrityHash);
+        CollectionAssert.AreEqual(before.EncryptedUserPasswordsDataPayload, after.EncryptedUserPasswordsDataPayload);
     }
 
     [TestMethod]
@@ -702,6 +737,9 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
 
     private sealed class LifecycleProbe(IUserLifecycleCoordinator inner) : IUserLifecycleCoordinator
     {
+        public bool IsControlOperation(Guid userId) => inner.IsControlOperation(userId);
+        public Task<T> ExecuteControlAsync<T>(Guid userId, Func<CancellationToken, Task<T>> action, CancellationToken ct = default) =>
+            inner.ExecuteControlAsync(userId, action, ct);
         public bool IsExecuting { get; private set; }
         public Task ExecuteAsync(Guid userId, Func<CancellationToken, Task> action, CancellationToken ct = default) =>
             ExecuteAsync<object?>(userId, async token => { await action(token); return null; }, ct);

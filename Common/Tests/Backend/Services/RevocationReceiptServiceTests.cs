@@ -22,6 +22,33 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 public sealed partial class RevocationReceiptServiceTests
 {
     [TestMethod]
+    [TestCategory("StorageBudget")]
+    public async Task ExhaustedRevocationReserve_PreservesDeletionBarrierAndPendingOperation_WithoutAppliedReceipt()
+    {
+        await using var scenario = await Scenario.CreateAsync();
+        await using var connection = scenario.Db.Connections.CreateConnection();
+        await connection.OpenAsync();
+        await PasswordManagerLocal.Common.Tests.TestInfrastructure.Storage.SqliteStorageTestCommands.SetBudgetAsync(connection, "Revocation", 1);
+        await Assert.ThrowsExactlyAsync<PasswordManagerLocal.Common.Contracts.Errors.StorageCapacityExceededException>(() =>
+            scenario.Inbox.StoreAndApplyAsync(scenario.Operation, scenario.Peers[0].LocalDeviceId));
+        using (var readback = scenario.Db.OpenSession())
+        {
+            Assert.IsNotNull(await new UserRepository(readback).GetByIdAsNoTrackingAsync(scenario.User.UId));
+            Assert.IsNotNull(await new DeletedUserBarrierRepository(readback).GetAsync(scenario.User.UId));
+            Assert.AreEqual(UserControlOperationStatus.StoredPending,
+                (await new UserControlOperationRepository(readback).GetByIdAsync(scenario.Operation.OperationId))!.Status);
+            Assert.AreEqual(0, (await new RevocationReceiptRepository(readback).ListAsync(scenario.Operation.OperationId)).Count);
+            Assert.IsNull(await new RevocationReceiptRepository(readback).GetEvidenceAsync(scenario.Operation.OperationId));
+        }
+        await PasswordManagerLocal.Common.Tests.TestInfrastructure.Storage.SqliteStorageTestCommands.SetBudgetAsync(connection,
+            "Revocation", StorageCapacityConstants.RevocationBytes);
+        var retry = await scenario.Inbox.TryApplyStoredAsync(scenario.Operation.OperationId);
+        Assert.AreEqual(UserControlOperationReceiptState.Applied, retry.State);
+        Assert.AreEqual(1, (await scenario.Db.RevocationReceipts.ListAsync(scenario.Operation.OperationId)).Count);
+        Assert.IsNotNull(await scenario.Db.DeletedUserBarriers.GetAsync(scenario.User.UId));
+    }
+
+    [TestMethod]
     public async Task DeletionReceipt_CommitsWithCleanup_AndSurvivesLogoutDuplicateAndReopen()
     {
         await using var scenario = await Scenario.CreateAsync();
@@ -403,12 +430,14 @@ public sealed partial class RevocationReceiptServiceTests
             FakeDeviceIdentityService identity) => new(new RevocationReceiptRepository(session),
                 new UserMembershipAuthorizationRepository(session), new UserControlOperationRepository(session), identity, Lifecycle, session);
 
-        public UserControlOperationInboxService CreateInbox(IUserAccountDeletionCleanupService? cleanup = null) => new(
+        public UserControlOperationInboxService CreateInbox(IUserAccountDeletionCleanupService? cleanup = null,
+            PasswordManagerLocal.Common.Backend.Abstractions.Persistence.ICriticalControlIngressStore? ingress = null,
+            IUserLifecycleCoordinator? lifecycle = null, IUserMembershipAuthorizationService? membership = null) => new(
             Db.UserControlOperations, Db.UserControlStates, Db.Users, Db.Devices, Db.UserDevices, Db.UserSyncSnapshots,
-            Lifecycle, new FakeInteractiveSessionStateService(new FakeAuthService()), Db.UnitOfWork, Membership,
+            lifecycle ?? Lifecycle, new FakeInteractiveSessionStateService(new FakeAuthService()), Db.UnitOfWork, membership ?? Membership,
             Db.UserMembershipAuthorizations, Db.LocalUserDevices, Peers[1], new FakeSyncRuntimeService(), Db.DeletedUserBarriers,
             cleanup ?? new UserAccountDeletionCleanupService(new UserAccountDeletionStore(Db.UnitOfWork, Db.Users, Db.DeviceEnrollmentCommits), Db.Users),
-            revocationReceipts: Receipts);
+            revocationReceipts: Receipts, criticalIngress: ingress);
 
         public static async Task<Scenario> CreateAsync(int peerCount = 3, bool authenticatedHistory = false)
         {

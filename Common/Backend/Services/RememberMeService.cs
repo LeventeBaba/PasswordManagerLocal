@@ -31,6 +31,7 @@ public class RememberMeService : IRememberMeService
     private readonly IUserLoginPreparationService? _preparation;
     private readonly IUserPostLoginWorkScheduler? _postLogin;
     private readonly IAuthenticatedSessionIssuer? _sessionIssuer;
+    private readonly PasswordManagerLocal.Common.Backend.Abstractions.Persistence.ICriticalControlIngressStore? _ingress;
 
     public RememberMeService(
         ITokenService tokens,
@@ -50,12 +51,14 @@ public class RememberMeService : IRememberMeService
         IUserLifecycleCoordinator? lifecycle = null,
         IUserLoginPreparationService? preparation = null,
         IUserPostLoginWorkScheduler? postLogin = null,
-        IAuthenticatedSessionIssuer? sessionIssuer = null)
+        IAuthenticatedSessionIssuer? sessionIssuer = null,
+        PasswordManagerLocal.Common.Backend.Abstractions.Persistence.ICriticalControlIngressStore? ingress = null)
     {
         _lifecycle = lifecycle;
         _preparation = preparation;
         _postLogin = postLogin;
         _sessionIssuer = sessionIssuer;
+        _ingress = ingress;
         _tokens = tokens;
         _keys = keys;
         _protector = protector;
@@ -89,7 +92,10 @@ public class RememberMeService : IRememberMeService
 
         foreach (var user in usersEnabledRM)
         {
-            var token = await TryInitializeRememberedUserAsync(user, ct);
+            if (_ingress?.IsSuspended(user.UId) == true) continue;
+            Guid? token;
+            try { token = await TryInitializeRememberedUserAsync(user, ct); }
+            catch (PasswordManagerLocal.Common.Contracts.Errors.PendingSecurityOperationException) { continue; }
             if (token is not null)
                 initializedTokens.Add(token.Value);
         }

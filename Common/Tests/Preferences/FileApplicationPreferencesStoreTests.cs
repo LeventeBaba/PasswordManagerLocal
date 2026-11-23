@@ -9,6 +9,7 @@ using System.Text.Json;
 namespace PasswordManagerLocal.Common.Tests.Preferences;
 
 [TestClass]
+[TestCategory("StorageAuxiliary")]
 public sealed class FileApplicationPreferencesStoreTests
 {
     [TestMethod]
@@ -193,6 +194,53 @@ public sealed class FileApplicationPreferencesStoreTests
             if (Directory.Exists(directory))
                 Directory.Delete(directory, recursive: true);
         }
+    }
+
+    [TestMethod]
+    public async Task FailedReplacementAndCleanup_StabilizesAcrossRepeatedStoreRecreation()
+    {
+        var fileSystem = new FakeApplicationPreferencesFileSystem();
+        var original = ApplicationPreferencesDefaults.Create();
+        await CreateStore(fileSystem).WriteAsync(original);
+        fileSystem.ReplaceFailure = new IOException("replace");
+        fileSystem.DeleteFailure = new IOException("cleanup");
+        for (var attempt = 0; attempt < 32; attempt++)
+        {
+            await Assert.ThrowsExactlyAsync<IOException>(() => CreateStore(fileSystem).WriteAsync(
+                original with { InterfaceAnimationsEnabled = !original.InterfaceAnimationsEnabled }));
+            Assert.AreEqual(original, await CreateStore(fileSystem).ReadAsync());
+            Assert.AreEqual(1, fileSystem.TemporaryFileCount);
+        }
+        Assert.AreEqual(1, fileSystem.WrittenTemporaryPaths.Count);
+        fileSystem.ReplaceFailure = null;
+        fileSystem.DeleteFailure = null;
+        var updated = original with { InterfaceAnimationsEnabled = !original.InterfaceAnimationsEnabled };
+        await CreateStore(fileSystem).WriteAsync(updated);
+        Assert.AreEqual(updated, await CreateStore(fileSystem).ReadAsync());
+        Assert.AreEqual(0, fileSystem.TemporaryFileCount);
+    }
+
+    [TestMethod]
+    public async Task LegacyOrphans_AreRemovedOnlyUnderThePreferenceLock()
+    {
+        var fileSystem = new FakeApplicationPreferencesFileSystem();
+        var orphan = $"{PreferencesPath()}.{Guid.NewGuid():N}.tmp";
+        var unrelated = $"{PreferencesPath()}.notes.tmp";
+        fileSystem.SetFile(orphan, "abandoned");
+        fileSystem.SetFile($"{PreferencesPath()}.tmp", "abandoned fixed slot");
+        fileSystem.SetFile(unrelated, "keep");
+        fileSystem.LockFailure = new IOException("another writer owns the slot");
+        await Assert.ThrowsExactlyAsync<IOException>(() =>
+            CreateStore(fileSystem).WriteAsync(ApplicationPreferencesDefaults.Create()));
+        Assert.IsTrue(fileSystem.FileExists(orphan));
+        Assert.AreEqual("abandoned fixed slot", fileSystem.GetFile($"{PreferencesPath()}.tmp"));
+        Assert.AreEqual(0, fileSystem.WrittenTemporaryPaths.Count);
+
+        fileSystem.LockFailure = null;
+        await CreateStore(fileSystem).WriteAsync(ApplicationPreferencesDefaults.Create());
+        Assert.IsFalse(fileSystem.FileExists(orphan));
+        Assert.IsFalse(fileSystem.FileExists($"{PreferencesPath()}.tmp"));
+        Assert.AreEqual("keep", fileSystem.GetFile(unrelated));
     }
 
     private static FileApplicationPreferencesStore CreateStore(

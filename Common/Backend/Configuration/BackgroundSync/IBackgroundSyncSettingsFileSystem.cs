@@ -8,4 +8,6 @@ public interface IBackgroundSyncSettingsFileSystem
     void WriteAllText(string path, string contents);
     void ReplaceFile(string sourcePath, string destinationPath);
     void DeleteFile(string path);
+    IEnumerable<string> EnumerateFiles(string directory, string searchPattern);
+    Task<IAsyncDisposable> AcquireExclusiveLockAsync(string path, CancellationToken cancellationToken);
 }

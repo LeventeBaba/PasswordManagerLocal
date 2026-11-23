@@ -145,6 +145,14 @@ public sealed class SyncPeerProtocolHandler
             ack.UserControlOperationReceipts.AddRange(controlOperationReceipts);
             return ack;
         }
+        catch (PasswordManagerLocal.Common.Contracts.Errors.PendingSecurityOperationException)
+        {
+            throw new SyncProtocolException(SyncProtocolStatusCode.Unavailable, "A pending security transition temporarily blocks ordinary synchronization.");
+        }
+        catch (PasswordManagerLocal.Common.Contracts.Errors.StorageCapacityExceededException)
+        {
+            throw new SyncProtocolException(SyncProtocolStatusCode.ResourceExhausted, "Local storage capacity is exhausted; the delta was not acknowledged.");
+        }
         catch (SyncStateUnavailableException ex)
         {
             BackendDebugLog.Warning($"Local synchronization retry: {ex.Message}", category: "Synchronization");

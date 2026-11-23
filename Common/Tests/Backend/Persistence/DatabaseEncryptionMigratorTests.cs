@@ -7,7 +7,9 @@ using SQLitePCL;
 namespace PasswordManagerLocal.Common.Tests.Backend.Persistence;
 
 [TestClass]
-public sealed class DatabaseEncryptionMigratorTests
+[TestCategory("MigrationStorage")]
+[TestCategory("StoragePhysical")]
+public sealed partial class DatabaseEncryptionMigratorTests
 {
     private const string TestPassword = "bWlncmF0aW9uLXRlc3QtZGF0YWJhc2Uta2V5";
 

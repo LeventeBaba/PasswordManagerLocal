@@ -1,5 +1,6 @@
 ﻿using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Sync;
 
@@ -14,6 +15,7 @@ public sealed class SyncAuthorizationService : ISyncAuthorizationService
     private readonly IDeviceIdentityService _identity;
     private readonly IUserMembershipAuthorizationRepository? _membershipHistory;
     private readonly IDeletedUserBarrierRepository? _deletionBarriers;
+    private readonly ICriticalControlIngressStore? _ingress;
 
     public SyncAuthorizationService(
         IDeviceRepository devices,
@@ -22,7 +24,7 @@ public sealed class SyncAuthorizationService : ISyncAuthorizationService
         ISyncRouteRepository syncRoutes,
         IDeviceIdentityService identity,
         IUserMembershipAuthorizationRepository? membershipHistory = null,
-        IDeletedUserBarrierRepository? deletionBarriers = null)
+        IDeletedUserBarrierRepository? deletionBarriers = null, ICriticalControlIngressStore? ingress = null)
     {
         _devices = devices;
         _userDevices = userDevices;
@@ -31,6 +33,7 @@ public sealed class SyncAuthorizationService : ISyncAuthorizationService
         _identity = identity;
         _membershipHistory = membershipHistory;
         _deletionBarriers = deletionBarriers;
+        _ingress = ingress;
     }
 
     public async Task<bool> CanSendAsync(SyncItem item, Guid targetDeviceId, CancellationToken ct = default)
@@ -38,12 +41,15 @@ public sealed class SyncAuthorizationService : ISyncAuthorizationService
         if (!_identity.IsSyncOn || targetDeviceId == Guid.Empty || targetDeviceId == _identity.LocalDeviceId)
             return false;
 
+        if (item.ModelType == SyncModelType.User && _ingress?.IsSuspended(item.ModelId) == true) return false;
+
         if (item.ModelType == SyncModelType.User)
             return item.ChangeType != SyncChangeType.Deleted && await _syncRoutes.IsEligibleAsync(item.ModelId, targetDeviceId, ct);
 
         if (item.ModelType == SyncModelType.UserDevice)
         {
             var link = await _userDevices.GetByModelIdAsync(item.ModelId, ct);
+            if (link is not null && _ingress?.IsSuspended(link.UserId) == true) return false;
             if (link is null || !await _localUsers.IsSyncOnAsync(link.UserId, ct))
                 return false;
 
@@ -69,6 +75,8 @@ public sealed class SyncAuthorizationService : ISyncAuthorizationService
 
         if (payload.UserControlOperation is not null && _membershipHistory is not null)
             return await _membershipHistory.HasHistoricalAuthorizationAsync(payload.ModelId, sourceDeviceId, ct);
+        if (payload.ModelType == SyncModelType.User) _ingress?.ThrowIfSuspended(payload.ModelId);
+        if (payload.UserDevice is not null) _ingress?.ThrowIfSuspended(payload.UserDevice.UserId);
         if (!_identity.IsSyncOn) return false;
 
         if (payload.ModelType == SyncModelType.User)

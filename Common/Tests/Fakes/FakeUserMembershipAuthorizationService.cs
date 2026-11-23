@@ -6,6 +6,7 @@ namespace PasswordManagerLocal.Common.Tests.Fakes;
 
 public sealed class FakeUserMembershipAuthorizationService : IUserMembershipAuthorizationService
 {
+    public int ControlAuthorVerificationCalls { get; private set; }
     public Task<UserMembershipAuthorization> CreateGenesisAsync(User user, CancellationToken ct = default) =>
         Task.FromResult(Create(user.UId, Guid.NewGuid(), Guid.NewGuid(), user.KeyEpoch, user.MembershipEpoch, []));
 
@@ -35,6 +36,7 @@ public sealed class FakeUserMembershipAuthorizationService : IUserMembershipAuth
 
     public Task<UserMembershipAuthorization> VerifyControlAuthorAsync(UserControlOperationEnvelope envelope, CancellationToken ct = default)
     {
+        ControlAuthorVerificationCalls++;
         UserControlOperationEnvelopeUtil.VerifyWithSigningKey(envelope, envelope.OriginSignPublicKey);
         return Task.FromResult(Create(envelope.UserId, envelope.OriginDeviceId, envelope.OriginInstanceId, envelope.PreviousKeyEpoch, envelope.PreviousMembershipEpoch, envelope.OriginSignPublicKey));
     }

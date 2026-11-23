@@ -13,6 +13,25 @@ public sealed class EndpointRpcBackendErrorMapperRestartTests
     private readonly EndpointRpcBackendErrorMapper _mapper = new();
 
     [TestMethod]
+    [TestCategory("StorageBudget")]
+    public void CapacityFailure_PreservesCommitModel_AndNeverRequiresDatabaseReset()
+    {
+        var failure = new PasswordManagerLocal.Common.Contracts.Errors.StorageCapacityExceededException();
+        Assert.IsTrue(_mapper.TryMapKnownMutationFailure(failure, CreateContext(EndpointOperationId.ChangeUsername), out var error));
+        Assert.AreEqual(EndpointRpcErrorCode.OperationRejected, error.ErrorCode);
+        Assert.AreEqual(EndpointFailureKind.LimitReached, error.FailureKind);
+        Assert.AreEqual(EndpointMutationOutcome.NotCommitted, error.MutationOutcome);
+        Assert.IsFalse(error.RequiresProcessRestart);
+        Assert.IsFalse(ExceptionRestartRequirementClassifier.RequiresProcessRestart(failure));
+        Assert.IsFalse(_mapper.TryMapKnownMutationFailure(failure, CreateContext(EndpointOperationId.AddNewPassword), out _),
+            "A possible post-commit failure cannot be relabeled as an uncommitted operation.");
+        var pending = new PasswordManagerLocal.Common.Contracts.Errors.PendingSecurityOperationException();
+        Assert.IsTrue(_mapper.TryMapKnownMutationFailure(pending, CreateContext(EndpointOperationId.ChangeUsername), out var blocked));
+        Assert.AreEqual(EndpointMutationOutcome.NotCommitted, blocked.MutationOutcome);
+        Assert.IsFalse(blocked.RequiresProcessRestart);
+    }
+
+    [TestMethod]
     [DataRow(EndpointOperationId.Logout, "runtime-nested-restart", EndpointMutationOutcome.NotCommitted)]
     [DataRow(EndpointOperationId.GetLocalDeviceInfo, "aggregate-restart", EndpointMutationOutcome.NotApplicable)]
     public void PreInvocationRestartFailureIsConclusiveForOperationKind(

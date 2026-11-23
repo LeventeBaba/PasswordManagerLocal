@@ -683,6 +683,7 @@ public sealed class BackendRuntimeTests
     }
 
     [TestMethod]
+    [TestCategory("StorageAuxiliary")]
     [DataRow(BackendRuntimeFailureKind.DatabaseCompatibility)]
     [DataRow(BackendRuntimeFailureKind.DatabaseConfigurationInvalid)]
     [DataRow(BackendRuntimeFailureKind.DatabaseKeyUnavailable)]
@@ -708,15 +709,25 @@ public sealed class BackendRuntimeTests
             out _);
 
         var paths = new BackendStoragePaths(directory.Path);
-        foreach (var path in new[]
-                 {
-                     paths.DatabasePath,
-                     paths.DatabaseWalPath,
-                     paths.DatabaseShmPath,
-                     paths.DatabaseJournalPath,
-                     paths.DatabaseConfigPath,
-                     $"{paths.DatabaseConfigPath}.123.tmp"
-                 })
+        var retainedPaths = new[]
+        {
+            paths.DatabasePath,
+            paths.DatabaseWalPath,
+            paths.DatabaseShmPath,
+            paths.DatabaseJournalPath,
+            paths.DatabaseConfigPath,
+            paths.DatabaseMigrationTempPath,
+            paths.DatabaseMigrationBackupPath,
+            $"{paths.DatabaseMigrationTempPath}-wal",
+            $"{paths.DatabaseMigrationTempPath}-shm",
+            $"{paths.DatabaseMigrationTempPath}-journal",
+            $"{paths.DatabaseMigrationBackupPath}-wal",
+            $"{paths.DatabaseMigrationBackupPath}-shm",
+            $"{paths.DatabaseMigrationBackupPath}-journal",
+            $"{paths.DatabaseConfigPath}.tmp",
+            $"{paths.DatabaseConfigPath}.123.tmp"
+        };
+        foreach (var path in retainedPaths)
         {
             await File.WriteAllTextAsync(path, "test");
         }
@@ -726,6 +737,7 @@ public sealed class BackendRuntimeTests
 
         Assert.AreEqual("test", await File.ReadAllTextAsync(paths.DatabasePath));
         Assert.AreEqual("test", await File.ReadAllTextAsync(paths.DatabaseConfigPath));
+        Assert.IsTrue(retainedPaths.All(File.Exists));
         await runtime.ResetDatabaseAndRestartAsync();
 
         Assert.AreEqual(BackendRuntimeState.Ready, runtime.Snapshot.State);
@@ -735,6 +747,7 @@ public sealed class BackendRuntimeTests
         Assert.IsFalse(File.Exists(paths.DatabaseJournalPath));
         Assert.IsFalse(File.Exists(paths.DatabaseConfigPath));
         Assert.IsFalse(File.Exists($"{paths.DatabaseConfigPath}.123.tmp"));
+        Assert.IsTrue(retainedPaths.All(path => !File.Exists(path)));
         await runtime.DisposeAsync();
     }
 

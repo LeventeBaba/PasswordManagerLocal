@@ -1,6 +1,7 @@
 using Google.Protobuf;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Security;
@@ -19,6 +20,7 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
     private readonly IDeviceIdentityService _identity;
     private readonly IUserMembershipAuthorizationRepository? _membershipHistory;
     private readonly IRevocationReceiptService? _receipts;
+    private readonly ICriticalControlIngressStore? _criticalIngress;
 
     public UserControlOperationAntiEntropyService(
         IUserControlOperationRepository operations,
@@ -27,7 +29,7 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
         IOutgoingDeltaBuilderService deltaBuilder,
         IDeviceIdentityService identity,
         IUserMembershipAuthorizationRepository? membershipHistory = null,
-        IRevocationReceiptService? receipts = null)
+        IRevocationReceiptService? receipts = null, ICriticalControlIngressStore? criticalIngress = null)
     {
         _operations = operations;
         _devices = devices;
@@ -36,6 +38,7 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
         _identity = identity;
         _membershipHistory = membershipHistory;
         _receipts = receipts;
+        _criticalIngress = criticalIngress;
     }
 
     public async Task<UserControlOperationInventoryExchangeRequest> BuildInventoryAsync(
@@ -45,7 +48,7 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
         await ValidatePeerAsync(peerDeviceId, ct);
         var rows = await _operations.ListAllRelayableAsync(ct);
         var rowsByUser = rows.GroupBy(operation => operation.UserId).ToDictionary(group => group.Key);
-        var activeUserIds = (await _routes.ListAllEligibleUserIdsAsync(peerDeviceId, ct)).ToHashSet();
+        var activeUserIds = (await _routes.ListAllControlEligibleUserIdsAsync(peerDeviceId, ct)).ToHashSet();
         IReadOnlyList<Guid> historicalUserIds = _membershipHistory is null
             ? Array.Empty<Guid>()
             : await _membershipHistory.ListUserIdsForDeviceAsync(peerDeviceId, ct);
@@ -85,6 +88,9 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
 
                     var envelope = UserControlOperationEnvelopeUtil.Deserialize(row.EnvelopePayload);
                     EnsureRowMatchesEnvelope(row, envelope);
+                    if (_criticalIngress?.IsSuspended(userId) == true && envelope.OperationType is not
+                        (UserControlOperationType.DeviceRemoval or UserControlOperationType.AccountDeletion) &&
+                        !await _criticalIngress.CanApplyPredecessorAsync(envelope, ct)) continue;
                     userInventory.Operations.Add(ToInventoryEntry(row));
                     if (_receipts is not null && row.Status == UserControlOperationStatus.Applied &&
                         row.OperationType is UserControlOperationType.DeviceRemoval or UserControlOperationType.AccountDeletion)
@@ -355,7 +361,7 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
             // inaccessible operations alike, including IDs paired with the wrong account.
             if (row is null || row.UserId != userId ||
                 row.Status is UserControlOperationStatus.Rejected or UserControlOperationStatus.Quarantined ||
-                (!await _routes.IsEligibleAsync(userId, peerDeviceId, ct) &&
+                (!await _routes.IsControlEligibleAsync(userId, peerDeviceId, ct) &&
                  !await CanRelayHistoricallyAsync(row, peerDeviceId, ct)))
             {
                 throw new SyncStateUnavailableException("The requested control operation is unavailable for this peer.");

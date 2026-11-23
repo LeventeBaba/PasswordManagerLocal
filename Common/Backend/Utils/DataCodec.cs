@@ -19,14 +19,16 @@ internal static class DataCodec
     {
         await using var producer = new ChannelStream();
         using var cipherOutput = new MemoryStream();
-        var encryptionTask = AES256.EncryptToStreamAsync(producer, cipherOutput, key, associatedData, aesFrameSize);
+        using var boundedCipherOutput = new CapacityLimitedStream(cipherOutput, StorageCapacityConstants.MaxLargeRowBytes);
+        var encryptionTask = EncryptFromPipeAsync(producer, boundedCipherOutput, key, associatedData, aesFrameSize);
 
         try
         {
             await using (var compressionStream = await CompressionUtil.OpenWriteAsync(producer, level, leaveOpen: true))
             {
+                using var boundedPlaintext = new CapacityLimitedStream(compressionStream, StorageCapacityConstants.MaxDecodedUserDataBytes);
                 UtcDateTimeUtil.NormalizeObjectGraph(value, typeInfo);
-                await JsonSerializer.SerializeAsync(compressionStream, value, typeInfo, ct);
+                await JsonSerializer.SerializeAsync(boundedPlaintext, value, typeInfo, ct);
                 await compressionStream.FlushAsync(ct);
             }
 
@@ -41,11 +43,29 @@ internal static class DataCodec
             {
                 await encryptionTask;
             }
+            catch (PasswordManagerLocal.Common.Contracts.Errors.StorageCapacityExceededException)
+            {
+                // The output limit can fail in the consumer while compression is writing.
+                // Report that cause rather than the producer's resulting closed-channel error.
+                throw;
+            }
             catch
             {
                 // Preserve the original serialization/compression failure.
             }
 
+            throw;
+        }
+    }
+
+    private static async Task EncryptFromPipeAsync(ChannelStream producer, Stream output, EncryptionKey key,
+        byte[]? associatedData, int frameSize)
+    {
+        try { await AES256.EncryptToStreamAsync(producer, output, key, associatedData, frameSize); }
+        catch (Exception failure)
+        {
+            // A failed consumer must release a producer waiting for room in the bounded pipe.
+            producer.CompleteWriting(failure);
             throw;
         }
     }
@@ -57,6 +77,7 @@ internal static class DataCodec
         byte[]? associatedData = null,
         CancellationToken ct = default) where T : class
     {
+        if (blob.Length > StorageCapacityConstants.MaxLargeRowBytes) return null;
         using var input = new MemoryStream(blob, writable: false);
         await using var plaintextPipe = new ChannelStream();
         var decryptionTask = DecryptIntoPipeAsync(input, plaintextPipe, key, associatedData);
@@ -64,13 +85,14 @@ internal static class DataCodec
         try
         {
             await using var decompressionStream = await CompressionUtil.OpenReadAsync(plaintextPipe, leaveOpen: true);
-            var value = await JsonSerializer.DeserializeAsync(decompressionStream, typeInfo, ct);
+            using var boundedPlaintext = new CapacityLimitedStream(decompressionStream, StorageCapacityConstants.MaxDecodedUserDataBytes);
+            var value = await JsonSerializer.DeserializeAsync(boundedPlaintext, typeInfo, ct);
 
             // Consume the complete authenticated and compressed stream before accepting
             // the decoded object. This both authenticates every AES-GCM frame and prevents
             // the bounded producer pipe from being left blocked if the JSON reader finishes
             // before the producer has emitted its final segment.
-            await DrainSensitiveStreamAsync(decompressionStream, ct);
+            await DrainSensitiveStreamAsync(boundedPlaintext, ct);
             await decryptionTask;
 
             return value is null ? null : UtcDateTimeUtil.NormalizeObjectGraph(value, typeInfo);

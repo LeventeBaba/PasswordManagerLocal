@@ -49,7 +49,10 @@ internal static class AppDatabaseInitializer
             // SQLite cannot switch to WAL inside a transaction. Existing vaults keep
             // their configured journal mode.
             if (!await HasTablesAsync(connection, transaction: null, ct))
+            {
+                SqliteStorageMaintenance.ConfigureNewDatabase(connection);
                 await ExecuteAsync(connection, transaction: null, "PRAGMA journal_mode = WAL;", ct);
+            }
 
             await using var transaction = connection.BeginTransaction(deferred: false);
             if (!await HasTablesAsync(connection, transaction, ct))
@@ -64,7 +67,13 @@ internal static class AppDatabaseInitializer
             // Existing vaults receive this additive upgrade after passing quick_check.
             await ExecuteAsync(connection, transaction, RecoveryJournalSchema, ct);
             await RemoveRetiredGroupSchemaAsync(connection, transaction, ct);
+            await SqliteStoragePolicy.InstallAsync(connection, transaction, ct);
             await transaction.CommitAsync(ct);
+            await SqliteStorageMaintenance.TryReclaimFreePagesAsync(connection, ct);
+        }
+        catch (SqliteException exception) when (SqliteCapacityError.IsCapacityFailure(exception))
+        {
+            throw SqliteCapacityError.Wrap(exception);
         }
         finally
         {

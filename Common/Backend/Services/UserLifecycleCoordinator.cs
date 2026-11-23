@@ -1,4 +1,5 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using System.Collections.Concurrent;
 
 using PasswordManagerLocal.Common.Backend.Internal.Lifecycle;
@@ -12,8 +13,17 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 /// </summary>
 public sealed class UserLifecycleCoordinator : IUserLifecycleCoordinator
 {
+    private readonly ICriticalControlIngressStore? _ingress;
     private readonly ConcurrentDictionary<Guid, UserLifecycleLockEntry> _entries = new();
     private readonly AsyncLocal<IReadOnlyDictionary<Guid, Ownership>?> _heldDepths = new();
+
+    public UserLifecycleCoordinator(ICriticalControlIngressStore? ingress = null) => _ingress = ingress;
+
+    public bool IsControlOperation(Guid userId) => _heldDepths.Value is { } held &&
+        held.TryGetValue(userId, out var ownership) && ownership.Active && ownership.Control;
+
+    public Task<T> ExecuteControlAsync<T>(Guid userId, Func<CancellationToken, Task<T>> action, CancellationToken ct = default) =>
+        ExecuteCoreAsync(userId, action, control: true, ct);
 
     public Task ExecuteAsync(
         Guid userId,
@@ -28,10 +38,12 @@ public sealed class UserLifecycleCoordinator : IUserLifecycleCoordinator
             },
             ct);
 
-    public async Task<T> ExecuteAsync<T>(
+    public Task<T> ExecuteAsync<T>(
         Guid userId,
         Func<CancellationToken, Task<T>> action,
-        CancellationToken ct = default)
+        CancellationToken ct = default) => ExecuteCoreAsync(userId, action, control: false, ct);
+
+    private async Task<T> ExecuteCoreAsync<T>(Guid userId, Func<CancellationToken, Task<T>> action, bool control, CancellationToken ct)
     {
         if (userId == Guid.Empty)
             throw new ArgumentException("A valid user id is required.", nameof(userId));
@@ -40,7 +52,18 @@ public sealed class UserLifecycleCoordinator : IUserLifecycleCoordinator
         var depths = _heldDepths.Value;
         if (depths is not null && depths.TryGetValue(userId, out var ownership) && ownership.Active)
         {
-            return await action(ct).ConfigureAwait(false);
+            if (!control && !ownership.Control) _ingress?.ThrowIfSuspended(userId);
+            if (!control || ownership.Control) return await action(ct).ConfigureAwait(false);
+            // Publish a separate flow-local control owner. Mutating the ordinary owner
+            // would also upgrade sibling work that had already captured its context.
+            var nestedControl = new Ownership { Control = true };
+            SetOwnership(userId, nestedControl);
+            try { return await action(ct).ConfigureAwait(false); }
+            finally
+            {
+                nestedControl.Active = false;
+                SetOwnership(userId, ownership);
+            }
         }
 
         var entry = AcquireEntry(userId);
@@ -54,10 +77,11 @@ public sealed class UserLifecycleCoordinator : IUserLifecycleCoordinator
             throw;
         }
 
-        var held = new Ownership();
+        var held = new Ownership { Control = control };
         SetOwnership(userId, held);
         try
         {
+            if (!control) _ingress?.ThrowIfSuspended(userId);
             return await action(ct).ConfigureAwait(false);
         }
         finally
@@ -102,7 +126,7 @@ public sealed class UserLifecycleCoordinator : IUserLifecycleCoordinator
         _heldDepths.Value = replacement.Count == 0 ? null : replacement;
     }
 
-    private sealed class Ownership { public volatile bool Active = true; }
+    private sealed class Ownership { public volatile bool Active = true; public bool Control { get; init; } }
 
     private void ReleaseReference(Guid userId, UserLifecycleLockEntry entry)
     {

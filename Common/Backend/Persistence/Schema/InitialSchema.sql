@@ -1,5 +1,17 @@
 -- Initial vault schema. The recovery journal is installed by the additive startup upgrade.
 
+-- Exact received revocations are staged before membership verification. This is custody and
+-- a profile access fence, never evidence that the operation was applied or delivered.
+CREATE TABLE "CriticalControlIngress" (
+    "EnvelopeHash" BLOB NOT NULL PRIMARY KEY CHECK(length("EnvelopeHash") = 32),
+    "UserId" TEXT NOT NULL,
+    "OperationId" TEXT NOT NULL,
+    "OperationHash" BLOB NOT NULL CHECK(length("OperationHash") = 32),
+    "TransportPeerDeviceId" TEXT NOT NULL,
+    "EnvelopePayload" BLOB NOT NULL CHECK(length("EnvelopePayload") BETWEEN 1 AND 4194304)
+);
+CREATE INDEX "IX_CriticalControlIngress_UserId" ON "CriticalControlIngress" ("UserId", "OperationId");
+
 CREATE TABLE "Users" (
     "UId" TEXT NOT NULL,
     "EncryptedGeneralUserDataPayload" BLOB NOT NULL,

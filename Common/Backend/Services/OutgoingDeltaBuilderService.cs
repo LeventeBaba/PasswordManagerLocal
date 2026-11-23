@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Security;
@@ -23,6 +24,7 @@ public sealed class OutgoingDeltaBuilderService : IOutgoingDeltaBuilderService
     private readonly IUserLifecycleCoordinator? _lifecycle;
     private readonly IServiceScopeFactory? _scopes;
     private readonly IRevocationReceiptRepository? _revocationEvidence;
+    private readonly ICriticalControlIngressStore? _criticalIngress;
 
     public OutgoingDeltaBuilderService(
         IUserRepository users,
@@ -34,9 +36,10 @@ public sealed class OutgoingDeltaBuilderService : IOutgoingDeltaBuilderService
         IUserMembershipAuthorizationService membershipAuthorization,
         IUserLifecycleCoordinator? lifecycle = null,
         IServiceScopeFactory? scopes = null,
-        IRevocationReceiptRepository? revocationEvidence = null)
+        IRevocationReceiptRepository? revocationEvidence = null, ICriticalControlIngressStore? criticalIngress = null)
     {
         _revocationEvidence = revocationEvidence;
+        _criticalIngress = criticalIngress;
         _lifecycle = lifecycle;
         _scopes = scopes;
         _users = users;
@@ -75,6 +78,7 @@ public sealed class OutgoingDeltaBuilderService : IOutgoingDeltaBuilderService
 
     private async Task<NetworkDelta> BuildCoreAsync(SyncItem item, Device device, CancellationToken ct)
     {
+        if (item.ModelType == SyncModelType.User) _criticalIngress?.ThrowIfSuspended(item.ModelId);
         ValidateTargetDevice(device);
         var timestamp = item.ChangedAtTs > 0
             ? item.ChangedAtTs
@@ -91,6 +95,7 @@ public sealed class OutgoingDeltaBuilderService : IOutgoingDeltaBuilderService
     {
         ct.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(snapshot);
+        _criticalIngress?.ThrowIfSuspended(snapshot.UserId);
         ValidateTargetDevice(device);
 
         if (snapshot.Status is not (UserSyncSnapshotStatus.Pending or UserSyncSnapshotStatus.LocalPublished or UserSyncSnapshotStatus.MergedReceipt))
@@ -145,6 +150,10 @@ public sealed class OutgoingDeltaBuilderService : IOutgoingDeltaBuilderService
             throw new InvalidDataException("Stored control-operation metadata does not match its immutable envelope.");
         }
 
+        if (_criticalIngress?.IsSuspended(envelope.UserId) == true && envelope.OperationType is not
+            (UserControlOperationType.DeviceRemoval or UserControlOperationType.AccountDeletion) &&
+            !await _criticalIngress.CanApplyPredecessorAsync(envelope, ct))
+            throw new PasswordManagerLocal.Common.Contracts.Errors.PendingSecurityOperationException();
         await _membershipAuthorization.VerifyControlAuthorAsync(envelope, ct);
 
         // A relay may have reconstructed public proof prefixes from retained Applied

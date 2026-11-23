@@ -15,6 +15,12 @@ internal sealed record SqliteStorageMeasurement(
 {
     public long AllocatedPageBytes => PageSize * PageCount;
     public long UsedPageBytes => PageSize * (PageCount - FreelistCount);
+    public IReadOnlyDictionary<string, long> ChargedBytes { get; init; } = new Dictionary<string, long>();
+    public IReadOnlyDictionary<string, long> CapacityBytes { get; init; } = new Dictionary<string, long>();
+    public long MaximumPageCount { get; init; }
+    public long AutoCheckpointPages { get; init; }
+    public long RetainedJournalLimitBytes { get; init; }
+    public long WalPressureLimitBytes { get; init; }
 
     public static Task<SqliteStorageMeasurement> CaptureAsync(ProductionSyncTestHost host, CancellationToken ct = default) =>
         CaptureAsync(host.Services.GetRequiredService<SqliteConnectionFactory>(),
@@ -68,20 +74,45 @@ internal sealed record SqliteStorageMeasurement(
             command.CommandText = "PRAGMA journal_mode;";
             mode = Convert.ToString(await command.ExecuteScalarAsync(ct)) ?? "unknown";
         }
+        var charged = new SortedDictionary<string, long>(StringComparer.Ordinal);
+        var capacities = new SortedDictionary<string, long>(StringComparer.Ordinal);
+        using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = "SELECT Category, UsedBytes, LimitBytes FROM StorageBudgets ORDER BY Category;";
+            using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                charged.Add(reader.GetString(0), reader.GetInt64(1));
+                capacities.Add(reader.GetString(0), reader.GetInt64(2));
+            }
+        }
+        var maximumPages = await ReadPragmaAsync(connection, transaction, "max_page_count", ct);
+        var autoCheckpointPages = await ReadPragmaAsync(connection, transaction, "wal_autocheckpoint", ct);
+        var journalLimit = await ReadPragmaAsync(connection, transaction, "journal_size_limit", ct);
         transaction.Commit();
         // Sample before this observer closes its connection: closing the final WAL connection
         // can checkpoint/remove sidecars. Callers must quiesce writers before comparing samples.
         return new(Size(databasePath), Size(databasePath + "-wal"), Size(databasePath + "-shm"),
-            Size(databasePath + "-journal"), pageSize, pages, free, mode, counts, blobs);
+            Size(databasePath + "-journal"), pageSize, pages, free, mode, counts, blobs)
+        {
+            ChargedBytes = charged, CapacityBytes = capacities, MaximumPageCount = maximumPages,
+            AutoCheckpointPages = autoCheckpointPages, RetainedJournalLimitBytes = journalLimit,
+            WalPressureLimitBytes = factory.WalPressureThresholdBytes
+        };
     }
 
+    public static Task<(long Busy, long LogFrames, long CheckpointedFrames)> CheckpointAsync(
+        ProductionSyncTestHost host, CancellationToken ct = default) =>
+        CheckpointAsync(host.Services.GetRequiredService<SqliteConnectionFactory>(), ct: ct);
+
     public static async Task<(long Busy, long LogFrames, long CheckpointedFrames)> CheckpointAsync(
-        ProductionSyncTestHost host, CancellationToken ct = default)
+        SqliteConnectionFactory factory, bool truncate = false, CancellationToken ct = default)
     {
-        await using var connection = host.Services.GetRequiredService<SqliteConnectionFactory>().CreateConnection();
+        await using var connection = factory.CreateConnection();
         await connection.OpenAsync(ct);
         using var command = connection.CreateCommand();
-        command.CommandText = "PRAGMA wal_checkpoint(PASSIVE);";
+        command.CommandText = truncate ? "PRAGMA wal_checkpoint(TRUNCATE);" : "PRAGMA wal_checkpoint(PASSIVE);";
         using var reader = await command.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct)) throw new InvalidOperationException("Checkpoint returned no status.");
         return (reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2));

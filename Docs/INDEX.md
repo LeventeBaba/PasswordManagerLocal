@@ -8,6 +8,7 @@
 | [Synchronization](Architecture/SYNCHRONIZATION.md) | Eligibility, runtime supervision, discovery, transport, snapshot relay/merge, and causal tombstone collection |
 | [Account and device lifecycle](Architecture/ACCOUNT_LIFECYCLE.md) | Enrollment, removal, key rotation, login projection, account deletion, and authenticated revocation delivery |
 | [Integrity and recovery](Architecture/RECOVERY.md) | Canonical checkpoints, fault isolation, automatic reconstruction, and confirmed device-history repair |
+| [Phase 4 storage checklist](Architecture/STORAGE_PHASE4.md) | Finite logical/physical growth, evidence retention, bounded reclamation and validation status |
 | [Interactive project map](SOLUTION_PROJECT_ARCHITECTURE.html) | Default project-reference graph and platform process boundaries |
 
 ## Build and test

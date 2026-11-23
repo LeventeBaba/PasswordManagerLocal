@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
 
@@ -9,13 +10,15 @@ public sealed class InteractiveUserDataStateAccessor : IInteractiveUserDataState
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IInteractiveSessionStateService _sessionState;
+    private readonly ICriticalControlIngressStore? _ingress;
 
     public InteractiveUserDataStateAccessor(
         IServiceScopeFactory scopeFactory,
-        IInteractiveSessionStateService sessionState)
+        IInteractiveSessionStateService sessionState, ICriticalControlIngressStore? ingress = null)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _sessionState = sessionState ?? throw new ArgumentNullException(nameof(sessionState));
+        _ingress = ingress;
     }
 
     public Guid GetUserIdFromToken(Guid token) =>
@@ -41,6 +44,7 @@ public sealed class InteractiveUserDataStateAccessor : IInteractiveUserDataState
         var result = _sessionState.ExecuteRequired(() =>
         {
             using var scope = _scopeFactory.CreateScope();
+            if (_ingress is not null) _ = scope.ServiceProvider.GetRequiredService<IUserSessionService>().GetUidFromToken(token);
             var found = scope.ServiceProvider
                 .GetRequiredService<IDataCachingService>()
                 .TryGetUserDataBundle(token, out var foundValue);

@@ -33,6 +33,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
     private readonly IPendingSyncActivationService? _pendingSyncActivation;
 
     private readonly IRevocationReceiptService? _revocationReceipts;
+    private readonly ICriticalControlIngressStore? _criticalIngress;
 
     public UserControlOperationInboxService(
         IUserControlOperationRepository operations,
@@ -57,8 +58,10 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         IUserCanonicalHealthService? canonicalHealth = null,
         IUserSyncFaultService? syncFaults = null,
         IPendingSyncActivationService? pendingSyncActivation = null,
-        IRevocationReceiptService? revocationReceipts = null)
+        IRevocationReceiptService? revocationReceipts = null,
+        ICriticalControlIngressStore? criticalIngress = null)
     {
+        _criticalIngress = criticalIngress;
         _revocationReceipts = revocationReceipts;
         _operations = operations;
         _states = states;
@@ -93,15 +96,22 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         if (transportPeerDeviceId == Guid.Empty)
             throw new InvalidDataException("The transport peer identity is missing.");
 
-        return await _lifecycle.ExecuteAsync(
+        return await _lifecycle.ExecuteControlAsync(
             envelope.UserId,
             async token =>
             {
-                var stored = await StoreCoreAsync(envelope, transportPeerDeviceId, token);
+                byte[]? ingressHash = null;
+                if (_criticalIngress is not null && envelope.OperationType is
+                    UserControlOperationType.DeviceRemoval or UserControlOperationType.AccountDeletion)
+                    ingressHash = await _criticalIngress.RetainAsync(envelope, transportPeerDeviceId, token);
+                UserControlOperationReceiptResult stored;
+                try { stored = await StoreCoreAsync(envelope, transportPeerDeviceId, token); }
+                catch { _uow.ClearTrackedChanges(); throw; }
                 if (stored.State is UserControlOperationReceiptState.Quarantined or UserControlOperationReceiptState.Rejected or UserControlOperationReceiptState.Obsolete)
                 {
                     if (stored.State == UserControlOperationReceiptState.Quarantined)
                         await RecordControlFaultAsync(envelope, stored.Detail, token);
+                    await CompleteIngressAsync(envelope, stored.State, ingressHash, token);
                     return stored;
                 }
 
@@ -123,6 +133,7 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
                 var applied = await TryApplyStoredSafelyAsync(envelope.OperationId, token);
                 if (applied.State == UserControlOperationReceiptState.Quarantined)
                     await RecordControlFaultAsync(envelope, applied.Detail, token);
+                await CompleteIngressAsync(envelope, applied.State, ingressHash, token);
                 return applied;
             },
             ct);
@@ -134,16 +145,29 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
     {
         var row = await _operations.GetByIdAsync(operationId, ct)
             ?? throw new InvalidOperationException("The stored control operation does not exist.");
-        return await _lifecycle.ExecuteAsync(
+        return await _lifecycle.ExecuteControlAsync(
             row.UserId,
             async token =>
             {
                 var result = await TryApplyStoredSafelyAsync(operationId, token);
                 if (result.State == UserControlOperationReceiptState.Quarantined)
                     await RecordControlFaultAsync(UserControlOperationEnvelopeUtil.Deserialize(row.EnvelopePayload), result.Detail, token);
+                if (result.State is UserControlOperationReceiptState.Applied or UserControlOperationReceiptState.Obsolete or UserControlOperationReceiptState.Quarantined)
+                    await (_criticalIngress?.CompleteAsync(row.UserId, row.OperationId, row.OperationHash, token) ?? Task.CompletedTask);
                 return result;
             },
             ct);
+    }
+
+    private async Task CompleteIngressAsync(UserControlOperationEnvelope envelope, UserControlOperationReceiptState state,
+        byte[]? ingressHash, CancellationToken ct)
+    {
+        if (_criticalIngress is null || ingressHash is null) return;
+        if (state is UserControlOperationReceiptState.Applied or UserControlOperationReceiptState.Obsolete or UserControlOperationReceiptState.Quarantined)
+            await _criticalIngress.CompleteAsync(envelope.UserId, envelope.OperationId, envelope.OperationHash, ct);
+        else if (state == UserControlOperationReceiptState.Rejected)
+            await _criticalIngress.DiscardAsync(ingressHash, ct);
+        // StoredPending/AlreadyStored are custody only: keep the fence until the transition is terminal.
     }
 
     private async Task<UserControlOperationReceiptResult> StoreCoreAsync(
@@ -543,6 +567,28 @@ public sealed class UserControlOperationInboxService : IUserControlOperationInbo
         {
             await transaction.RollbackAsync(ct);
             return Receipt(envelope, UserControlOperationReceiptState.Rejected, row.StatusReason);
+        }
+
+        if (_criticalIngress is not null && envelope.OperationType is not
+            (UserControlOperationType.DeviceRemoval or UserControlOperationType.AccountDeletion) &&
+            !await _criticalIngress.CanApplyPredecessorAsync(envelope, ct))
+            return Receipt(envelope, UserControlOperationReceiptState.StoredPending,
+                "A retained revocation permits only its historical prerequisites to advance authority.");
+
+        if (_criticalIngress is not null && envelope.OperationType != UserControlOperationType.AccountDeletion)
+        {
+            try { await _membershipAuthorization.VerifyControlAuthorAsync(envelope, ct); }
+            catch (Exception failure) when (failure is InvalidDataException or UnauthorizedAccessException)
+            {
+                // A queued operation may have been stored before a removal/cutoff committed.
+                // Reuse the normal verifier at the later application boundary; retain the rejected proof.
+                row.Status = UserControlOperationStatus.Rejected;
+                row.StatusReason = "The retained operation is no longer authorized for application.";
+                _operations.Update(row);
+                await _uow.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+                return Receipt(envelope, UserControlOperationReceiptState.Rejected, row.StatusReason);
+            }
         }
 
         if (envelope.OperationType == UserControlOperationType.AccountDeletion)

@@ -135,9 +135,18 @@ public sealed class FileApplicationPreferencesStore : IApplicationPreferencesSto
     {
         Validate(preferences);
         var directory = Path.GetDirectoryName(_preferencesPath)!;
-        var temporaryPath = Path.Combine(
-            directory,
-            $"{Path.GetFileName(_preferencesPath)}.{Guid.NewGuid():N}.tmp");
+        var temporaryPath = $"{_preferencesPath}.tmp";
+
+        // Every caller holds the existing cross-process preference lock.
+        if (_fileSystem.FileExists(temporaryPath))
+            _fileSystem.DeleteFile(temporaryPath);
+        var name = Path.GetFileName(_preferencesPath);
+        foreach (var candidate in _fileSystem.EnumerateFiles(directory, $"{name}.*.tmp"))
+        {
+            var suffix = Path.GetFileName(candidate).AsSpan(name.Length + 1);
+            if (suffix.Length == 36 && Guid.TryParseExact(suffix[..32], "N", out _))
+                _fileSystem.DeleteFile(candidate);
+        }
 
         try
         {

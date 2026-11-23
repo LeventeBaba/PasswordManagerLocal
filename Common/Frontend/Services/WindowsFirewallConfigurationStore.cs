@@ -57,12 +57,22 @@ internal static class WindowsFirewallConfigurationStore
         {
             var path = GetConfigurationPath();
             var directory = Path.GetDirectoryName(path)!;
-            var temporaryPath = Path.Combine(
-                directory,
-                $"{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+            var temporaryPath = $"{path}.tmp";
+            FileStream? fileLock = null;
             try
             {
                 Directory.CreateDirectory(directory);
+                // This flag is best effort. A competing owner may finish its replacement first.
+                fileLock = new FileStream($"{path}.lock", FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite, FileShare.None, bufferSize: 1);
+                File.Delete(temporaryPath);
+                var name = Path.GetFileName(path);
+                foreach (var candidate in Directory.EnumerateFiles(directory, $"{name}.*.tmp"))
+                {
+                    var suffix = Path.GetFileName(candidate).AsSpan(name.Length + 1);
+                    if (suffix.Length == 36 && Guid.TryParseExact(suffix[..32], "N", out _))
+                        File.Delete(candidate);
+                }
                 var json = JsonSerializer.Serialize(
                     new WindowsFirewallConfiguration { IsConfigured = isConfigured },
                     WindowsFirewallConfigurationJsonContext.Default.WindowsFirewallConfiguration);
@@ -76,12 +86,14 @@ internal static class WindowsFirewallConfigurationStore
             {
                 try
                 {
-                    if (File.Exists(temporaryPath))
+                    if (fileLock is not null && File.Exists(temporaryPath))
                         File.Delete(temporaryPath);
                 }
                 catch
                 {
                 }
+                try { fileLock?.Dispose(); }
+                catch { }
             }
         }
     }

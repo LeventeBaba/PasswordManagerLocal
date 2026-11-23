@@ -58,24 +58,37 @@ public sealed class FileBackgroundSyncSettingsStore : IBackgroundSyncSettingsSto
         }
     }
 
-    public Task WriteAsync(
+    public async Task WriteAsync(
         BackgroundSyncSettings settings,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var directory = Path.GetDirectoryName(_settingsPath)!;
+        _fileSystem.CreateDirectory(directory);
+        await using var fileLock = await _fileSystem.AcquireExclusiveLockAsync(
+            $"{_settingsPath}.lock", cancellationToken).ConfigureAwait(false);
+
         lock (_gate)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var directory = Path.GetDirectoryName(_settingsPath)!;
-            var temporaryPath = Path.Combine(
-                directory,
-                $"{Path.GetFileName(_settingsPath)}.{Guid.NewGuid():N}.tmp");
+            var temporaryPath = $"{_settingsPath}.tmp";
+
+            // The exclusive file lock makes a fixed staging slot safe after a crash.
+            // Failure to reclaim an orphan stops the write before allocating another file.
+            if (_fileSystem.FileExists(temporaryPath))
+                _fileSystem.DeleteFile(temporaryPath);
+            var name = Path.GetFileName(_settingsPath);
+            foreach (var candidate in _fileSystem.EnumerateFiles(directory, $"{name}.*.tmp"))
+            {
+                var suffix = Path.GetFileName(candidate).AsSpan(name.Length + 1);
+                if (suffix.Length == 36 && Guid.TryParseExact(suffix[..32], "N", out _))
+                    _fileSystem.DeleteFile(candidate);
+            }
 
             try
             {
-                _fileSystem.CreateDirectory(directory);
                 var json = JsonSerializer.Serialize(
                     settings,
                     BackgroundSyncSettingsJsonContext.Default.BackgroundSyncSettings);
@@ -95,7 +108,5 @@ public sealed class FileBackgroundSyncSettingsStore : IBackgroundSyncSettingsSto
                 }
             }
         }
-
-        return Task.CompletedTask;
     }
 }

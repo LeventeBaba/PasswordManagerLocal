@@ -22,6 +22,7 @@ internal sealed class SyncRuntimeEligibilityRepository(SqliteSession session, ID
           AND length(d."PublicKey") > 0 AND length(d."SignPublicKey") > 0
           AND length(d."TlsCertFingerprint") = 64
           AND NOT EXISTS (SELECT 1 FROM "DeletedUserBarriers" b WHERE b."UserId" = lu."UserId")
+          AND NOT EXISTS (SELECT 1 FROM "CriticalControlIngress" ci WHERE ci."UserId" = lu."UserId")
           AND NOT EXISTS (SELECT 1 FROM "UserControlStates" s WHERE s."UserId" = lu."UserId" AND s."HasConflict" = 1)
           AND EXISTS (SELECT 1 FROM "UserMembershipAuthorizations" a
               WHERE a."UserId" = lu."UserId" AND a."DeviceId" = $local AND a."OriginInstanceId" = $origin
