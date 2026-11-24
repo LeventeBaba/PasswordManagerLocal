@@ -1,5 +1,6 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Contracts.Notifications;
 
 namespace PasswordManagerLocal.Common.Backend.Persistence;
@@ -10,7 +11,19 @@ internal sealed class BackendChangeSet
     private readonly Dictionary<Guid, FrontendChangeScope> _userChanges = [];
     private FrontendChangeScope _globalScope;
 
-    public bool IsEmpty => _globalScope == FrontendChangeScope.None && _userChanges.Count == 0;
+    private bool _deliveryStateChanged;
+    private bool _eligibilityStateChanged;
+    private bool _evidenceMaintenanceRequested;
+    private bool _evidenceChanged;
+
+    public bool IsEmpty => !_deliveryStateChanged && !_eligibilityStateChanged && !_evidenceChanged &&
+        _globalScope == FrontendChangeScope.None && _userChanges.Count == 0;
+
+    public void ObserveEvidenceChange(bool requestMaintenance)
+    {
+        _evidenceChanged = true;
+        _evidenceMaintenanceRequested |= requestMaintenance;
+    }
 
     public void Add(Guid? userId, FrontendChangeScope scope)
     {
@@ -29,13 +42,22 @@ internal sealed class BackendChangeSet
 
     public void Merge(BackendChangeSet other)
     {
+        _deliveryStateChanged |= other._deliveryStateChanged;
+        _eligibilityStateChanged |= other._eligibilityStateChanged;
+        _evidenceMaintenanceRequested |= other._evidenceMaintenanceRequested;
+        _evidenceChanged |= other._evidenceChanged;
         Add(null, other._globalScope);
         foreach (var change in other._userChanges)
             Add(change.Key, change.Value);
     }
 
-    public void Publish(IBackendChangePublisher? publisher)
+    public void Publish(IBackendChangePublisher? publisher, IRevocationDeliveryActivity? activity = null,
+        SynchronizationEvidenceMaintenanceState? evidenceMaintenance = null)
     {
+        if (_deliveryStateChanged || _evidenceChanged)
+            evidenceMaintenance?.ProofChanged(requestMaintenance: _deliveryStateChanged || _evidenceMaintenanceRequested);
+        if (_deliveryStateChanged) activity?.NotifyCommittedChange();
+        else if (_eligibilityStateChanged) activity?.RequestRefresh();
         if (publisher is null)
             return;
 
@@ -50,6 +72,19 @@ internal sealed class BackendChangeSet
 
     public void AddEntityMutation(object entity, bool addedOrDeleted, Func<string, bool> changed)
     {
+        // Delivered only after a durable COMMIT (including explicit transactions). No network
+        // lifecycle calls run inside a transaction or inside a network/worker callback.
+        _eligibilityStateChanged |= entity switch
+        {
+            User => addedOrDeleted || changed(nameof(User.MembershipEpoch)) || changed(nameof(User.KeyEpoch)),
+            LocalUserDevice => addedOrDeleted || changed(nameof(LocalUserDevice.IsSyncOn)),
+            UserDevice => addedOrDeleted || changed(nameof(UserDevice.IsSyncOn)) || changed(nameof(UserDevice.IsDeleted)),
+            Device => addedOrDeleted || changed(nameof(Device.IsTrusted)) || changed(nameof(Device.IsBlocked)) ||
+                changed(nameof(Device.PublicKey)) || changed(nameof(Device.SignPublicKey)) || changed(nameof(Device.TlsCertFingerprint)),
+            UserMembershipAuthorization or UserOriginRemovalCutoff or UserControlState or UserControlOperation or DeletedUserBarrier => true,
+            LocalDeviceIdentity => addedOrDeleted || changed(nameof(LocalDeviceIdentity.OriginInstanceId)),
+            _ => false
+        };
         switch (entity)
         {
             case User user:
@@ -74,9 +109,16 @@ internal sealed class BackendChangeSet
                 CaptureEnrollmentCommit(addedOrDeleted, changed, commit);
                 break;
             case UserMembershipAuthorization authorization:
+                _deliveryStateChanged = true;
                 CaptureMembershipAuthorization(addedOrDeleted, changed, authorization);
                 break;
+            case UserOriginRemovalCutoff or RevocationReceiptEvidence or StoredRevocationReceipt or RevocationEvidenceDebt or UserControlState or UserControlOperation:
+                _deliveryStateChanged = true;
+                Add(null, FrontendChangeScope.BackgroundSync);
+                break;
             case DeletedUserBarrier barrier:
+                _deliveryStateChanged = true;
+                Add(null, FrontendChangeScope.BackgroundSync);
                 Add(barrier.UserId, FrontendChangeScope.Everything);
                 break;
         }

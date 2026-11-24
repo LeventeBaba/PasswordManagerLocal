@@ -23,6 +23,44 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Sync.Discovery;
 public sealed class LocalDiscoveryHostedServiceSecurityTests
 {
     [TestMethod]
+    public async Task PassiveHistoricalControlIngress_AnswersAuthenticatedQueriesWithoutActiveDiscoveryOrWorkers()
+    {
+        using var localKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        using var remoteKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters());
+        var identity = CreateIdentity(localKey, isSyncOn: false);
+        var remote = CreateTrustedDevice(remoteKey); remote.GenerateIntegrityHash();
+        var devices = new FakeDeviceRepository(); await devices.AddAsync(remote);
+        var history = new FakeUserMembershipAuthorizationRepository();
+        await history.AddAsync(new UserMembershipAuthorization
+        {
+            AuthorizationId = Guid.NewGuid(), UserId = Guid.NewGuid(), DeviceId = remote.Id,
+            OriginInstanceId = Guid.NewGuid(), StartedMembershipEpoch = 1, MinimumKeyEpoch = 1,
+            SignPublicKey = remote.SignPublicKey, SignPublicKeyHash = System.Security.Cryptography.SHA256.HashData(remote.SignPublicKey),
+            IsActive = true, IsGenesis = true
+        });
+        var services = new ServiceCollection();
+        services.AddSingleton<IDeviceRepository>(devices);
+        services.AddSingleton<IUserMembershipAuthorizationRepository>(history);
+        using var provider = services.BuildServiceProvider();
+        var transport = new FakeLocalDiscoveryTransport(); var tasks = new FakeDeviceSyncTaskService();
+        using var service = CreateService(identity, new FakeSyncDeviceIdentityService(), transport,
+            new EnrollmentRuntimeState(), tasks, scopeFactory: provider.GetRequiredService<IServiceScopeFactory>());
+        await service.StartPassiveAsync();
+        await service.StopAsync(); // Active runtime release retains backend-owned passive ingress.
+        MSTestAssert.IsTrue(transport.IsStarted);
+        var bytes = LocalDiscoveryPacketCodec.BuildSyncQueryAuthenticatedBytes(DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            Enumerable.Repeat((byte)0x7B, SyncConstants.LocalDiscoveryNonceBytes).ToArray(), remote.Id);
+        await transport.InjectAsync(LocalDiscoveryPacketCodec.AppendAuthenticator(bytes,
+            SignatureAlgorithm.Ed25519.Sign(remoteKey, bytes), SyncConstants.LocalDiscoverySignatureBytes));
+        MSTestAssert.AreEqual(1, transport.UnicastPayloads.Count);
+        MSTestAssert.AreEqual(0, transport.MulticastPayloads.Count);
+        MSTestAssert.AreEqual(0, tasks.Starts.Count);
+        MSTestAssert.IsFalse(identity.IsSyncOn);
+        await service.StopPassiveAsync();
+        MSTestAssert.IsFalse(transport.IsStarted);
+    }
+
+    [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Unit")]
     public async Task SyncQuery_FromTrustedSignedDevice_GetsSignedResponse()

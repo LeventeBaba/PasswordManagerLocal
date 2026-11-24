@@ -14,6 +14,7 @@ public interface IEndpoints
 
 
     Task<UserProfileInfoResponse> GetUserProfileInfoAsync(Guid token, CancellationToken ct = default);
+    Task RemoveLocalProfileAsync(LoginRequest request, bool acknowledgeDataLoss, CancellationToken ct = default);
     Task DeleteUserAccountAsync(Guid token, byte[] password, CancellationToken ct = default);
     Task ChangeUsernameAsync(Guid token, string newUsername, CancellationToken ct = default);
     Task UpdateUserProfileInfoAsync(UpdateUserProfileRequest request, CancellationToken ct = default);

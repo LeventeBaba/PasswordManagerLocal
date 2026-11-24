@@ -22,6 +22,7 @@ public sealed class EndpointRpcContractValidator
         typeof(ChangeMasterPasswordEndpointRequest),
         typeof(GetUserProfileInfoEndpointRequest),
         typeof(DeleteUserAccountEndpointRequest),
+        typeof(RemoveLocalProfileEndpointRequest),
         typeof(ChangeUsernameEndpointRequest),
         typeof(UpdateUserProfileInfoEndpointRequest),
         typeof(EmptyEndpointRequest),
@@ -94,6 +95,7 @@ public sealed class EndpointRpcContractValidator
             EndpointOperationId.GetAuthSessionStatus when value is GetAuthSessionStatusEndpointRequest request => Validate(request),
             EndpointOperationId.ChangeMasterPassword when value is ChangeMasterPasswordEndpointRequest request => Validate(request),
             EndpointOperationId.GetUserProfileInfo when value is GetUserProfileInfoEndpointRequest request => Validate(request),
+            EndpointOperationId.RemoveLocalProfile when value is RemoveLocalProfileEndpointRequest request => Validate(request),
             EndpointOperationId.DeleteUserAccount when value is DeleteUserAccountEndpointRequest request => Validate(request),
             EndpointOperationId.ChangeUsername when value is ChangeUsernameEndpointRequest request => Validate(request),
             EndpointOperationId.UpdateUserProfileInfo when value is UpdateUserProfileInfoEndpointRequest request => Validate(request),
@@ -156,6 +158,7 @@ public sealed class EndpointRpcContractValidator
             EndpointOperationId.GetAuthSessionStatus when value is GetAuthSessionStatusEndpointResponse response => Validate(response),
             EndpointOperationId.ChangeMasterPassword when value is EmptyEndpointResponse response => Validate(response),
             EndpointOperationId.GetUserProfileInfo when value is GetUserProfileInfoEndpointResponse response => Validate(response),
+            EndpointOperationId.RemoveLocalProfile when value is EmptyEndpointResponse response => Validate(response),
             EndpointOperationId.DeleteUserAccount when value is EmptyEndpointResponse response => Validate(response),
             EndpointOperationId.ChangeUsername when value is EmptyEndpointResponse response => Validate(response),
             EndpointOperationId.UpdateUserProfileInfo when value is EmptyEndpointResponse response => Validate(response),
@@ -320,6 +323,7 @@ public sealed class EndpointRpcContractValidator
         ValidSensitive(value.Request.Password) && ValidSensitive(value.Request.NewPassword) &&
         value.Request.Validate(out _);
     private static bool Validate(GetUserProfileInfoEndpointRequest value) => ValidGuid(value.Token);
+    private static bool Validate(RemoveLocalProfileEndpointRequest value) => value.Request is not null && ValidSensitive(value.Request.Password) && value.Request.Validate() && value.AcknowledgeDataLoss;
     private static bool Validate(DeleteUserAccountEndpointRequest value) => ValidGuid(value.Token) && ValidSensitive(value.Password);
     private static bool Validate(ChangeUsernameEndpointRequest value) => ValidGuid(value.Token) && DataValidation.IsValidUsername(value.NewUsername);
     private static bool Validate(UpdateUserProfileInfoEndpointRequest value) =>

@@ -220,6 +220,31 @@ public sealed class SqliteAccountRepositoryTests
         await Assert.ThrowsExactlyAsync<InvalidDataIntegrityException>(() => users.GetByIdWithRelationsAsync(user.UId));
     }
 
+    [TestMethod]
+    public async Task FileBackedFixture_PreservesSchemaAndCommittedDataAcrossIndependentSessions()
+    {
+        await using var baseline = await SqliteRepositoryTestDatabase.CreateFileBackedAsync();
+        Assert.IsTrue(File.Exists(baseline.DatabasePath));
+        var user = CreateUser([0x71]);
+        await baseline.Users.AddAsync(user);
+        await baseline.UnitOfWork.SaveChangesAsync();
+
+        // Each read opens and closes an independent native handle against the same
+        // file; none depends on a previously warmed shared-memory cache.
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(async _ =>
+        {
+            using var session = baseline.OpenSession();
+            Assert.IsFalse(await new DeletedUserBarrierRepository(session).ExistsAsync(user.UId));
+            var persisted = await new UserRepository(session).GetByIdAsNoTrackingAsync(user.UId);
+            Assert.IsNotNull(persisted);
+            CollectionAssert.AreEqual(user.IntegrityHash, persisted.IntegrityHash);
+        }));
+        using var reopened = baseline.OpenSession();
+        var saved = await new UserRepository(reopened).GetByIdAsNoTrackingAsync(user.UId);
+        Assert.IsNotNull(saved);
+        CollectionAssert.AreEqual(user.EncryptedPayload, saved.EncryptedPayload);
+    }
+
     private static User CreateUser(byte[] username)
     {
         var now = new DateTimeOffset(2026, 11, 7, 18, 0, 0, TimeSpan.Zero).AddTicks(23);

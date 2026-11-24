@@ -7,5 +7,9 @@ public enum WindowsBackgroundSyncConsistency
     Transitioning = 2,
     Degraded = 3,
     Inconsistent = 4,
-    Unavailable = 5
+    Unavailable = 5,
+    EnabledIdle = 6,
+    Starting = 7,
+    DegradedRetrying = 8,
+    RestartRequired = 9
 }

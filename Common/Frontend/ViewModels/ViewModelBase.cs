@@ -131,6 +131,8 @@ public abstract class ViewModelBase : DisposableReactiveObject
 
         var key = exception switch
         {
+            IOperationOutcomeUnknown => "Error_OperationOutcomeUnknown",
+            IPartiallyCommittedOperation => "Error_OperationPartiallyCommitted",
             InvalidTokenException => "Error_InvalidSession",
             UserNotFoundException => "Error_InvalidCredentials",
             UnauthorizedAccessException => "Error_InvalidCredentials",
@@ -143,6 +145,8 @@ public abstract class ViewModelBase : DisposableReactiveObject
             DuplicateCustomUserColorCodeException => "Error_DuplicateCustomColorCode",
             CustomUserColorNotFoundException => "Error_NotFound",
             LimitReachedException => "Error_LimitReached",
+            StorageCapacityExceededException => "Error_StorageCapacity",
+            PendingSecurityOperationException => "Error_SecurityPending",
             InvalidDataIntegrityException => "Error_DataIntegrity",
             DeviceIdentityNotInitilaizedException => "Error_DeviceIdentity",
             DuplicateActiveProfileException => "Error_ProfileAlreadyLoggedIn",

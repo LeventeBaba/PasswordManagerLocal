@@ -1,11 +1,28 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Internal.Recovery;
 using PasswordManagerLocal.Common.Backend.Sync;
 
 namespace PasswordManagerLocal.Common.Tests.Fakes;
 
 public sealed class FakeUserMembershipAuthorizationService : IUserMembershipAuthorizationService
 {
+    public bool RejectLocalInstallation { get; set; }
+    public Task<UserMembershipAuthorization> VerifyLocalInstallationAsync(Guid userId, long keyEpoch, long membershipEpoch, CancellationToken ct = default)
+    {
+        if (RejectLocalInstallation)
+            throw new UnauthorizedAccessException("The local installation is not authorized.");
+        return Task.FromResult(Create(userId, Guid.NewGuid(), Guid.NewGuid(), keyEpoch, membershipEpoch, []));
+    }
+
+    public Task<UserMembershipAuthorization> VerifyCapturedLocalInstallationAsync(Guid userId, long keyEpoch,
+        long membershipEpoch, UserRecoveryAuthority authority, CancellationToken ct = default) =>
+        VerifyLocalInstallationAsync(userId, keyEpoch, membershipEpoch, ct);
+
+    public Task<UserMembershipAuthorization> VerifyCapturedSnapshotAuthorAsync(UserSnapshotEnvelope envelope,
+        UserRecoveryAuthority authority, CancellationToken ct = default) => VerifySnapshotAuthorAsync(envelope, ct);
+
+    public int ControlAuthorVerificationCalls { get; private set; }
     public Task<UserMembershipAuthorization> CreateGenesisAsync(User user, CancellationToken ct = default) =>
         Task.FromResult(Create(user.UId, Guid.NewGuid(), Guid.NewGuid(), user.KeyEpoch, user.MembershipEpoch, []));
 
@@ -35,6 +52,7 @@ public sealed class FakeUserMembershipAuthorizationService : IUserMembershipAuth
 
     public Task<UserMembershipAuthorization> VerifyControlAuthorAsync(UserControlOperationEnvelope envelope, CancellationToken ct = default)
     {
+        ControlAuthorVerificationCalls++;
         UserControlOperationEnvelopeUtil.VerifyWithSigningKey(envelope, envelope.OriginSignPublicKey);
         return Task.FromResult(Create(envelope.UserId, envelope.OriginDeviceId, envelope.OriginInstanceId, envelope.PreviousKeyEpoch, envelope.PreviousMembershipEpoch, envelope.OriginSignPublicKey));
     }

@@ -19,6 +19,7 @@ public sealed class BackendStoragePaths
         DatabaseShmPath = $"{DatabasePath}-shm";
         DatabaseJournalPath = $"{DatabasePath}-journal";
         DatabaseConfigPath = Path.Combine(RootDirectory, ApplicationFileNames.DbConfigFileName);
+        DatabaseResetPendingPath = $"{DatabaseConfigPath}.reset-pending";
         LogsDirectory = Path.Combine(RootDirectory, ApplicationFileNames.LogsFolderName);
     }
 
@@ -30,6 +31,7 @@ public sealed class BackendStoragePaths
     public string DatabaseShmPath { get; }
     public string DatabaseJournalPath { get; }
     public string DatabaseConfigPath { get; }
+    public string DatabaseResetPendingPath { get; }
     public string LogsDirectory { get; }
 
     public string GetTemporaryDatabaseConfigSearchPattern() =>

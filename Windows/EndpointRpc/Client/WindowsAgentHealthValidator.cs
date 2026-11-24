@@ -14,7 +14,7 @@ public sealed class WindowsAgentHealthValidator
             (backendStatus.RuntimeState != BackendRuntimeStatusState.Failed
                 ? backendStatus.RuntimeState is not BackendRuntimeStatusState.Stopping and
                     not BackendRuntimeStatusState.Unavailable
-                : backendStatus.FailureKind.RequiresDatabaseReset());
+                : backendStatus.FailureKind.CanRetryStartup());
     }
 
     public bool IsHealthyForEndpoint(
@@ -42,7 +42,7 @@ public sealed class WindowsAgentHealthValidator
             agentStatus.RequiresProcessRestart ||
             backendStatus.RequiresProcessRestart ||
             (backendStatus.RuntimeState == BackendRuntimeStatusState.Failed &&
-                !backendStatus.FailureKind.RequiresDatabaseReset());
+                !backendStatus.FailureKind.CanRetryStartup());
     }
 
     private static bool IsAgentShellOperational(AgentStatusDto agentStatus) =>

@@ -49,6 +49,9 @@ public sealed class UserRecoveryJournalService : IUserRecoveryJournalService
     {
         if (!_store.HasActiveTransaction)
             throw new InvalidOperationException("A recovery journal must share the history-reset transaction.");
+        // Check before JSON decoding can amplify a rejected oversized local snapshot.
+        if (snapshot.Length == 0 || snapshot.Length > MaximumPayloadBytes)
+            throw new RecoveryJournalPersistenceException(new InvalidDataException("Recovery data exceeds the database journal limit."));
         try
         {
             var decoded = JsonSerializer.Deserialize(snapshot, BackendJsonSerializerContext.Default.UserRecoveryJournalSnapshot)
@@ -251,7 +254,7 @@ public sealed class UserRecoveryJournalService : IUserRecoveryJournalService
         // A superseded/quarantined status, a healthy reset, or a new pairing is NOT evidence of a merge.
         foreach (var retained in snapshot.Snapshots)
         {
-            if (retained.Status == UserSyncSnapshotStatus.IsolatedFork) return false;
+            if (retained.Status is UserSyncSnapshotStatus.IsolatedFork or UserSyncSnapshotStatus.RetiredForkEvidence) return false;
             UserSnapshotEnvelope? envelope;
             try
             {

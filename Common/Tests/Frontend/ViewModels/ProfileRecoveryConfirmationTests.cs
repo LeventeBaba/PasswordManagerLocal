@@ -149,6 +149,28 @@ public sealed class ProfileRecoveryConfirmationTests
         Assert.IsTrue(recording.BorrowedPassword!.All(value => value == 0));
     }
 
+    [TestMethod]
+    public async Task CommittedHistoryRepairClearsItsPlanAndCannotBeRepeatedFromTheOldDialog()
+    {
+        var endpoints = DispatchProxy.Create<IEndpoints, RecoveryEndpoints>();
+        var recording = (RecoveryEndpoints)(object)endpoints;
+        recording.ConfirmationException = new PasswordManagerLocal.Common.Backend.Exceptions.MutationPartiallyCommittedException("private journal details");
+        await using var preferences = await TestUiPreferencesFactory.CreateAsync();
+        using var model = new ProfileViewModel(preferences, endpoints, () => Task.FromResult(true), () => Task.CompletedTask);
+        await OpenAssessmentAsync(model, Guid.NewGuid());
+        model.HistoryRecoveryPassword = "P@ssw0rd12345678";
+        model.IsHistoryRecoveryAcknowledged = true;
+        await InvokeAsync(model, "ConfirmHistoryRecoveryAsync");
+        Assert.IsFalse(model.IsHistoryRecoveryDialogOpen);
+        Assert.IsFalse(model.HasHistoryRecoveryOffer);
+        Assert.IsFalse(model.IsHistoryRecoveryAcknowledged);
+        Assert.AreEqual(string.Empty, model.HistoryRecoveryPassword);
+        Assert.AreEqual(preferences.GetString("Profile_Device_Recovery_CommittedNeedsReview"), model.StatusMessage);
+        await InvokeAsync(model, "ConfirmHistoryRecoveryAsync");
+        Assert.AreEqual(1, recording.ConfirmCalls);
+        Assert.IsTrue(recording.BorrowedPassword!.All(value => value == 0));
+    }
+
     private static async Task OpenAssessmentAsync(ProfileViewModel model, Guid token)
     {
         model.SetSessionToken(token);

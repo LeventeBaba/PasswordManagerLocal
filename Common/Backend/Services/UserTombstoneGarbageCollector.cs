@@ -128,10 +128,18 @@ public sealed class UserTombstoneGarbageCollector : IUserTombstoneGarbageCollect
             var retainedSnapshots = await _snapshots.ListForUserAsync(userId, ct);
             if (retainedSnapshots.Count > TombstoneConstants.MaxCausalSnapshotEvidenceRowsPerUser)
                 return await RollbackBlockedAsync(transaction, userId, TombstoneGarbageCollectionReason.EvidenceLimitExceeded, ct);
-            if (retainedSnapshots.Any(row => row.Status is UserSyncSnapshotStatus.Pending or UserSyncSnapshotStatus.RecoveryCandidate))
+            if (retainedSnapshots.Any(row => row.Status == UserSyncSnapshotStatus.RecoveryCandidate))
                 return await RollbackBlockedAsync(transaction, userId, TombstoneGarbageCollectionReason.PendingSnapshotMerge, ct);
-            if (retainedSnapshots.Any(row => row.Status is UserSyncSnapshotStatus.IsolatedFork or UserSyncSnapshotStatus.IsolatedCorrupt))
+            if (retainedSnapshots.Any(row => row.Status is UserSyncSnapshotStatus.IsolatedFork or UserSyncSnapshotStatus.RetiredForkEvidence or UserSyncSnapshotStatus.IsolatedCorrupt))
                 return await RollbackBlockedAsync(transaction, userId, TombstoneGarbageCollectionReason.QuarantinedEvidence, ct);
+
+            var faultRepository = _services.GetService<IUserSyncFaultRepository>();
+            if (faultRepository is not null && (await faultRepository.ListActiveForUserAsync(userId, ct))
+                .Any(fault => fault.BlocksGarbageCollection || fault.Status == UserSyncHealthStatus.TerminalConflict))
+                return await RollbackBlockedAsync(transaction, userId, TombstoneGarbageCollectionReason.QuarantinedEvidence, ct);
+            var controlStates = _services.GetService<IUserControlStateRepository>();
+            if (controlStates is not null && (await controlStates.GetAsync(userId, ct))?.HasConflict == true)
+                return await RollbackBlockedAsync(transaction, userId, TombstoneGarbageCollectionReason.InvalidAuthenticatedEvidence, ct);
 
             var authorizations = await _authorizations.ListForUserAsync(userId, ct);
             var cutoffs = await _cutoffs.ListForUserAsync(userId, ct);
@@ -165,6 +173,21 @@ public sealed class UserTombstoneGarbageCollector : IUserTombstoneGarbageCollect
             if (receiptLoad.FailureReason is not null)
                 return await RollbackBlockedAsync(transaction, userId, receiptLoad.FailureReason.Value, ct);
 
+            var pending = new List<UserSnapshotEnvelope>();
+            foreach (var row in retainedSnapshots.Where(row => row.Status == UserSyncSnapshotStatus.Pending))
+            {
+                try
+                {
+                    var envelope = UserSnapshotEvidenceUtil.DeserializeExact(row);
+                    await _membershipAuthorization.VerifySnapshotAuthorAsync(envelope, ct);
+                    pending.Add(envelope);
+                }
+                catch (Exception ex) when (ex is InvalidDataException or UnauthorizedAccessException or JsonException)
+                {
+                    return await RollbackBlockedAsync(transaction, userId, TombstoneGarbageCollectionReason.InvalidAuthenticatedEvidence, ct);
+                }
+            }
+
             using var bundle = await _reader.GetAndVerifyUserDataBundleAsync(user, key, ct);
             var tombstones = TombstoneGarbageCollectionRules.EnumerateTombstones(bundle).ToList();
             if (tombstones.Count == 0)
@@ -183,6 +206,9 @@ public sealed class UserTombstoneGarbageCollector : IUserTombstoneGarbageCollect
 
             var stable = new List<TombstoneDescriptor>();
             var diagnostics = new List<TombstoneGarbageCollectionDiagnostic>();
+            // Reuse deterministic ordering and common anchor decisions only within this
+            // lifecycle-owned write transaction; no proof cache survives a later mutation.
+            var evaluatePending = TombstonePendingEvidenceRules.CreateEvaluator(pending, knowledgeByOrigin, receiptLoad.Receipts);
             foreach (var tombstone in tombstones.OrderBy(item => item.ItemType).ThenBy(item => item.ItemId))
             {
                 var evaluation = TombstoneGarbageCollectionRules.Evaluate(
@@ -192,6 +218,8 @@ public sealed class UserTombstoneGarbageCollector : IUserTombstoneGarbageCollect
                     cutoffByAuthorization,
                     knowledgeByOrigin,
                     receiptLoad.Receipts);
+                if (evaluation.Reason == TombstoneGarbageCollectionReason.Stable)
+                    evaluation = evaluatePending(tombstone.CausalReference!);
                 if (evaluation.Reason == TombstoneGarbageCollectionReason.Stable)
                 {
                     stable.Add(tombstone);
@@ -353,26 +381,8 @@ public sealed class UserTombstoneGarbageCollector : IUserTombstoneGarbageCollect
         {
             try
             {
-                if (row.EnvelopePayload.Length == 0 || row.EnvelopePayload.Length > SyncConstants.MaxUserSnapshotEnvelopeBytes)
-                    throw new InvalidDataException("A retained merged receipt has an invalid envelope size.");
-                var envelope = JsonSerializer.Deserialize(
-                                   row.EnvelopePayload,
-                                   BackendJsonSerializerContext.Default.UserSnapshotEnvelope)
-                               ?? throw new InvalidDataException("A retained merged receipt is invalid.");
+                var envelope = UserSnapshotEvidenceUtil.DeserializeExact(row);
                 await _membershipAuthorization.VerifySnapshotAuthorAsync(envelope, ct);
-                if (row.UserId != envelope.UserId ||
-                    !Hashing.Verify(row.SnapshotHash, envelope.SnapshotHash) ||
-                    !Hashing.Verify(row.OriginSignPublicKey, envelope.OriginSignPublicKey) ||
-                    !Hashing.Verify(row.OriginSignature, envelope.OriginSignature) ||
-                    row.OriginDeviceId != envelope.OriginDeviceId ||
-                    row.OriginInstanceId != envelope.OriginInstanceId ||
-                    row.OriginRevision != envelope.OriginRevision ||
-                    row.UserKeyEpoch != envelope.UserKeyEpoch ||
-                    row.MembershipEpoch != envelope.MembershipEpoch ||
-                    row.CreatedAtUtc != envelope.CreatedAtUtc)
-                {
-                    throw new InvalidDataException("A retained merged receipt row conflicts with its immutable envelope.");
-                }
 
                 var key = (envelope.OriginDeviceId, envelope.OriginInstanceId);
                 if (!receipts.TryGetValue(key, out var list))

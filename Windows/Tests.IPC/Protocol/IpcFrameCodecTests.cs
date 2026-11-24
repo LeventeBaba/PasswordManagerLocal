@@ -13,9 +13,9 @@ public sealed class IpcFrameCodecTests
             ?? throw new InvalidOperationException($"Missing IPC protocol constant: {fieldName}."));
 
     [TestMethod]
-    public void ProtocolIdentifiersRemainStableForVersionFive()
+    public void ProtocolIdentifiersRemainStableForVersionSix()
     {
-        Assert.AreEqual(5, ReadPublishedProtocolConstant(nameof(WindowsIpcProtocol.CurrentVersion)));
+        Assert.AreEqual(6, ReadPublishedProtocolConstant(nameof(WindowsIpcProtocol.CurrentVersion)));
         Assert.AreEqual(24, ReadPublishedProtocolConstant(nameof(WindowsIpcProtocol.HeaderSize)));
         Assert.AreEqual(1, (int)IpcMessageKind.HandshakeRequest);
         Assert.AreEqual(5, (int)IpcMessageKind.RequestCancellation);
@@ -28,7 +28,7 @@ public sealed class IpcFrameCodecTests
     }
 
     [TestMethod]
-    public async Task ValidFrameRoundTripsAndUsesTheVersionFiveHeaderLayout()
+    public async Task ValidFrameRoundTripsAndUsesTheVersionSixHeaderLayout()
     {
         var codec = new IpcFrameCodec();
         var payload = new byte[] { 1, 2, 3, 4 };
@@ -45,7 +45,7 @@ public sealed class IpcFrameCodecTests
         var bytes = stream.ToArray();
         Assert.AreEqual(WindowsIpcProtocol.HeaderSize + payload.Length, bytes.Length);
         Assert.AreEqual(WindowsIpcProtocol.Magic, BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(0, 4)));
-        Assert.AreEqual(5, BinaryPrimitives.ReadInt32BigEndian(bytes.AsSpan(4, 4)));
+        Assert.AreEqual(6, BinaryPrimitives.ReadInt32BigEndian(bytes.AsSpan(4, 4)));
         Assert.AreEqual((int)IpcMessageKind.Request, BinaryPrimitives.ReadInt32BigEndian(bytes.AsSpan(8, 4)));
         Assert.AreEqual(0x0102030405060708, BinaryPrimitives.ReadInt64BigEndian(bytes.AsSpan(12, 8)));
         Assert.AreEqual(payload.Length, BinaryPrimitives.ReadInt32BigEndian(bytes.AsSpan(20, 4)));
@@ -71,8 +71,8 @@ public sealed class IpcFrameCodecTests
     }
 
     [TestMethod]
-    [DataRow(4)]
-    [DataRow(6)]
+    [DataRow(WindowsIpcProtocol.CurrentVersion - 1)]
+    [DataRow(WindowsIpcProtocol.CurrentVersion + 1)]
     public async Task NonCurrentProtocolVersionIsRejected(int version)
     {
         var bytes = CreateHeaderBytes(version, IpcMessageKind.Request, 1, 0);

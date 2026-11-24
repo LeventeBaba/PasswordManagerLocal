@@ -158,7 +158,7 @@ public sealed class WindowsNamedPipeFrontendBackendClient :
                 throw new EndpointRpcDisconnectedException(
                     new InvalidOperationException("The Windows agent control connection is unavailable."));
             }
-            await EnsureAgentHealthyAsync(cancellationToken);
+            await EnsureAgentHealthyAsync(cancellationToken, allowStartupRetry: true);
 
             ChangeState(BackendRuntimeState.Starting, BackendRuntimeFailureKind.None, null);
             await DisposeEndpointConnectionLockedAsync();
@@ -220,7 +220,8 @@ public sealed class WindowsNamedPipeFrontendBackendClient :
                 _lifecycleLock.Release();
             }
 
-            var result = await _agentConnection.ResetDatabaseAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            var result = await _agentConnection.ResetDatabaseAsync(CancellationToken.None);
             if (!result.Completed)
             {
                 var failure = new InvalidOperationException(
@@ -236,13 +237,13 @@ public sealed class WindowsNamedPipeFrontendBackendClient :
                     recoveryAllowed = false;
                     CancelAgentObserverLocked();
                     recoveryAllowed = await _agentConnection.PrepareForReplacementAsync(
-                        cancellationToken);
+                        CancellationToken.None);
                 }
                 throw failure;
             }
 
             ExitDatabaseResetSuppression();
-            await ConnectAsync(cancellationToken);
+            await ConnectAsync(CancellationToken.None);
         }
         finally
         {
@@ -851,6 +852,9 @@ public sealed class WindowsNamedPipeFrontendBackendClient :
                 BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable =>
                     (new DatabaseKeyUnavailableException(original),
                      BackendRuntimeFailureKind.DatabaseKeyUnavailable),
+                BackendRuntimeFailureStatusKind.DatabaseResetIncomplete =>
+                    (new DatabaseResetIncompleteException(original),
+                     BackendRuntimeFailureKind.DatabaseResetIncomplete),
                 BackendRuntimeFailureStatusKind.DatabaseUnreadable =>
                     (new DatabaseUnreadableException(original),
                      BackendRuntimeFailureKind.DatabaseUnreadable),
@@ -894,13 +898,18 @@ public sealed class WindowsNamedPipeFrontendBackendClient :
             innerException: original);
     }
 
-    private async Task EnsureAgentHealthyAsync(CancellationToken cancellationToken)
+    private async Task EnsureAgentHealthyAsync(CancellationToken cancellationToken, bool allowStartupRetry = false)
     {
         if (_agentConnection is null)
             return;
 
         var agentStatus = await _agentConnection.GetAgentStatusAsync(cancellationToken);
         var backendStatus = await _agentConnection.GetBackendRuntimeStatusAsync(cancellationToken);
+        if (allowStartupRetry && backendStatus.RuntimeState == BackendRuntimeStatusState.Failed &&
+            backendStatus.FailureKind.CanRetryStartup() &&
+            _agentHealthValidator.CanRegisterUi(agentStatus, backendStatus))
+            return; // The normal endpoint handshake retries existing storage; readiness is checked afterward.
+
         if (!_agentHealthValidator.IsHealthyForEndpoint(agentStatus, backendStatus))
         {
             throw new InvalidOperationException(

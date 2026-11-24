@@ -15,7 +15,7 @@ using MSTestAssert = Microsoft.VisualStudio.TestTools.UnitTesting.Assert;
 namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 
 [TestClass]
-public sealed class UserTombstoneGarbageCollectorIntegrationTests
+public sealed partial class UserTombstoneGarbageCollectorIntegrationTests
 {
     [TestMethod]
     [TestCategory("Backend")]

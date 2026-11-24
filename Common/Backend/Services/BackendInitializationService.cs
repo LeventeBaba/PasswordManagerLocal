@@ -1,10 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Data.Sqlite;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Diagnostics;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Configuration;
+using PasswordManagerLocal.Common.Backend.Security;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
 
@@ -14,17 +16,19 @@ internal sealed class BackendInitializationService : IBackendInitializationServi
     private readonly IDeviceIdentityService _deviceIdentity;
     private readonly BackendStoragePaths _storagePaths;
     private readonly SqliteConnectionFactory _connections;
+    private readonly ICriticalControlIngressStore? _criticalIngress;
 
     public BackendInitializationService(
         IServiceScopeFactory scopeFactory,
         IDeviceIdentityService deviceIdentity,
         BackendStoragePaths storagePaths,
-        SqliteConnectionFactory connections)
+        SqliteConnectionFactory connections, ICriticalControlIngressStore? criticalIngress = null)
     {
         _scopeFactory = scopeFactory;
         _deviceIdentity = deviceIdentity;
         _storagePaths = storagePaths;
         _connections = connections;
+        _criticalIngress = criticalIngress;
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -61,7 +65,11 @@ internal sealed class BackendInitializationService : IBackendInitializationServi
             await AppDatabaseInitializer.InitializeAsync(connection, cancellationToken);
         }
 
+        DbConfigManager.TryCleanupTemporaryConfigurationsForVerifiedDatabase(_storagePaths);
+
         await _deviceIdentity.InitializeAsync(cancellationToken);
+
+        _criticalIngress?.Initialize();
 
         bool shouldEnableSync;
         using (var scope = _scopeFactory.CreateScope())

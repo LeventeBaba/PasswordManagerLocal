@@ -276,8 +276,9 @@ public sealed class WindowsAgentBackendRuntimeOwner : IWindowsAgentBackendRuntim
         var snapshot = Snapshot;
         if (snapshot.RequiresProcessRestart || snapshot.IsResetting ||
             snapshot.State is WindowsAgentBackendOwnerState.Stopping or
-                WindowsAgentBackendOwnerState.Stopped or
-                WindowsAgentBackendOwnerState.Failed)
+                WindowsAgentBackendOwnerState.Stopped ||
+            (snapshot.State == WindowsAgentBackendOwnerState.Failed &&
+                !snapshot.Runtime.FailureKind.CanRetryStartup()))
         {
             throw new InvalidOperationException("The agent backend runtime is unavailable.");
         }
@@ -352,7 +353,7 @@ public sealed class WindowsAgentBackendRuntimeOwner : IWindowsAgentBackendRuntim
                 interactive,
                 sync,
                 reasons,
-                requiresRestart,
+                requiresRestart || sync.RequiresProcessRestart,
                 isResetting,
                 failure,
                 DateTimeOffset.UtcNow);

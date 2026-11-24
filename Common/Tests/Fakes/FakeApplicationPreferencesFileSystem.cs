@@ -10,6 +10,8 @@ public sealed class FakeApplicationPreferencesFileSystem : IApplicationPreferenc
     public Exception? ReplaceFailure { get; set; }
 
     public Exception? LockFailure { get; set; }
+    public Exception? DeleteFailure { get; set; }
+    public HashSet<string> WrittenTemporaryPaths { get; } = [];
 
     public int ReplaceCount { get; private set; }
 
@@ -48,7 +50,10 @@ public sealed class FakeApplicationPreferencesFileSystem : IApplicationPreferenc
     {
         cancellationToken.ThrowIfCancellationRequested();
         lock (_gate)
+        {
+            WrittenTemporaryPaths.Add(Normalize(path));
             _files[Normalize(path)] = contents;
+        }
         return Task.CompletedTask;
     }
 
@@ -70,7 +75,18 @@ public sealed class FakeApplicationPreferencesFileSystem : IApplicationPreferenc
     public void DeleteFile(string path)
     {
         lock (_gate)
+        {
+            if (DeleteFailure is not null)
+                throw DeleteFailure;
             _files.Remove(Normalize(path));
+        }
+    }
+
+    public IEnumerable<string> EnumerateFiles(string directory, string searchPattern)
+    {
+        lock (_gate)
+            return _files.Keys.Where(path => Path.GetDirectoryName(path) == Path.GetFullPath(directory) &&
+                System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(searchPattern, Path.GetFileName(path))).ToArray();
     }
 
     public Task<IAsyncDisposable> AcquireExclusiveLockAsync(

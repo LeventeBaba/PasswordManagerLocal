@@ -185,7 +185,7 @@ public sealed class WindowsIpcOperationAuthorizerTests
     }
 
     [TestMethod]
-    public void RunningAgentWithNonResettableBackendFailureIsStatusOnly()
+    public void RunningAgentWithUnsafeBackendFailureIsStatusOnly()
     {
         var state = new WindowsAgentStateStore();
         state.MarkRunning(DateTimeOffset.UtcNow);
@@ -196,7 +196,7 @@ public sealed class WindowsIpcOperationAuthorizerTests
             Snapshot = FakeWindowsAgentBackendRuntimeOwner.CreateSnapshot(
                 ownerState: WindowsAgentBackendOwnerState.Failed,
                 runtimeState: BackendRuntimeState.Failed,
-                runtimeFailureKind: BackendRuntimeFailureKind.StorageUnavailable)
+                runtimeFailureKind: BackendRuntimeFailureKind.ShutdownFailure)
         };
         var authorizer = new WindowsAgentOperationAuthorizer(
             state,
@@ -216,10 +216,35 @@ public sealed class WindowsIpcOperationAuthorizerTests
     }
 
     [TestMethod]
+    [DataRow(BackendRuntimeFailureKind.StorageUnavailable)]
+    [DataRow(BackendRuntimeFailureKind.StartupFailure)]
+    public void RetryableStartupAllowsUiRegistrationButStillRejectsDatabaseReset(BackendRuntimeFailureKind failure)
+    {
+        var state = new WindowsAgentStateStore();
+        state.MarkRunning(DateTimeOffset.UtcNow);
+        var gate = new WindowsAgentAdmissionGate(); gate.Open();
+        var coordinator = new SingleUiConnectionCoordinator();
+        var backend = new FakeWindowsAgentBackendRuntimeOwner
+        {
+            Snapshot = FakeWindowsAgentBackendRuntimeOwner.CreateSnapshot(
+                ownerState: WindowsAgentBackendOwnerState.Failed, runtimeState: BackendRuntimeState.Failed,
+                runtimeFailureKind: failure)
+        };
+        var authorizer = new WindowsAgentOperationAuthorizer(state, gate, backend,
+            new WindowsIpcOperationAuthorizer(coordinator), AgentLocalizationTestFactory.CreateEnglish());
+        var registration = CreateContext(Guid.NewGuid(), IpcPeerRole.Ui, IpcOperationId.RegisterUiConnection);
+        Assert.IsTrue(authorizer.Authorize(registration).IsAuthorized);
+        Assert.IsTrue(coordinator.TryRegister(registration.Connection, out _));
+        Assert.IsFalse(authorizer.Authorize(CreateContext(registration.Connection.ConnectionId,
+            IpcPeerRole.Ui, IpcOperationId.ResetDatabase)).IsAuthorized);
+    }
+
+    [TestMethod]
     [DataRow(BackendRuntimeFailureKind.DatabaseCompatibility)]
     [DataRow(BackendRuntimeFailureKind.DatabaseConfigurationInvalid)]
     [DataRow(BackendRuntimeFailureKind.DatabaseKeyUnavailable)]
     [DataRow(BackendRuntimeFailureKind.DatabaseUnreadable)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseResetIncomplete)]
     public void RunningAgentWithResettableBackendFailureAllowsOnlyControlRecoveryOperations(BackendRuntimeFailureKind kind)
     {
         var state = new WindowsAgentStateStore();

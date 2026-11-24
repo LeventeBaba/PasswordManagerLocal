@@ -4,6 +4,7 @@ using PasswordManagerLocal.Common.Backend.Exceptions;
 using Google.Protobuf;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Security;
@@ -37,6 +38,7 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
     private readonly IUserSyncKeyResolverService? _keyResolver;
     private readonly IUserDataBundleVerificationService? _bundleVerification;
     private readonly IMemoryCache? _equivalenceCache;
+    private readonly ICriticalControlIngressStore? _criticalIngress;
 
     public UserSnapshotAntiEntropyService(
         IUserRepository users,
@@ -53,7 +55,7 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
         IServiceScopeFactory? scopes = null,
         IUserSyncKeyResolverService? keyResolver = null,
         IUserDataBundleVerificationService? bundleVerification = null,
-        IMemoryCache? equivalenceCache = null)
+        IMemoryCache? equivalenceCache = null, ICriticalControlIngressStore? criticalIngress = null)
     {
         _lifecycle = lifecycle ?? new UserLifecycleCoordinator();
         _scopes = scopes;
@@ -70,6 +72,7 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
         _keyResolver = keyResolver;
         _bundleVerification = bundleVerification;
         _equivalenceCache = equivalenceCache;
+        _criticalIngress = criticalIngress;
     }
 
     public async Task<UserSnapshotInventoryExchangeRequest> BuildInventoryAsync(
@@ -157,7 +160,7 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
                         storedRevision = retained.OriginRevision;
                         storedHash = retained.SnapshotHash;
                     }
-                    else if (retained.Status == UserSyncSnapshotStatus.IsolatedFork)
+                    else if (retained.Status is UserSyncSnapshotStatus.IsolatedFork or UserSyncSnapshotStatus.RetiredForkEvidence)
                     {
                         if (retained.OriginRevision <= 0 || retained.SnapshotHash.Length != SyncConstants.SyncDeltaPayloadHashBytes)
                             throw new SyncStateUnavailableException("A quarantined user snapshot has invalid revision metadata.");
@@ -564,7 +567,8 @@ public sealed class UserSnapshotAntiEntropyService : IUserSnapshotAntiEntropySer
         if (eligibleIds.Length > SyncConstants.MaxUserSnapshotInventoryUsers)
             throw new InvalidOperationException("The user snapshot inventory user limit was reached.");
 
-        return await _users.ListByIdsAsync(eligibleIds, ct);
+        var unfenced = eligibleIds.Where(id => _criticalIngress?.IsSuspended(id) != true).ToArray();
+        return await _users.ListByIdsAsync(unfenced, ct);
     }
 
     private void ValidateRemoteInventory(

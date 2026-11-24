@@ -504,7 +504,7 @@
           "kind": "Explanation",
           "platform": "All",
           "title": "A leválasztás hatása kommunikációval jut el más eszközökre",
-          "body": "Az alkalmazás rögzíti a leválasztást, és továbbítja a többi eszköznek. A leválasztott eszköz profilja akkor törlődik ott, amikor az eszköz megkapja és alkalmazza a leválasztást. Offline vagy elveszett eszköz adatait ez a művelet nem tudja azonnal törölni; azon az eszközön ne módosítsd tovább a profilt."
+          "body": "A leválasztás akkor jut el a többi telepítésre, amikor azok kommunikálni tudnak. Egy offline telepítés még nem feltétlenül értesült róla. Az aláírt leválasztás alkalmazása után a helyi példánya a bejelentkezési képernyőn törölhető a felhasználónévvel, mesterjelszóval és külön tudomásulvétellel. A többi helyi profil megmarad, a telepítés azonossága nem újul meg. A leválasztott azonosság nem csatlakozhat újra. Friss beállításhoz újratelepítés vagy minden alkalmazásadat törlése is szükséges lehet, ami minden helyi profilt érint; előbb őrizd meg az adataikat. Ezután egy ép, engedélyezett eszközön kifejezetten használd a + (Eszköz hozzáadása) műveletet, és hagyd jóvá a friss telepítést."
         }
       ],
       "relatedTopicIds": [
@@ -1598,7 +1598,7 @@
           "kind": "Explanation",
           "platform": "All",
           "title": "A jóváhagyott helyreállítás után",
-          "body": "Sikeres ellenőrzés után az ideiglenes helyi profilmásolat törlődik. Kizárólag a feloldatlan fogadott bizonyítékok maradnak a védett adatbázisban, igazolt rendezésükig vagy a profil törléséig. A megszakadt ellenőrzés a profilkulcs elérhetővé válásakor automatikusan újrapróbálódik. Jóváhagyott helyreállítás után a szinkronizáció szünetel; külön engedélyezze, és párosítsa újra a többi eszközt. Más profilok nem változnak."
+          "body": "Sikeres ellenőrzés után a feleslegessé vált átmeneti helyreállítási adatok törlődnek, a még rendezetlen beérkezett bizonyítékok védetten megmaradnak. A szinkronizálás a megerősített javítás után szünetel. Más telepítéseken külön kézi beavatkozásra lehet szükség. Friss telepítést csak a szokásos Eszköz hozzáadása jóváhagyás engedélyezhet. Részleges vagy bizonytalan eredménynél ne ismételd meg a régi jóváhagyást: újraindítás után futtass diagnosztikát az aktuális állapot áttekintéséhez."
         }
       ],
       "relatedTopicIds": [
@@ -1735,7 +1735,7 @@
           "kind": "Explanation",
           "platform": "All",
           "title": "Amit látsz",
-          "body": "Az alkalmazás külön jelzi a nem támogatott adatbázis-verziót, a hiányzó vagy sérült adatbázis-konfigurációt, a nem elérhető védett adatbáziskulcsot és a beállított kulccsal nem olvasható adatbázist. A helyreállítási képernyők alaphelyzetbe állítást és külön végleges törlési megerősítést kínálnak. Az átmenetileg zárolt eszköz vagy nem elérhető biztonságos kulcstároló újrapróbálást igényel, nem alaphelyzetbe állítást."
+          "body": "Az alkalmazás megkülönbözteti a nem támogatott verziót, a hiányzó vagy sérült konfigurációt, az elérhetetlen védett kulcsot, az olvashatatlan adatbázist és a megszakadt alaphelyzetbe állítást. Az újrapróbálás törlés vagy kulcscsere kérése nélkül nyitja meg a meglévő tárolót. A zárolt eszköz vagy átmenetileg elérhetetlen tároló újrapróbálható állapot, nem az adatvesztés bizonyítéka."
         },
         {
           "id": "reason",
@@ -1749,14 +1749,14 @@
           "kind": "Step",
           "platform": "All",
           "title": "Őrizd meg az adatokat, és ellenőrizd a verziót",
-          "body": "Ha szükséged van a helyi adatokra, utasítsd el az alaphelyzetbe állítást, és zárd be az alkalmazást. Ellenőrizd, hogy nem régebbi verziót indítottál-e, illetve van-e megbízható, kompatibilis frissítés. Őrizd meg a másik működő eszközt. Tartós hibánál a verziót és biztonságosan megosztható részleteket jelezd."
+          "body": "Őrizd meg az ép, engedélyezett eszközöket, és először ellenőrizd az elérhető jelszavakat rajtuk. Szükség szerint oldd fel ezt az eszközt, állítsd helyre a tároló elérését, zárd be az ütköző folyamatokat, vagy keress kompatibilis alkalmazásverziót, majd válaszd az adatok törlése nélküli újrapróbálást. Megszakadt alaphelyzetbe állítás után a megmaradt fájlok használata blokkolt, és nem törlődnek automatikusan. Megőrzésükhöz bezárhatod az alkalmazást."
         },
         {
           "id": "erase",
           "kind": "Warning",
           "platform": "All",
           "title": "Az alaphelyzetbe állítás minden helyi profilt töröl",
-          "body": "Az alaphelyzetbe állítás végleg eltávolítja a helyi adatbázist, védett kulcsát, a profilokat, jelszavakat és helyi szinkronizálási adatokat. Újratelepítés vagy alkalmazásadat-törlés is megszüntetheti a hozzáférést. Ezeket ne használd szokásos hibajavításként: a másik eszközről újjáépítés nem garantált."
+          "body": "Az alaphelyzetbe állítás MINDEN helyi profilt, jelszót, védett kulcsot, telepítési azonosságot és szinkronizálási állapotot érint. Tekintsd át a figyelmeztetést, aktívan jelöld be a tudomásulvételt, majd használd a külön végleges megerősítést. A csak itt mentett módosítások végleg elveszhetnek. A művelet nem állítja helyre a régi adatokat, és másutt nem választja le a régi eszközt. Ha lehet, előbb válaszd le egy ép, engedélyezett eszközről. Az új, üres indítás után jelentkezz be egy már engedélyezett eszközön, és a + (Eszköz hozzáadása) gombbal hagyj jóvá új párosítást. Semmi nem párosul automatikusan. Sikertelen alaphelyzetbe állítás után néhány fájl már hiányozhat; az újrapróbálás nem ismétli meg a törlést."
         }
       ],
       "relatedTopicIds": [

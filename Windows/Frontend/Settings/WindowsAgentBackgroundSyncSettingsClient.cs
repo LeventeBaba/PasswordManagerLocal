@@ -130,10 +130,21 @@ public sealed class WindowsAgentBackgroundSyncSettingsClient : IBackgroundSyncSe
         IsAvailable: state.Consistency != WindowsBackgroundSyncConsistency.Unavailable,
         IsDegraded: state.Consistency is WindowsBackgroundSyncConsistency.Degraded or
             WindowsBackgroundSyncConsistency.Inconsistent or
-            WindowsBackgroundSyncConsistency.Unavailable,
+            WindowsBackgroundSyncConsistency.Unavailable or WindowsBackgroundSyncConsistency.DegradedRetrying or
+            WindowsBackgroundSyncConsistency.RestartRequired,
         state.IsTransitionInProgress,
         MapFailureKind(state.FailureKind),
-        state.Failure?.SafeMessage);
+        state.Failure?.SafeMessage,
+        state.Consistency switch
+        {
+            WindowsBackgroundSyncConsistency.Disabled => BackgroundSyncOperationalState.Disabled,
+            WindowsBackgroundSyncConsistency.EnabledIdle => BackgroundSyncOperationalState.EnabledIdle,
+            WindowsBackgroundSyncConsistency.Operational => BackgroundSyncOperationalState.Running,
+            WindowsBackgroundSyncConsistency.Starting or WindowsBackgroundSyncConsistency.Transitioning => BackgroundSyncOperationalState.Starting,
+            WindowsBackgroundSyncConsistency.DegradedRetrying => BackgroundSyncOperationalState.DegradedRetrying,
+            WindowsBackgroundSyncConsistency.RestartRequired => BackgroundSyncOperationalState.RestartRequired,
+            _ => BackgroundSyncOperationalState.Unavailable
+        });
 
     private static BackgroundSyncClientFailureKind MapFailureKind(
         WindowsBackgroundSyncFailureKind failureKind) => failureKind switch

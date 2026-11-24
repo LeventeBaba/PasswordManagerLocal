@@ -17,4 +17,10 @@ public sealed class PhysicalBackgroundSyncSettingsFileSystem : IBackgroundSyncSe
         File.Move(sourcePath, destinationPath, overwrite: true);
 
     public void DeleteFile(string path) => File.Delete(path);
+
+    public IEnumerable<string> EnumerateFiles(string directory, string searchPattern) =>
+        Directory.EnumerateFiles(directory, searchPattern, SearchOption.TopDirectoryOnly);
+
+    public async Task<IAsyncDisposable> AcquireExclusiveLockAsync(string path, CancellationToken cancellationToken) =>
+        await StorageFileLock.AcquireAsync(path, cancellationToken).ConfigureAwait(false);
 }

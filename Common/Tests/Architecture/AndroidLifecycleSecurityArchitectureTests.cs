@@ -94,7 +94,7 @@ public sealed class AndroidLifecycleSecurityArchitectureTests
             @"private bool IsCurrentActiveAttachment\([^)]*\)\s*=>\s*(?<body>[^;]+);");
         Assert.IsTrue(activeAttachment.Success);
         Assert.AreEqual(
-            "!_runtimeUnsafe && IsCurrentInteractiveClient(client) && client.HasMutationAuthority",
+            "!_runtimeUnsafe && _composition?.Runtime.SyncSnapshot.RequiresProcessRestart != true && IsCurrentInteractiveClient(client) && client.HasMutationAuthority",
             Regex.Replace(activeAttachment.Groups["body"].Value, @"\s+", " ").Trim());
 
         var currentClient = Regex.Match(

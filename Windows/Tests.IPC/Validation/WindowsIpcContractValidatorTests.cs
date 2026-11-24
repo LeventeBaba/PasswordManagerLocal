@@ -341,6 +341,7 @@ public sealed class WindowsIpcContractValidatorTests
     [DataRow(BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid, IpcFailureKind.Runtime)]
     [DataRow(BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable, IpcFailureKind.PlatformKey)]
     [DataRow(BackendRuntimeFailureStatusKind.DatabaseUnreadable, IpcFailureKind.Runtime)]
+    [DataRow(BackendRuntimeFailureStatusKind.DatabaseResetIncomplete, IpcFailureKind.Runtime)]
     public void NonVersionRecoveryFailuresRoundTripWithoutVersionMetadata(
         BackendRuntimeFailureStatusKind kind, IpcFailureKind failureKind)
     {

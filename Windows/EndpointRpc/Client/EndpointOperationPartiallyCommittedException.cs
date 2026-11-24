@@ -2,7 +2,7 @@ using PasswordManagerLocal.Windows.EndpointRpc.Contracts;
 
 namespace PasswordManagerLocal.Windows.EndpointRpc.Client;
 
-public sealed class EndpointOperationPartiallyCommittedException : Exception
+public sealed class EndpointOperationPartiallyCommittedException : Exception, PasswordManagerLocal.Common.Contracts.Errors.IPartiallyCommittedOperation
 {
     public EndpointOperationPartiallyCommittedException(
         EndpointOperationId operationId,

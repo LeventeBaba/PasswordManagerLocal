@@ -384,6 +384,7 @@ public sealed class NamedPipeEndpointsProxyMappingTests
             new(nameof(IEndpoints.GetAuthSessionStatusAsync), () => proxy.GetAuthSessionStatusAsync(EndpointRpcTestData.Token)),
             new(nameof(IEndpoints.ChangeMasterPasswordAsync), () => proxy.ChangeMasterPasswordAsync(master)),
             new(nameof(IEndpoints.GetUserProfileInfoAsync), () => proxy.GetUserProfileInfoAsync(EndpointRpcTestData.Token)),
+            new(nameof(IEndpoints.RemoveLocalProfileAsync), () => proxy.RemoveLocalProfileAsync(login, true)),
             new(nameof(IEndpoints.DeleteUserAccountAsync), () => proxy.DeleteUserAccountAsync(EndpointRpcTestData.Token, password)),
             new(nameof(IEndpoints.ChangeUsernameAsync), () => proxy.ChangeUsernameAsync(EndpointRpcTestData.Token, "ValidUser2")),
             new(nameof(IEndpoints.UpdateUserProfileInfoAsync), () => proxy.UpdateUserProfileInfoAsync(profile)),

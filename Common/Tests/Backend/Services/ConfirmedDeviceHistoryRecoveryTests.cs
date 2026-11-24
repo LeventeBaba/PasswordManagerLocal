@@ -14,10 +14,12 @@ using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
+using PasswordManagerLocal.Common.Backend.Services.Hosted;
 using PasswordManagerLocal.Common.Backend.Utils;
 using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Tests.Fakes;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
+using PasswordManagerLocal.Common.Tests.TestInfrastructure.Storage;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 
@@ -126,9 +128,9 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
             var snapshots = scope.ServiceProvider.GetRequiredService<IUserSyncSnapshotRepository>();
             var snapshot = (await snapshots.ListForUserAsync(before.UId)).First();
             retainedEnvelope = snapshot.EnvelopePayload.ToArray();
-            snapshot.Status = UserSyncSnapshotStatus.IsolatedFork;
-            snapshot.QuarantineReason = "test retained fork";
-            snapshot.ConflictingSnapshotHash = new byte[32];
+            snapshot.Status = UserSyncSnapshotStatus.Pending;
+            snapshot.QuarantineReason = null;
+            snapshot.ConflictingSnapshotHash = null;
             snapshots.Update(snapshot);
             await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
         }
@@ -161,7 +163,7 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
         Assert.AreEqual(0, archive.User.EncryptedUserPasswordsDataPayload.Length);
         Assert.IsTrue(archive.SavedKey is null or { Length: 0 },
             "Recovery must not create a remembered key when Remember Me was disabled; null and an empty buffer both mean no key.");
-        Assert.IsTrue(archive.Snapshots.Any(row => row.Status == UserSyncSnapshotStatus.IsolatedFork && row.EnvelopePayload.SequenceEqual(retainedEnvelope)));
+        Assert.IsTrue(archive.Snapshots.Any(row => row.Status == UserSyncSnapshotStatus.Pending && row.EnvelopePayload.SequenceEqual(retainedEnvelope)));
         Assert.IsTrue(archive.Operations.Any(row => Encoding.UTF8.GetString(row.EnvelopePayload) == "{broken history"));
         using (var scope = source.Services.CreateScope())
         {
@@ -196,10 +198,10 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
         {
             await scope.ServiceProvider.GetRequiredService<IUserSyncFaultRepository>().AddAsync(new UserSyncFault
             {
-                UserId = before.UId, Scope = UserSyncFaultScope.ControlPlane,
-                Kind = UserSyncFaultKind.MembershipConflict, Status = UserSyncHealthStatus.TerminalConflict,
+                UserId = before.UId, Scope = UserSyncFaultScope.LocalCanonical,
+                Kind = UserSyncFaultKind.CanonicalCheckpointMismatch, Status = UserSyncHealthStatus.AwaitingEvidence,
                 KeyEpoch = before.KeyEpoch, MembershipEpoch = before.MembershipEpoch,
-                DiagnosticCode = "invalid-removal-history", BlocksLifecycle = true
+                DiagnosticCode = "checkpoint-verification-pending", BlocksPublishing = true
             });
             await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
         }
@@ -220,8 +222,8 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
                 UPDATE "UserControlStates" SET "LastUpdatedAtUtc" = $now WHERE "UserId" = $user;
                 UPDATE "UserSyncStates" SET "LastUpdatedAtUtc" = $now WHERE "UserId" = $user;
                 UPDATE "DeviceEnrollmentCommits" SET "LastAttemptAtUtc" = $now WHERE "UserId" = $user;
-                """, ("$now", now), ("$next", now.AddMinutes(5)), ("$scope", (byte)UserSyncFaultScope.ControlPlane),
-                ("$code", "invalid-removal-history"), ("$device", removed.Identity.LocalDeviceId), ("$user", before.UId));
+                """, ("$now", now), ("$next", now.AddMinutes(5)), ("$scope", (byte)UserSyncFaultScope.LocalCanonical),
+                ("$code", "checkpoint-verification-pending"), ("$device", removed.Identity.LocalDeviceId), ("$user", before.UId));
             await transaction.CommitAsync();
         }
         await source.Endpoints.GetUserDevicesAsync(token); // The frontend refreshes this before confirmation.
@@ -293,7 +295,7 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
     [TestMethod]
     [Timeout(90_000)]
     [TestCategory("Backend")]
-    public async Task MissingLocalAuthorization_CanBeRebuiltAfterExplicitApproval()
+    public async Task MissingLocalAuthorization_CannotBeRecreatedByExplicitHistoryApproval()
     {
         await using var source = await ProductionSyncTestHost.CreateAsync();
         var token = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest("missing_membership"));
@@ -305,10 +307,101 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
             await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
         }
         var assessment = await source.Endpoints.RunSelfDiagnosticsAndRepairAsync(token);
-        CollectionAssert.Contains(assessment.RecoveryRisks.ToArray(), "RecoveryRiskLocalMembership");
-        var repaired = await source.Endpoints.ConfirmSelfDiagnosticsRepairAsync(token, assessment.RecoveryPlanId!, Password());
-        Assert.IsTrue(repaired.Healthy, string.Join(", ", repaired.Findings));
-        CollectionAssert.AreEqual(before.EncryptedUserPasswordsDataPayload, (await ReadUserAsync(source, token)).EncryptedUserPasswordsDataPayload);
+        Assert.IsNull(assessment.RecoveryPlanId);
+        CollectionAssert.Contains(assessment.Findings.ToArray(), "RecoveryBlockedLocalAuthorization");
+        var denied = await source.Endpoints.ConfirmSelfDiagnosticsRepairAsync(token, new string('A', 64), Password());
+        Assert.IsFalse(denied.Healthy);
+        Assert.IsNull(denied.RecoveryPlanId);
+        CollectionAssert.Contains(denied.Findings.ToArray(), "RecoveryBlockedLocalAuthorization");
+        Assert.AreEqual(0, (await JournalsAsync(source)).Count);
+        CollectionAssert.AreEqual(before.IntegrityHash, (await ReadUserAsync(source, token)).IntegrityHash);
+        using var verify = source.Services.CreateScope();
+        Assert.AreEqual(0, (await verify.ServiceProvider.GetRequiredService<IUserMembershipAuthorizationRepository>()
+            .ListForUserAsync(before.UId)).Count);
+    }
+
+    [TestMethod]
+    [Timeout(90_000)]
+    [TestCategory("Recovery")]
+    [TestCategory("EnrollmentSecurity")]
+    [DataRow(UserSyncFaultScope.SnapshotFork, UserSyncFaultKind.SameRevisionFork)]
+    [DataRow(UserSyncFaultScope.LocalCanonical, UserSyncFaultKind.DuplicateOriginInstallation)]
+    [DataRow(UserSyncFaultScope.ControlPlane, UserSyncFaultKind.MembershipConflict)]
+    [DataRow(UserSyncFaultScope.ControlPlane, UserSyncFaultKind.KeyEpochConflict)]
+    [DataRow(UserSyncFaultScope.DeterministicItem, UserSyncFaultKind.DeterministicItemConflict)]
+    public async Task TerminalEvidence_AfterReviewCannotBeOverriddenByAStaleConfirmation(
+        UserSyncFaultScope faultScope, UserSyncFaultKind kind)
+    {
+        await using var source = await ProductionSyncTestHost.CreateAsync();
+        await using var removed = await ProductionSyncTestHost.CreateAsync();
+        var token = await PrepareAsync(source, removed);
+        var before = await ReadUserAsync(source, token);
+        var assessment = await source.Endpoints.RunSelfDiagnosticsAndRepairAsync(token);
+        Assert.IsNotNull(assessment.RecoveryPlanId);
+        var oldOrigin = source.Identity.OriginInstanceId;
+        var descriptor = new UserSyncFaultDescriptor
+        {
+            UserId = before.UId, Scope = faultScope, Kind = kind,
+            Status = UserSyncHealthStatus.TerminalConflict,
+            OriginDeviceId = removed.Identity.LocalDeviceId, OriginInstanceId = removed.Identity.OriginInstanceId,
+            KeyEpoch = before.KeyEpoch, MembershipEpoch = before.MembershipEpoch,
+            OriginRevision = 7, ObservedHash = Enumerable.Repeat((byte)0x11, 32).ToArray(),
+            ConflictingHash = Enumerable.Repeat((byte)0x22, 32).ToArray(), BlocksLogin = true,
+            BlocksLifecycle = true, DiagnosticCode = "terminal-after-review"
+        };
+        using (var scope = source.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IUserSyncFaultService>().RecordAsync(descriptor);
+            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+        }
+        var result = await source.Endpoints.ConfirmSelfDiagnosticsRepairAsync(token, assessment.RecoveryPlanId!, Password());
+        Assert.IsFalse(result.Healthy);
+        Assert.IsNull(result.RecoveryPlanId);
+        CollectionAssert.Contains(result.Findings.ToArray(), "RecoveryBlockedTerminalConflict");
+        Assert.AreEqual(0, (await JournalsAsync(source)).Count);
+        CollectionAssert.AreEqual(before.IntegrityHash, (await ReadUserAsync(source, token)).IntegrityHash);
+        Assert.AreEqual(oldOrigin, source.Identity.OriginInstanceId);
+        using var verify = source.Services.CreateScope();
+        var fault = (await verify.ServiceProvider.GetRequiredService<IUserSyncFaultRepository>()
+            .ListActiveForUserAsync(before.UId)).Single();
+        Assert.AreEqual(UserSyncHealthStatus.TerminalConflict, fault.Status);
+        CollectionAssert.AreEqual(descriptor.ObservedHash, fault.ObservedHash);
+        CollectionAssert.AreEqual(descriptor.ConflictingHash, fault.ConflictingHash);
+        Assert.IsNull(fault.RecoveredAtUtc);
+    }
+
+    [TestMethod]
+    [Timeout(90_000)]
+    [TestCategory("Recovery")]
+    [TestCategory("EnrollmentSecurity")]
+    public async Task RetainedForkWithoutFaultRow_BlocksHistoryResetAndKeepsTheOriginalEnvelope()
+    {
+        await using var source = await ProductionSyncTestHost.CreateAsync();
+        await using var removed = await ProductionSyncTestHost.CreateAsync();
+        var token = await PrepareAsync(source, removed);
+        var before = await ReadUserAsync(source, token);
+        var assessment = await source.Endpoints.RunSelfDiagnosticsAndRepairAsync(token);
+        Assert.IsNotNull(assessment.RecoveryPlanId);
+        byte[] bytes;
+        using (var scope = source.Services.CreateScope())
+        {
+            var snapshots = scope.ServiceProvider.GetRequiredService<IUserSyncSnapshotRepository>();
+            var row = (await snapshots.ListForUserAsync(before.UId)).First();
+            bytes = row.EnvelopePayload.ToArray();
+            row.Status = UserSyncSnapshotStatus.IsolatedFork;
+            row.ConflictingSnapshotHash = Enumerable.Repeat((byte)0x55, 32).ToArray();
+            snapshots.Update(row);
+            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+        }
+        var denied = await source.Endpoints.ConfirmSelfDiagnosticsRepairAsync(token, assessment.RecoveryPlanId!, Password());
+        Assert.IsNull(denied.RecoveryPlanId);
+        CollectionAssert.Contains(denied.Findings.ToArray(), "RecoveryBlockedTerminalConflict");
+        Assert.AreEqual(0, (await JournalsAsync(source)).Count);
+        using var verify = source.Services.CreateScope();
+        var retained = (await verify.ServiceProvider.GetRequiredService<IUserSyncSnapshotRepository>()
+            .ListForUserAsync(before.UId)).Single(row => row.Status == UserSyncSnapshotStatus.IsolatedFork);
+        CollectionAssert.AreEqual(bytes, retained.EnvelopePayload);
+        CollectionAssert.AreEqual(before.IntegrityHash, (await ReadUserAsync(source, token)).IntegrityHash);
     }
 
     [TestMethod]
@@ -604,11 +697,36 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
         await using var source = await ProductionSyncTestHost.CreateAsync();
         var token = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest("journal_schema"));
         var before = await ReadUserAsync(source, token);
+        await source.Services.GetRequiredService<UserPostLoginWorkHostedService>().StopAsync();
         using (var scope = source.Services.CreateScope())
         {
             var services = scope.ServiceProvider;
-            await services.ExecuteFixtureSqlAsync("""DROP TABLE "UserRecoveryJournals";""");
             await using var connection = services.GetRequiredService<SqliteConnectionFactory>().CreateConnection();
+            await connection.OpenAsync();
+            // Model the older image before journals AND storage admission existed. Dropping
+            // only a guarded table from today's schema is corruption, which startup must reject.
+            // Quiesce the fixture worker above and perform the fixture downgrade atomically.
+            using (var legacy = connection.BeginTransaction(deferred: false))
+            {
+                using var command = connection.CreateCommand();
+                command.Transaction = legacy;
+                var operations = new[] { "INSERT", "UPDATE", "DELETE" };
+                var triggers = SqliteStoragePolicy.Tables.SelectMany(table => operations.Select(operation =>
+                        $"Storage_{table.TableName}_{operation}"))
+                    .Concat(SqliteStoragePolicy.WalGuardedTables.SelectMany(table => operations.Select(operation =>
+                        $"WalPressure_{table}_{operation}")));
+                command.CommandText = string.Join("\n", triggers.Select(name =>
+                    "DROP TRIGGER " + SqliteStorageTestCommands.Quote(name) + ";")) + """
+
+                    DROP TABLE "StorageUsage";
+                    DROP TABLE "StorageBudgets";
+                    DROP TABLE "UserRecoveryJournals";
+                    """;
+                await command.ExecuteNonQueryAsync();
+                await legacy.CommitAsync();
+            }
+            Assert.AreEqual(0L, await SqliteStorageTestCommands.ScalarAsync(connection,
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('UserRecoveryJournals', 'StorageUsage', 'StorageBudgets');"));
             await AppDatabaseInitializer.InitializeAsync(connection);
             var journals = services.GetRequiredService<IUserRecoveryJournalStore>();
             journals.Add(new UserRecoveryJournal
@@ -617,10 +735,18 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
                 CreatedAtUtc = DateTimeOffset.UtcNow, ProtectedKey = [1], EncryptedPayload = [2], PayloadHash = new byte[32]
             });
             await services.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+            var retainedUsage = await SqliteStorageTestCommands.ScalarAsync(connection,
+                "SELECT UsedBytes FROM StorageUsage WHERE TableName = 'UserRecoveryJournals';");
             await AppDatabaseInitializer.InitializeAsync(connection);
             Assert.HasCount(1, await journals.ListIdsAsync(default));
+            Assert.AreEqual(1L, await SqliteStorageTestCommands.ScalarAsync(connection,
+                "SELECT RowCount FROM StorageUsage WHERE TableName = 'UserRecoveryJournals';"));
+            Assert.AreEqual(retainedUsage, await SqliteStorageTestCommands.ScalarAsync(connection,
+                "SELECT UsedBytes FROM StorageUsage WHERE TableName = 'UserRecoveryJournals';"));
         }
-        CollectionAssert.AreEqual(before.IntegrityHash, (await ReadUserAsync(source, token)).IntegrityHash);
+        var after = await ReadUserAsync(source, token);
+        CollectionAssert.AreEqual(before.IntegrityHash, after.IntegrityHash);
+        CollectionAssert.AreEqual(before.EncryptedUserPasswordsDataPayload, after.EncryptedUserPasswordsDataPayload);
     }
 
     [TestMethod]
@@ -702,6 +828,9 @@ public sealed class ConfirmedDeviceHistoryRecoveryTests
 
     private sealed class LifecycleProbe(IUserLifecycleCoordinator inner) : IUserLifecycleCoordinator
     {
+        public bool IsControlOperation(Guid userId) => inner.IsControlOperation(userId);
+        public Task<T> ExecuteControlAsync<T>(Guid userId, Func<CancellationToken, Task<T>> action, CancellationToken ct = default) =>
+            inner.ExecuteControlAsync(userId, action, ct);
         public bool IsExecuting { get; private set; }
         public Task ExecuteAsync(Guid userId, Func<CancellationToken, Task> action, CancellationToken ct = default) =>
             ExecuteAsync<object?>(userId, async token => { await action(token); return null; }, ct);

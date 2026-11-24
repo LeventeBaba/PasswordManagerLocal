@@ -22,7 +22,6 @@ public class UserProfileService : IUserProfileService
     private readonly IUserDeletionService _deletion;
     private readonly ICredentialVerificationService _authService;
     private readonly ISyncVersionClockService _versionClock;
-    private readonly IUserLifecycleCoordinator _lifecycle;
 
     public UserProfileService(
         IUserLookupService lookup,
@@ -31,8 +30,7 @@ public class UserProfileService : IUserProfileService
         IUserSessionService sessions,
         IUserDeletionService deletion,
         ICredentialVerificationService authService,
-        ISyncVersionClockService versionClock,
-        IUserLifecycleCoordinator lifecycle)
+        ISyncVersionClockService versionClock)
     {
         _lookup = lookup;
         _reader = reader;
@@ -41,7 +39,6 @@ public class UserProfileService : IUserProfileService
         _deletion = deletion;
         _authService = authService;
         _versionClock = versionClock;
-        _lifecycle = lifecycle;
     }
 
 
@@ -77,8 +74,8 @@ public class UserProfileService : IUserProfileService
             throw new InvalidInputException();
 
         var userId = _sessions.GetUidFromToken(token);
-        return _lifecycle.ExecuteAsync(
-            userId,
+        return _writer.ExecuteMutationAsync(
+            token,
             innerCt => ChangeUsernameUnderLifecycleAsync(token, userId, newUsername, innerCt),
             ct);
     }

@@ -1,6 +1,6 @@
 namespace PasswordManagerLocal.Common.Backend.Exceptions;
 
-public class MutationPartiallyCommittedException : Exception
+public class MutationPartiallyCommittedException : Exception, IPartiallyCommittedOperation
 {
     public MutationPartiallyCommittedException(
         string message,

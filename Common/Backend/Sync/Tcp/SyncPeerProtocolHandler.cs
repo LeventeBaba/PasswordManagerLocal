@@ -63,7 +63,7 @@ public sealed class SyncPeerProtocolHandler
                 ProtocolVersion = SyncConstants.SyncProtocolVersion,
                 DeviceId = identity.DeviceIdHex,
                 SignPub = ByteString.CopyFrom(identity.SignPublicKey),
-                SyncAvailable = identity.IsSyncOn
+                SyncAvailable = true // The authenticated control channel remains available while active discovery is idle.
             };
         }
         catch (Exception ex)
@@ -80,6 +80,7 @@ public sealed class SyncPeerProtocolHandler
 
     public async Task<Ack> PushDeltaAsync(IAsyncEnumerable<DeltaChunk> chunks, PeerConnectionContext context, CancellationToken ct)
     {
+        using var deliveryLease = _root.GetService<IRevocationDeliveryActivity>()?.Enter();
         using var scope = _root.CreateScope();
         Device? remoteDevice = null;
 
@@ -144,6 +145,14 @@ public sealed class SyncPeerProtocolHandler
             ack.UserControlOperationReceipts.AddRange(controlOperationReceipts);
             return ack;
         }
+        catch (PasswordManagerLocal.Common.Contracts.Errors.PendingSecurityOperationException)
+        {
+            throw new SyncProtocolException(SyncProtocolStatusCode.Unavailable, "A pending security transition temporarily blocks ordinary synchronization.");
+        }
+        catch (PasswordManagerLocal.Common.Contracts.Errors.StorageCapacityExceededException)
+        {
+            throw new SyncProtocolException(SyncProtocolStatusCode.ResourceExhausted, "Local storage capacity is exhausted; the delta was not acknowledged.");
+        }
         catch (SyncStateUnavailableException ex)
         {
             BackendDebugLog.Warning($"Local synchronization retry: {ex.Message}", category: "Synchronization");
@@ -196,6 +205,8 @@ public sealed class SyncPeerProtocolHandler
         {
             ValidateAuthenticatedSyncContext(context);
             remoteDevice = await ValidateRemoteDeviceAsync(scope.ServiceProvider, context, null, null, ct);
+            if (context.ControlOnly)
+                throw new SyncProtocolException(SyncProtocolStatusCode.Unavailable, "Only authenticated control evidence is available while this route is idle.");
             var antiEntropy = scope.ServiceProvider.GetRequiredService<IUserSnapshotAntiEntropyService>();
             var reply = await antiEntropy.BuildInventoryReplyAsync(remoteDevice.Id, request, ct);
             await AddAuthorizedEndpointHintsAsync(scope.ServiceProvider, remoteDevice.Id, reply, ct);
@@ -288,6 +299,8 @@ public sealed class SyncPeerProtocolHandler
                 throw new SyncProtocolException(SyncProtocolStatusCode.ResourceExhausted, "Too many user snapshots were requested.");
 
             remoteDevice = await ValidateRemoteDeviceAsync(scope.ServiceProvider, context, null, null, ct);
+            if (context.ControlOnly)
+                throw new SyncProtocolException(SyncProtocolStatusCode.Unavailable, "Only authenticated control evidence is available while this route is idle.");
             var antiEntropy = scope.ServiceProvider.GetRequiredService<IUserSnapshotAntiEntropyService>();
             return await antiEntropy.BuildRequestedSnapshotDeltasAsync(remoteDevice.Id, request.Requests, ct);
         }
@@ -320,6 +333,7 @@ public sealed class SyncPeerProtocolHandler
         PeerConnectionContext context,
         CancellationToken ct)
     {
+        using var deliveryLease = _root.GetService<IRevocationDeliveryActivity>()?.Enter();
         using var scope = _root.CreateScope();
         Device? remoteDevice = null;
         try
@@ -357,6 +371,7 @@ public sealed class SyncPeerProtocolHandler
         PeerConnectionContext context,
         CancellationToken ct)
     {
+        using var deliveryLease = _root.GetService<IRevocationDeliveryActivity>()?.Enter();
         using var scope = _root.CreateScope();
         Device? remoteDevice = null;
         try
@@ -861,8 +876,7 @@ public sealed class SyncPeerProtocolHandler
             throw new SyncProtocolException(SyncProtocolStatusCode.Unauthenticated, "Client certificate is missing.");
 
         var identity = services.GetRequiredService<IDeviceIdentityService>();
-        if (!identity.IsSyncOn)
-            throw new SyncProtocolException(SyncProtocolStatusCode.Unavailable, "Local synchronization is disabled.");
+
 
         var devices = services.GetRequiredService<IDeviceRepository>();
 
@@ -905,13 +919,12 @@ public sealed class SyncPeerProtocolHandler
             throw new SyncProtocolException(SyncProtocolStatusCode.PermissionDenied, "Local device cannot sync with itself.");
 
         var routes = services.GetRequiredService<ISyncRouteRepository>();
-        if (!await routes.HasEligibleUserForDeviceAsync(remoteDevice.Id, ct))
+        context.ControlOnly = !identity.IsSyncOn || !await routes.HasEligibleUserForDeviceAsync(remoteDevice.Id, ct);
+        if (context.ControlOnly)
         {
-            var operations = services.GetRequiredService<IUserControlOperationRepository>();
             var membership = services.GetRequiredService<IUserMembershipAuthorizationRepository>();
-            var revokedUserIds = await operations.ListAppliedRevocationUserIdsAsync(ct);
             var historicalUserIds = await membership.ListUserIdsForDeviceAsync(remoteDevice.Id, ct);
-            if (!historicalUserIds.Any(revokedUserIds.Contains))
+            if (historicalUserIds.Count == 0)
                 throw new SyncProtocolException(SyncProtocolStatusCode.PermissionDenied, "Remote device is not linked to an enabled local user or a signed revocation relay.");
         }
 

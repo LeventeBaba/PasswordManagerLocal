@@ -1,6 +1,7 @@
 using Google.Protobuf;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Constants;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Security;
@@ -18,6 +19,8 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
     private readonly IOutgoingDeltaBuilderService _deltaBuilder;
     private readonly IDeviceIdentityService _identity;
     private readonly IUserMembershipAuthorizationRepository? _membershipHistory;
+    private readonly IRevocationReceiptService? _receipts;
+    private readonly ICriticalControlIngressStore? _criticalIngress;
 
     public UserControlOperationAntiEntropyService(
         IUserControlOperationRepository operations,
@@ -25,7 +28,8 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
         ISyncRouteRepository routes,
         IOutgoingDeltaBuilderService deltaBuilder,
         IDeviceIdentityService identity,
-        IUserMembershipAuthorizationRepository? membershipHistory = null)
+        IUserMembershipAuthorizationRepository? membershipHistory = null,
+        IRevocationReceiptService? receipts = null, ICriticalControlIngressStore? criticalIngress = null)
     {
         _operations = operations;
         _devices = devices;
@@ -33,6 +37,8 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
         _deltaBuilder = deltaBuilder;
         _identity = identity;
         _membershipHistory = membershipHistory;
+        _receipts = receipts;
+        _criticalIngress = criticalIngress;
     }
 
     public async Task<UserControlOperationInventoryExchangeRequest> BuildInventoryAsync(
@@ -42,7 +48,7 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
         await ValidatePeerAsync(peerDeviceId, ct);
         var rows = await _operations.ListAllRelayableAsync(ct);
         var rowsByUser = rows.GroupBy(operation => operation.UserId).ToDictionary(group => group.Key);
-        var activeUserIds = (await _routes.ListAllEligibleUserIdsAsync(peerDeviceId, ct)).ToHashSet();
+        var activeUserIds = (await _routes.ListAllControlEligibleUserIdsAsync(peerDeviceId, ct)).ToHashSet();
         IReadOnlyList<Guid> historicalUserIds = _membershipHistory is null
             ? Array.Empty<Guid>()
             : await _membershipHistory.ListUserIdsForDeviceAsync(peerDeviceId, ct);
@@ -59,19 +65,19 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
 
         var result = new UserControlOperationInventoryExchangeRequest();
         var total = 0;
+        var totalReceipts = 0;
         foreach (var userId in eligibleUserIds.OrderBy(id => id))
         {
             var userInventory = new UserControlOperationUserInventory { UserId = userId.ToString("N") };
             if (rowsByUser.TryGetValue(userId, out var group))
             {
-                var relayCutoff = GetHistoricalRevocationCutoff(group, peerDeviceId);
+                var relayCutoff = GetHistoricalRelayBound(group, peerDeviceId);
                 foreach (var row in group
                              .Where(operation => activeUserIds.Contains(userId) ||
-                                                 (operation.OperationType == UserControlOperationType.AccountDeletion &&
-                                                  operation.Status == UserControlOperationStatus.Applied) ||
-                                                 (relayCutoff > 0 &&
-                                                  operation.Status == UserControlOperationStatus.Applied &&
-                                                  operation.ResultingMembershipEpoch <= relayCutoff))
+                                                 (operation.OperationType == UserControlOperationType.AccountDeletion && operation.Status == UserControlOperationStatus.Applied) ||
+                                                 (operation.Status == UserControlOperationStatus.Applied &&
+                                                  operation.ResultingMembershipEpoch <= relayCutoff.Membership &&
+                                                  operation.ResultingKeyEpoch <= relayCutoff.Key))
                              .OrderBy(operation => operation.OriginDeviceId)
                              .ThenBy(operation => operation.OriginInstanceId)
                              .ThenBy(operation => operation.OriginSequence))
@@ -82,7 +88,19 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
 
                     var envelope = UserControlOperationEnvelopeUtil.Deserialize(row.EnvelopePayload);
                     EnsureRowMatchesEnvelope(row, envelope);
+                    if (_criticalIngress?.IsSuspended(userId) == true && envelope.OperationType is not
+                        (UserControlOperationType.DeviceRemoval or UserControlOperationType.AccountDeletion) &&
+                        !await _criticalIngress.CanApplyPredecessorAsync(envelope, ct)) continue;
                     userInventory.Operations.Add(ToInventoryEntry(row));
+                    if (_receipts is not null && row.Status == UserControlOperationStatus.Applied &&
+                        row.OperationType is UserControlOperationType.DeviceRemoval or UserControlOperationType.AccountDeletion)
+                    {
+                        var receipts = await _receipts.GetInventoryAsync(row.OperationId, ct);
+                        totalReceipts += receipts.Count;
+                        if (totalReceipts > SyncConstants.MaxRevocationReceiptInventoryEntries)
+                            throw new InvalidOperationException("The revocation receipt inventory safety limit was reached.");
+                        userInventory.Receipts.AddRange(receipts);
+                    }
                 }
             }
 
@@ -104,10 +122,127 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
         var local = await BuildInventoryAsync(peerDeviceId, ct);
         ValidateInventory(remoteInventory, local);
 
+        ValidateReceiptBatchLimits(remoteInventory.RequestedReceipts.Count, remoteInventory.ReceiptResponses);
+        if (_receipts is not null && remoteInventory.ReceiptResponses.Count > 0)
+        {
+            await _receipts.StoreAsync(remoteInventory.ReceiptResponses.Select(b => b.ToByteArray()), AllowedOperations(local), ct);
+            local = await BuildInventoryAsync(peerDeviceId, ct);
+        }
+        else if (_receipts is null && (remoteInventory.RequestedReceipts.Count > 0 || remoteInventory.ReceiptResponses.Count > 0))
+            throw new InvalidOperationException("Revocation receipt exchange is unavailable.");
+
+        if (_receipts is not null) await _receipts.ObservePeerInventoryAsync(peerDeviceId, remoteInventory.Users, ct);
         var reply = new UserControlOperationInventoryExchangeReply();
         reply.Users.AddRange(local.Users);
         reply.RequestedOperations.AddRange(FindMissingOperations(local, remoteInventory.Users));
+        if (_receipts is not null)
+        {
+            reply.RequestedReceipts.AddRange(FindMissingReceipts(local.Users, remoteInventory.Users));
+            reply.ReceiptResponses.AddRange((await _receipts.BuildRequestedAsync(
+                remoteInventory.RequestedReceipts, AllowedOperations(local), ct)).Select(b => ByteString.CopyFrom(b)));
+        }
         return reply;
+    }
+
+    public async Task<UserControlOperationInventoryExchangeRequest?> BuildReceiptFollowUpAsync(
+        Guid peerDeviceId, UserControlOperationInventoryExchangeReply remote, CancellationToken ct = default)
+    {
+        if (_receipts is null) return null;
+        var local = await BuildInventoryAsync(peerDeviceId, ct);
+        var remoteInventory = new UserControlOperationInventoryExchangeRequest();
+        remoteInventory.Users.AddRange(remote.Users);
+        ValidateInventory(remoteInventory, local);
+        ValidateReceiptBatchLimits(remote.RequestedReceipts.Count, remote.ReceiptResponses);
+        // Responses are accepted separately against the exact request that caused them.
+        var missing = FindMissingReceipts(local.Users, remote.Users);
+        if (missing.Count == 0 && remote.RequestedReceipts.Count == 0) return null;
+        local.RequestedReceipts.AddRange(missing);
+        local.ReceiptResponses.AddRange((await _receipts.BuildRequestedAsync(
+            remote.RequestedReceipts, AllowedOperations(local), ct)).Select(b => ByteString.CopyFrom(b)));
+        return local;
+    }
+
+    public async Task AcceptReceiptReplyAsync(Guid peerDeviceId,
+        UserControlOperationInventoryExchangeRequest request, UserControlOperationInventoryExchangeReply reply,
+        CancellationToken ct = default)
+    {
+        ValidateReceiptBatchLimits(reply.RequestedReceipts.Count, reply.ReceiptResponses);
+        var expected = request.RequestedReceipts.ToDictionary(RevocationReceiptService.Key);
+        var seen = new HashSet<(Guid, Guid, Guid, Guid, int, string)>();
+        foreach (var payload in reply.ReceiptResponses)
+        {
+            var receipt = RevocationDeliveryReceiptUtil.Deserialize(payload.ToByteArray());
+            var entry = RevocationReceiptService.ToInventory(receipt);
+            var key = RevocationReceiptService.Key(entry);
+            if (!seen.Add(key) || !expected.TryGetValue(key, out var wanted) ||
+                !Hashing.Verify(entry.ReceiptHash.ToByteArray(), wanted.ReceiptHash.ToByteArray()))
+                throw new InvalidDataException("A receipt response does not match an exact outstanding request.");
+        }
+        if (seen.Count != expected.Count)
+            throw new SyncStateUnavailableException("Not all requested receipts were returned; refresh inventory.");
+        var local = await BuildInventoryAsync(peerDeviceId, ct);
+        var remoteInventory = new UserControlOperationInventoryExchangeRequest();
+        remoteInventory.Users.AddRange(reply.Users);
+        ValidateInventory(remoteInventory, local);
+        if (_receipts is not null && reply.ReceiptResponses.Count > 0)
+        {
+            await _receipts.StoreAsync(reply.ReceiptResponses.Select(b => b.ToByteArray()), AllowedOperations(local), ct);
+        }
+        if (_receipts is not null)
+            await _receipts.ObservePeerInventoryAsync(peerDeviceId, reply.Users, ct);
+    }
+
+    public static IReadOnlyList<RevocationReceiptInventoryEntry> FindMissingReceipts(
+        IEnumerable<UserControlOperationUserInventory> localUsers, IEnumerable<UserControlOperationUserInventory> remoteUsers)
+    {
+        var local = localUsers.ToArray();
+        var operations = local.SelectMany(u => u.Operations.Select(o => (Id: Guid.Parse(o.OperationId), User: Guid.Parse(u.UserId))))
+            .ToDictionary(o => o.Id, o => o.User);
+        var known = local.SelectMany(u => u.Receipts).ToDictionary(RevocationReceiptService.Key);
+        var seen = new HashSet<(Guid, Guid, Guid, Guid, int, string)>();
+        var result = new List<RevocationReceiptInventoryEntry>();
+        var total = 0;
+        foreach (var user in remoteUsers)
+        {
+            if (!Guid.TryParse(user.UserId, out var userId) || userId == Guid.Empty)
+                throw new InvalidDataException("The receipt inventory user identity is invalid.");
+            foreach (var receipt in user.Receipts.OrderBy(r => r.Kind == 3))
+            {
+                if (++total > SyncConstants.MaxRevocationReceiptInventoryEntries)
+                    throw new InvalidDataException("The remote receipt inventory is too large.");
+                var key = RevocationReceiptService.Key(receipt);
+                if (!seen.Add(key)) throw new InvalidDataException("Duplicate receipt inventory identity.");
+                // Receive/apply the revocation first. A receipt never substitutes for the operation.
+                if (!operations.TryGetValue(key.Item1, out var operationUser)) continue;
+                if (operationUser != userId) throw new InvalidDataException("Cross-user receipt inventory replay.");
+                if (known.TryGetValue(key, out var existing))
+                {
+                    if (!Hashing.Verify(existing.ReceiptHash.ToByteArray(), receipt.ReceiptHash.ToByteArray()))
+                        throw new InvalidDataException("Conflicting revocation receipt hash.");
+                    continue;
+                }
+                if (receipt.Kind == 3 && !local.SelectMany(u => u.Receipts).Concat(result).Any(r =>
+                        r.Kind == (int)RevocationReceiptKind.Applied && Hashing.Verify(r.ReceiptHash.ToByteArray(), receipt.AttestedReceiptHash.ToByteArray())))
+                    continue;
+                if (result.Count < SyncConstants.MaxRevocationReceiptsPerCall) result.Add(receipt.Clone());
+            }
+        }
+        return result;
+    }
+
+    private static HashSet<Guid> AllowedOperations(UserControlOperationInventoryExchangeRequest inventory) =>
+        inventory.Users.SelectMany(u => u.Operations)
+            .Where(o => !o.Quarantined && (o.OperationType == (int)UserControlOperationType.DeviceRemoval || o.OperationType == (int)UserControlOperationType.AccountDeletion))
+            .Select(o => Guid.Parse(o.OperationId)).ToHashSet();
+
+    private static void ValidateReceiptBatchLimits(int requestCount, IEnumerable<ByteString> payloads)
+    {
+        if (requestCount > SyncConstants.MaxRevocationReceiptsPerCall)
+            throw new InvalidDataException("Too many revocation receipt requests.");
+        var count = 0;
+        foreach (var payload in payloads)
+            if (++count > SyncConstants.MaxRevocationReceiptsPerCall || payload.Length == 0 || payload.Length > SyncConstants.MaxRevocationReceiptBytes)
+                throw new InvalidDataException("The revocation receipt response batch is too large or malformed.");
     }
 
     public IReadOnlyList<UserControlOperationRequest> FindMissingOperations(
@@ -149,7 +284,7 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
 
                 if (localById.TryGetValue(operationId, out var localExact))
                 {
-                    if (!CryptographicOperations.FixedTimeEquals(
+                    if (localExact.UserId != userId || !CryptographicOperations.FixedTimeEquals(
                             localExact.Operation.OperationHash.ToByteArray(),
                             operation.OperationHash.ToByteArray()))
                     {
@@ -226,7 +361,7 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
             // inaccessible operations alike, including IDs paired with the wrong account.
             if (row is null || row.UserId != userId ||
                 row.Status is UserControlOperationStatus.Rejected or UserControlOperationStatus.Quarantined ||
-                (!await _routes.IsEligibleAsync(userId, peerDeviceId, ct) &&
+                (!await _routes.IsControlEligibleAsync(userId, peerDeviceId, ct) &&
                  !await CanRelayHistoricallyAsync(row, peerDeviceId, ct)))
             {
                 throw new SyncStateUnavailableException("The requested control operation is unavailable for this peer.");
@@ -251,12 +386,28 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
             return false;
         if (row.Status != UserControlOperationStatus.Applied)
             return false;
-        if (row.OperationType == UserControlOperationType.AccountDeletion)
-            return true;
-
+        if (row.OperationType == UserControlOperationType.AccountDeletion) return true;
         var operations = await _operations.ListForUserAsync(row.UserId, ct);
+        var bound = GetHistoricalRelayBound(operations, peerDeviceId);
+        return row.ResultingMembershipEpoch <= bound.Membership && row.ResultingKeyEpoch <= bound.Key;
+    }
+
+    private (long Membership, long Key) GetHistoricalRelayBound(IEnumerable<UserControlOperation> rows, Guid peerDeviceId)
+    {
+        var operations = rows.ToArray();
+        var revocations = operations.Where(o => o.Status == UserControlOperationStatus.Applied &&
+            o.OperationType is UserControlOperationType.DeviceRemoval or UserControlOperationType.AccountDeletion).ToArray();
+        if (revocations.Length == 0) return (0, 0);
+        var memberBound = revocations.Max(o => o.ResultingMembershipEpoch);
         var cutoff = GetHistoricalRevocationCutoff(operations, peerDeviceId);
-        return cutoff > 0 && row.ResultingMembershipEpoch <= cutoff;
+        var keyBound = revocations.Max(o => o.ResultingKeyEpoch);
+        if (cutoff > 0)
+        {
+            memberBound = Math.Min(memberBound, cutoff);
+            keyBound = Math.Min(keyBound, revocations.Where(o => o.OperationType == UserControlOperationType.DeviceRemoval &&
+                o.ResultingMembershipEpoch == cutoff).Min(o => o.PreviousKeyEpoch));
+        }
+        return (memberBound, keyBound);
     }
 
     private long GetHistoricalRevocationCutoff(IEnumerable<UserControlOperation> operations, Guid peerDeviceId)
@@ -294,6 +445,9 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
         var allowedUsers = local.Users.Select(user => ParseGuid(user.UserId, "user")).ToHashSet();
         var seenUsers = new HashSet<Guid>();
         var count = 0;
+        var receiptCount = 0;
+        var receiptKeys = new HashSet<(Guid, Guid, Guid, Guid, int, string)>();
+        var seenOperations = new HashSet<Guid>();
         foreach (var user in remote.Users)
         {
             var userId = ParseGuid(user.UserId, "user");
@@ -307,8 +461,22 @@ public sealed class UserControlOperationAntiEntropyService : IUserControlOperati
                 if (count > SyncConstants.MaxUserControlInventoryEntries)
                     throw new InvalidDataException("The remote control-operation inventory contains too many entries.");
                 ValidateInventoryEntry(operation);
+                if (!seenOperations.Add(ParseGuid(operation.OperationId, "operation")))
+                    throw new InvalidDataException("The remote control-operation inventory contains duplicate operations.");
+            }
+            var operationIds = user.Operations.Select(o => ParseGuid(o.OperationId, "operation")).ToHashSet();
+            foreach (var receipt in user.Receipts)
+            {
+                if (++receiptCount > SyncConstants.MaxRevocationReceiptInventoryEntries)
+                    throw new InvalidDataException("The remote revocation receipt inventory is too large.");
+                var key = RevocationReceiptService.Key(receipt);
+                if (!operationIds.Contains(key.Item1) || !receiptKeys.Add(key))
+                    throw new InvalidDataException("A receipt inventory identity is duplicated or not bound to its user's operation inventory.");
             }
         }
+        // Validate immutable ID/hash and original sequence conflicts before receipt imports or
+        // peer-knowledge writes. These checks must apply to both requests and replies.
+        _ = FindMissingOperations(local, remote.Users);
     }
 
     private void ValidateInventoryEntry(UserControlOperationInventoryEntry entry)

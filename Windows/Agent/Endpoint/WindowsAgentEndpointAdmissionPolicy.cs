@@ -28,7 +28,7 @@ public sealed class WindowsAgentEndpointAdmissionPolicy : IEndpointRpcAdmissionP
             ?? throw new ArgumentNullException(nameof(endpointHostStateProvider));
     }
 
-    public bool CanAcceptConnection => IsOperational();
+    public bool CanAcceptConnection => IsOperational(allowStartupRetry: true);
 
     public bool TryEnterRequest(out IDisposable? lease)
     {
@@ -49,15 +49,16 @@ public sealed class WindowsAgentEndpointAdmissionPolicy : IEndpointRpcAdmissionP
     public Task WaitForDrainAsync(CancellationToken cancellationToken = default) =>
         _admissionGate.WaitForDrainAsync(cancellationToken);
 
-    private bool IsOperational()
+    private bool IsOperational(bool allowStartupRetry = false)
     {
         var backend = _backendOwner.Snapshot;
         return _stateSource.State == AgentState.Running &&
             _admissionGate.IsOpen &&
             _endpointHostStateProvider() == WindowsAgentEndpointHostState.Ready &&
-            backend.State is WindowsAgentBackendOwnerState.Ready or WindowsAgentBackendOwnerState.Interactive &&
-            backend.Runtime.State is not BackendRuntimeState.Failed and
-                not BackendRuntimeState.Stopping &&
+            ((backend.State is WindowsAgentBackendOwnerState.Ready or WindowsAgentBackendOwnerState.Interactive &&
+                backend.Runtime.State is not BackendRuntimeState.Failed and not BackendRuntimeState.Stopping) ||
+             (allowStartupRetry && backend.State == WindowsAgentBackendOwnerState.Failed &&
+                backend.Runtime.State == BackendRuntimeState.Failed && backend.Runtime.FailureKind.CanRetryStartup())) &&
             !backend.IsResetting &&
             !backend.RequiresProcessRestart;
     }

@@ -46,6 +46,17 @@ public sealed class UserCanonicalHealthService : IUserCanonicalHealthService
                 "account-deleted");
         }
 
+        return await VerifyCoreAsync(user, await _checkpoints.GetAsync(user.UId, ct), key, keyConfidence, recordFault, ct);
+    }
+
+    public Task<CanonicalHealthResult> VerifyCapturedAsync(User user, UserCanonicalCheckpoint? checkpoint,
+        EncryptionKey? key, UserSyncKeyConfidence keyConfidence, CancellationToken ct = default) =>
+        VerifyCoreAsync(user, checkpoint, key, keyConfidence, recordFault: false, ct: ct);
+
+    private async Task<CanonicalHealthResult> VerifyCoreAsync(User user, UserCanonicalCheckpoint? checkpoint,
+        EncryptionKey? key, UserSyncKeyConfidence keyConfidence, bool recordFault, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
         try
         {
             user.VerifyIntegrity();
@@ -61,7 +72,6 @@ public sealed class UserCanonicalHealthService : IUserCanonicalHealthService
                 "canonical-row-integrity-mismatch");
         }
 
-        var checkpoint = await _checkpoints.GetAsync(user.UId, ct);
         if (checkpoint is null)
         {
             if (recordFault)

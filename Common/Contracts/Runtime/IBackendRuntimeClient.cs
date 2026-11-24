@@ -8,5 +8,9 @@ public interface IBackendRuntimeClient : IAsyncDisposable
 
     Task ConnectAsync(CancellationToken cancellationToken = default);
     Task WaitUntilReadyAsync(CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Explicitly resets eligible failed-startup storage. Cancellation may abort
+    /// before destructive work; after that boundary the caller observes the outcome.
+    /// </summary>
     Task ResetDatabaseAndRestartAsync(CancellationToken cancellationToken = default);
 }

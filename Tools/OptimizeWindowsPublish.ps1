@@ -46,7 +46,7 @@ function Remove-PublishedFiles {
     if ($RemoveUnusedXmlSerializerAssembly) {
         # A residual ILLink 'copy' action can retain this facade even though the
         # normal trimmed Agent graph proves that no reachable Agent code needs it.
-        # Keep the Phase 6 minimal-Agent boundary authoritative after every pass.
+        # Keep the minimal Agent dependency boundary authoritative after every pass.
         $exactFiles += 'System.Xml.XmlSerializer.dll'
     }
 

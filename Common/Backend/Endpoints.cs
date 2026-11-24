@@ -44,6 +44,9 @@ public sealed class Endpoints : IEndpoints
         RunAsync<IUserProfileService, UserProfileInfoResponse>(service =>
             service.GetUserProfileInfoAsync(token, ct));
 
+    public Task RemoveLocalProfileAsync(LoginRequest request, bool acknowledgeDataLoss, CancellationToken ct = default) =>
+        RunAsync<IUserLocalProfileService>(service => service.RemoveAsync(request, acknowledgeDataLoss, ct));
+
     public Task DeleteUserAccountAsync(Guid token, byte[] password, CancellationToken ct = default) =>
         RunAsync<IUserProfileService>(service => service.DeleteUserAccountAsync(token, password, ct));
 

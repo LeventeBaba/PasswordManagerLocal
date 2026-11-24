@@ -230,6 +230,19 @@ public partial class MainView : UserControl, IDisposable
             sender is MainViewModel { IsContextHelpOpen: false })
             RestoreContextHelpFocus();
 
+        if (e.PropertyName is nameof(MainViewModel.IsDatabaseRecoveryDialogOpen) or
+            nameof(MainViewModel.IsDatabaseResetAcknowledgementVisible))
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_disposed || DataContext is not MainViewModel { IsDatabaseRecoveryDialogOpen: true } model)
+                    return;
+                var name = model.IsDatabaseRecoverySecondaryButtonVisible
+                    ? "DatabaseRecoveryCancelButton" : "DatabaseRecoveryRetryButton";
+                this.GetVisualDescendants().OfType<Button>().FirstOrDefault(button => button.Name == name)?.Focus();
+            });
+        }
+
         if (e.PropertyName == nameof(MainViewModel.IsMobileMainPageAnimationEnabled))
             UpdateMobileMainPageTransition();
     }

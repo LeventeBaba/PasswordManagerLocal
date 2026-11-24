@@ -1867,6 +1867,7 @@ public sealed class ProfileViewModel : ViewModelBase
         set
         {
             this.RaiseAndSetIfChanged(ref _historyRecoveryPassword, value);
+            IsHistoryRecoveryAcknowledged = false;
             this.RaisePropertyChanged(nameof(CanConfirmHistoryRecovery));
         }
     }
@@ -1919,6 +1920,7 @@ public sealed class ProfileViewModel : ViewModelBase
         var passwordHash = SecretTransform.HashPassword(HistoryRecoveryPassword);
         ClearStatusMessage();
         HistoryRecoveryPassword = string.Empty;
+        IsHistoryRecoveryAcknowledged = false;
         IsHistoryRecoveryPasswordVisible = false;
         IsRunningSelfDiagnostics = true;
         try
@@ -1931,6 +1933,22 @@ public sealed class ProfileViewModel : ViewModelBase
             await LoadDevicesAsync();
             // SetSelfDiagnosticsResult clears acknowledgement; changed plans still
             // require a new password and explicit approval.
+        }
+        catch (Exception ex) when (ex is IOperationOutcomeUnknown)
+        {
+            if (_token == token)
+            {
+                SetSelfDiagnosticsResult(null);
+                ShowLocalizedErrorMessage("Profile_Device_Recovery_OutcomeUnknown");
+            }
+        }
+        catch (Exception ex) when (ex is IPartiallyCommittedOperation)
+        {
+            if (_token == token)
+            {
+                SetSelfDiagnosticsResult(null);
+                ShowLocalizedErrorMessage("Profile_Device_Recovery_CommittedNeedsReview");
+            }
         }
         catch (Exception ex)
         {

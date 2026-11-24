@@ -3,13 +3,13 @@ using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
+using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Configuration;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Contracts.Notifications;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
-using SQLitePCL;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Persistence;
 
@@ -18,7 +18,47 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Persistence;
 [TestCategory("Integration")]
 public sealed class SqliteSessionTests
 {
-    static SqliteSessionTests() => Batteries_V2.Init();
+    static SqliteSessionTests() => SqliteProviderInitializer.EnsureInitialized();
+
+    [TestMethod]
+    public async Task DeliveryRefresh_IsPublishedOnlyAfterCommit_EvenWithoutAFrontendPublisher()
+    {
+        using var fixture = await SessionFixture.CreateAsync();
+        var activity = new RecordingDeliveryActivity();
+        using var session = fixture.OpenSession(activity: activity);
+        var id = Guid.NewGuid();
+        var changes = new BackendChangeSet();
+        changes.AddEntityMutation(new StoredRevocationReceipt(), true, _ => true);
+        await using (var transaction = await session.BeginTransactionAsync())
+        {
+            session.Stage<TestRow>(SqliteMutation.Operation.Insert,
+                """INSERT INTO "SessionRows" ("Id", "Value") VALUES ($id, X'01');""", null, changes, ("$id", id));
+            await session.SaveChangesAsync();
+            Assert.AreEqual(0, activity.Refreshes);
+            await transaction.RollbackAsync();
+        }
+        Assert.AreEqual(0, activity.Refreshes);
+        await using (var transaction = await session.BeginTransactionAsync())
+        {
+            session.Stage<TestRow>(SqliteMutation.Operation.Insert,
+                """INSERT INTO "SessionRows" ("Id", "Value") VALUES ($id, X'02');""", null, changes, ("$id", id));
+            await session.SaveChangesAsync();
+            Assert.AreEqual(0, activity.Refreshes);
+            await transaction.CommitAsync();
+        }
+        Assert.AreEqual(1, activity.Refreshes);
+        await session.SaveChangesAsync();
+        Assert.AreEqual(1, activity.Refreshes, "An idle flush must not schedule another runtime reconciliation.");
+    }
+
+    private sealed class RecordingDeliveryActivity : IRevocationDeliveryActivity
+    {
+        public int Refreshes { get; private set; }
+        public bool HasActiveWork => false;
+        public IDisposable Enter() => throw new NotSupportedException();
+        public void RequestRefresh() => Refreshes++;
+        public IAsyncEnumerable<bool> ReadRefreshesAsync(CancellationToken ct) => throw new NotSupportedException();
+    }
 
     [TestMethod]
     public async Task StandaloneFlush_WhenSecondWriteFails_RollsBackAllRowsAndNotifications()
@@ -280,7 +320,7 @@ public sealed class SqliteSessionTests
             }
         }
 
-        public SqliteSession OpenSession(IBackendChangePublisher? publisher = null) => new(connections, publisher);
+        public SqliteSession OpenSession(IBackendChangePublisher? publisher = null, IRevocationDeliveryActivity? activity = null) => new(connections, publisher, activity);
 
         public void Dispose() => Directory.Delete(directory, recursive: true);
     }

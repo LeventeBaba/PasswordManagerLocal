@@ -27,7 +27,7 @@ public sealed class UserDataBundleRecoveryTests
     [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Recovery")]
-    public async Task TryReconstructCanonicalAsync_CandidatePermutations_ProduceSameLogicalResultAndPreserveVersions()
+    public async Task PrepareCanonicalRecoveryAsync_CandidatePermutations_ProduceSameLogicalResultAndPreserveVersions()
     {
         using var material = new RecoveryTestMaterial();
         using var key = EncryptionKey.Create();
@@ -82,15 +82,24 @@ public sealed class UserDataBundleRecoveryTests
                 RecoveryTestMaterial.Version(500, DeviceA, InstanceA));
             var local = await material.EncryptUserAsync(localBundle, key);
             local.EncryptedPayload[0] ^= 0x5A;
-            var service = CreateService(new InMemoryUserRepository());
+            var users = new InMemoryUserRepository();
+            await users.AddAsync(local);
+            var damaged = local.EncryptedPayload.ToArray();
+            var source = local;
+            var service = CreateService(users);
 
-            var result = await service.TryReconstructCanonicalAsync(
-                local,
+            using var prepared = await service.PrepareCanonicalRecoveryAsync(
+                local, null,
                 permutation.Select(index => envelopes[index]).ToArray(),
                 key,
                 UserSyncKeyConfidence.VerifiedRemoteSnapshot,
                 expectedKeyEpoch: 1,
                 expectedMembershipEpoch: 1);
+            var result = prepared.Result;
+            MSTestAssert.AreNotSame(source, prepared.User);
+            CollectionAssert.AreEqual(damaged, source.EncryptedPayload);
+            CollectionAssert.AreEqual(damaged, (await users.GetByIdAsync(source.UId))!.EncryptedPayload);
+            local = prepared.User;
 
             MSTestAssert.IsTrue(result.Reconstructed);
             MSTestAssert.AreEqual(3, result.HealthyCandidateCount);
@@ -115,7 +124,7 @@ public sealed class UserDataBundleRecoveryTests
     [DataRow(UserDataBlobKind.Devices)]
     [TestCategory("Backend")]
     [TestCategory("Recovery")]
-    public async Task TryReconstructCanonicalAsync_PartialSalvage_PreservesHealthyLocalComponents(
+    public async Task PrepareCanonicalRecoveryAsync_PartialSalvage_PreservesHealthyLocalComponents(
         UserDataBlobKind damagedComponent)
     {
         using var material = new RecoveryTestMaterial();
@@ -144,7 +153,6 @@ public sealed class UserDataBundleRecoveryTests
             [RecoveryTestMaterial.CreateDevice(remoteDeviceId, "remote-device", RecoveryTestMaterial.Version(1_200, DeviceB, InstanceB))]);
         var local = await material.EncryptUserAsync(localBundle, key);
         var checkpoint = UserCanonicalCheckpointUtil.Create(local, 1, DateTimeOffset.UtcNow, localIdentity);
-        var checkpoints = new MemoryCheckpointRepository(checkpoint);
         var remote = await material.CreateEnvelopeAsync(remoteBundle, key, remoteIdentity, revision: 3);
 
         switch (damagedComponent)
@@ -163,14 +171,16 @@ public sealed class UserDataBundleRecoveryTests
                 break;
         }
 
-        var service = CreateService(new InMemoryUserRepository(), checkpoints, localIdentity);
-        var result = await service.TryReconstructCanonicalAsync(
-            local,
+        var service = CreateService(new InMemoryUserRepository(), localIdentity);
+        using var prepared = await service.PrepareCanonicalRecoveryAsync(
+            local, checkpoint,
             [remote],
             key,
             UserSyncKeyConfidence.ExplicitlyTrusted,
             expectedKeyEpoch: 1,
             expectedMembershipEpoch: 1);
+        var result = prepared.Result;
+        local = prepared.User;
 
         MSTestAssert.IsTrue(result.Reconstructed);
         MSTestAssert.AreEqual(damagedComponent, result.RecoveredComponents);
@@ -281,7 +291,6 @@ public sealed class UserDataBundleRecoveryTests
 
     private static UserDataBundleSyncService CreateService(
         InMemoryUserRepository users,
-        IUserCanonicalCheckpointRepository? checkpoints = null,
         FakeDeviceIdentityService? identity = null)
     {
         var integrity = new UserDataBundleIntegrityService();
@@ -292,7 +301,6 @@ public sealed class UserDataBundleRecoveryTests
             new UserDevicesDataMergeService(),
             new RecoveryTestVersionClock(),
             verification: new UserDataBundleVerificationService(integrity),
-            checkpoints: checkpoints,
             identity: identity);
     }
 

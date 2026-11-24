@@ -39,13 +39,13 @@ public sealed class SyncDeviceIdentityWarmupHostedService : ISyncControlledHoste
         using var scope = _scopeFactory.CreateScope();
         var devices = scope.ServiceProvider.GetRequiredService<IDeviceRepository>();
         var pendingDevices = await devices.ListDevicesNeedingSyncAsync(ct);
-        var operations = scope.ServiceProvider.GetService<IUserControlOperationRepository>();
+        var delivery = scope.ServiceProvider.GetService<IRevocationDeliveryService>();
         var membership = scope.ServiceProvider.GetService<IUserMembershipAuthorizationRepository>();
 
         IReadOnlyList<Device> deletionRelayDevices = [];
-        if (operations is not null && membership is not null)
+        if (delivery is not null && membership is not null)
         {
-            var revokedUserIds = await operations.ListAppliedRevocationUserIdsAsync(ct);
+            var revokedUserIds = await delivery.ListPendingUserIdsAsync(ct);
             var historicalDeviceIds = await membership.ListDeviceIdsForUsersAsync(revokedUserIds, ct);
             deletionRelayDevices = await devices.ListByIdsAsync(historicalDeviceIds, ct);
         }

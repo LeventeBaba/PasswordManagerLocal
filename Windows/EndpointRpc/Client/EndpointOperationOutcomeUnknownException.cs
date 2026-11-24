@@ -2,7 +2,7 @@ using PasswordManagerLocal.Windows.EndpointRpc.Contracts;
 
 namespace PasswordManagerLocal.Windows.EndpointRpc.Client;
 
-public sealed class EndpointOperationOutcomeUnknownException : Exception
+public sealed class EndpointOperationOutcomeUnknownException : Exception, PasswordManagerLocal.Common.Contracts.Errors.IOperationOutcomeUnknown
 {
     public EndpointOperationOutcomeUnknownException(
         EndpointOperationId operationId,

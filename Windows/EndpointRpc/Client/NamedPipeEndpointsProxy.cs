@@ -132,6 +132,17 @@ public sealed class NamedPipeEndpointsProxy : IEndpoints, IAsyncDisposable
         return response.Profile;
     }
 
+    public async Task RemoveLocalProfileAsync(LoginRequest request, bool acknowledgeDataLoss, CancellationToken ct = default)
+    {
+        await InvokeAsync(EndpointOperationId.RemoveLocalProfile,
+            () => new RemoveLocalProfileEndpointRequest
+            {
+                Request = request is null ? null! : EndpointSensitiveData.Clone(request),
+                AcknowledgeDataLoss = acknowledgeDataLoss
+            }, EndpointRpcJsonContext.Default.RemoveLocalProfileEndpointRequest,
+            EndpointRpcJsonContext.Default.EmptyEndpointResponse, ct);
+    }
+
     public async Task DeleteUserAccountAsync(Guid token, byte[] password, CancellationToken ct = default)
     {
         await InvokeAsync(

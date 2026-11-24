@@ -218,16 +218,20 @@ public sealed class WindowsRuntimeOwnershipArchitectureTests
             "Persistence",
             "BackendStorageCleaner.cs"));
 
-        Assert.AreEqual(2, CountOccurrences(runtime, "_storageCleaner.ClearSqlitePools()"));
-        Assert.AreEqual(2, CountOccurrences(runtime, "_storageCleaner.DeleteDatabaseFiles()"));
+        Assert.AreEqual(1, CountOccurrences(runtime, "_storageCleaner.ClearSqlitePools()"));
+        Assert.AreEqual(1, CountOccurrences(runtime, "_storageCleaner.DeleteDatabaseFilesAsync("));
         var resetDisposeIndex = runtime.IndexOf("await DisposeCurrentHostCoreAsync()", StringComparison.Ordinal);
         var resetClearIndex = runtime.IndexOf("_storageCleaner.ClearSqlitePools()", resetDisposeIndex, StringComparison.Ordinal);
-        var resetDeleteIndex = runtime.IndexOf("_storageCleaner.DeleteDatabaseFiles()", resetClearIndex, StringComparison.Ordinal);
+        var resetDeleteIndex = runtime.IndexOf("_storageCleaner.DeleteDatabaseFilesAsync(", resetClearIndex, StringComparison.Ordinal);
 
         Assert.IsTrue(resetDisposeIndex >= 0);
         Assert.IsTrue(resetClearIndex > resetDisposeIndex);
         Assert.IsTrue(resetDeleteIndex > resetClearIndex);
         StringAssert.Contains(cleaner, "SqliteConnection.ClearAllPools()");
+        Assert.IsTrue(cleaner.IndexOf("marker.Flush", StringComparison.Ordinal) <
+            cleaner.IndexOf("DeleteDatabaseFilesCore();", StringComparison.Ordinal));
+        Assert.IsTrue(cleaner.IndexOf("DeleteDatabaseFilesCore();", StringComparison.Ordinal) <
+            cleaner.IndexOf("File.Delete(_paths.DatabaseResetPendingPath)", StringComparison.Ordinal));
     }
 
     [TestMethod]

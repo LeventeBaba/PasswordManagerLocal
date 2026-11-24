@@ -129,7 +129,11 @@ internal sealed class UserRepository(SqliteSession session) : IUserRepository
         using var command = await session.CreateCommandAsync("""UPDATE "Users" SET "SavedKey" = $key WHERE "UId" = $id;""", ct);
         command.Parameters.Add("$key", SqliteType.Blob).Value = (object?)savedKey ?? DBNull.Value;
         command.Parameters.AddWithValue("$id", id);
-        await command.ExecuteNonQueryAsync(ct);
+        try { await command.ExecuteNonQueryAsync(ct); }
+        catch (SqliteException exception) when (SqliteCapacityError.IsCapacityFailure(exception))
+        {
+            throw SqliteCapacityError.Wrap(exception);
+        }
     }
 
     public async Task<IReadOnlyList<User>> GetAllRememberMeEnabledUsersAsync(CancellationToken ct = default) =>

@@ -2,10 +2,12 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Backend.Utils;
 using System.Text.Json;
+using PasswordManagerLocal.Common.Backend.Sync.Recovery;
 
 namespace PasswordManagerLocal.Common.Backend.Services;
 
@@ -70,18 +72,29 @@ public sealed class UserSnapshotPublisherService : IUserSnapshotPublisherService
         return _lifecycle.ExecuteAsync(user.UId, token => GetOrCreateCoreAsync(user, key, keyConfidence, token), ct);
     }
 
+    public Task<UserSyncSnapshot> GetOrCreatePreparedRecoveryAsync(User user, PreparedCanonicalRecovery prepared,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(prepared);
+        if (!prepared.MatchesVerifiedOutput(user))
+            throw new InvalidDataException("The prepared recovery does not prove this canonical generation.");
+        return _lifecycle.ExecuteAsync(user.UId, token => GetOrCreateCoreAsync(user, null,
+            UserSyncKeyConfidence.VerifiedRemoteSnapshot, token, prepared), ct);
+    }
+
     private async Task<UserSyncSnapshot> GetOrCreateCoreAsync(
         User user,
         EncryptionKey? suppliedKey,
         UserSyncKeyConfidence suppliedKeyConfidence,
-        CancellationToken ct)
+        CancellationToken ct,
+        PreparedCanonicalRecovery? prepared = null)
     {
         if (user.UId == Guid.Empty)
             throw new InvalidOperationException("Cannot publish a snapshot for an invalid user.");
         if (_deletionBarriers is not null && await _deletionBarriers.ExistsAsync(user.UId, ct))
             throw new InvalidOperationException("Cannot publish a snapshot for a permanently deleted account identity.");
 
-        await EnforceCanonicalHealthGateAsync(user, suppliedKey, suppliedKeyConfidence, ct);
+        await EnforceCanonicalHealthGateAsync(user, suppliedKey, suppliedKeyConfidence, ct, prepared);
 
         var state = await _states.GetAsync(user.UId, ct);
         var isNewState = state is null;
@@ -242,8 +255,14 @@ public sealed class UserSnapshotPublisherService : IUserSnapshotPublisherService
         User user,
         EncryptionKey? suppliedKey,
         UserSyncKeyConfidence suppliedKeyConfidence,
-        CancellationToken ct)
+        CancellationToken ct,
+        PreparedCanonicalRecovery? prepared = null)
     {
+        // Canonical health cannot settle competing signed histories. Do not reschedule
+        // futile recovery, rewrite the prior publication, or advance counters on a replay.
+        if ((_syncFaults is not null && await _syncFaults.HasTerminalFaultAsync(user.UId, ct)) ||
+            await _snapshots.HasIsolatedForkAsync(user.UId, ct))
+            throw new SyncStateUnavailableException("Unresolved synchronization authority prevents publication.");
         if (_canonicalHealth is null)
         {
             // Test-only/legacy construction remains source compatible, but production DI always
@@ -252,6 +271,8 @@ public sealed class UserSnapshotPublisherService : IUserSnapshotPublisherService
             return;
         }
 
+        if (prepared is not null && !prepared.MatchesVerifiedOutput(user))
+            throw new InvalidDataException("Prepared recovery canonical content changed before publication.");
         EncryptionKey? resolvedKey = null;
         var key = suppliedKey;
         var confidence = suppliedKey is null
@@ -259,7 +280,7 @@ public sealed class UserSnapshotPublisherService : IUserSnapshotPublisherService
             : suppliedKeyConfidence;
         try
         {
-            if (key is null)
+            if (key is null && prepared is null)
             {
                 _keyResolver?.TryResolve(user, out resolvedKey, out confidence);
                 key = resolvedKey;
@@ -268,13 +289,13 @@ public sealed class UserSnapshotPublisherService : IUserSnapshotPublisherService
             var previouslyBlocked = _syncFaults is not null &&
                                     await _syncFaults.IsPublishingBlockedAsync(user.UId, ct);
 
-            if (health.FullyVerified && _syncFaults is not null)
+            if ((health.FullyVerified || (prepared is not null && health.IsPublishable)) && _syncFaults is not null)
             {
                 await _syncFaults.MarkLocalCanonicalRecoveredAsync(user.UId, ct);
-                previouslyBlocked = false;
+                previouslyBlocked = await _syncFaults.IsPublishingBlockedAsync(user.UId, ct);
             }
 
-            if (!health.IsPublishable || (previouslyBlocked && !health.FullyVerified))
+            if (!health.IsPublishable || previouslyBlocked)
             {
                 var stale = await GetLatestAsync(user.UId, user.KeyEpoch, ct);
                 if (stale is not null)

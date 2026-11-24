@@ -71,5 +71,6 @@
   "Agent.Ipc.RegisteredUiRequired": "This operation requires the currently registered Password Manager Local UI.",
   "Agent.Runtime.DatabaseConfigurationInvalid": "The local database configuration is missing or damaged.",
   "Agent.Runtime.DatabaseKeyUnavailable": "The protected local database key cannot be recovered in this installation or operating-system account.",
-  "Agent.Runtime.DatabaseUnreadable": "The local database cannot be read with its configured encryption key."
+  "Agent.Runtime.DatabaseUnreadable": "The local database cannot be read with its configured encryption key.",
+  "Agent.Runtime.DatabaseResetIncomplete": "A confirmed local database reset did not finish. Surviving files are preserved and startup is blocked."
 }

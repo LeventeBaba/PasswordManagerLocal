@@ -17,9 +17,11 @@
     <UpToDateCheckOutput Include="$(PmlWindowsIconFile)" Set="PmlWindowsIcon" />
     <UpToDateCheckInput Include="$(PmlWindowsIconFile)" />
   </ItemGroup>
+  <!-- Avalonia also packages resources during IDE design-time builds. Generate
+       the shared SVG-derived icon before that consumer on a clean checkout. -->
   <Target Name="GeneratePmlWindowsIcon"
-          BeforeTargets="PrepareForBuild;CoreCompile;GetCopyToOutputDirectoryItems"
-          Condition="'$(PmlWindowsIconGenerator)' != '' and '$(DesignTimeBuild)' != 'true'"
+          BeforeTargets="PrepareForBuild;CoreCompile;GetCopyToOutputDirectoryItems;GenerateAvaloniaResources"
+          Condition="'$(PmlWindowsIconGenerator)' != ''"
           Inputs="$(PmlIconSvg);$(PmlWindowsIconGenerator)"
           Outputs="$(PmlWindowsIconFile)">
     <Exec Command="$(PmlIconPowerShell) -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(PmlWindowsIconGenerator)&quot; -SvgPath &quot;$(PmlIconSvg)&quot; -IconPath &quot;$(PmlWindowsIconFile)&quot;" />

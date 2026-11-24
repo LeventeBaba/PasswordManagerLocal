@@ -23,6 +23,7 @@ public sealed class FakeInteractiveSessionStateService : IInteractiveSessionStat
     public int ActivateCalls { get; private set; }
     public int DeactivateCalls { get; private set; }
     public Exception? ActivateFailure { get; set; }
+    public Exception? LogoutFailure { get; set; }
     public List<Guid> InvalidatedCacheUserIds { get; } = [];
     public Dictionary<Guid, EncryptionKey> UserKeys { get; } = [];
 
@@ -94,6 +95,7 @@ public sealed class FakeInteractiveSessionStateService : IInteractiveSessionStat
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (LogoutFailure is not null) throw LogoutFailure;
         if (IsActive)
             _authSessions?.LogoutUser(userId, reason);
 

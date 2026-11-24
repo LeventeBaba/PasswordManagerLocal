@@ -44,5 +44,6 @@ public enum EndpointOperationId
     UpdatePasswordTag = 40,
     RunSelfDiagnosticsAndRepair = 41,
     // Operation ID 42 was retired with the explicit device-presence refresh action.
-    ConfirmSelfDiagnosticsRepair = 43
+    ConfirmSelfDiagnosticsRepair = 43,
+    RemoveLocalProfile = 44
 }

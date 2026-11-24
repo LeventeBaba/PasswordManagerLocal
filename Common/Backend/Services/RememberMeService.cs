@@ -26,11 +26,13 @@ public class RememberMeService : IRememberMeService
     private readonly IUserCanonicalHealthService? _canonicalHealth;
     private readonly IUserDataRecoveryCoordinator? _recoveryCoordinator;
     private readonly IUserRepository? _users;
+    private readonly IUserForkRecoveryService? _forkRecovery;
 
     private readonly IUserLifecycleCoordinator? _lifecycle;
     private readonly IUserLoginPreparationService? _preparation;
     private readonly IUserPostLoginWorkScheduler? _postLogin;
     private readonly IAuthenticatedSessionIssuer? _sessionIssuer;
+    private readonly PasswordManagerLocal.Common.Backend.Abstractions.Persistence.ICriticalControlIngressStore? _ingress;
 
     public RememberMeService(
         ITokenService tokens,
@@ -50,12 +52,15 @@ public class RememberMeService : IRememberMeService
         IUserLifecycleCoordinator? lifecycle = null,
         IUserLoginPreparationService? preparation = null,
         IUserPostLoginWorkScheduler? postLogin = null,
-        IAuthenticatedSessionIssuer? sessionIssuer = null)
+        IAuthenticatedSessionIssuer? sessionIssuer = null,
+        PasswordManagerLocal.Common.Backend.Abstractions.Persistence.ICriticalControlIngressStore? ingress = null,
+        IUserForkRecoveryService? forkRecovery = null)
     {
         _lifecycle = lifecycle;
         _preparation = preparation;
         _postLogin = postLogin;
         _sessionIssuer = sessionIssuer;
+        _ingress = ingress;
         _tokens = tokens;
         _keys = keys;
         _protector = protector;
@@ -70,6 +75,7 @@ public class RememberMeService : IRememberMeService
         _canonicalHealth = canonicalHealth;
         _recoveryCoordinator = recoveryCoordinator;
         _users = users;
+        _forkRecovery = forkRecovery;
     }
 
 
@@ -89,7 +95,10 @@ public class RememberMeService : IRememberMeService
 
         foreach (var user in usersEnabledRM)
         {
-            var token = await TryInitializeRememberedUserAsync(user, ct);
+            if (_ingress?.IsSuspended(user.UId) == true) continue;
+            Guid? token;
+            try { token = await TryInitializeRememberedUserAsync(user, ct); }
+            catch (PasswordManagerLocal.Common.Contracts.Errors.PendingSecurityOperationException) { continue; }
             if (token is not null)
                 initializedTokens.Add(token.Value);
         }
@@ -234,6 +243,15 @@ public class RememberMeService : IRememberMeService
                             user, key, UserSyncKeyConfidence.RememberMe, recordFault: true, ct: ct);
                         if (health.State is not (UserDataVerificationState.Healthy or UserDataVerificationState.CheckpointMissing))
                             throw new UnauthorizedAccessException("The local account copy could not be verified.");
+                    }
+
+                    if (_forkRecovery is not null && await _forkRecovery.CanAccessIndependentCanonicalAsync(user, ct))
+                    {
+                        if (_preparation is not null) await _preparation.EnsureAuthorizedAsync(user.UId, ct);
+                        var readToken = _sessionIssuer is not null
+                            ? _sessionIssuer.IssueAuthenticatedSession(user.UId, key, bundle) : _tokens.Issue(user.UId);
+                        if (_sessionIssuer is null) _keys.SetUserKey(readToken, key);
+                        return readToken;
                     }
 
                     UserDeviceLoginUtil.UpdateCurrentDeviceLastLoginDate(

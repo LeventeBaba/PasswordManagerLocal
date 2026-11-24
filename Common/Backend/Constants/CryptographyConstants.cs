@@ -7,4 +7,5 @@ public static class CryptographyConstants
     public const int AesGcmNonceSizeInBytes = 12;
     public const int AesGcmTagSizeInBytes = 16;
     public const int DefaultAesFrameSizeBytes = 64 * 1024;
+    public const int MaxAesFrameSizeBytes = 1024 * 1024;
 }

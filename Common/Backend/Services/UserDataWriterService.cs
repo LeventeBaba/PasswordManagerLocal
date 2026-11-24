@@ -31,6 +31,7 @@ public sealed class UserDataWriterService : IUserDataWriterService
     private readonly IUnitOfWork _uow;
     private readonly IUserLoginIdentityProjectionService _loginIdentities;
     private readonly IUserCanonicalHealthService? _canonicalHealth;
+    private readonly IUserSyncFaultService? _syncFaults;
 
     public UserDataWriterService(
         IUserRepository users,
@@ -45,7 +46,8 @@ public sealed class UserDataWriterService : IUserDataWriterService
         IUserLifecycleCoordinator lifecycle,
         IUnitOfWork uow,
         IUserLoginIdentityProjectionService loginIdentities,
-        IUserCanonicalHealthService? canonicalHealth = null)
+        IUserCanonicalHealthService? canonicalHealth = null,
+        IUserSyncFaultService? syncFaults = null)
     {
         _reader = reader;
         _users = users;
@@ -60,10 +62,24 @@ public sealed class UserDataWriterService : IUserDataWriterService
         _uow = uow;
         _loginIdentities = loginIdentities;
         _canonicalHealth = canonicalHealth;
+        _syncFaults = syncFaults;
     }
 
-    public Task ExecuteMutationAsync(Guid token, Func<CancellationToken, Task> mutation, CancellationToken ct = default) =>
-        _lifecycle.ExecuteAsync(_interactiveState.GetUserIdFromToken(token), mutation, ct);
+    public Task ExecuteMutationAsync(Guid token, Func<CancellationToken, Task> mutation, CancellationToken ct = default)
+    {
+        var userId = _interactiveState.GetUserIdFromToken(token);
+        return _lifecycle.ExecuteAsync(userId, async inner =>
+        {
+            await EnsureWritableAsync(userId, inner);
+            await mutation(inner);
+        }, ct);
+    }
+
+    private async Task EnsureWritableAsync(Guid userId, CancellationToken ct)
+    {
+        if (_syncFaults is not null && await _syncFaults.HasTerminalFaultAsync(userId, ct))
+            throw new SyncStateUnavailableException("This profile requires secure device recovery before changes can be saved.");
+    }
 
     public Task ExecuteMutationsAsync(Guid firstToken, Guid secondToken, Func<CancellationToken, Task> mutation, CancellationToken ct = default)
     {
@@ -71,7 +87,12 @@ public sealed class UserDataWriterService : IUserDataWriterService
         var second = _interactiveState.GetUserIdFromToken(secondToken);
         // Stable ordering prevents opposite-direction profile exports from deadlocking.
         if (first.CompareTo(second) > 0) (first, second) = (second, first);
-        return _lifecycle.ExecuteAsync(first, inner => _lifecycle.ExecuteAsync(second, mutation, inner), ct);
+        return _lifecycle.ExecuteAsync(first, inner => _lifecycle.ExecuteAsync(second, async owned =>
+        {
+            await EnsureWritableAsync(first, owned);
+            if (second != first) await EnsureWritableAsync(second, owned);
+            await mutation(owned);
+        }, inner), ct);
     }
 
     public async Task AddNewUserAsync(User user, CancellationToken ct = default)
@@ -91,6 +112,7 @@ public sealed class UserDataWriterService : IUserDataWriterService
 
     public async Task UpdateUserAsync(User user, bool enqueueSync, CancellationToken ct = default)
     {
+        await EnsureWritableAsync(user.UId, ct);
         user.LastModifiedAt = DateTimeOffset.UtcNow;
         user.GenerateIntegrityHash();
         _users.Update(user);
@@ -142,6 +164,7 @@ public sealed class UserDataWriterService : IUserDataWriterService
         bool enqueueSync,
         CancellationToken ct)
     {
+        await EnsureWritableAsync(user.UId, ct);
         var persisted = await _users.GetByIdAsNoTrackingAsync(user.UId, ct)
             ?? throw new UserNotFoundException();
         if (bundle.CanonicalGeneration is not null &&
@@ -298,6 +321,7 @@ public sealed class UserDataWriterService : IUserDataWriterService
         bool preserveLogicalTimestamps,
         CancellationToken ct)
     {
+        await EnsureWritableAsync(user.UId, ct);
         _integrity.UpdateModifiedBlobIntegrity(bundle, modifiedBlobs);
         _validator.EnsureUserDataBundleCanBePersisted(bundle, user);
 

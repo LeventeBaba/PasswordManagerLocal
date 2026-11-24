@@ -1,4 +1,5 @@
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Sync.Recovery;
 using PasswordManagerLocal.Common.Backend.Security;
 
 namespace PasswordManagerLocal.Common.Backend.Abstractions.Services;
@@ -13,4 +14,8 @@ public interface IUserSnapshotPublisherService
         UserSyncKeyConfidence keyConfidence,
         CancellationToken ct = default) =>
         GetOrCreateAsync(user, ct);
+    Task<UserSyncSnapshot> GetOrCreatePreparedRecoveryAsync(User user, PreparedCanonicalRecovery prepared,
+        CancellationToken ct = default) =>
+        throw new NotSupportedException("Prepared recovery publication is unavailable.");
 }
+

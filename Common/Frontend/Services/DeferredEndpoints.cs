@@ -58,6 +58,9 @@ public sealed class DeferredEndpoints : IEndpoints
     }
 
 
+    public Task RemoveLocalProfileAsync(LoginRequest request, bool acknowledgeDataLoss, CancellationToken ct = default) =>
+        InvokeAsync((endpoints, operationToken) => endpoints.RemoveLocalProfileAsync(request, acknowledgeDataLoss, operationToken), ct);
+
     public async Task DeleteUserAccountAsync(Guid token, byte[] password, CancellationToken ct = default)
     {
         await InvokeAsync((endpoints, operationToken) => endpoints.DeleteUserAccountAsync(token, password, operationToken), ct);

@@ -147,7 +147,7 @@ internal sealed class RecoveryTestMaterial : IDisposable
     public async Task<UserSnapshotEnvelope> CreateEnvelopeAsync(
         UserDataBundle bundle,
         EncryptionKey key,
-        FakeDeviceIdentityService origin,
+        IDeviceIdentityService origin,
         long revision,
         DateTimeOffset? timestamp = null,
         long keyEpoch = 1,

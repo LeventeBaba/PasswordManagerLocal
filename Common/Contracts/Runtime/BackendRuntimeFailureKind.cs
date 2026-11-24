@@ -11,5 +11,6 @@ public enum BackendRuntimeFailureKind
     ShutdownFailure,
     DatabaseConfigurationInvalid,
     DatabaseKeyUnavailable,
-    DatabaseUnreadable
+    DatabaseUnreadable,
+    DatabaseResetIncomplete
 }

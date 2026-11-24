@@ -16,5 +16,6 @@ public enum UserDataRecoveryState : byte
     BackoffActive = 11,
     DatabaseUnhealthy = 12,
     TransactionConflict = 13,
-    Failed = 14
+    Failed = 14,
+    LocalInstallationUnauthorized = 15
 }

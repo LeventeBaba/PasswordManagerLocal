@@ -1,3 +1,5 @@
+using PasswordManagerLocal.Common.Contracts.BackgroundSync;
+
 namespace PasswordManagerLocal.Android.Runtime;
 
 public sealed record AndroidBackgroundSyncServiceState(
@@ -14,15 +16,17 @@ public sealed record AndroidBackgroundSyncServiceState(
     AndroidServiceStartPhase ServiceStartPhase,
     bool IsRuntimeReady,
     bool RequiresUserAction,
-    AndroidNotificationAvailability NotificationAvailability)
+    AndroidNotificationAvailability NotificationAvailability,
+    BackgroundSyncOperationalState OperationalState = BackgroundSyncOperationalState.Unspecified)
 {
     public bool IsOperational =>
         IsEnabled &&
-        IsForegroundActive &&
+        (OperationalState == BackgroundSyncOperationalState.EnabledIdle ||
+        (IsForegroundActive &&
         IsBackgroundLeaseActive &&
         IsRuntimeReady &&
         !IsSecureStorageDeferred &&
         !RequiresProcessRestart &&
         !RequiresUserAction &&
-        FailureKind == AndroidBackgroundSyncFailureKind.None;
+        FailureKind == AndroidBackgroundSyncFailureKind.None));
 }

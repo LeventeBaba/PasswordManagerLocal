@@ -29,7 +29,7 @@ internal sealed class UserOriginRemovalCutoffRepository(SqliteSession session) :
         (nameof(UserOriginRemovalCutoff.ResultingMembershipEpoch), row => row.ResultingMembershipEpoch),
         (nameof(UserOriginRemovalCutoff.UserId), row => row.UserId),
         (nameof(UserOriginRemovalCutoff.UserKeyEpoch), row => row.UserKeyEpoch)
-    ], trackChanges: false);
+    ], trackChanges: true);
 
     public async Task<UserOriginRemovalCutoff?> GetAsync(
         Guid userId, Guid deviceId, Guid originInstanceId, long userKeyEpoch, CancellationToken ct = default) =>

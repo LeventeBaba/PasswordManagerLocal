@@ -26,7 +26,9 @@ internal sealed class ControllableQueueWriterService : ISyncQueueWriterService
 
     public bool FailNextEnqueue { get; set; }
 
-    public Task EnqueueAsync(
+    public Func<CancellationToken, Task>? BeforeEnqueueAsync { get; set; }
+
+    public async Task EnqueueAsync(
         SyncItem item,
         long changedAtTs,
         IReadOnlyCollection<Guid> excludedDeviceIds,
@@ -34,13 +36,14 @@ internal sealed class ControllableQueueWriterService : ISyncQueueWriterService
         bool activateTargets,
         CancellationToken ct = default)
     {
+        if (BeforeEnqueueAsync is not null) await BeforeEnqueueAsync(ct);
         if (FailNextEnqueue)
         {
             FailNextEnqueue = false;
             throw new InvalidOperationException("Injected recovery queue failure.");
         }
 
-        return _inner.EnqueueAsync(
+        await _inner.EnqueueAsync(
             item,
             changedAtTs,
             excludedDeviceIds,

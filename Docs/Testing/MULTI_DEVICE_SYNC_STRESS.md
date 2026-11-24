@@ -1,113 +1,163 @@
-# Multi-device synchronization stress test
+# Multi-device synchronization tests
 
-The five-device regression test is in:
+The synchronization suites use production services with isolated SQLite vaults, encrypted snapshots, signed authority, revision knowledge, queues, and protocol handlers. [ProductionSyncTestHost](../../Common/Tests/TestInfrastructure/ProductionSyncTestHost.cs) replaces OS transport with authenticated in-process transport. [MultiDeviceSyncStressFixture](../../Common/Tests/Backend/Services/MultiDeviceSyncStressFixture.cs) shares enrollment, topology, restart, healing, and convergence helpers across five-device scenarios.
 
-`Common/Tests/Backend/Services/MultiDeviceConvergenceStressTests.cs`
+## Opt-in scenarios
 
-Both stress-test classes share the production-backed host and synchronization
-helpers in `Common/Tests/Backend/Services/MultiDeviceSyncStressFixture.cs`.
-Each source file defines exactly one matching primary type, as required by the
-architecture guard. The opt-in categories and test behavior remain unchanged.
+Synchronization cases require `PASSWORDMANAGERLOCAL_SYNC_STRESS=1`; wire-limit cases require `PASSWORDMANAGERLOCAL_SECURITY_STRESS=1`. Without their opt-in flag, these tests report inconclusive before exercising the workload. Normal suite filters exclude `SyncStress`, `SyncStressExtended`, and `SecurityStress`.
 
-This test uses five independently enrolled production backend instances, each with its own
-SQLite database, repository layer, encrypted snapshots, version clocks, signed operations,
-queues, and protocol handlers. Only the operating-system network transport is replaced
-with the repository's existing in-process authenticated transport.
+| Suite / scenario | Category | Seeds / setup | Coverage |
+| --- | --- | --- | --- |
+| [MultiDeviceConvergenceStressTests](../../Common/Tests/Backend/Services/MultiDeviceConvergenceStressTests.cs) | `SyncStress` | `1701`, `20261111`; five devices | Partitions, concurrent writes, edit/delete races, tags/colors, relay, failed transfer/retry, persistent restart, chain/mesh convergence |
+| [MultiDeviceRuntimeEligibilityStressTests](../../Common/Tests/Backend/Services/MultiDeviceRuntimeEligibilityStressTests.cs) | `SyncStress` | `20261115`, `7719`; five devices | Offline eligibility, peer disable/re-enable, duplicate wake-ups, controlled-service failure/retry, persisted restart decisions |
+| [MultiDeviceAdversarialChurnStressTests](../../Common/Tests/Backend/Services/MultiDeviceAdversarialChurnStressTests.cs) | `SyncStressExtended` | `271828`, `314159`; five devices | Stale fifth replica, 12 write/partition waves, relay restart, queue loss, anti-entropy recovery, second partition/convergence, no resurrection |
+| [LockedRelayRestart](../../Common/Tests/Backend/Services/Relay/RegularSyncEndToEndTests.cs) | `SyncStressExtended` | Three-device scenario | Pending signed-envelope custody across locked relay restart, indirect merge, and merge after unlock |
+| [EnrollmentRemovalCycles](../../Common/Tests/Backend/Services/Storage/DatabaseGrowthBaselineTests.cs) | `SyncStressExtended`, `DatabaseGrowthBaseline` | Four enrollment/removal cycles | Bounded live membership with retained historical-authority measurements |
+| [BoundedStorageGrowthStressTests](../../Common/Tests/Backend/Persistence/BoundedStorageGrowthStressTests.cs) | `SyncStressExtended`, `BoundedGrowth` | Seed `1701`; file-backed vault per collection; reduced 32 KiB category budgets | Structural history exhaustion and repeated refusal across snapshot/origin, control/membership, revocation/debt and recovery/fault collections |
+| [RecoveredCanonicalPublication](../../Common/Tests/Backend/Services/Recovery/RegularSyncEndToEndTests.cs) | `SyncStressExtended`, `Recovery`, `TransactionHardening` | Enrolled pair; latest edit published before root damage | Old-session rejection and recovered credential after fresh login, exact pending snapshot across locked restart, and merge without redelivery |
+| [FiveDevices_DelayedDeliveryAndLockedRecipients](../../Common/Tests/Backend/Services/AuthenticatedForkRemovalTests.cs) | `SyncStressExtended`, `DeviceRemoval` | Five independent installations | Signed fork exclusion, delayed removal delivery and locked recipients |
+| [EvidenceCompaction_RepeatedDuplicateArrivals](../../Common/Tests/Backend/Services/EvidenceCompaction/RevocationReceiptServiceTests.cs) | `SyncStressExtended`, `EvidenceCompaction`, `BoundedGrowth` | Three peers; file-backed vault; 64 duplicate-proof rounds | Cross-session schema visibility, stable row counts and storage charges after authenticated evidence reclamation |
+| [TcpEnrollment_EnforcesSnapshotByteLimitBeforeImport](../../Common/Tests/Backend/Services/Adversarial/DeviceEnrollmentEndToEndTests.cs) | `SecurityStress` | At-limit and oversized payload cases | Enrollment snapshot byte admission before import |
+| [ProductionTcp_EnforcesAggregateDeltaBytes](../../Common/Tests/Backend/Services/Adversarial/RegularSyncEndToEndTests.cs) | `SecurityStress` | At-limit and oversized aggregate cases | Total bytes admitted during one TCP delta exchange |
+| [ProductionTcp_GlobalLimitAppliesAcrossDistinctLoopbackSources](../../Common/Tests/Backend/Services/Adversarial/RegularSyncEndToEndTests.cs) | `SecurityStress` | Multiple loopback source addresses | Global connection limit across distinct sources |
 
-## Running
+Five-device cases enroll independent installations; databases are not cloned. Enrollment preflight propagates signed membership before partitioning. Reachable edges are explicit. Queue-loss scenarios remove queue bookkeeping while retaining the durable signed snapshots needed for anti-entropy.
 
-The test is opt-in to keep everyday test runs fast. After building the project yourself,
-run from the repository root:
+Convergence assertions compare logical IDs, metadata, secrets, tags/colors, deletion state, and queue drain as applicable. Independent writes must survive; competing versions can resolve to one deterministic winner. Seeds fix intended operations/topologies, not thread scheduling. Five-device convergence/runtime cases allow 12 minutes per seed; extended churn allows 20 minutes per seed.
 
-```cmd
- dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj --no-build --environment "PASSWORDMANAGERLOCAL_SYNC_STRESS=1" --filter "TestCategory=SyncStress"
+## Commands
+
+On Windows, double-click [Tools/Run-Common-Stress-Tests.bat](../../Tools/Run-Common-Stress-Tests.bat) to restore/build Common.Tests and run all three opt-in categories in Debug, including every declared seed and data row. The runner enables both flags only in test-host processes, resolves the solution relative to its own location, shows console output and saves TRX results under `artifacts/test-results/common-stress`. It returns the test command's exit code and keeps the window open for review.
+
+```bat
+Tools\Run-Common-Stress-Tests.bat
+Tools\Run-Common-Stress-Tests.bat Release
+Tools\Run-Common-Stress-Tests.bat Debug --no-pause
 ```
 
-If not built yet, omit `--no-build`. The test runs two fixed replayable random seeds,
-`1701` and `20261111`. A failure includes the seed, the step, active graph edges, and
-per-device membership IDs, signed control-operation epochs and statuses, fault diagnostics, durable queues, and transport failures. For a single-seed reproduction, temporarily keep
-only the applicable `[DataRow(...)]` on the test method.
+`--no-pause` is useful from a terminal or automation. A security scenario may still report inconclusive if the operating system does not provide multiple loopback source addresses; the runner does not bypass that capability check. Review the final test summary and TRX files for skipped/inconclusive cases.
 
-## What is exercised
+Commands use PowerShell from the repository root after a Debug build. `--environment` enables stress only in test hosts.
 
-1. Sequential enrollment of five separate devices. Every new pair explicitly enables local sync and completes authenticated control-inventory/queue exchange before the next enrollment. Signed membership still must propagate to all existing devices over the chain before editing starts.
-2. Offline independent password additions on all five devices, repeated across four
-   changing partitions with randomized write order and session direction.
-3. Concurrent edits to one existing password, and an edit-vs-delete race on another.
-4. Password tags and custom colors created independently on different devices.
-5. Multi-hop forwarding from device 0 to device 4, with no direct network link.
-6. Injected failed delta transfer, durable queue retention, and retry propagation.
-7. Restart of device 2 from its persistent database while disconnected, followed by
-   a new edit and reconnection.
-8. Eventual propagation through a chain, then full-mesh anti-entropy and queue drain.
-9. Agreement on logical password IDs, metadata, hashes of decrypted secrets, tags, and
-   custom colors, plus preservation of every uniquely created password.
+```powershell
+# Both five-device categories, including extended relay/membership cases.
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --environment 'PASSWORDMANAGERLOCAL_SYNC_STRESS=1' --filter 'TestCategory=SyncStress|TestCategory=SyncStressExtended' --logger 'trx;LogFilePrefix=sync-stress'
 
-## Limits and interpretation
+# Standard convergence and runtime eligibility.
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --environment 'PASSWORDMANAGERLOCAL_SYNC_STRESS=1' --filter 'TestCategory=SyncStress'
 
-The test does not simulate actual TCP/UDP packet timing, Android process suspension,
-clock jumps, or arbitrary Byzantine devices. It establishes deterministic agreement
-for the tested schedules; it does not prove universal convergence for every possible
-combination of concurrent operations. Conflict resolution may legitimately choose
-one of two competing updates, or a deletion over an update; the test verifies that
-all replicas agree and unrelated changes are preserved.
+# Extended adversarial churn, locked relay, and membership measurement.
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --environment 'PASSWORDMANAGERLOCAL_SYNC_STRESS=1' --filter 'TestCategory=SyncStressExtended'
 
-Do not remove a failing seed or increase retry limits simply to make a failure pass.
-Use the recorded seed, schedule, queue state, and snapshots to investigate first.
-
-
-## Extended adversarial churn test (separate opt-in category)
-
-The additional test is in
-`Common/Tests/Backend/Services/MultiDeviceAdversarialChurnStressTests.cs`.
-It reuses the same production-backed five-device test fixture and is considerably
-slower than the original two-seed test. Run it separately **after building**:
-
-```cmd
- dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj --no-build --environment "PASSWORDMANAGERLOCAL_SYNC_STRESS=1" --filter "TestCategory=SyncStressExtended"
+# One class, retaining all of its declared data rows.
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --environment 'PASSWORDMANAGERLOCAL_SYNC_STRESS=1' --filter 'FullyQualifiedName~MultiDeviceAdversarialChurnStressTests'
 ```
 
-It uses the reproducible operation/topology seeds `271828` and `314159`, with a
-20-minute per-case timeout. Seeds fix the intended operation order and graph
-schedule, not operating-system thread scheduling. Use a filter such as
-`--filter "FullyQualifiedName~FiveDevices_StaleReplicaQueueLossAndRepeatedChurn_ConvergeWithoutResurrection&TestCategory=SyncStressExtended"`
-to run just this test method (both seeds). To isolate one seed, temporarily
-comment out the other `[DataRow]`; retain both in the committed source.
+The fixed seeds and healing-pass limits are part of regression coverage. Failures identify the seed, step/wave, topology, device, authority state, queue state, and transport observations. Investigate that state before changing retry ceilings or expected convergence.
 
-### New coverage (not simply more repetitions of the baseline test)
+## Supporting regression suites
 
-1. Keep a **long-lived fifth peer fully disconnected** while the other four
-   repeatedly partition, perform 12 waves of independent writes and competing
-   edits, exchange snapshots over changing topologies, and restart relays.
-2. Delete an item on the active side; prove the four active replicas agree on
-   the tombstone while the fifth still carries the old live version.
-3. Create another publication on the stale peer, erase **all its pending
-   outgoing queue entries**, restart the peer, and reconnect it through a single
-   link. Its new data must still propagate through **snapshot anti-entropy**,
-   while the old deleted item must not be resurrected.
-4. Require the five devices to reach canonical logical agreement and drain
-   pending queues in a full mesh. Verify the **exact decrypted secret bytes** of
-   every independently created password on every device, not merely its name.
-5. After this first convergence, partition **all five devices again**. Make
-   additional independent writes plus five competing edits to the same password,
-   restart a relay, and converge over a different multi-hop chain.
-6. Require a second full-mesh quiescence, no deleted-item resurrection, no lost
-   independent secret, and stability after redundant anti-entropy exchanges.
+| Area | Test suites |
+| --- | --- |
+| Committed eligibility and lifecycle | `SyncRuntimeEligibilityTests`, `SyncRuntimeCommittedTransitionTests`, `SyncRuntimeServiceTests`, `SyncRuntimeResilienceTests` |
+| Worker/network behavior | `DeviceSyncTaskServiceTests`, `NetworkSignatureChangeTrackerTests`, `SyncNetworkRefreshExecutionProfileTests`, `LocalDiscoveryNetworkLeaseTests` |
+| Revocation and deletion | `RevocationReceiptServiceTests`, account-lifecycle and revocation partials of `RegularSyncEndToEndTests`, interrupted-export scenario |
+| Recovery durability/concurrency | `UserDataRecoveryCoordinatorTests`, `AutomaticRecoveryTriggerTests`, `UserRecoverySessionServiceTests`, lifecycle and tombstone suites |
+| Android ownership/restoration | `AndroidRuntimeServiceHostTests`, `AndroidBackgroundRestorationPolicyTests`, `AndroidServiceStartStateMachineTests` |
+| Windows ownership/IPC | `WindowsAgentBackendRuntimeOwnerTests`, `WindowsBackgroundSyncCoordinatorTests`, Windows IPC and Endpoint RPC suites |
 
-This is an intentionally adversarial recovery test. It deliberately erases
-**queue bookkeeping** through the existing test-host helper; it does **not**
-delete encrypted snapshots or modify production synchronization code. The
-expected behavior is recovery through the production anti-entropy protocol.
+```powershell
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --filter 'FullyQualifiedName~SyncRuntime|FullyQualifiedName~DeviceSyncTaskServiceTests|FullyQualifiedName~NetworkSignatureChangeTrackerTests'
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --filter 'FullyQualifiedName~RevocationReceiptServiceTests|FullyQualifiedName~FinalDeletionReceipt_RestartBeforeExport|FullyQualifiedName~UserDataRecoveryCoordinatorTests'
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --filter 'FullyQualifiedName~AndroidRuntimeServiceHostTests|FullyQualifiedName~AndroidBackgroundRestorationPolicyTests|FullyQualifiedName~AndroidServiceStartStateMachineTests'
+dotnet test .\Windows\Tests.IPC\PasswordManagerLocal.Windows.Tests.IPC.csproj -c Debug --no-build --no-restore
+dotnet test .\Windows\Tests.EndpointRpc\PasswordManagerLocal.Windows.Tests.EndpointRpc.csproj -c Debug --no-build --no-restore
+```
 
-### Troubleshooting
+## Fixture ownership and deterministic boundaries
 
-The test logs the seed, wave, reachable edges, writers, restart, and queue-loss
-count. `HealUntilAsync` includes per-device membership epochs, operations,
-transport failures, pending queues, and password names when a convergence
-checkpoint fails. Do not reduce the assertions, remove a failing seed, or
-silently raise the healing-pass limit. First determine whether the fault is in
-simulated scheduling, recovery logic, merge semantics, or the test's assumptions.
+`ProductionSyncTestHost` owns its post-login consumer, protocol workers, temporary database directory, and service provider. Restart preserves the on-disk vault/installation identity and creates a new host. Disposal joins owned work before releasing services/files.
 
-As with the original stress test, this does **not** simulate real Wi-Fi, Android
-service suspension, arbitrary clock skew, or every possible interleaving. Passing
-both seeds is valuable evidence, but cannot prove universal convergence.
+`SqliteProviderInitializerTests` keeps guarded SQLite connections open while initializing another fixture, concurrently requesting initialization, invoking the package's late initialization path and forcing full garbage collections. Both pooled and unpooled reopen must retain working admission callbacks and committed writes. A source guard requires application and fixture registration to pass through the single process initializer. This regression targets the Linux CI test-host crash caused by a collected provider callback; it belongs to the normal suite.
+
+`ControlledDelayTimeProvider` gates one-shot supervisor delays. Explicit signals/gates control startup, shutdown, retry, and recovery fault injection. Production app code has no test fault switches.
+
+Initial-read gate release makes deferred post-login reconciliation runnable; it does not join the consumer. Tests measuring unchanged canonical state during rejected admission use the existing per-user lifecycle coordinator around the baseline, requests, and readback. Nested inbox calls remain reentrant and execute real transactions. Ordinary transfer idleness alone does not establish canonical-write idleness.
+
+The historical-budget stress scenario uses `SqliteStorageFileFixture` for each collection, and the repeated evidence-compaction stress scenario uses that same bounded file-backed fixture through `SqliteRepositoryTestDatabase.CreateFileBackedAsync`. Setup, independent readers, budget changes, receipt application, measurements and compaction sessions address each scenario's initialized persistent database image. Ordinary repository fixtures retain their shared-memory default. A fast repository regression verifies committed user data and the deletion-barrier table through independently opened file-backed sessions.
+
+Partial test classes are grouped by behavior under `AccountLifecycle`, `Adversarial`, `FailureInjection`, `Recovery`, `Relay`, `RevocationDelivery`, `Runtime`, `Storage`, `StorageSecurity`, `EvidenceCompaction`, and `CausalGc`. Each file retains the matching primary type name. SDK default compile inclusion discovers those files without explicit project entries.
+
+## Storage baselines
+
+The `DatabaseGrowthBaseline` category uses [SqliteStorageMeasurement](../../Common/Tests/TestInfrastructure/Storage/SqliteStorageMeasurement.cs) to capture main/WAL/SHM/journal lengths, page/freelist counts, journal mode, every persistent table's row count, and aggregate BLOB lengths. Explicit PASSIVE checkpoint samples record busy/log/checkpointed-frame status. Output contains counts and lengths rather than plaintext vault data or keys.
+
+Workloads cover unchanged synchronization, repeated discovery, bounded live-data edits/remote merges, receipt/custody exchanges, enrollment/removal, recovery attempts, rejected authentication/malformed envelopes, backend restart, control anti-entropy, and causal tombstone collection. No-op/admission cases assert idempotence; fixed-origin cases check applicable snapshot row bounds. Membership churn retains signed history rather than deleting evidence to meet a file-size assertion.
+
+```powershell
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --filter 'TestCategory=DatabaseGrowthBaseline&TestCategory!=SyncStressExtended' --logger 'console;verbosity=normal' --logger 'trx;LogFilePrefix=storage-baseline'
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --environment 'PASSWORDMANAGERLOCAL_SYNC_STRESS=1' --filter 'TestCategory=DatabaseGrowthBaseline' --logger 'trx;LogFilePrefix=storage-baseline-complete'
+```
+
+Stable file size or row count does not establish a lifetime storage bound. BLOBs can grow within fixed rows; SQLite can reuse free pages or retain allocated space after deletion. Connection closure can checkpoint/remove WAL sidecars. Interpret row/BLOB totals, allocated/used-page estimates, and sidecar/checkpoint samples together.
+
+## Storage capacity tests
+
+The same measurement helper also captures charged category usage, category capacities, the main-page ceiling, auto-checkpoint configuration and retained-journal target. The [admission inventory](../Architecture/APPLICATION.md#storage-admission-and-limits) defines their meaning, hard native limits and platform-validation scope.
+
+| Category / suite | Assertions |
+| --- | --- |
+| `StorageBudget` / `SqliteStorageBudgetTests` | Every application table has insert/update/delete guards; finite row sizes and profile count; byte growth and UTF-8 accounting; savepoint/outer rollback; no failed-flush notifications; no-growth upsert; deletion/cascade releases; restart does not reset usage; conservative analyzer preserves barriers |
+| `StorageBudget` / service regressions | Valid signed snapshot rejected at capacity cannot advance knowledge or alter canonical data; exhausted revocation reserve preserves pending deletion/barrier without an applied receipt; local mutations retain the preceding committed vault/checkpoint |
+| `SecurityIngress` | Failed initial control admission retains the exact received envelope and blocks affected-profile access across reopen/restart; no author verification before custody when the ingress budget is full; duplicates stabilize; invalid signatures release their temporary fence; completion requires durable proof; post-commit cleanup failure/retry; prerequisite epoch bounds and control-scope retirement; unaffected-profile access and real receipt/barrier recovery |
+| `StorageBudget` / codec and AES tests | Exact stream limits, repeated reads/writes and trailing input; forged oversized frame header rejected before renting buffers |
+| `StoragePhysical` | Per-open configuration, competing logical writers, actual SQLITE_FULL rollback and freelist reuse; native commit overshoot/pinned-reader WAL limits; rollback-journal and shared-memory limits; shared temporary-file allowance and release; encrypted pooled reopen/rekey; bounded incremental reclamation preserves evidence; older images avoid automatic rewrite |
+| `WalPressure` (also `StoragePhysical`) | Pinned-reader write refusal and stable rejected retries across connection/factory reopen; admission on every table and accounting path; independent-clock failure; already-open session retry and notification behavior; forced spills within one transaction and rollback; incomplete schema/unconfigured-handle rejection; encrypted URI filenames and pooled reopen |
+| `MigrationStorage` (also `StoragePhysical`) | Exact/oversized copy admission, existing-slot preservation, cancellation and changed input length; workspace refusal and retry; structural verification before cleanup/promotion; empty images and ambiguous recovery artifacts; fixed-copy counts across restarts; blocked checkpoint preservation; WAL-resident pages cannot bypass the main-image limit; native rekey workspace/journal exhaustion preserves the original and permits a later retry |
+| `StorageAuxiliary` | Repeated replacement/cleanup failures reuse one settings slot across store recreation; committed values survive; legacy orphan cleanup preserves unrelated files; cancellation cannot remove another writer's slot; physical competing settings/key initializers; key-recovery files survive unavailable/invalid configuration; protected-key size rejection; finite debug-log bytes/count across restarts and competing writers, UTF-8 truncation and lock contention |
+| `BoundedGrowth` | Finite reduced budgets, then repeated rejected admissions without additional persistent rows or charges; structural rows test admission independently of cryptographic authorization |
+
+```powershell
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --filter 'TestCategory=StorageBudget' --logger 'trx;LogFilePrefix=storage-budget'
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --filter 'TestCategory=SecurityIngress' --logger 'trx;LogFilePrefix=security-ingress'
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --filter 'TestCategory=StoragePhysical' --logger 'trx;LogFilePrefix=storage-physical'
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --filter 'TestCategory=WalPressure' --logger 'trx;LogFilePrefix=wal-pressure'
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --filter 'TestCategory=MigrationStorage' --logger 'trx;LogFilePrefix=migration-storage'
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --filter 'TestCategory=StorageAuxiliary' --logger 'trx;LogFilePrefix=storage-auxiliary'
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --environment 'PASSWORDMANAGERLOCAL_SYNC_STRESS=1' --filter 'TestCategory=BoundedGrowth' --logger 'trx;LogFilePrefix=bounded-growth'
+```
+
+The original pinned-reader test demonstrates that PASSIVE checkpointing leaves frames outstanding. The WAL-pressure suite uses reduced thresholds and a controlled monotonic clock to exercise refusal, throttled maintenance and resumption without sleeps. The spill workload uses a small SQLite page cache in its isolated connection. These pressure tests assert stable rejected retries and transactional state preservation. The separate `SqliteBoundedVfsTests` deliberately set the pressure threshold above a reduced hard WAL limit and exercise native commit/spill refusal, rollback preservation and resumption after a reader gap. They also exercise rollback journals, shared memory, competing temporary handles, encrypted rekey and incremental page reclamation. The existing measurement helper records the pressure allowance alongside actual WAL/main/SHM lengths and logical budgets.
+
+Reduced budgets and pressure thresholds apply only to isolated test factories. Production defaults remain generous. Auxiliary-file tests use injected replacement/cleanup failures and seeded interrupted staging files, plus physical lock/concurrent-writer tests; they do not simulate a machine power loss or establish filesystem rename durability on every platform. Structural admission tests do not establish correctness for every signed churn/recovery interleaving; the existing authenticated synchronization, revocation, recovery, fork, cutoff and prerequisite suites remain part of release validation. The critical-ingress tests cover the initial control-write and post-application cleanup boundaries; the native VFS tests cover physical refusal separately. The rotating diagnostic writer is tested directly in Debug and Release, while its production call sites remain Debug-only.
+
+Migration tests use small encrypted databases and internal reduced image limits/free-space probes. Deliberately violated CHECK constraints preserve a readable header while causing structural verification to fail, without modifying arbitrary encrypted bytes. Existing stage/backup files must survive those failures. Zero-byte and allocated-but-empty images cannot authorize dropping a healthy staged candidate. The copy tests use bounded streams for cancellation and length-change boundaries; they do not require multi-gigabyte fixture files. The native-rekey exhaustion regression uses reduced native WAL, journal and temporary allowances; repeated failure must preserve the exact original before a successful retry with normal allowances. No test creates a filesystem free-space reservation. Native ABI and actual power-loss/rename durability still require Windows/Android release validation. No build or tests were executed while completing this implementation.
+
+## Evidence compaction and pending causal evidence
+
+The `EvidenceCompaction` category extends the existing signed revocation scenarios with duplicate-proof reclamation, exact receipt/custody preservation, completed and pending delivery, missing/mismatching proof, reset/conflict retention, changed captures, failed-write accounting rollback, concurrent captures and reduced-capacity admission. Keyset tests put blocked or oversized records before independently reclaimable history. Analyzer tests cover all sixteen evidence tables, immutable composite receipt cursors, dependency references, scope validation and read-only behavior. Maintenance tests verify post-commit proof generations, rollback, coalescing, continuation, failed/exhausted-generation suppression and timestamp-only duplicate stability.
+
+Recovered-origin fault cases verify UTF-8 accounting, exact retention of non-diagnostic evidence, replay/fork rejection, unavailable/unauthorized replacement proof, stored-only knowledge, journals, active conflicts, replacement histories, cutoff enforcement, write failure and revalidation. The opt-in churn case repeatedly restores an old duplicate revocation representation and verifies stable row/charge totals after cleanup; necessary historical operation/fault identities do not disappear.
+
+The `CausalGC` category reuses encrypted bundles, signed envelopes and historical author verification in fast fixtures and a production-composition SQLite fixture. Two distinct deletion anchors verify partial collection against an old-key pending revision whose logical contents were incorporated indirectly. Missing anchor/merged proof, changed exact hashes, row/signature tampering, recovery candidates, isolated corruption and terminal forks retain deletions.
+
+Production-SQLite cases cover checkpoint validity, independent-session reopen, complete backend restart, cancellation after canonical/publication flush, injected write/capacity failure with full accounting rollback, and canonical reconstruction after diagnostic compaction. A publication gate and an entry observer around the unmodified production lifecycle coordinator create controlled overlap with incoming snapshots, evidence compaction, signed account deletion, key replacement, device removal and canonical recovery. The observer preserves real locking, reentrancy and ingress fencing; it does not substitute fake authority. These cases cover the collector winning the publication boundary and the competing operation following it. Existing authority-first blockers, anti-entropy, relay, removal, recovery and opt-in multi-device suites remain part of release validation; arbitrary interleavings and physical-device behavior require broader validation.
+
+```powershell
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --filter 'TestCategory=EvidenceCompaction&TestCategory!=SyncStressExtended'
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --filter 'TestCategory=CausalGC|FullyQualifiedName~UserTombstoneGarbageCollectorTests|FullyQualifiedName~UserTombstoneGarbageCollectorIntegrationTests'
+dotnet test .\Common\Tests\PasswordManagerLocal.Common.Tests.csproj -c Debug --no-build --no-restore --environment 'PASSWORDMANAGERLOCAL_SYNC_STRESS=1' --filter 'TestCategory=EvidenceCompaction&TestCategory=SyncStressExtended'
+```
+
+Builds, tests and application execution were not run during this implementation. Source-level checks do not establish compilation, convergence or supported-platform acceptance.
+
+## Physical-device coverage
+
+In-process transport and controlled runtime services do not reproduce OS socket timing, Wi-Fi multicast, platform scheduling, force-stop, or installer behavior.
+
+| Platform | Physical checks |
+| --- | --- |
+| Windows | Sign-in startup; frontend closure/reopen with one Agent; enabled idle; last-peer disable/re-enable/block/unblock; offline peer return; sleep/resume; interface/firewall changes; Agent restart; upgrade; revocation-only delivery; final receipt with another eligible profile; retry/restart status |
+| Android | Foreground notification/readiness; activity closure/replacement; enabled idle and local reactivation; screen lock/sleep; Wi-Fi/router multicast; reboot/first unlock; supported service restoration; notification/start restrictions; battery/OEM limits; revocation-only delivery; remembered-key recovery; force-stop behavior |
+
+Passing the seeded cases establishes behavior for those scenarios. It does not establish universal convergence across every interleaving or guarantee platform restoration when the operating system forbids execution.

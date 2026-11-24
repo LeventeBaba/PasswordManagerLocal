@@ -235,6 +235,7 @@ public sealed class WindowsAgentStatusProviderTests
     [DataRow(BackendRuntimeFailureKind.DatabaseConfigurationInvalid, BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid)]
     [DataRow(BackendRuntimeFailureKind.DatabaseKeyUnavailable, BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable)]
     [DataRow(BackendRuntimeFailureKind.DatabaseUnreadable, BackendRuntimeFailureStatusKind.DatabaseUnreadable)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseResetIncomplete, BackendRuntimeFailureStatusKind.DatabaseResetIncomplete)]
     public async Task DatabaseRecoveryStatusPreservesCauseAndVersionMetadata(
         BackendRuntimeFailureKind runtimeKind, BackendRuntimeFailureStatusKind wireKind)
     {
@@ -250,6 +251,7 @@ public sealed class WindowsAgentStatusProviderTests
                 {
                     BackendRuntimeFailureKind.DatabaseCompatibility => new PasswordManagerLocal.Common.Contracts.Errors.DatabaseVersionNotSupportedException(99, 12, 12),
                     BackendRuntimeFailureKind.DatabaseConfigurationInvalid => new PasswordManagerLocal.Common.Contracts.Errors.DatabaseConfigurationInvalidException(),
+                    BackendRuntimeFailureKind.DatabaseResetIncomplete => new PasswordManagerLocal.Common.Contracts.Errors.DatabaseResetIncompleteException(),
                     BackendRuntimeFailureKind.DatabaseKeyUnavailable => new PasswordManagerLocal.Common.Contracts.Errors.DatabaseKeyUnavailableException(),
                     _ => new PasswordManagerLocal.Common.Contracts.Errors.DatabaseUnreadableException()
                 })

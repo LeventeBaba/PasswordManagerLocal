@@ -11,6 +11,16 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Security;
 public sealed class AES256Tests
 {
     [TestMethod]
+    [TestCategory("StorageBudget")]
+    public async Task ForgedLargeFrameHeader_IsRejectedBeforeBufferAllocation()
+    {
+        using var key = EncryptionKey.Create();
+        var encrypted = await AES256.EncryptAsync(new byte[32], key);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(encrypted.AsSpan(13, 4), int.MaxValue);
+        await MSTestAssert.ThrowsExactlyAsync<CryptographicException>(() => AES256.DecryptAsync(encrypted, key));
+    }
+
+    [TestMethod]
     [TestCategory("Backend")]
     [TestCategory("Security")]
     public async Task DecryptAsync_ReadsLegacyMultiFrameFormat()

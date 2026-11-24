@@ -68,8 +68,13 @@ public static class BackendServiceCollectionExtensions
         services.AddSingleton<IKeyProtector>(keyProtector);
         services.AddSingleton<ILocalDiscoveryNetworkLease>(discoveryNetworkLease);
         services.AddSingleton<SqliteConnectionFactory>();
+        services.AddSingleton<ICriticalControlIngressStore, CriticalControlIngressStore>();
         services.AddSingleton<IBackendInitializationService, BackendInitializationService>();
         services.AddScoped<SqliteSession>();
+        services.AddSingleton<SynchronizationEvidenceMaintenanceState>();
+        services.AddScoped<SqliteStorageRetentionAnalyzer>();
+        services.AddScoped<SqliteSynchronizationEvidenceCompactor>();
+        services.AddScoped<IUserCanonicalRecoveryStore, UserCanonicalRecoveryStore>();
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<SqliteSession>());
         services.AddScoped<IUserAccountDeletionStore, UserAccountDeletionStore>();
         services.AddScoped<IUserRecoveryJournalStore, UserRecoveryJournalStore>();
@@ -78,6 +83,7 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<IUserDeviceRepository, UserDeviceRepository>();
         services.AddScoped<ILocalUserDeviceRepository, LocalUserDeviceRepository>();
         services.AddScoped<ISyncRouteRepository, SyncRouteRepository>();
+        services.AddScoped<ISyncRuntimeEligibilityService, SyncRuntimeEligibilityRepository>();
         services.AddScoped<ISyncQueueRepository, SyncQueueRepository>();
         services.AddScoped<ISyncItemRepository, SyncItemRepository>();
         services.AddScoped<ISyncTombstoneRepository, SyncTombstoneRepository>();
@@ -85,6 +91,11 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<IUserSyncSnapshotRepository, UserSyncSnapshotRepository>();
         services.AddScoped<IUserSyncStateRepository, UserSyncStateRepository>();
         services.AddScoped<IUserRevisionKnowledgeRepository, UserRevisionKnowledgeRepository>();
+        services.AddScoped<IRevocationReceiptRepository, RevocationReceiptRepository>();
+        services.AddScoped<IRevocationReceiptService, RevocationReceiptService>();
+        services.AddScoped<IRevocationDeliveryService, RevocationDeliveryService>();
+        services.AddSingleton<IRevocationDeliveryActivity, RevocationDeliveryActivity>();
+        services.AddSingleton<RevocationDeliveryRuntimeHostedService>();
         services.AddScoped<IUserControlOperationRepository, UserControlOperationRepository>();
         services.AddScoped<IUserControlStateRepository, UserControlStateRepository>();
         services.AddScoped<IUserMembershipAuthorizationRepository, UserMembershipAuthorizationRepository>();
@@ -201,9 +212,13 @@ public static class BackendServiceCollectionExtensions
         services.AddSingleton<TcpSyncServerHostedService>();
         services.AddSingleton<SyncNetworkRefreshHostedService>();
         services.AddSingleton<ISyncControlledHostedService>(sp => sp.GetRequiredService<SyncDeviceIdentityWarmupHostedService>());
+        // The passive authenticated control listener belongs to backend lifetime, independently of active discovery.
+        services.AddSingleton<PassiveDiscoveryHostedService>();
+        services.AddSingleton<IPassiveSyncRuntime>(sp => sp.GetRequiredService<PassiveDiscoveryHostedService>());
         services.AddSingleton<ISyncControlledHostedService>(sp => sp.GetRequiredService<TcpSyncServerHostedService>());
         services.AddSingleton<ISyncControlledHostedService>(sp => sp.GetRequiredService<LocalDiscoveryHostedService>());
         services.AddSingleton<ISyncControlledHostedService>(sp => sp.GetRequiredService<SyncNetworkRefreshHostedService>());
+        services.AddSingleton<IBackendHostedService>(sp => sp.GetRequiredService<RevocationDeliveryRuntimeHostedService>());
 
         return services;
     }
@@ -239,6 +254,8 @@ public static class BackendServiceCollectionExtensions
         services.AddScoped<ILocalDeviceSettingsService, LocalDeviceSettingsService>();
         services.AddScoped<IUserDeviceQueryService, UserDeviceQueryService>();
         services.AddScoped<IUserDeviceSettingsService, UserDeviceSettingsService>();
+        services.AddScoped<IUserLocalProfileService, UserLocalProfileService>();
+        services.AddScoped<IUserForkRecoveryService, UserForkRecoveryService>();
         services.AddScoped<IUserDeviceDisconnectionService, UserDeviceDisconnectionService>();
         services.AddScoped<IUserRecoveryJournalService, UserRecoveryJournalService>();
         services.AddSingleton<UserRecoveryJournalHostedService>();

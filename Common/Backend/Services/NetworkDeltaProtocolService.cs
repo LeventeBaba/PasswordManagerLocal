@@ -24,6 +24,7 @@ public sealed class NetworkDeltaProtocolService : INetworkDeltaProtocolService
     private readonly IUserMembershipAuthorizationService _membershipAuthorization;
     private readonly IUserMembershipAuthorizationRepository? _membershipHistory;
     private readonly IDeletedUserBarrierRepository? _deletionBarriers;
+    private readonly ICriticalControlIngressStore? _criticalIngress;
 
     private static readonly string[] SensitiveLocalOnlyPropertyNames =
     [
@@ -46,7 +47,8 @@ public sealed class NetworkDeltaProtocolService : INetworkDeltaProtocolService
         IDeviceIdentityService identity,
         IUserMembershipAuthorizationService membershipAuthorization,
         IUserMembershipAuthorizationRepository? membershipHistory = null,
-        IDeletedUserBarrierRepository? deletionBarriers = null)
+        IDeletedUserBarrierRepository? deletionBarriers = null,
+        ICriticalControlIngressStore? criticalIngress = null)
     {
         _devices = devices;
         _userDevices = userDevices;
@@ -55,6 +57,7 @@ public sealed class NetworkDeltaProtocolService : INetworkDeltaProtocolService
         _membershipAuthorization = membershipAuthorization;
         _membershipHistory = membershipHistory;
         _deletionBarriers = deletionBarriers;
+        _criticalIngress = criticalIngress;
     }
 
     public async Task<ValidatedNetworkDelta> ValidateAndReadAsync(NetworkDelta delta, CancellationToken ct = default)
@@ -76,7 +79,22 @@ public sealed class NetworkDeltaProtocolService : INetworkDeltaProtocolService
 
         ValidateEnvelope(delta, payload);
         SyncCryptoUtil.ValidatePayloadIntegrity(payload, delta.Ts);
-        await ValidateUserSnapshotOriginAsync(payload, ct);
+        var critical = payload.UserControlOperation?.OperationType is
+            UserControlOperationType.DeviceRemoval or UserControlOperationType.AccountDeletion;
+        byte[]? ingressHash = null;
+        if (critical && _criticalIngress is not null)
+        {
+            // Reject an unrelated transport route before retaining any account evidence.
+            // Historical route authorization does not verify the control author's new authority.
+            await ValidateSourceAuthorizationAsync(sourceDevice, payload, ct);
+            ingressHash = await _criticalIngress.RetainAsync(payload.UserControlOperation!, sourceDevice.Id, ct);
+        }
+        try { await ValidateUserSnapshotOriginAsync(payload, ct); }
+        catch (Exception failure) when (failure is InvalidDataException or UnauthorizedAccessException)
+        {
+            if (ingressHash is not null) await _criticalIngress!.DiscardAsync(ingressHash, CancellationToken.None);
+            throw;
+        }
         await ValidateDeviceIdentityImmutabilityAsync(sourceDevice, payload, ct);
 
         return new ValidatedNetworkDelta(sourceDevice, payload);

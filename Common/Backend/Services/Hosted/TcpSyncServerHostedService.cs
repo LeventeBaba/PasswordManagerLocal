@@ -16,28 +16,42 @@ using PasswordManagerLocal.Common.Backend.Diagnostics;
 
 namespace PasswordManagerLocal.Common.Backend.Services.Hosted;
 
-public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
+public sealed class TcpSyncServerHostedService : ISyncControlledHostedService, ISyncRuntimeHealth
 {
     private readonly IDeviceIdentityService _identity;
     private readonly SyncPeerProtocolHandler _handler;
-    private readonly IEnrollmentRuntimeState _enrollmentState;
     private readonly IBackendExecutionProfileProvider? _executionProfileProvider;
+    private readonly IRevocationDeliveryActivity? _deliveryActivity;
     private readonly SemaphoreSlim _connectionSlots = new(SyncConstants.MaxConcurrentSyncConnections, SyncConstants.MaxConcurrentSyncConnections);
     private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
     private readonly ConcurrentDictionary<string, int> _connectionsByRemoteIp = new(StringComparer.OrdinalIgnoreCase);
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
     private Task? _acceptLoopTask;
+    private bool _passiveOwner;
+    public bool RequiresProcessRestart { get; private set; }
+    private readonly ConcurrentDictionary<long, TaskCompletionSource> _connections = new();
+    private long _nextConnectionId;
+    public bool IsHealthy
+    {
+        get
+        {
+            var task = _acceptLoopTask;
+            _ = task?.Exception; // Observe faults; the supervisor owns recovery.
+            return _listener is not null && task is { IsCompleted: false };
+        }
+    }
 
     public TcpSyncServerHostedService(
         IDeviceIdentityService identity,
         SyncPeerProtocolHandler handler,
         IEnrollmentRuntimeState enrollmentState,
-        IBackendExecutionProfileProvider? executionProfileProvider = null)
+        IBackendExecutionProfileProvider? executionProfileProvider = null,
+        IRevocationDeliveryActivity? deliveryActivity = null)
     {
+        _deliveryActivity = deliveryActivity;
         _identity = identity;
         _handler = handler;
-        _enrollmentState = enrollmentState;
         _executionProfileProvider = executionProfileProvider;
     }
 
@@ -59,12 +73,7 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
         await _lifecycleLock.WaitAsync(cancellationToken);
         try
         {
-            if (!_identity.IsSyncOn && !_enrollmentState.IsActive)
-            {
-                BackendDebugLog.Info("TCP sync server was not started because synchronization is disabled on this device.");
-                return;
-            }
-
+            if (RequiresProcessRestart) throw new InvalidOperationException("The TCP listener requires a complete process restart.");
             if (_listener is not null)
                 return;
 
@@ -79,7 +88,7 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
                 listener.Start();
                 _listener = listener;
                 _cts = lifetime;
-                _acceptLoopTask = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => AcceptLoopAsync(listener, lifetime.Token), CancellationToken.None);
+                _acceptLoopTask = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => SuperviseAcceptLoopAsync(listener, lifetime.Token), CancellationToken.None);
                 var localEndpoint = listener.LocalEndpoint;
                 BackendDebugLog.Info($"TCP sync server listening on {localEndpoint}. ProcessId={Environment.ProcessId}, ExclusiveAddressUse={listener.ExclusiveAddressUse}.");
                 if (_identity.IsSyncOn && _executionProfileProvider?.IsInteractive == false)
@@ -104,36 +113,59 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
     }
 
 
-    public async Task StopAsync(CancellationToken cancellationToken)
+    internal async Task StartPassiveAsync(CancellationToken ct)
+    {
+        _passiveOwner = true;
+        try { await StartAsync(ct); } catch { _passiveOwner = false; throw; }
+    }
+    internal async Task StopPassiveAsync(CancellationToken ct)
+    {
+        _passiveOwner = false;
+        await StopAsync(ct);
+    }
+    internal Task RestorePassiveAsync(CancellationToken ct) => _passiveOwner ? StartAsync(ct) : Task.CompletedTask;
+
+    public Task StopAsync(CancellationToken cancellationToken) => StopCoreAsync(cancellationToken, force: false);
+    internal Task StopForNetworkRefreshAsync(CancellationToken ct) => StopCoreAsync(ct, force: true);
+
+    private async Task StopCoreAsync(CancellationToken cancellationToken, bool force)
     {
         await _lifecycleLock.WaitAsync(cancellationToken);
         try
         {
+            if (_passiveOwner && !force) return;
             var lifetime = _cts;
             var listener = _listener;
             var acceptLoopTask = _acceptLoopTask;
-
-            _cts = null;
-            _listener = null;
-            _acceptLoopTask = null;
 
             lifetime?.Cancel();
             listener?.Stop();
 
             if (acceptLoopTask is not null)
-                await Task.WhenAny(acceptLoopTask, Task.Delay(TimeSpan.FromSeconds(2), cancellationToken));
-
+            {
+                try { await acceptLoopTask.WaitAsync(TimeSpan.FromSeconds(2), cancellationToken); }
+                catch when (acceptLoopTask.IsCompleted) { /* A terminated accept loop owns no live work. */ }
+            }
+            await Task.WhenAll(_connections.Values.Select(connection => connection.Task))
+                .WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+            _cts = null;
+            _listener = null;
+            _acceptLoopTask = null;
             lifetime?.Dispose();
 
             if (listener is not null)
                 BackendDebugLog.Info($"TCP sync server stopped on port {SyncConstants.SyncPort}.");
         }
-        finally
-        {
-            _lifecycleLock.Release();
-        }
+        catch { RequiresProcessRestart = true; throw; }
+        finally { _lifecycleLock.Release(); }
     }
 
+
+    private async Task SuperviseAcceptLoopAsync(TcpListener listener, CancellationToken ct)
+    {
+        try { await AcceptLoopAsync(listener, ct); }
+        finally { if (!ct.IsCancellationRequested) _deliveryActivity?.RequestRefresh(); }
+    }
 
     private async Task AcceptLoopAsync(TcpListener listener, CancellationToken ct)
     {
@@ -155,16 +187,8 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
             }
             catch (Exception ex)
             {
-                BackendDebugLog.Error($"TCP sync server accept failed: {ex.Message}", ex);
-                try
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
-                }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
-                continue;
+                BackendDebugLog.Error("TCP synchronization accept loop failed.", ex);
+                throw; // The owner must clean up this listener before retrying.
             }
 
             if (!TryBeginConnection(client, out var remoteIp))
@@ -175,7 +199,14 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
             }
 
             BackendDebugLog.Info($"TCP sync server accepted an incoming connection from {remoteIp}.");
-            _ = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(() => HandleClientAsync(client, remoteIp, ct), CancellationToken.None);
+            var connectionId = Interlocked.Increment(ref _nextConnectionId);
+            var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _connections[connectionId] = completion;
+            _ = PasswordManagerLocal.Common.Backend.Utils.IndependentBackgroundWork.Run(async () =>
+            {
+                try { await HandleClientAsync(client, remoteIp, ct); }
+                finally { completion.TrySetResult(); _connections.TryRemove(connectionId, out _); }
+            }, CancellationToken.None);
         }
     }
 
@@ -245,6 +276,7 @@ public sealed class TcpSyncServerHostedService : ISyncControlledHostedService
             if (frame is null)
                 return;
 
+            using var deliveryLease = context.SyncHelloAccepted ? _deliveryActivity?.Enter() : null;
             try
             {
                 switch (frame.Type)

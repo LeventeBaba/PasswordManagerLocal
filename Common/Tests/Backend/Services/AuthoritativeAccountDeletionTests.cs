@@ -141,6 +141,8 @@ public sealed class AuthoritativeAccountDeletionTests
             cutoffs,
             identity);
         var lifecycle = new UserLifecycleCoordinator();
+        var receiptRepository = new RevocationReceiptRepository(uow);
+        var receipts = new RevocationReceiptService(receiptRepository, authorizations, operations, identity, lifecycle, uow);
         var writer = new UserControlOperationWriterService(
             operations,
             states,
@@ -166,7 +168,8 @@ public sealed class AuthoritativeAccountDeletionTests
             auth,
             runtime,
             uow,
-            enrollment);
+            enrollment,
+            revocationReceipts: receipts);
 
         await MSTestAssert.ThrowsExactlyAsync<InvalidOperationException>(() => cleanup.DeleteCanonicalAndPendingStateAsync(user.UId));
         await using (var transaction = await uow.BeginTransactionAsync())
@@ -189,6 +192,12 @@ public sealed class AuthoritativeAccountDeletionTests
         MSTestAssert.AreEqual(UserControlOperationStatus.Applied, operation.Status);
         MSTestAssert.AreEqual(operation.OperationId, barrier.DeletionOperationId);
         MSTestAssert.IsTrue(operation.OperationHash.SequenceEqual(barrier.OperationHash));
+        var appliedReceipt = RevocationDeliveryReceiptUtil.Deserialize(
+            (await receiptRepository.ListAsync(operation.OperationId)).Single().Payload);
+        MSTestAssert.AreEqual(identity.LocalDeviceId, appliedReceipt.RecipientDeviceId);
+        MSTestAssert.AreEqual(RevocationReceiptKind.Applied, appliedReceipt.Kind);
+        RevocationDeliveryReceiptUtil.Verify(appliedReceipt,
+            UserControlOperationEnvelopeUtil.Deserialize(operation.EnvelopePayload), authorization);
         MSTestAssert.HasCount(0, await database.UserSyncSnapshots.ListForUserAsync(user.UId));
         MSTestAssert.HasCount(0, await database.UserRevisionKnowledge.ListAsync(user.UId, user.KeyEpoch));
         MSTestAssert.IsNull(await database.UserSyncStates.GetAsync(user.UId));
@@ -365,12 +374,16 @@ public sealed class AuthoritativeAccountDeletionTests
             new ThrowingDeletionCleanupService(),
             new FakeAuthService(),
             new FakeSyncRuntimeService(),
-            database.UnitOfWork);
+            database.UnitOfWork,
+            revocationReceipts: new RevocationReceiptService(database.RevocationReceipts, database.UserMembershipAuthorizations,
+                database.UserControlOperations, identity, lifecycle, database.UnitOfWork));
 
         await MSTestAssert.ThrowsExactlyAsync<InvalidOperationException>(() => deletion.DeleteUserAsync(user.UId));
 
         MSTestAssert.IsNotNull(await database.Users.GetByIdAsync(user.UId));
         MSTestAssert.IsNull(await database.DeletedUserBarriers.GetAsync(user.UId));
+        using (var command = await database.UnitOfWork.CreateCommandAsync("SELECT COUNT(*) FROM RevocationDeliveryReceipts;"))
+            MSTestAssert.AreEqual(0L, (long)(await command.ExecuteScalarAsync())!);
         MSTestAssert.IsFalse((await database.UserControlOperations.ListForUserAsync(user.UId))
             .Any(row => row.OperationType == UserControlOperationType.AccountDeletion));
     }

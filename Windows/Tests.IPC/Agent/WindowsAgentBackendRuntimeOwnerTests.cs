@@ -4,12 +4,50 @@ using PasswordManagerLocal.Common.Contracts.Runtime;
 using PasswordManagerLocal.Common.Contracts.BackgroundSync;
 using PasswordManagerLocal.Windows.Agent.Backend;
 using PasswordManagerLocal.Windows.Tests.IPC.Infrastructure;
+using PasswordManagerLocal.Common.Backend.Models;
 
 namespace PasswordManagerLocal.Windows.Tests.IPC.Agent;
 
 [TestClass]
 public sealed class WindowsAgentBackendRuntimeOwnerTests
 {
+    [TestMethod]
+    public async Task FrontendReasonReleaseDuringRetry_KeepsOneBackgroundOwnerAndPublishesRecoveredHealth()
+    {
+        var runtime = new FakeAgentOwnedBackendRuntime();
+        var lifetime = new BackendRuntimeLifetimeCoordinator(runtime);
+        var creations = 0;
+        await using var owner = new WindowsAgentBackendRuntimeOwner(() =>
+        {
+            creations++;
+            return new BackendRuntimeComposition(runtime, lifetime, @"C:\agent-data");
+        });
+        await owner.StartAsync();
+        await using var background = await owner.AcquireBackgroundSyncLeaseAsync();
+        var interactive = await lifetime.AcquireAsync(BackendLifetimeReason.InteractiveUi);
+        try
+        {
+            runtime.SetSyncSnapshot(new(SyncRuntimeState.Degraded, new IOException("transient discovery failure"),
+                SyncRuntimeReason.NormalProfileSynchronization));
+            await interactive.DisposeAsync();
+            Assert.AreEqual(BackendLifetimeReason.BackgroundSync, owner.Snapshot.ActiveReasons);
+            Assert.IsTrue(owner.Snapshot.Synchronization.IsRetryable);
+            Assert.IsFalse(owner.Snapshot.RequiresProcessRestart);
+            Assert.AreEqual(0, runtime.StopCount);
+            for (var index = 0; index < 12; index++)
+                runtime.SetSyncSnapshot(new(SyncRuntimeState.Running, null,
+                    SyncRuntimeReason.NormalProfileSynchronization | SyncRuntimeReason.PendingRevocationDelivery));
+            // Final custody removes only the exceptional reason. Ordinary synchronization keeps ownership.
+            runtime.SetSyncSnapshot(new(SyncRuntimeState.Running, null, SyncRuntimeReason.NormalProfileSynchronization));
+            Assert.AreEqual(SyncRuntimeState.Running, owner.Snapshot.Synchronization.State);
+            Assert.AreEqual(BackendLifetimeReason.BackgroundSync, owner.Snapshot.ActiveReasons);
+            Assert.AreEqual(1, creations);
+            Assert.AreEqual(1, runtime.EnsureStartedCount);
+            Assert.AreEqual(0, runtime.StopCount);
+        }
+        finally { await interactive.DisposeAsync(); }
+    }
+
     [TestMethod]
     public async Task RepeatedStartCreatesExactlyOneRuntimeComposition()
     {

@@ -236,7 +236,7 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
                 UserSyncSnapshotStatus.Pending or
                 UserSyncSnapshotStatus.LocalPublished or
                 UserSyncSnapshotStatus.MergedReceipt or
-                UserSyncSnapshotStatus.IsolatedFork)
+                UserSyncSnapshotStatus.IsolatedFork or UserSyncSnapshotStatus.RetiredForkEvidence)
             .ToList();
         if (authorizations.Count > TombstoneConstants.MaxMembershipHistoryRowsPerUser ||
             cutoffs.Count > TombstoneConstants.MaxRemovalCutoffRowsPerUser ||
@@ -341,7 +341,7 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
 
     private static DeviceEnrollmentPendingSnapshot ToPendingSnapshot(UserSyncSnapshot row)
     {
-        var isQuarantined = row.Status == UserSyncSnapshotStatus.IsolatedFork;
+        var isQuarantined = row.Status is UserSyncSnapshotStatus.IsolatedFork or UserSyncSnapshotStatus.RetiredForkEvidence;
         return new DeviceEnrollmentPendingSnapshot
         {
             EnvelopePayload = row.EnvelopePayload.ToArray(),
@@ -355,6 +355,7 @@ public sealed class DeviceEnrollmentSnapshotService : IDeviceEnrollmentSnapshotS
             ConflictingSnapshotHash = isQuarantined && row.ConflictingSnapshotHash is { Length: > 0 }
                 ? row.ConflictingSnapshotHash.ToArray()
                 : null,
+            ConflictingEnvelopePayload = isQuarantined ? row.ConflictingEnvelopePayload?.ToArray() : null,
             ReceivedAtUtc = row.ReceivedAtUtc
         };
     }

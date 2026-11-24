@@ -104,6 +104,14 @@ public sealed class EndpointRpcBackendErrorMapper
                     EndpointRpcErrorCode.OperationRejected,
                     EndpointFailureKind.LimitReached,
                     "The endpoint operation was rejected."),
+            StorageCapacityExceededException =>
+                Error(
+                    EndpointRpcErrorCode.OperationRejected,
+                    EndpointFailureKind.LimitReached,
+                    "More data cannot currently be saved because local storage capacity has been reached."),
+            PendingSecurityOperationException =>
+                Error(EndpointRpcErrorCode.OperationRejected, EndpointFailureKind.Generic,
+                    "A pending security transition temporarily blocks this profile."),
             DeviceEnrollmentException enrollmentException =>
                 MapDeviceEnrollmentError(enrollmentException.ErrorCode),
             DeviceIdentityNotInitilaizedException =>
@@ -172,6 +180,10 @@ public sealed class EndpointRpcBackendErrorMapper
             DuplicatePasswordNameException or DuplicatePasswordTagNameException or
                 DuplicateCustomUserColorNameException or DuplicateCustomUserColorCodeException => true,
             LimitReachedException => true,
+            StorageCapacityExceededException when EndpointOperationManifest.Get(context.OperationId).CommitModel ==
+                EndpointMutationCommitModel.SingleAtomicCommit => true,
+            PendingSecurityOperationException when EndpointOperationManifest.Get(context.OperationId).CommitModel ==
+                EndpointMutationCommitModel.SingleAtomicCommit => true,
             DeviceEnrollmentException enrollmentException when context.OperationId == EndpointOperationId.AddDeviceByCode =>
                 enrollmentException.IsKnownNotCommitted,
             _ => false

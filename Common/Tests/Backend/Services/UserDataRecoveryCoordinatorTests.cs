@@ -20,7 +20,7 @@ using PasswordManagerLocal.Common.Tests.TestInfrastructure.Services.TestDoubles;
 namespace PasswordManagerLocal.Common.Tests.Backend.Services;
 
 [TestClass]
-public sealed class UserDataRecoveryCoordinatorTests
+public sealed partial class UserDataRecoveryCoordinatorTests
 {
     [TestMethod]
     [TestCategory("Backend")]

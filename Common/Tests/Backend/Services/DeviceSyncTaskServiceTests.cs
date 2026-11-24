@@ -616,6 +616,77 @@ public sealed class DeviceSyncTaskServiceTests
         await links.AddAsync(candidateLink);
     }
 
+    [TestMethod]
+    [TestCategory("Backend")]
+    public async Task PendingOfflineRecipientEvidence_DoesNotDefeatSuccessfulDiscoveryQuietPeriod()
+    {
+        var delivery = new FakeRevocationDeliveryService { Pending = true };
+        var activity = new RevocationDeliveryActivity();
+        using var setup = CreateSetup(enableAntiEntropy: true, delivery: delivery, activity: activity);
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(5));
+        MSTestAssert.AreEqual(1, setup.Transport.InventoryCalls,
+            "Pending revocation evidence must not block ordinary snapshot anti-entropy on an eligible route.");
+        var inventories = setup.Transport.InventoryCalls;
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(5));
+        MSTestAssert.AreEqual(inventories, setup.Transport.InventoryCalls);
+        MSTestAssert.IsTrue(delivery.Pending, "The quiet period must never complete an unacknowledged obligation.");
+        activity.NotifyCommittedChange(); // New authenticated evidence invalidates an old success stamp.
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(5));
+        MSTestAssert.AreEqual(inventories + 1, setup.Transport.InventoryCalls,
+            "New committed evidence must bypass an older discovery success stamp.");
+        inventories = setup.Transport.InventoryCalls;
+        MSTestAssert.IsTrue(setup.Service.TryStart(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(5));
+        MSTestAssert.AreEqual(inventories + 1, setup.Transport.InventoryCalls,
+            "New explicit work bypasses discovery coalescing.");
+        MSTestAssert.IsTrue(delivery.Pending, "Successful ordinary synchronization does not complete revocation delivery.");
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    public async Task PendingRevocationWithoutAnOrdinaryRoute_DoesNotSendOrdinaryDataOrInventCompletion()
+    {
+        var delivery = new FakeRevocationDeliveryService { Pending = true };
+        var routes = new FakeSyncRouteRepository(new FakeUserDeviceRepository(), new FakeLocalUserDeviceRepository());
+        using var setup = CreateSetup(enableAntiEntropy: true, delivery: delivery, routes: routes);
+        setup.Queue.Seed(CreateQueueItem(setup.Device.Id));
+
+        MSTestAssert.IsTrue(setup.Service.TryStart(setup.Endpoint, setup.Device));
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(5));
+
+        MSTestAssert.AreEqual(0, setup.Transport.InventoryCalls);
+        MSTestAssert.AreEqual(0, setup.Transport.SendCalls);
+        MSTestAssert.AreEqual(1, setup.Queue.Items.Count(item => item.ProcessedAt is null));
+        MSTestAssert.IsTrue(delivery.Pending);
+    }
+
+    [TestMethod]
+    [TestCategory("Backend")]
+    public async Task CanceledWorkerDrain_RetainsCanceledGenerationUntilTheWorkerActuallyExits()
+    {
+        using var setup = CreateSetup(enableAntiEntropy: true);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        setup.Queue.OnHasPendingCheckAsync = async check =>
+        {
+            if (check == 2) { entered.TrySetResult(); await release.Task; }
+        };
+        MSTestAssert.IsTrue(setup.Service.TryStartFromDiscovery(setup.Endpoint, setup.Device));
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(30));
+            await MSTestAssert.ThrowsAsync<OperationCanceledException>(() => setup.Service.StopAllAsync(cancellation.Token));
+            MSTestAssert.IsFalse(setup.Service.TryStart(setup.Endpoint, setup.Device), "An unconfirmed stop cannot create a second worker generation.");
+        }
+        finally { release.TrySetResult(); }
+        await setup.Service.WaitForIdleAsync(setup.Device.Id).WaitAsync(TimeSpan.FromSeconds(5));
+        await setup.Service.StopAllAsync();
+    }
+
     private static DeviceSyncTaskSetup CreateSetup(
         bool sendResult = true,
         TaskCompletionSource<bool>? sendGate = null,
@@ -623,7 +694,10 @@ public sealed class DeviceSyncTaskServiceTests
         IUserSnapshotAntiEntropyService? snapshotAntiEntropy = null,
         IIncomingDeltaApplierService? incomingApplier = null,
         TimeProvider? clock = null,
-        IBackendExecutionProfileProvider? profile = null)
+        IBackendExecutionProfileProvider? profile = null,
+        IRevocationDeliveryService? delivery = null,
+        IRevocationDeliveryActivity? activity = null,
+        ISyncRouteRepository? routes = null)
     {
         var device = new Device
         {
@@ -668,6 +742,8 @@ public sealed class DeviceSyncTaskServiceTests
         syncIdentities.TryAdd(device);
         var services = new ServiceCollection();
         services.AddSingleton<ISyncQueueRepository>(queue);
+        if (delivery is not null) services.AddSingleton<IRevocationDeliveryService>(delivery);
+        if (activity is not null) services.AddSingleton<IRevocationDeliveryActivity>(activity);
         services.AddSingleton<IOutgoingDeltaBuilderService>(builder);
         services.AddSingleton<ISyncAuthorizationService>(new FakeSyncAuthorizationService());
         services.AddSingleton<IUnitOfWork>(unitOfWork);
@@ -676,7 +752,7 @@ public sealed class DeviceSyncTaskServiceTests
         if (enableAntiEntropy)
         {
             services.AddSingleton<ILocalUserDeviceRepository>(new FakeLocalUserDeviceRepository());
-            services.AddSingleton<ISyncRouteRepository>(new AlwaysEligibleSyncRouteRepository());
+            services.AddSingleton<ISyncRouteRepository>(routes ?? new AlwaysEligibleSyncRouteRepository());
             services.AddSingleton<IUserSnapshotAntiEntropyService>(snapshotAntiEntropy ?? new EmptyUserSnapshotAntiEntropyService());
             services.AddSingleton<IPendingSyncActivationService>(new RecordingPendingSyncActivationService());
             if (incomingApplier is not null)
@@ -695,7 +771,8 @@ public sealed class DeviceSyncTaskServiceTests
             endpointRegistry,
             identity,
             executionProfile: profile,
-            clock: clock);
+            clock: clock,
+            deliveryActivity: activity);
 
         return new DeviceSyncTaskSetup(
             service,

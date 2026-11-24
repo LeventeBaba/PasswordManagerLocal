@@ -1,4 +1,5 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Abstractions.Notifications;
 using PasswordManagerLocal.Common.Backend.Diagnostics;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
@@ -22,6 +23,7 @@ public sealed class AuthSessionService : IAuthSessionService, IAuthenticatedSess
     private readonly IBackendChangePublisher? _changePublisher;
 
     private readonly IUserPostLoginWorkScheduler? _postLogin;
+    private readonly ICriticalControlIngressStore? _ingress;
 
     public AuthSessionService(
         IUserDataReaderService userDataReader,
@@ -31,9 +33,10 @@ public sealed class AuthSessionService : IAuthSessionService, IAuthenticatedSess
         IUserRepository users,
         IUserLifecycleCoordinator lifecycle,
         IBackendChangePublisher? changePublisher = null,
-        IUserPostLoginWorkScheduler? postLogin = null)
+        IUserPostLoginWorkScheduler? postLogin = null, ICriticalControlIngressStore? ingress = null)
     {
         _postLogin = postLogin;
+        _ingress = ingress;
         _userDataReader = userDataReader;
         _tokens = tokens;
         _cache = cache;
@@ -56,6 +59,8 @@ public sealed class AuthSessionService : IAuthSessionService, IAuthenticatedSess
     {
         if (!_tokens.TryGetUid(token, out var uid))
             throw new InvalidTokenException();
+
+        _ingress?.ThrowIfSuspended(uid);
 
         if (!_keys.TryGetEncryptionKey(token, out var key))
         {

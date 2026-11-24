@@ -10,7 +10,7 @@ internal sealed class UserSyncSnapshotRepository(SqliteSession session) : IUserS
     private const string Select = """
         SELECT "Id", "ConflictingSnapshotHash", "CreatedAtUtc", "EnvelopePayload", "LastReceivedFromDeviceId",
                "MembershipEpoch", "OriginDeviceId", "OriginInstanceId", "OriginRevision", "OriginSignPublicKey",
-               "OriginSignature", "QuarantineReason", "ReceivedAtUtc", "SnapshotHash", "Status", "UserId", "UserKeyEpoch"
+               "OriginSignature", "QuarantineReason", "ReceivedAtUtc", "SnapshotHash", "Status", "UserId", "UserKeyEpoch", "ConflictingEnvelopePayload"
         FROM "UserSyncSnapshots"
         """;
     private const string OriginKey = """
@@ -22,6 +22,7 @@ internal sealed class UserSyncSnapshotRepository(SqliteSession session) : IUserS
     [
         (nameof(UserSyncSnapshot.Id), row => row.Id),
         (nameof(UserSyncSnapshot.ConflictingSnapshotHash), row => row.ConflictingSnapshotHash),
+        (nameof(UserSyncSnapshot.ConflictingEnvelopePayload), row => row.ConflictingEnvelopePayload),
         (nameof(UserSyncSnapshot.CreatedAtUtc), row => row.CreatedAtUtc),
         (nameof(UserSyncSnapshot.EnvelopePayload), row => row.EnvelopePayload),
         (nameof(UserSyncSnapshot.LastReceivedFromDeviceId), row => row.LastReceivedFromDeviceId),
@@ -38,7 +39,8 @@ internal sealed class UserSyncSnapshotRepository(SqliteSession session) : IUserS
         (nameof(UserSyncSnapshot.UserId), row => row.UserId),
         (nameof(UserSyncSnapshot.UserKeyEpoch), row => row.UserKeyEpoch)
     ], concurrencyColumns: [nameof(UserSyncSnapshot.OriginRevision), nameof(UserSyncSnapshot.SnapshotHash)],
-        trackChanges: false);
+        trackChanges: false, maintenanceColumns:
+        [nameof(UserSyncSnapshot.Status), nameof(UserSyncSnapshot.OriginRevision), nameof(UserSyncSnapshot.SnapshotHash)]);
 
     public Task<UserSyncSnapshot?> GetAsync(Guid userId, Guid originDeviceId, Guid originInstanceId, long userKeyEpoch,
         CancellationToken ct = default) =>
@@ -89,6 +91,28 @@ internal sealed class UserSyncSnapshotRepository(SqliteSession session) : IUserS
             .ThenBy(row => row.OriginRevision).ThenBy(row => Convert.ToHexString(row.SnapshotHash), StringComparer.Ordinal).ToArray();
     }
 
+    public async Task<bool> HasIsolatedForkAsync(Guid userId, CancellationToken ct = default)
+    {
+        var pending = session.GetPendingRows<UserSyncSnapshot>().Where(item => item.Row.UserId == userId).ToArray();
+        if (pending.Length == 0)
+            return await session.ExistsAsync("""
+                SELECT 1 FROM "UserSyncSnapshots" WHERE "UserId" = $user AND "Status" = $fork
+                """, ct, ("$user", userId), ("$fork", (byte)UserSyncSnapshotStatus.IsolatedFork));
+
+        // Include staged isolation/deletion without loading encrypted envelopes merely
+        // to check a status. Terminal gates may run inside the caller's transaction.
+        var rows = await session.ReadAsync("""
+            SELECT "Id", "Status" FROM "UserSyncSnapshots" WHERE "UserId" = $user
+            """, row => (Id: row.GetGuid(0), Status: (UserSyncSnapshotStatus)row.GetByte(1)), ct, ("$user", userId));
+        var statuses = rows.ToDictionary(row => row.Id, row => row.Status);
+        foreach (var item in pending)
+        {
+            if (item.Operation == SqliteMutation.Operation.Delete) statuses.Remove(item.Row.Id);
+            else statuses[item.Row.Id] = item.Row.Status;
+        }
+        return statuses.Values.Any(status => status == UserSyncSnapshotStatus.IsolatedFork);
+    }
+
     public Task<bool> HasIsolatedForkAsync(Guid userId, long userKeyEpoch, long membershipEpoch, CancellationToken ct = default) =>
         session.ExistsAsync("""
             SELECT 1 FROM "UserSyncSnapshots" WHERE "UserId" = $user AND "UserKeyEpoch" = $epoch
@@ -136,6 +160,7 @@ internal sealed class UserSyncSnapshotRepository(SqliteSession session) : IUserS
         SnapshotHash = row.Blob(13),
         Status = (UserSyncSnapshotStatus)row.GetByte(14),
         UserId = row.GetGuid(15),
-        UserKeyEpoch = row.GetInt64(16)
+        UserKeyEpoch = row.GetInt64(16),
+        ConflictingEnvelopePayload = row.NullableBlob(17)
     });
 }

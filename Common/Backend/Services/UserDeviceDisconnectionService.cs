@@ -42,6 +42,10 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
     private readonly IUnitOfWork _uow;
     private readonly IUserTombstoneGarbageCollector? _garbageCollector;
     private readonly UserDeviceAccessor _accessor;
+    private readonly IUserMembershipAuthorizationService _membershipVerifier;
+    private readonly IDeletedUserBarrierRepository _deletionBarriers;
+    private readonly IUserSyncFaultRepository _faults;
+    private readonly IUserForkRecoveryService? _forkRecovery;
 
     public UserDeviceDisconnectionService(
         IUserLookupService userLookup,
@@ -67,7 +71,11 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
         ISyncVersionClockService versionClock,
         IUnitOfWork uow,
         UserDeviceAccessor accessor,
-        IUserTombstoneGarbageCollector? garbageCollector = null)
+        IUserMembershipAuthorizationService membershipVerifier,
+        IDeletedUserBarrierRepository deletionBarriers,
+        IUserSyncFaultRepository faults,
+        IUserTombstoneGarbageCollector? garbageCollector = null,
+        IUserForkRecoveryService? forkRecovery = null)
     {
         _userLookup = userLookup;
         _userDataReader = userDataReader;
@@ -92,6 +100,10 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
         _versionClock = versionClock;
         _uow = uow;
         _accessor = accessor;
+        _membershipVerifier = membershipVerifier;
+        _deletionBarriers = deletionBarriers;
+        _faults = faults;
+        _forkRecovery = forkRecovery;
         _garbageCollector = garbageCollector;
     }
 
@@ -119,15 +131,12 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
                 throw new InvalidInputException();
             await _accessor.GetActiveRemoteAsync(user.UId, deviceId, lifecycleToken);
 
-            var controlState = await _controlStates.GetAsync(user.UId, lifecycleToken);
-            if (controlState?.HasConflict == true)
-                throw new InvalidOperationException(controlState.ConflictReason ?? "The account control plane is quarantined.");
-            if (await HasIsolatedForkSnapshotsAsync(user, lifecycleToken))
-                throw new InvalidOperationException("Device removal is blocked by unresolved snapshot fork evidence.");
+            var forkProof = await EnsureRemovalAuthorityAsync(user, deviceId, lifecycleToken);
 
             await _snapshotMerge.TryMergePendingUnderLifecycleAsync(user.UId, key, UserSyncKeyConfidence.AuthenticatedSession, lifecycleToken);
             _uow.ClearTrackedChanges();
             user = await _userLookup.GetAndVerifyUserAsync(token, lifecycleToken);
+            forkProof = await EnsureRemovalAuthorityAsync(user, deviceId, lifecycleToken);
             var activeAuthorizations = await _membershipAuthorizations.ListActiveForDeviceAsync(user.UId, deviceId, lifecycleToken);
             if (activeAuthorizations.Count == 0)
                 throw new InvalidInputException();
@@ -170,8 +179,8 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
                         AuthorizationId = authorization.AuthorizationId,
                         OriginInstanceId = authorization.OriginInstanceId,
                         UserKeyEpoch = keyEpoch,
-                        HighestAcceptedSnapshotRevision = item?.HighestStoredRevision ?? 0,
-                        HighestAcceptedControlSequence = highestControlSequence,
+                        HighestAcceptedSnapshotRevision = forkProof is null ? item?.HighestStoredRevision ?? 0 : 0,
+                        HighestAcceptedControlSequence = forkProof is null ? highestControlSequence : 0,
                         SignPublicKeyHash = authorization.SignPublicKeyHash.ToArray(),
                         AdditionOperationId = additionId,
                         AdditionOperationHash = additionHash?.ToArray()
@@ -188,7 +197,8 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
                 PreviousMembershipEpoch = user.MembershipEpoch,
                 ResultingMembershipEpoch = checked(user.MembershipEpoch + 1),
                 KeyEpoch = user.KeyEpoch,
-                Origins = cutoffRows
+                Origins = cutoffRows,
+                ForkExclusion = forkProof
             };
             try
             {
@@ -213,7 +223,22 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
             await using var transaction = await _uow.BeginTransactionAsync(lifecycleToken);
             try
             {
+                await EnsureRemovalAuthorityAsync(user, deviceId, lifecycleToken);
                 using var bundle = await _userDataReader.GetLoadAndVerifyUserDataBundleAsync(token, lifecycleToken, user);
+                // The exceptional removal must be proven against the unchanged canonical
+                // generation. Commit its signed authority before editing device metadata;
+                // both changes still share the same outer transaction.
+                UserControlOperationEnvelope? earlyRemoval = null;
+                if (payload.ForkExclusion is not null)
+                {
+                    earlyRemoval = await _controlWriter.CreateAppliedDeviceRemovalUnderLifecycleAsync(user, payload, lifecycleToken);
+                    user = await _userLookup.GetAndVerifyUserAsync(token, lifecycleToken);
+                    // This exact signed transition changes only authority/epochs. The verified
+                    // encrypted bundle remains unchanged within the same lifecycle transaction.
+                    if (bundle.CanonicalGeneration is not null)
+                        System.Security.Cryptography.CryptographicOperations.ZeroMemory(bundle.CanonicalGeneration);
+                    bundle.CanonicalGeneration = UserDataGeneration.Capture(user);
+                }
                 var now = DateTimeOffset.UtcNow;
                 var encryptedDevice = bundle.UserDevicesData.Devices.FirstOrDefault(item => item.Id == deviceId);
                 // Membership can arrive before its encrypted presentation metadata. The
@@ -227,7 +252,7 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
                 await _userDataWriter.UpdateUserDataBundleAsync(bundle, token, UserDataBlobKind.Devices, false, lifecycleToken);
                 user = await _userLookup.GetAndVerifyUserAsync(token, lifecycleToken);
 
-                var envelope = await _controlWriter.CreateAppliedDeviceRemovalUnderLifecycleAsync(user, payload, lifecycleToken);
+                var envelope = earlyRemoval ?? await _controlWriter.CreateAppliedDeviceRemovalUnderLifecycleAsync(user, payload, lifecycleToken);
                 user = await _userLookup.GetAndVerifyUserAsync(token, lifecycleToken);
                 var localSnapshot = await _snapshotPublisher.GetOrCreateAsync(user, lifecycleToken);
                 await _queueWriter.EnqueueAsync(new SyncItem
@@ -266,9 +291,25 @@ public sealed class UserDeviceDisconnectionService : IUserDeviceDisconnectionSer
         }, ct);
     }
 
-    private async Task<bool> HasIsolatedForkSnapshotsAsync(User user, CancellationToken ct) =>
-        (await _snapshots.ListForUserAsync(user.UId, ct))
-            .Any(snapshot => snapshot.UserKeyEpoch == user.KeyEpoch && snapshot.Status == UserSyncSnapshotStatus.IsolatedFork);
+    private async Task<DeviceRemovalForkProof?> EnsureRemovalAuthorityAsync(User user, Guid selectedDeviceId, CancellationToken ct)
+    {
+        if (await _deletionBarriers.ExistsAsync(user.UId, ct))
+            throw new UnauthorizedAccessException("A deleted account cannot remove devices.");
+        await _membershipVerifier.VerifyLocalInstallationAsync(user.UId, user.KeyEpoch, user.MembershipEpoch, ct);
+        var state = await _controlStates.GetAsync(user.UId, ct);
+        if (state is null || state.HasConflict || state.AppliedKeyEpoch != user.KeyEpoch ||
+            state.AppliedMembershipEpoch != user.MembershipEpoch)
+            throw new InvalidOperationException("Device removal requires uncontested account authority.");
+        if ((await _faults.ListActiveForUserAsync(user.UId, ct)).Any(fault =>
+                UserSyncFaultPolicy.IsTerminal(fault) || fault.BlocksLifecycle) ||
+            await _snapshots.HasIsolatedForkAsync(user.UId, ct))
+        {
+            if (_forkRecovery is null)
+                throw new InvalidOperationException("Device removal is blocked by unresolved synchronization evidence.");
+            return await _forkRecovery.PrepareRemovalAsync(user, selectedDeviceId, ct);
+        }
+        return null;
+    }
 
     private static string DescribeRemovalCutoffProblems(IReadOnlyList<DeviceRemovalOriginCutoffPayload> cutoffs)
     {

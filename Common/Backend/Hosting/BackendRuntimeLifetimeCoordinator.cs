@@ -109,7 +109,7 @@ public sealed class BackendRuntimeLifetimeCoordinator : IBackendRuntimeLifetimeC
 
             await _runtime.ResetDatabaseAndRestartAsync(cancellationToken);
             runtimeRestarted = true;
-            cancellationToken.ThrowIfCancellationRequested();
+            // Reset owns its commit boundary; do not report cancellation after deletion committed.
             return new BackendRuntimeLease(this, reason);
         }
         catch

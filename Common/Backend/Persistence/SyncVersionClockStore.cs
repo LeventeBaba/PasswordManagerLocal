@@ -78,6 +78,10 @@ internal sealed class SyncVersionClockStore(SqliteConnectionFactory connections)
         command.Parameters.AddWithValue("$logical", state.LastLogicalCounter);
         command.Parameters.AddWithValue("$updatedAt", UtcDateTimeUtil.ToUtc(state.LastUpdatedAtUtc));
         command.Parameters.AddWithValue("$version", state.Version);
-        return command.ExecuteNonQuery() == 1;
+        try { return command.ExecuteNonQuery() == 1; }
+        catch (SqliteException exception) when (SqliteCapacityError.IsCapacityFailure(exception))
+        {
+            throw SqliteCapacityError.Wrap(exception);
+        }
     }
 }

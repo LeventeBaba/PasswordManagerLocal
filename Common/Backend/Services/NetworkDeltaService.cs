@@ -34,6 +34,7 @@ public sealed class NetworkDeltaService : INetworkDeltaService
 
     private readonly IUserPostLoginWorkScheduler? _postLogin;
     private readonly IUserLifecycleCoordinator? _userLifecycle;
+    private readonly ICriticalControlIngressStore? _criticalIngress;
 
     public NetworkDeltaService(
         IOutgoingDeltaBuilderService outgoingDeltaBuilder,
@@ -53,8 +54,10 @@ public sealed class NetworkDeltaService : INetworkDeltaService
         IUserTombstoneGarbageCollector? garbageCollector = null,
         IUserPostLoginWorkScheduler? postLogin = null,
         IUserLifecycleCoordinator? userLifecycle = null,
-        IServiceScopeFactory? scopes = null)
+        IServiceScopeFactory? scopes = null,
+        ICriticalControlIngressStore? criticalIngress = null)
     {
+        _criticalIngress = criticalIngress;
         _scopes = scopes;
         _postLogin = postLogin;
         _userLifecycle = userLifecycle;
@@ -92,7 +95,10 @@ public sealed class NetworkDeltaService : INetworkDeltaService
         if (_userLifecycle is not null && parts is { Length: 3 } &&
             parts[0] == nameof(SyncModelType.User) &&
             Guid.TryParseExact(parts[2], "N", out var userId) && userId != Guid.Empty)
-            return _userLifecycle.ExecuteAsync(userId,
+            // The encrypted payload does not expose its control kind in the routing hint.
+            // Permit control ingress under the lock, then explicitly gate ordinary snapshots
+            // after authenticated decoding in ApplyCoreAsync.
+            return _userLifecycle.ExecuteControlAsync(userId,
                 token => ApplyInFreshScopeAsync(delta, token), ct);
 
         return ApplyInFreshScopeAsync(delta, ct);
@@ -122,12 +128,16 @@ public sealed class NetworkDeltaService : INetworkDeltaService
 
     private async Task<NetworkDeltaApplyResult> ApplyCoreAsync(NetworkDelta delta, CancellationToken ct)
     {
-        if (!_identity.IsSyncOn)
+        if (!_identity.IsSyncOn && delta.Payload.Length == 0)
             throw new SyncRouteDisabledException("Local synchronization is disabled.");
 
         var validated = await _protocol.ValidateAndReadAsync(delta, ct);
         var sourceDevice = validated.SourceDevice;
         var payload = validated.Payload;
+        if (payload.ModelType == SyncModelType.User && payload.UserControlOperation is null)
+            _criticalIngress?.ThrowIfSuspended(payload.ModelId);
+        if (!_identity.IsSyncOn && payload.UserControlOperation is null)
+            throw new SyncRouteDisabledException("Ordinary synchronization is disabled; authenticated control evidence remains available.");
 
         await _protocol.ValidateSourceAuthorizationAsync(sourceDevice, payload, ct);
 

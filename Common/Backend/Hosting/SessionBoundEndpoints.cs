@@ -34,6 +34,9 @@ internal sealed class SessionBoundEndpoints : IEndpoints
         CancellationToken ct = default) =>
         _session.ExecuteAsync(endpoints => endpoints.GetUserProfileInfoAsync(token, ct));
 
+    public Task RemoveLocalProfileAsync(LoginRequest request, bool acknowledgeDataLoss, CancellationToken ct = default) =>
+        _session.ExecuteAsync(endpoints => endpoints.RemoveLocalProfileAsync(request, acknowledgeDataLoss, ct));
+
     public Task DeleteUserAccountAsync(
         Guid token,
         byte[] password,

@@ -110,27 +110,21 @@ public sealed class DeviceRemovalHistoryRecoveryTests
         var before = await ReadUserAsync(source, token);
         var otherBefore = await ReadUserAsync(source, otherToken);
         UserControlOperationEnvelope oldAddition;
+        Guid oldRevocationId;
+        byte[] oldReceipt;
         using (var scope = source.Services.CreateScope())
         {
             var old = (await scope.ServiceProvider.GetRequiredService<IUserControlOperationRepository>()
                 .ListForUserAsync(before.UId)).Single(operation => operation.OperationType == UserControlOperationType.DeviceAddition);
             oldAddition = UserControlOperationEnvelopeUtil.Deserialize(old.EnvelopePayload);
+            oldRevocationId = (await scope.ServiceProvider.GetRequiredService<IUserControlOperationRepository>()
+                .ListForUserAsync(before.UId)).Single(o => o.OperationType == UserControlOperationType.DeviceRemoval).OperationId;
+            oldReceipt = (await scope.ServiceProvider.GetRequiredService<IRevocationReceiptRepository>()
+                .ListAsync(oldRevocationId)).Single(r => r.RecipientDeviceId == source.Identity.LocalDeviceId).Payload;
         }
         var deviceId = source.Identity.LocalDeviceId;
         var originId = source.Identity.OriginInstanceId;
         await CorruptRemovalAsync(source, before.UId);
-        using (var scope = source.Services.CreateScope())
-        {
-            await scope.ServiceProvider.GetRequiredService<IUserSyncFaultService>().RecordAsync(new UserSyncFaultDescriptor
-            {
-                UserId = before.UId, Scope = UserSyncFaultScope.ControlPlane,
-                Kind = UserSyncFaultKind.MembershipConflict, Status = UserSyncHealthStatus.TerminalConflict,
-                KeyEpoch = before.KeyEpoch, MembershipEpoch = before.MembershipEpoch,
-                DiagnosticCode = "invalid-removal-history", BlocksLifecycle = true
-            });
-            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
-        }
-
         var result = await source.Endpoints.RunSelfDiagnosticsAndRepairAsync(token);
         Assert.IsTrue(result.Healthy, string.Join(", ", result.Findings));
         CollectionAssert.Contains(result.Findings.ToArray(), "SingleDeviceHistoryReset");
@@ -143,6 +137,14 @@ public sealed class DeviceRemovalHistoryRecoveryTests
         CollectionAssert.AreEqual(otherBefore.IntegrityHash, (await ReadUserAsync(source, otherToken)).IntegrityHash);
         Assert.AreEqual(deviceId, source.Identity.LocalDeviceId);
         Assert.AreEqual(originId, source.Identity.OriginInstanceId);
+        using (var receiptScope = source.Services.CreateScope())
+        {
+            var evidence = receiptScope.ServiceProvider.GetRequiredService<IRevocationReceiptRepository>();
+            Assert.IsNotNull(await evidence.GetEvidenceAsync(oldRevocationId));
+            CollectionAssert.AreEqual(oldReceipt, (await evidence.ListAsync(oldRevocationId)).Single(r => r.RecipientDeviceId == source.Identity.LocalDeviceId).Payload);
+            Assert.AreEqual(0, (await receiptScope.ServiceProvider.GetRequiredService<IRevocationReceiptService>()
+                .GetInventoryAsync(oldRevocationId)).Count, "Old receipts cannot authorize a replacement history.");
+        }
         await AssertSecretAsync(source, token, "Preserve this secret");
         await AssertSecretAsync(source, otherToken, "Other profile secret");
         Assert.AreEqual(0, (await source.Endpoints.RunSelfDiagnosticsAndRepairAsync(token)).RepairedCount);

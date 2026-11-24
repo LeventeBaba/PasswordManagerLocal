@@ -76,7 +76,13 @@ public sealed class LocalDeviceSettingsService : ILocalDeviceSettingsService
         await _uow.SaveChangesAsync(ct);
         try
         {
-            await _syncRuntime.RefreshSyncEnabledAsync(ct);
+            try { await _syncRuntime.RefreshSyncEnabledAsync(ct); }
+            catch (Exception ex)
+            {
+                // Commit already queued authoritative reconciliation; a transient runtime
+                // failure must not turn this successfully persisted preference into an error.
+                PasswordManagerLocal.Common.Backend.Diagnostics.BackendDebugLog.Warning("The committed synchronization preference will be reconciled automatically.", ex, "Synchronization");
+            }
 
             if (isSyncOn)
             {

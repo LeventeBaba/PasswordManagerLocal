@@ -68,7 +68,7 @@ internal static class AES256
         byte[]? associatedData = null,
         int frameSize = CryptographyConstants.DefaultAesFrameSizeBytes)
     {
-        if (frameSize <= 0)
+        if (frameSize <= 0 || frameSize > CryptographyConstants.MaxAesFrameSizeBytes)
             throw new ArgumentOutOfRangeException(nameof(frameSize));
 
         var header = new byte[HeaderSize];
@@ -145,7 +145,7 @@ internal static class AES256
             throw new CryptographicException("Unsupported version.");
 
         var frameSize = BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(13, 4));
-        if (frameSize <= 0)
+        if (frameSize <= 0 || frameSize > CryptographyConstants.MaxAesFrameSizeBytes)
             throw new CryptographicException("Invalid frame size.");
 
         var cipher = ArrayPool<byte>.Shared.Rent(frameSize);

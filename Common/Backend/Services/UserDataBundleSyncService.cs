@@ -25,7 +25,6 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
     private readonly IUserCanonicalHealthService? _canonicalHealth;
     private readonly IUserDataBundleVerificationService _verification;
     private readonly IUserSnapshotBatchVerificationService _snapshotBatchVerification;
-    private readonly IUserCanonicalCheckpointRepository? _checkpoints;
     private readonly IDeviceIdentityService? _identity;
 
     public UserDataBundleSyncService(
@@ -36,7 +35,6 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
         ISyncVersionClockService versionClock,
         IUserCanonicalHealthService? canonicalHealth = null,
         IUserDataBundleVerificationService? verification = null,
-        IUserCanonicalCheckpointRepository? checkpoints = null,
         IDeviceIdentityService? identity = null,
         IUserSnapshotBatchVerificationService? snapshotBatchVerification = null)
     {
@@ -49,7 +47,6 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
         _verification = verification ?? new UserDataBundleVerificationService(integrity);
         _snapshotBatchVerification = snapshotBatchVerification ??
             new UserSnapshotBatchVerificationService(_verification);
-        _checkpoints = checkpoints;
         _identity = identity;
     }
 
@@ -237,7 +234,7 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
                 return new UserSnapshotMergeBatchResult(false, results);
 
             if (changedBlobs != UserDataBlobKind.None)
-                await PersistMergedUserBundleAsync(existing, canonicalBundle, key, changedBlobs, ct);
+                await EncryptMergedUserBundleAsync(existing, canonicalBundle, key, changedBlobs, ct);
 
             existing.GenerateIntegrityHash();
             _users.Update(existing);
@@ -284,29 +281,54 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
         }
     }
 
-    public Task<UserDataRecoveryReconstructionResult> TryReconstructCanonicalAsync(
-        User existing,
-        IReadOnlyList<UserSnapshotEnvelope> snapshots,
-        EncryptionKey key,
-        UserSyncKeyConfidence keyConfidence,
-        CancellationToken ct = default) =>
-        TryReconstructCanonicalAsync(
-            existing,
-            snapshots,
-            key,
-            keyConfidence,
-            existing.KeyEpoch,
-            existing.MembershipEpoch,
-            ct);
-
-    public async Task<UserDataRecoveryReconstructionResult> TryReconstructCanonicalAsync(
-        User existing,
-        IReadOnlyList<UserSnapshotEnvelope> snapshots,
-        EncryptionKey key,
-        UserSyncKeyConfidence keyConfidence,
-        long expectedKeyEpoch,
-        long expectedMembershipEpoch,
+    /// <summary>
+    /// Prepares verified encrypted output without repository or shared-clock writes. Source and
+    /// checkpoint must belong exclusively to the caller's detached recovery capture.
+    /// </summary>
+    public async Task<PreparedCanonicalRecovery> PrepareCanonicalRecoveryAsync(
+        User source, UserCanonicalCheckpoint? checkpoint,
+        IReadOnlyList<UserSnapshotEnvelope> snapshots, EncryptionKey key,
+        UserSyncKeyConfidence keyConfidence, long expectedKeyEpoch, long expectedMembershipEpoch,
         CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(key);
+        var working = PreparedCanonicalRecovery.Copy(source);
+        try
+        {
+            var result = await ReconstructCanonicalAsync(working, checkpoint, snapshots, key,
+                keyConfidence, expectedKeyEpoch, expectedMembershipEpoch, ct);
+            if (result.Reconstructed)
+            {
+                // Bind publication to verified ciphertext, not just the pre-encryption objects.
+                // This round trip also belongs outside SQLite's read and write transactions.
+                using var outputVerification = await _verification.VerifyCanonicalAsync(working, key,
+                    keyConfidence == UserSyncKeyConfidence.UnconfirmedPassword
+                        ? UserSyncKeyConfidence.VerifiedRemoteSnapshot : keyConfidence, ct);
+                if (!outputVerification.IsHealthy)
+                    throw new InvalidDataException("Reconstructed canonical output did not pass verification.");
+            }
+            ct.ThrowIfCancellationRequested();
+            return new PreparedCanonicalRecovery(working, result, source);
+        }
+        catch
+        {
+            PreparedCanonicalRecovery.ClearSpeculativeOutput(working, source);
+            throw;
+        }
+    }
+
+    public void ObserveCommittedRecovery(PreparedCanonicalRecovery prepared)
+    {
+        if (prepared.Result.ObservedVersion is { } version)
+            _versionClock.Observe([version]);
+    }
+
+    private async Task<UserDataRecoveryReconstructionResult> ReconstructCanonicalAsync(
+        User existing, UserCanonicalCheckpoint? checkpoint,
+        IReadOnlyList<UserSnapshotEnvelope> snapshots, EncryptionKey key,
+        UserSyncKeyConfidence keyConfidence, long expectedKeyEpoch, long expectedMembershipEpoch,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(existing);
         ArgumentNullException.ThrowIfNull(key);
@@ -334,6 +356,7 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
         var prevalidationFailures = new RecoveryCandidateVerificationResult?[ordered.Length];
         var verificationCandidates = new List<UserSnapshotEnvelope>(ordered.Length);
         byte[]? epochPasswordSalt = null;
+        SyncVersionStamp? observedVersion = null;
         CanonicalSalvage? localSalvage = null;
         UserSyncPayload? localMetadata = null;
         IReadOnlyList<UserDataBundleVerificationResult> candidateVerifications = [];
@@ -430,6 +453,7 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
                     throw new RecoveryEvidenceConflictException("recovery-root-key-material-conflict");
                 }
 
+                observedVersion = MaximumObserved(observedVersion, SyncVersionStampTraversal.Enumerate(bundle));
                 verified.Add((snapshot, verification));
                 candidateResults.Add(new RecoveryCandidateVerificationResult(
                     snapshot.OriginDeviceId,
@@ -448,6 +472,7 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
             // can be independently authenticated through the root's child hashes.
             localSalvage = await TryReadCanonicalSalvageAsync(
                 existing,
+                checkpoint,
                 key,
                 expectedKeyEpoch,
                 expectedMembershipEpoch,
@@ -466,7 +491,6 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
             existing.MembershipEpoch = expectedMembershipEpoch;
             existing.LastModifiedAt = baseCandidate.Envelope.CreatedAtUtc;
 
-            _versionClock.Observe(SyncVersionStampTraversal.Enumerate(baseBundle));
             for (var index = 1; index < verified.Count; index++)
             {
                 MergeRecoveryBundle(
@@ -481,6 +505,12 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
             if (localSalvage is not null)
             {
                 recoveredComponents = localSalvage.FailedComponents;
+                if (localSalvage.General is not null)
+                    observedVersion = MaximumObserved(observedVersion, [localSalvage.General.Version]);
+                if (localSalvage.Passwords is not null)
+                    observedVersion = MaximumObserved(observedVersion, SyncVersionStampTraversal.Enumerate(localSalvage.Passwords));
+                if (localSalvage.Devices is not null)
+                    observedVersion = MaximumObserved(observedVersion, SyncVersionStampTraversal.Enumerate(localSalvage.Devices));
                 MergeHealthyLocalSalvage(existing, baseBundle, localSalvage, localMetadata);
                 existing.LastModifiedAt = MaxDateTimeOffset(existing.LastModifiedAt, localSalvage.LastModifiedAt);
             }
@@ -491,13 +521,13 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
             _integrity.RebuildModifiedBlobIntegrity(baseBundle, UserDataBlobKind.All);
             _integrity.VerifyUntrustedBundle(baseBundle);
             UserLoginIdentityMetadataUtil.Verify(existing, baseBundle.GeneralUserData);
-            await PersistMergedUserBundleAsync(existing, baseBundle, key, UserDataBlobKind.All, ct);
+            await EncryptMergedUserBundleAsync(existing, baseBundle, key, UserDataBlobKind.All, ct);
             existing.GenerateIntegrityHash();
             existing.VerifyIntegrity();
-            _users.Update(existing);
 
             return new UserDataRecoveryReconstructionResult(true, candidateResults, "canonical-reconstructed")
             {
+                ObservedVersion = observedVersion,
                 RecoveredComponents = recoveredComponents == UserDataBlobKind.None
                     ? UserDataBlobKind.All
                     : recoveredComponents
@@ -512,6 +542,14 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
         }
     }
 
+    private static SyncVersionStamp? MaximumObserved(SyncVersionStamp? current, IEnumerable<SyncVersionStamp> stamps)
+    {
+        foreach (var stamp in stamps)
+            if (current is null || SyncVersionStampComparer.Instance.Compare(stamp, current) > 0)
+                current = stamp;
+        return current;
+    }
+
     private void MergeRecoveryBundle(
         User existing,
         UserDataBundle target,
@@ -519,7 +557,7 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
         UserSyncPayload incomingMetadata,
         DateTimeOffset incomingTimestamp)
     {
-        _versionClock.Observe(SyncVersionStampTraversal.Enumerate(incoming));
+
         var changed = UserDataBlobKind.None;
         try
         {
@@ -573,7 +611,7 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
         {
             if (local.General is not null)
             {
-                _versionClock.Observe([local.General.Version]);
+
                 GeneralUserDataMergeUtil.Merge(target.GeneralUserData, local.General, existing, localMetadata);
                 existing.GeneralUserDataLastModifiedAt = MaxDateTimeOffset(
                     existing.GeneralUserDataLastModifiedAt,
@@ -581,7 +619,7 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
             }
             if (local.Passwords is not null)
             {
-                _versionClock.Observe(SyncVersionStampTraversal.Enumerate(local.Passwords));
+
                 _passwordsDataMerge.Merge(target.UserPasswordsData, local.Passwords);
                 existing.UserPasswordsDataLastModifiedAt = MaxDateTimeOffset(
                     existing.UserPasswordsDataLastModifiedAt,
@@ -589,7 +627,7 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
             }
             if (local.Devices is not null)
             {
-                _versionClock.Observe(SyncVersionStampTraversal.Enumerate(local.Devices));
+
                 _devicesDataMerge.Merge(target.UserDevicesData, local.Devices);
                 existing.UserDevicesDataLastModifiedAt = MaxDateTimeOffset(
                     existing.UserDevicesDataLastModifiedAt,
@@ -609,15 +647,15 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
 
     private async Task<CanonicalSalvage?> TryReadCanonicalSalvageAsync(
         User existing,
+        UserCanonicalCheckpoint? checkpoint,
         EncryptionKey key,
         long expectedKeyEpoch,
         long expectedMembershipEpoch,
         CancellationToken ct)
     {
-        if (_checkpoints is null || _identity is null)
+        if (_identity is null)
             return null;
 
-        var checkpoint = await _checkpoints.GetAsync(existing.UId, ct);
         if (checkpoint is null)
             return null;
         try
@@ -892,7 +930,7 @@ public sealed class UserDataBundleSyncService : IUserDataBundleSyncService
     }
 
 
-    private async Task PersistMergedUserBundleAsync(
+    private async Task EncryptMergedUserBundleAsync(
         User user,
         UserDataBundle bundle,
         EncryptionKey userKey,

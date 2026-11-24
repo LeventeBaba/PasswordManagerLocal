@@ -17,6 +17,8 @@ public interface IApplicationPreferencesFileSystem
 
     void DeleteFile(string path);
 
+    IEnumerable<string> EnumerateFiles(string directory, string searchPattern);
+
     Task<IAsyncDisposable> AcquireExclusiveLockAsync(
         string lockPath,
         CancellationToken cancellationToken);

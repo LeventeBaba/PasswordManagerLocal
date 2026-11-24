@@ -26,7 +26,7 @@ internal sealed class UserControlStateRepository(SqliteSession session) : IUserC
         (nameof(UserControlState.LastUpdatedAtUtc), row => row.LastUpdatedAtUtc),
         (nameof(UserControlState.LocalOriginInstanceId), row => row.LocalOriginInstanceId),
         (nameof(UserControlState.NextOriginSequence), row => row.NextOriginSequence)
-    ], trackChanges: false);
+    ], trackChanges: true);
 
     public async Task<UserControlState?> GetAsync(Guid userId, CancellationToken ct = default)
     {

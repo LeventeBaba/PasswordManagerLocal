@@ -50,6 +50,7 @@ public static class EndpointOperationManifest
         new(EndpointOperationId.UpdatePasswordTag, nameof(PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints.UpdatePasswordTagAsync), typeof(UpdatePasswordTagEndpointRequest), typeof(EmptyEndpointResponse), EndpointMutationCommitModel.CommitThenFollowUp, EndpointRpcLimits.MaximumSmallRequestPayloadSize, EndpointRpcLimits.MaximumSmallResponsePayloadSize),
         new(EndpointOperationId.RunSelfDiagnosticsAndRepair, nameof(PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints.RunSelfDiagnosticsAndRepairAsync), typeof(RunSelfDiagnosticsAndRepairEndpointRequest), typeof(RunSelfDiagnosticsAndRepairEndpointResponse), EndpointMutationCommitModel.MultiStageRecoverableCommit, EndpointRpcLimits.MaximumSmallRequestPayloadSize, EndpointRpcLimits.MaximumSmallResponsePayloadSize),
         new(EndpointOperationId.ConfirmSelfDiagnosticsRepair, nameof(PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints.ConfirmSelfDiagnosticsRepairAsync), typeof(ConfirmSelfDiagnosticsRepairEndpointRequest), typeof(ConfirmSelfDiagnosticsRepairEndpointResponse), EndpointMutationCommitModel.MultiStageRecoverableCommit, EndpointRpcLimits.MaximumSmallRequestPayloadSize, EndpointRpcLimits.MaximumSmallResponsePayloadSize),
+        new(EndpointOperationId.RemoveLocalProfile, nameof(PasswordManagerLocal.Common.Contracts.Endpoints.IEndpoints.RemoveLocalProfileAsync), typeof(RemoveLocalProfileEndpointRequest), typeof(EmptyEndpointResponse), EndpointMutationCommitModel.CommitThenFollowUp, EndpointRpcLimits.MaximumSmallRequestPayloadSize, EndpointRpcLimits.MaximumSmallResponsePayloadSize)
     ];
 
     public static IReadOnlyList<EndpointOperationDescriptor> All => Descriptors;
@@ -98,6 +99,7 @@ public static class EndpointOperationManifest
         EndpointOperationId.UpdatePasswordTag => Descriptors[39],
         EndpointOperationId.RunSelfDiagnosticsAndRepair => Descriptors[40],
         EndpointOperationId.ConfirmSelfDiagnosticsRepair => Descriptors[41],
+        EndpointOperationId.RemoveLocalProfile => Descriptors[42],
         _ => throw new ArgumentOutOfRangeException(nameof(operationId))
     };
 }

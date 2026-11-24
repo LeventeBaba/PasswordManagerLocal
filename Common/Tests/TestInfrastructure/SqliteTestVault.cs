@@ -1,6 +1,5 @@
 using Microsoft.Data.Sqlite;
 using PasswordManagerLocal.Common.Backend.Persistence;
-using SQLitePCL;
 
 namespace PasswordManagerLocal.Common.Tests.TestInfrastructure;
 
@@ -9,7 +8,7 @@ internal sealed class SqliteTestVault : IAsyncDisposable
 {
     private readonly SqliteConnection _anchor;
 
-    static SqliteTestVault() => Batteries_V2.Init();
+    static SqliteTestVault() => SqliteProviderInitializer.EnsureInitialized();
 
     private SqliteTestVault(SqliteConnection anchor, SqliteConnectionFactory connections)
     {

@@ -6,4 +6,5 @@ public sealed record BackgroundSyncClientState(
     bool IsDegraded,
     bool IsTransitionInProgress,
     BackgroundSyncClientFailureKind FailureKind,
-    string? SafeMessage);
+    string? SafeMessage,
+    BackgroundSyncOperationalState OperationalState = BackgroundSyncOperationalState.Unspecified);

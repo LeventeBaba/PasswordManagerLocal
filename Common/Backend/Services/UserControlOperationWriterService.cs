@@ -17,11 +17,14 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
     private readonly IUserDeviceRepository _userDevices;
     private readonly IUserMembershipAuthorizationRepository _authorizationRows;
     private readonly IUserMembershipAuthorizationService _membershipAuthorization;
+    private readonly IUserForkRecoveryService? _forkRecovery;
     private readonly IDeviceIdentityService _identity;
     private readonly IUserLifecycleCoordinator _lifecycle;
     private readonly IUnitOfWork _uow;
     private readonly IUserCanonicalHealthService? _canonicalHealth;
     private readonly IUserLoginIdentityProjectionService? _loginIdentities;
+
+    private readonly IRevocationReceiptService? _revocationReceipts;
 
     public UserControlOperationWriterService(
         IUserControlOperationRepository operations,
@@ -35,8 +38,11 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         IUserLifecycleCoordinator lifecycle,
         IUnitOfWork uow,
         IUserCanonicalHealthService? canonicalHealth = null,
-        IUserLoginIdentityProjectionService? loginIdentities = null)
+        IUserLoginIdentityProjectionService? loginIdentities = null,
+        IRevocationReceiptService? revocationReceipts = null,
+        IUserForkRecoveryService? forkRecovery = null)
     {
+        _revocationReceipts = revocationReceipts;
         _operations = operations;
         _states = states;
         _users = users;
@@ -44,6 +50,7 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         _userDevices = userDevices;
         _authorizationRows = authorizationRows;
         _membershipAuthorization = membershipAuthorization;
+        _forkRecovery = forkRecovery;
         _identity = identity;
         _lifecycle = lifecycle;
         _uow = uow;
@@ -180,6 +187,15 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         var active = await _authorizationRows.ListActiveForDeviceAsync(user.UId, payload.RemovedDeviceId, ct);
         DeviceRemovalEvidenceUtil.ValidateActiveAuthorizations(payload, active);
 
+        if (payload.ForkExclusion is not null)
+        {
+            if (_forkRecovery is null) throw new InvalidOperationException("Fork-removal verification is unavailable.");
+            var verified = await _forkRecovery.PrepareRemovalAsync(user, payload.RemovedDeviceId, ct);
+            if (verified.AuthorizationId != payload.ForkExclusion.AuthorizationId ||
+                !verified.FirstEnvelope.AsSpan().SequenceEqual(payload.ForkExclusion.FirstEnvelope) ||
+                !verified.SecondEnvelope.AsSpan().SequenceEqual(payload.ForkExclusion.SecondEnvelope))
+                throw new InvalidDataException("The recovery removal evidence changed before signing.");
+        }
         var state = await GetOrCreateStateAsync(user, user.KeyEpoch, user.MembershipEpoch, ct);
         var envelope = CreateEnvelope(
             user,
@@ -192,6 +208,11 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
             UserControlOperationEnvelopeUtil.SerializeDeviceRemovalPayload(payload));
         await PersistAppliedEnvelopeAsync(envelope, state, ct);
 
+        if (payload.ForkExclusion is not null)
+        {
+            if (_forkRecovery is null) throw new InvalidOperationException("Fork-removal verification is unavailable.");
+            await _forkRecovery.StageSignedExclusionAsync(user, payload, envelope, ct);
+        }
         foreach (var authorization in active)
             await _membershipAuthorization.EndAuthorizationAsync(authorization, payload, envelope.OperationId, envelope.OperationHash, envelope.CreatedAtUtc, ct);
 
@@ -215,6 +236,8 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
         if (_loginIdentities is not null)
             await _loginIdentities.SetCanonicalAsync(user, user.GetGeneralUserDataVersion(), ct);
         _states.Update(state);
+        if (_revocationReceipts is not null)
+            await _revocationReceipts.StageAppliedAsync(envelope, ct);
         await _uow.SaveChangesAsync(ct);
         return envelope;
     }
@@ -368,6 +391,18 @@ public sealed class UserControlOperationWriterService : IUserControlOperationWri
 
     private async Task PersistAppliedEnvelopeAsync(UserControlOperationEnvelope envelope, UserControlState state, CancellationToken ct)
     {
+        if (envelope.OperationType is UserControlOperationType.DeviceRemoval or UserControlOperationType.AccountDeletion)
+        {
+            var history = await _authorizationRows.ListForUserAsync(envelope.UserId, ct);
+            envelope.RevocationMembers = UserControlOperationEnvelopeUtil.CreateMembershipSummary(history.Where(m =>
+                m.StartedMembershipEpoch <= envelope.PreviousMembershipEpoch && m.MinimumKeyEpoch <= envelope.PreviousKeyEpoch));
+            foreach (var proof in (await _operations.ListForUserAsync(envelope.UserId, ct)).Where(o =>
+                         o.Status == UserControlOperationStatus.Applied && o.ResultingMembershipEpoch <= envelope.PreviousMembershipEpoch &&
+                         o.OperationType is UserControlOperationType.DeviceAddition or UserControlOperationType.DeviceRemoval))
+                envelope.RevocationHistoryProofs.Add(UserControlOperationEnvelopeUtil.CopyCoreProof(
+                    UserControlOperationEnvelopeUtil.Deserialize(proof.EnvelopePayload)));
+            UserControlOperationEnvelopeUtil.FillOriginAuthentication(envelope, _identity);
+        }
         var serialized = UserControlOperationEnvelopeUtil.Serialize(envelope);
         var receivedAtUtc = DateTimeOffset.UtcNow;
         await _operations.AddAsync(

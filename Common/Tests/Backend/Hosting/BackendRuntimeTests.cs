@@ -167,6 +167,21 @@ public sealed class BackendRuntimeTests
     }
 
     [TestMethod]
+    public async Task DelayedSynchronizationNotification_CannotRestoreAnObsoleteRunningState()
+    {
+        using var directory = new TemporaryDirectory();
+        var sync = new FakeSyncRuntimeService();
+        var runtime = CreateRuntime(directory.Path, _ => Task.CompletedTask, sync, out _);
+        await runtime.EnsureStartedAsync();
+        await sync.StartAsync();
+        var obsolete = sync.Snapshot;
+        await sync.StopAsync();
+        sync.ReplayStateNotification(obsolete);
+        Assert.AreEqual(SyncRuntimeState.Disabled, runtime.SyncSnapshot.State);
+        await runtime.DisposeAsync();
+    }
+
+    [TestMethod]
     public async Task SyncFailure_LeavesBackendReadyAndMarksSyncDegraded()
     {
         using var directory = new TemporaryDirectory();
@@ -668,6 +683,7 @@ public sealed class BackendRuntimeTests
     }
 
     [TestMethod]
+    [TestCategory("StorageAuxiliary")]
     [DataRow(BackendRuntimeFailureKind.DatabaseCompatibility)]
     [DataRow(BackendRuntimeFailureKind.DatabaseConfigurationInvalid)]
     [DataRow(BackendRuntimeFailureKind.DatabaseKeyUnavailable)]
@@ -693,15 +709,25 @@ public sealed class BackendRuntimeTests
             out _);
 
         var paths = new BackendStoragePaths(directory.Path);
-        foreach (var path in new[]
-                 {
-                     paths.DatabasePath,
-                     paths.DatabaseWalPath,
-                     paths.DatabaseShmPath,
-                     paths.DatabaseJournalPath,
-                     paths.DatabaseConfigPath,
-                     $"{paths.DatabaseConfigPath}.123.tmp"
-                 })
+        var retainedPaths = new[]
+        {
+            paths.DatabasePath,
+            paths.DatabaseWalPath,
+            paths.DatabaseShmPath,
+            paths.DatabaseJournalPath,
+            paths.DatabaseConfigPath,
+            paths.DatabaseMigrationTempPath,
+            paths.DatabaseMigrationBackupPath,
+            $"{paths.DatabaseMigrationTempPath}-wal",
+            $"{paths.DatabaseMigrationTempPath}-shm",
+            $"{paths.DatabaseMigrationTempPath}-journal",
+            $"{paths.DatabaseMigrationBackupPath}-wal",
+            $"{paths.DatabaseMigrationBackupPath}-shm",
+            $"{paths.DatabaseMigrationBackupPath}-journal",
+            $"{paths.DatabaseConfigPath}.tmp",
+            $"{paths.DatabaseConfigPath}.123.tmp"
+        };
+        foreach (var path in retainedPaths)
         {
             await File.WriteAllTextAsync(path, "test");
         }
@@ -711,6 +737,7 @@ public sealed class BackendRuntimeTests
 
         Assert.AreEqual("test", await File.ReadAllTextAsync(paths.DatabasePath));
         Assert.AreEqual("test", await File.ReadAllTextAsync(paths.DatabaseConfigPath));
+        Assert.IsTrue(retainedPaths.All(File.Exists));
         await runtime.ResetDatabaseAndRestartAsync();
 
         Assert.AreEqual(BackendRuntimeState.Ready, runtime.Snapshot.State);
@@ -720,6 +747,7 @@ public sealed class BackendRuntimeTests
         Assert.IsFalse(File.Exists(paths.DatabaseJournalPath));
         Assert.IsFalse(File.Exists(paths.DatabaseConfigPath));
         Assert.IsFalse(File.Exists($"{paths.DatabaseConfigPath}.123.tmp"));
+        Assert.IsTrue(retainedPaths.All(path => !File.Exists(path)));
         await runtime.DisposeAsync();
     }
 
@@ -954,6 +982,209 @@ public sealed class BackendRuntimeTests
         StringAssert.Contains(failure.Message, "platform key-protector factory returned null");
         Assert.AreEqual(BackendRuntimeState.Failed, runtime.Snapshot.State);
         Assert.AreEqual(BackendLifetimeReason.None, composition.LifetimeCoordinator.ActiveReasons);
+    }
+
+    [TestMethod]
+    [DataRow(0, BackendRuntimeFailureKind.DatabaseCompatibility)]
+    [DataRow(1, BackendRuntimeFailureKind.DatabaseConfigurationInvalid)]
+    [DataRow(2, BackendRuntimeFailureKind.DatabaseKeyUnavailable)]
+    [DataRow(3, BackendRuntimeFailureKind.PlatformKeyUnavailable)]
+    [DataRow(4, BackendRuntimeFailureKind.DatabaseUnreadable)]
+    [DataRow(5, BackendRuntimeFailureKind.StorageUnavailable)]
+    [DataRow(6, BackendRuntimeFailureKind.StorageUnavailable)]
+    [DataRow(7, BackendRuntimeFailureKind.StartupFailure)]
+    [DataRow(8, BackendRuntimeFailureKind.DatabaseUnreadable)]
+    [TestCategory("Recovery")]
+    public async Task StartupClassificationPreservesStorageAndSeparatesRetryFromReset(
+        int failureCase, BackendRuntimeFailureKind expected)
+    {
+        using var directory = new TemporaryDirectory();
+        Exception failure = failureCase switch
+        {
+            0 => new DatabaseVersionNotSupportedException(99, 18, 18),
+            1 => new DatabaseConfigurationInvalidException(),
+            2 => new DatabaseKeyUnavailableException(),
+            3 => new KeyProtectorUnavailableException(KeyProtectorUnavailableReason.PlatformKeyStoreUnavailable),
+            4 => new Microsoft.Data.Sqlite.SqliteException("structural corruption", 11),
+            5 => new Microsoft.Data.Sqlite.SqliteException("busy", 5),
+            6 => new IOException("storage temporarily unavailable"),
+            7 => new InvalidOperationException("ordinary startup failure"),
+            _ => new DatabaseUnreadableException()
+        };
+        var paths = new BackendStoragePaths(directory.Path);
+        await File.WriteAllTextAsync(paths.DatabasePath, "protected data");
+        await File.WriteAllTextAsync(paths.DatabaseConfigPath, "protected key");
+        await using var runtime = CreateRuntime(directory.Path, _ => Task.FromException(failure),
+            new FakeSyncRuntimeService(), out _);
+        await Assert.ThrowsAsync<Exception>(() => runtime.EnsureStartedAsync());
+        Assert.AreEqual(expected, runtime.Snapshot.FailureKind);
+        Assert.AreEqual("protected data", await File.ReadAllTextAsync(paths.DatabasePath));
+        Assert.AreEqual("protected key", await File.ReadAllTextAsync(paths.DatabaseConfigPath));
+        Assert.IsFalse(File.Exists(paths.DatabaseResetPendingPath));
+        if (!expected.RequiresDatabaseReset())
+            await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.ResetDatabaseAndRestartAsync());
+    }
+
+    [TestMethod]
+    [TestCategory("Recovery")]
+    [Timeout(20_000)]
+    public async Task StorageLockFailureDoesNotDeleteOrMarkStorageForReset()
+    {
+        using var directory = new TemporaryDirectory();
+        var paths = new BackendStoragePaths(directory.Path);
+        await File.WriteAllTextAsync(paths.DatabasePath, "original");
+        await File.WriteAllTextAsync(paths.DatabaseConfigPath, "key");
+        using var storageLock = StorageFileLock.Acquire($"{paths.DatabaseConfigPath}.lock");
+        var cleaner = new PasswordManagerLocal.Common.Backend.Persistence.BackendStorageCleaner(paths);
+        await Assert.ThrowsAsync<IOException>(() => cleaner.DeleteDatabaseFilesAsync(CancellationToken.None));
+        Assert.AreEqual("original", await File.ReadAllTextAsync(paths.DatabasePath));
+        Assert.AreEqual("key", await File.ReadAllTextAsync(paths.DatabaseConfigPath));
+        Assert.IsFalse(File.Exists(paths.DatabaseResetPendingPath));
+    }
+
+    [TestMethod]
+    [TestCategory("Recovery")]
+    public async Task CancelledResetWhileWaitingForStorageLockPreservesEveryFile()
+    {
+        using var directory = new TemporaryDirectory();
+        var paths = new BackendStoragePaths(directory.Path);
+        await File.WriteAllTextAsync(paths.DatabasePath, "original");
+        await File.WriteAllTextAsync(paths.DatabaseConfigPath, "key");
+        await using var runtime = CreateRuntime(directory.Path,
+            _ => Task.FromException(new DatabaseUnreadableException()), new FakeSyncRuntimeService(), out _);
+        await Assert.ThrowsAsync<DatabaseUnreadableException>(() => runtime.EnsureStartedAsync());
+        using var storageLock = StorageFileLock.Acquire($"{paths.DatabaseConfigPath}.lock");
+        using var cancellation = new CancellationTokenSource();
+        var reset = runtime.ResetDatabaseAndRestartAsync(cancellation.Token);
+        Assert.IsFalse(reset.IsCompleted);
+        cancellation.Cancel();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => reset);
+        Assert.AreEqual("original", await File.ReadAllTextAsync(paths.DatabasePath));
+        Assert.AreEqual("key", await File.ReadAllTextAsync(paths.DatabaseConfigPath));
+        Assert.IsFalse(File.Exists(paths.DatabaseResetPendingPath));
+        Assert.IsFalse(runtime.Snapshot.IsReady);
+    }
+
+    [TestMethod]
+    [TestCategory("Recovery")]
+    public async Task CancellationAfterDeletionWaitsForFreshStartupAndRejectsOverlappingReset()
+    {
+        using var directory = new TemporaryDirectory();
+        var attempts = 0;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var runtime = CreateRuntime(directory.Path, async _ =>
+        {
+            if (++attempts == 1) throw new DatabaseUnreadableException();
+            entered.SetResult();
+            await release.Task;
+        }, new FakeSyncRuntimeService(), out _);
+        var paths = new BackendStoragePaths(directory.Path);
+        await File.WriteAllTextAsync(paths.DatabasePath, "original");
+        await Assert.ThrowsAsync<DatabaseUnreadableException>(() => runtime.EnsureStartedAsync());
+        using var cancellation = new CancellationTokenSource();
+        var reset = runtime.ResetDatabaseAndRestartAsync(cancellation.Token);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        cancellation.Cancel();
+        Assert.IsFalse(reset.IsCompleted, "An irreversible reset must remain observed after caller cancellation.");
+        Assert.IsFalse(File.Exists(paths.DatabasePath));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.ResetDatabaseAndRestartAsync());
+        release.SetResult();
+        await reset;
+        Assert.IsTrue(runtime.Snapshot.IsReady);
+        Assert.AreEqual(2, attempts);
+    }
+
+    [TestMethod]
+    [TestCategory("Recovery")]
+    public async Task PartialDeletionBlocksRestartAndRequiresFreshExplicitReset()
+    {
+        using var directory = new TemporaryDirectory();
+        var paths = new BackendStoragePaths(directory.Path);
+        var attempts = 0;
+        await using var runtime = CreateRuntime(directory.Path, _ => ++attempts == 1
+            ? Task.FromException(new DatabaseUnreadableException()) : Task.CompletedTask,
+            new FakeSyncRuntimeService(), out _);
+        await File.WriteAllTextAsync(paths.DatabasePath, "original");
+        await File.WriteAllTextAsync(paths.DatabaseConfigPath, "key");
+        // A directory at a fixed file path is a real, portable deletion failure.
+        Directory.CreateDirectory(paths.DatabaseMigrationTempPath);
+        await Assert.ThrowsAsync<DatabaseUnreadableException>(() => runtime.EnsureStartedAsync());
+        await Assert.ThrowsAsync<DatabaseResetIncompleteException>(() => runtime.ResetDatabaseAndRestartAsync());
+        Assert.IsFalse(runtime.Snapshot.IsReady);
+        Assert.AreEqual(BackendRuntimeFailureKind.DatabaseResetIncomplete, runtime.Snapshot.FailureKind);
+        Assert.IsFalse(File.Exists(paths.DatabasePath));
+        Assert.AreEqual("key", await File.ReadAllTextAsync(paths.DatabaseConfigPath));
+        Assert.AreEqual(0L, new FileInfo(paths.DatabaseResetPendingPath).Length);
+        await Assert.ThrowsAsync<DatabaseResetIncompleteException>(() => runtime.EnsureStartedAsync());
+        Assert.AreEqual(1, attempts, "No host may open surviving partially reset storage.");
+        Directory.Delete(paths.DatabaseMigrationTempPath);
+        await runtime.ResetDatabaseAndRestartAsync();
+        Assert.IsTrue(runtime.Snapshot.IsReady);
+        Assert.IsFalse(File.Exists(paths.DatabaseResetPendingPath));
+        Assert.IsFalse(File.Exists(paths.DatabaseConfigPath));
+    }
+
+    [TestMethod]
+    [TestCategory("Recovery")]
+    public async Task FailedFreshStartupKeepsNewStorageAndRetryDoesNotDeleteItAgain()
+    {
+        using var directory = new TemporaryDirectory();
+        var paths = new BackendStoragePaths(directory.Path);
+        var attempts = 0;
+        await using var runtime = CreateRuntime(directory.Path, async _ =>
+        {
+            if (++attempts == 1) throw new DatabaseUnreadableException();
+            if (attempts == 2)
+            {
+                await File.WriteAllTextAsync(paths.DatabasePath, "new protected database");
+                await File.WriteAllTextAsync(paths.DatabaseConfigPath, "new protected key");
+                throw new IOException("startup interrupted after fresh storage creation");
+            }
+        }, new FakeSyncRuntimeService(), out _);
+        await Assert.ThrowsAsync<DatabaseUnreadableException>(() => runtime.EnsureStartedAsync());
+        await Assert.ThrowsAsync<IOException>(() => runtime.ResetDatabaseAndRestartAsync());
+        Assert.IsFalse(runtime.Snapshot.IsReady);
+        Assert.AreEqual("new protected database", await File.ReadAllTextAsync(paths.DatabasePath));
+        Assert.AreEqual("new protected key", await File.ReadAllTextAsync(paths.DatabaseConfigPath));
+        await runtime.EnsureStartedAsync();
+        Assert.IsTrue(runtime.Snapshot.IsReady);
+        Assert.AreEqual("new protected database", await File.ReadAllTextAsync(paths.DatabasePath));
+        Assert.AreEqual("new protected key", await File.ReadAllTextAsync(paths.DatabaseConfigPath));
+    }
+
+    [TestMethod]
+    [TestCategory("Recovery")]
+    public async Task StartupCleanupFailureBlocksBothRetryAndResetOnTheSameRuntime()
+    {
+        using var directory = new TemporaryDirectory();
+        var paths = new BackendStoragePaths(directory.Path);
+        await File.WriteAllTextAsync(paths.DatabasePath, "original");
+        var options = new BackendRuntimeOptions(paths, static () => new TestKeyProtector(),
+            static () => new FakeLocalDiscoveryNetworkLease(), (_, _) =>
+            {
+                var services = CreateHost(new DelegateInitializationService(_ =>
+                    Task.FromException(new DatabaseUnreadableException())), new FakeSyncRuntimeService()).Services;
+                return new BackendServiceHost(new FailingDisposalProvider(services));
+            });
+        var runtime = new BackendRuntime(options);
+        await Assert.ThrowsAsync<AggregateException>(() => runtime.EnsureStartedAsync());
+        Assert.AreEqual(BackendRuntimeFailureKind.ShutdownFailure, runtime.Snapshot.FailureKind);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.EnsureStartedAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.ResetDatabaseAndRestartAsync());
+        Assert.AreEqual("original", await File.ReadAllTextAsync(paths.DatabasePath));
+        Assert.IsFalse(File.Exists(paths.DatabaseResetPendingPath));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.DisposeAsync().AsTask());
+    }
+
+    private sealed class FailingDisposalProvider(IServiceProvider inner) : IServiceProvider, IAsyncDisposable
+    {
+        public object? GetService(Type serviceType) => inner.GetService(serviceType);
+        public async ValueTask DisposeAsync()
+        {
+            if (inner is IAsyncDisposable disposable) await disposable.DisposeAsync();
+            throw new IOException("Injected incomplete provider shutdown");
+        }
     }
 
     private static BackendRuntime CreateRuntime(

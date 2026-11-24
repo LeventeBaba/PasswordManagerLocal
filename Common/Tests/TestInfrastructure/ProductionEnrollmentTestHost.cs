@@ -1,3 +1,4 @@
+using PasswordManagerLocal.Common.Backend.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using PasswordManagerLocal.Common.Contracts.Endpoints;
@@ -9,7 +10,6 @@ using PasswordManagerLocal.Common.Contracts.Requests;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Backend.Sync.Tcp;
 using PasswordManagerLocal.Common.Tests.Fakes;
-using SQLitePCL;
 using System.Text;
 
 namespace PasswordManagerLocal.Common.Tests.TestInfrastructure;
@@ -24,7 +24,7 @@ public sealed class ProductionEnrollmentTestHost : IAsyncDisposable
     private readonly ServiceProvider _services;
     private readonly string _rootDirectory;
 
-    static ProductionEnrollmentTestHost() => Batteries_V2.Init();
+    static ProductionEnrollmentTestHost() => SqliteProviderInitializer.EnsureInitialized();
 
     private ProductionEnrollmentTestHost(
         ServiceProvider services,

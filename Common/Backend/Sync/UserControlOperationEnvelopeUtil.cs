@@ -10,8 +10,8 @@ namespace PasswordManagerLocal.Common.Backend.Sync;
 
 public static class UserControlOperationEnvelopeUtil
 {
-    private const string ContentDomain = "PasswordManagerLocal.Common.Backend.UserControlOperation.Content.v2";
-    private const string SignatureDomain = "PasswordManagerLocal.Common.Backend.UserControlOperation.Signature.v2";
+    private const string ContentDomain = "PasswordManagerLocal.Common.Backend.UserControlOperation.Content.v3";
+    private const string SignatureDomain = "PasswordManagerLocal.Common.Backend.UserControlOperation.Signature.v3";
 
     public static void FillOriginAuthentication(UserControlOperationEnvelope envelope, IDeviceIdentityService identity)
     {
@@ -265,6 +265,8 @@ public static class UserControlOperationEnvelopeUtil
                     MinimumKeyEpoch = row.MinimumKeyEpoch,
                     MaximumKeyEpoch = row.MaximumKeyEpoch,
                     SignPublicKeyHash = row.SignPublicKeyHash.ToArray(),
+                    SignPublicKey = row.SignPublicKey.ToArray(), AdditionOperationHash = row.AdditionOperationHash?.ToArray(),
+                    RemovalOperationHash = row.RemovalOperationHash?.ToArray(),
                     AdditionOperationId = row.AdditionOperationId,
                     RemovalOperationId = row.RemovalOperationId
                 })
@@ -299,7 +301,11 @@ public static class UserControlOperationEnvelopeUtil
                 (member.EndedMembershipEpoch is long ended && ended <= member.StartedMembershipEpoch) ||
                 member.MinimumKeyEpoch <= 0 ||
                 (member.MaximumKeyEpoch is long maximum && maximum < member.MinimumKeyEpoch) ||
-                member.SignPublicKeyHash.Length != SyncConstants.SyncDeltaPayloadHashBytes ||
+                member.SignPublicKeyHash.Length != SyncConstants.SyncDeltaPayloadHashBytes || member.SignPublicKey is null ||
+                member.SignPublicKey.Length is not (0 or SyncConstants.SyncDeltaEd25519PublicKeyBytes) ||
+                (member.SignPublicKey.Length != 0 && !Hashing.Verify(member.SignPublicKeyHash, Hashing.SHA256Hash(member.SignPublicKey))) ||
+                (member.AdditionOperationHash is not null && member.AdditionOperationHash.Length != 32) ||
+                (member.RemovalOperationHash is not null && member.RemovalOperationHash.Length != 32) ||
                 (member.StartedMembershipEpoch == 1
                     ? member.AdditionOperationId is not null
                     : member.AdditionOperationId != member.AuthorizationId)) ||
@@ -371,6 +377,7 @@ public static class UserControlOperationEnvelopeUtil
                 (origin.AdditionOperationHash is not null && origin.AdditionOperationHash.Length != SyncConstants.SyncDeltaPayloadHashBytes)) ||
             payload.Origins.Select(origin => (origin.AuthorizationId, origin.UserKeyEpoch)).Distinct().Count() != payload.Origins.Count)
             throw new InvalidDataException("The device-removal origin cutoffs are invalid or duplicated.");
+        if (payload.ForkExclusion is not null) DeviceRemovalForkProofUtil.Validate(payload);
         if (!Hashing.Verify(payload.IntegrityHash, CalculateDeviceRemovalPayloadIntegrityHash(payload)))
             throw new InvalidDataException("The device-removal payload integrity hash is invalid.");
     }
@@ -379,7 +386,7 @@ public static class UserControlOperationEnvelopeUtil
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
-        writer.Write("PasswordManagerLocal.Common.Backend.AccountDeletionMembershipHistory.v1");
+        writer.Write("PasswordManagerLocal.Common.Backend.AccountDeletionMembershipHistory.v2");
         var ordered = members.OrderBy(member => member.AuthorizationId).ToArray();
         writer.Write(ordered.Length);
         foreach (var member in ordered)
@@ -394,6 +401,9 @@ public static class UserControlOperationEnvelopeUtil
             writer.Write(member.MaximumKeyEpoch.HasValue);
             if (member.MaximumKeyEpoch.HasValue) writer.Write(member.MaximumKeyEpoch.Value);
             SyncCryptoUtil.WriteBytes(writer, member.SignPublicKeyHash);
+            SyncCryptoUtil.WriteBytes(writer, member.SignPublicKey);
+            SyncCryptoUtil.WriteBytes(writer, member.AdditionOperationHash ?? []);
+            SyncCryptoUtil.WriteBytes(writer, member.RemovalOperationHash ?? []);
             writer.Write(member.AdditionOperationId.HasValue);
             if (member.AdditionOperationId.HasValue) writer.Write(member.AdditionOperationId.Value.ToByteArray());
             writer.Write(member.RemovalOperationId.HasValue);
@@ -406,7 +416,7 @@ public static class UserControlOperationEnvelopeUtil
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
-        writer.Write("PasswordManagerLocal.Common.Backend.AccountDeletionPayload.v1");
+        writer.Write("PasswordManagerLocal.Common.Backend.AccountDeletionPayload.v2");
         writer.Write(payload.UserId.ToByteArray());
         writer.Write(payload.DeletionGeneration.ToByteArray());
         writer.Write(payload.KeyEpoch);
@@ -445,6 +455,13 @@ public static class UserControlOperationEnvelopeUtil
             if (origin.AdditionOperationId.HasValue) writer.Write(origin.AdditionOperationId.Value.ToByteArray());
             SyncCryptoUtil.WriteBytes(writer, origin.AdditionOperationHash ?? []);
         }
+        if (payload.ForkExclusion is { } proof)
+        {
+            writer.Write("PasswordManagerLocal.DeviceRemovalForkExclusion.v1");
+            writer.Write(proof.AuthorizationId.ToByteArray());
+            SyncCryptoUtil.WriteBytes(writer, proof.FirstEnvelope);
+            SyncCryptoUtil.WriteBytes(writer, proof.SecondEnvelope);
+        }
         return Hashing.SHA256Hash(stream.ToArray());
     }
 
@@ -467,6 +484,7 @@ public static class UserControlOperationEnvelopeUtil
         writer.Write(envelope.CreatedAtUtc.ToUniversalTime().ToUnixTimeMilliseconds());
         SyncCryptoUtil.WriteBytes(writer, envelope.PayloadHash);
         SyncCryptoUtil.WriteBytes(writer, envelope.OriginSignPublicKey);
+        SyncCryptoUtil.WriteBytes(writer, CalculateAccountDeletionMembershipHistoryHash(envelope.RevocationMembers));
         return Hashing.SHA256Hash(stream.ToArray());
     }
 
@@ -484,8 +502,50 @@ public static class UserControlOperationEnvelopeUtil
         return stream.ToArray();
     }
 
+    public static UserControlOperationEnvelope CopyCoreProof(UserControlOperationEnvelope proof) => new()
+    {
+        OperationId = proof.OperationId, UserId = proof.UserId, OperationType = proof.OperationType,
+        OriginDeviceId = proof.OriginDeviceId, OriginInstanceId = proof.OriginInstanceId, OriginSequence = proof.OriginSequence,
+        PreviousKeyEpoch = proof.PreviousKeyEpoch, ResultingKeyEpoch = proof.ResultingKeyEpoch,
+        PreviousMembershipEpoch = proof.PreviousMembershipEpoch, ResultingMembershipEpoch = proof.ResultingMembershipEpoch,
+        CreatedAtUtc = proof.CreatedAtUtc, RevocationMembers = proof.RevocationMembers,
+        OperationPayload = proof.OperationPayload, PayloadHash = proof.PayloadHash, OperationHash = proof.OperationHash,
+        OriginSignPublicKey = proof.OriginSignPublicKey, OriginSignature = proof.OriginSignature
+    };
+
+    public static List<AccountDeletionKnownMember> CreateMembershipSummary(IEnumerable<UserMembershipAuthorization> rows) =>
+        rows.OrderBy(row => row.AuthorizationId).Select(row => new AccountDeletionKnownMember
+        {
+            AuthorizationId = row.AuthorizationId, DeviceId = row.DeviceId, OriginInstanceId = row.OriginInstanceId,
+            StartedMembershipEpoch = row.StartedMembershipEpoch, EndedMembershipEpoch = row.EndedMembershipEpoch,
+            MinimumKeyEpoch = row.MinimumKeyEpoch, MaximumKeyEpoch = row.MaximumKeyEpoch,
+            SignPublicKeyHash = row.SignPublicKeyHash.ToArray(), SignPublicKey = row.SignPublicKey.ToArray(),
+            AdditionOperationHash = row.AdditionOperationHash?.ToArray(), RemovalOperationHash = row.RemovalOperationHash?.ToArray(),
+            AdditionOperationId = row.AdditionOperationId,
+            RemovalOperationId = row.RemovalOperationId
+        }).ToList();
+
     private static void ValidateUnsigned(UserControlOperationEnvelope envelope)
     {
+        if (envelope.RevocationHistoryProofs is null || envelope.RevocationHistoryProofs.Count > SyncConstants.MaxUserControlInventoryEntries ||
+            envelope.RevocationHistoryProofs.Any(p => p is null || p.RevocationHistoryProofs is null || p.RevocationHistoryProofs.Count != 0))
+            throw new InvalidDataException("Retirement evidence must contain bounded, non-nested signed proof envelopes.");
+        if (envelope.RevocationMembers is null || envelope.RevocationMembers.Count > SyncConstants.MaxUserControlInventoryEntries ||
+            envelope.RevocationMembers.Any(m => m is null || m.AuthorizationId == Guid.Empty || m.DeviceId == Guid.Empty ||
+                m.OriginInstanceId == Guid.Empty || m.StartedMembershipEpoch <= 0 || m.MinimumKeyEpoch <= 0 ||
+                m.SignPublicKeyHash is not { Length: SyncConstants.SyncDeltaPayloadHashBytes } ||
+                m.SignPublicKey is not { Length: SyncConstants.SyncDeltaEd25519PublicKeyBytes } ||
+                !Hashing.Verify(m.SignPublicKeyHash, Hashing.SHA256Hash(m.SignPublicKey)) ||
+                (m.AdditionOperationHash is not null && m.AdditionOperationHash.Length != 32) ||
+                (m.RemovalOperationHash is not null && m.RemovalOperationHash.Length != 32) ||
+                (m.EndedMembershipEpoch is long end && end <= m.StartedMembershipEpoch) ||
+                (m.MaximumKeyEpoch is long maximum && maximum < m.MinimumKeyEpoch)) ||
+            envelope.RevocationMembers.Select(m => m.AuthorizationId).Distinct().Count() != envelope.RevocationMembers.Count ||
+            envelope.RevocationMembers.Select(m => (m.DeviceId, m.OriginInstanceId)).Distinct().Count() != envelope.RevocationMembers.Count)
+            throw new InvalidDataException("The signed revocation recipient declaration is invalid.");
+        if (envelope.OperationType is not (UserControlOperationType.DeviceRemoval or UserControlOperationType.AccountDeletion) &&
+            envelope.RevocationMembers.Count != 0)
+            throw new InvalidDataException("Only revocations may declare delivery recipients.");
         if (envelope.OperationId == Guid.Empty || envelope.UserId == Guid.Empty ||
             envelope.OriginDeviceId == Guid.Empty || envelope.OriginInstanceId == Guid.Empty)
         {

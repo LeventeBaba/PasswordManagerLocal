@@ -2,47 +2,80 @@
 
 ## Build prerequisites
 
-Publish on Windows x64 with the .NET SDK pinned in [global.json](../global.json). Native AOT also requires the Visual Studio C++ build tools and a Windows SDK.
+| Tool | Use |
+| --- | --- |
+| .NET SDK accepted by [global.json](../global.json) | Project target frameworks remain .NET 10; `major` roll-forward permits newer installed SDKs when required |
+| Inkscape 1.4 or newer | SVG-to-ICO rendering |
+| WiX SDK/extensions pinned in the project | MSI build and UI integration |
+| Visual Studio C++ build tools and Windows SDK | Native AOT publishing |
 
-The build renders [PasswordManagerLocal.svg](../PasswordManagerLocal.svg) into a multi-resolution ICO under `artifacts\branding`. The app, tray, and MSI share that icon. The generator uses Inkscape 1.4 or newer from `PATH` or its standard installation directory. Set `PML_INKSCAPE_PATH` to an absolute executable path for a portable installation. [Icon generation script](../Tools/Windows/GenerateWindowsIcon.ps1)
+[GenerateWindowsIcon.ps1](../Tools/Windows/GenerateWindowsIcon.ps1) renders [PasswordManagerLocal.svg](../PasswordManagerLocal.svg) into the shared multi-resolution `artifacts\branding\PasswordManagerLocal.ico`. The frontend, Agent, and MSI consume that output. Inkscape resolves through `PATH`, its standard installation directory, or `PML_INKSCAPE_PATH`. Generation is incremental, serialized, and atomic; it runs before Avalonia resource packaging in ordinary and design-time builds.
 
-The installer uses the pinned WiX SDK and its UI and Util extensions. After reviewing the [WiX Toolset EULA](https://docs.firegiant.com/wix/osmf/), accept it for the build account from the solution root.
+WiX EULA acceptance is associated with the build account:
 
 ```powershell
 dotnet build .\Windows\Installer\PasswordManagerLocal.Windows.Installer.wixproj -t:AcceptEula -p:EulaId=wix7
 ```
 
+[EULA reference](https://docs.firegiant.com/wix/osmf/).
+
 ## Publish modes and outputs
 
-Run the publish command from the solution root.
+Commands run from the repository root on Windows x64.
 
-| Command | Output under `artifacts\publish` | Executable layout |
+| Command | Output root under `artifacts\publish` | Executable layout |
 | --- | --- | --- |
 | `publish.cmd -W` | `PasswordManagerLocal.Windows` | Managed UI and Agent executables |
 | `publish.cmd -W -ReadyToRun` | `PasswordManagerLocal.Windows-ReadyToRun` | ReadyToRun UI and Agent executables |
-| `publish.cmd -W -NativeAOT` | `PasswordManagerLocal.Windows-NativeAot\win-x64` | One executable with separate UI and Agent process roles |
+| `publish.cmd -W -NativeAOT` | `PasswordManagerLocal.Windows-NativeAot\win-x64` | One executable with separate UI/Agent process roles |
 
-Each output root contains `product\PasswordManagerLocal`, `PasswordManagerLocal-win-x64.zip`, `PasswordManagerLocal.msi`, and `reports`. The ZIP contains the product files. The MSI uses the product folder as input and adds the license, attribution, and installer integration. MSI versioning comes from `Version` in [Directory.Build.props](../Directory.Build.props), using three numeric fields within Windows Installer's limits. Add `-SignWindows` for [Authenticode signing](RELEASE_SIGNING.md#windows-authenticode).
+Each root contains:
 
-The Native AOT executable stays beside its native DLLs. It starts the UI with no arguments. The UI launches the Agent role with `--agent --ui-requested`, and background sync uses `--agent --background` for sign-in startup. See [Windows runtime ownership](Architecture/APPLICATION.md#windows-runtime).
+| Path | Contents |
+| --- | --- |
+| `product\PasswordManagerLocal` | Verified executable/native-library product layout |
+| `PasswordManagerLocal-win-x64.zip` | Product files |
+| `PasswordManagerLocal.msi` | Installer built from the verified product, license, attribution, and integration inputs |
+| `reports` | Packaging, installer, and signing diagnostics |
 
-## Installer behavior
+Standalone project publishing is rejected by the build targets. [PublishWindowsProduct.ps1](../Tools/Windows/PublishWindowsProduct.ps1) stages, verifies, optionally signs, archives, and packages the product. `-SignWindows` enables [Authenticode](RELEASE_SIGNING.md#windows-authenticode); default Windows output is unsigned.
 
-The MSI installs per machine under `%ProgramFiles%\PasswordManagerLocal` by default. First install can use a different protected folder on a fixed NTFS drive. Setup rejects user-writable paths, junctions, and symbolic links. The vault and preferences live in the user's Local AppData, separate from program files.
+[Directory.Build.props](../Directory.Build.props) supplies the product version. MSI version validation requires three numeric fields within `255.255.65535`.
 
-Setup includes Start menu shortcuts and an optional desktop shortcut, selected by default. An interactive install offers an unchecked option to open the app as the desktop user. That option is skipped when setup requires a restart.
+## Native AOT entry points
 
-English is the default installer language. The same MSI embeds Hungarian dialogs and shortcut labels. Its language is independent of the app setting. Select the Hungarian transform from the directory containing the MSI.
+The unified executable remains beside its native DLLs. No arguments starts the UI. The UI starts the Agent role with `--agent --ui-requested`; sign-in background startup uses `--agent --background`. Roles retain separate process/instance ownership and communicate over IPC. See [Windows runtime](Architecture/APPLICATION.md#windows-runtime).
+
+## Installation and upgrades
+
+The MSI installs per machine under `%ProgramFiles%\PasswordManagerLocal` by default. First installation accepts a protected custom folder on a fixed NTFS drive. User-writable paths, junctions, and symbolic links are rejected. Vault/preferences remain in the user's Local AppData outside program files.
+
+Setup creates Start menu shortcuts and an optional desktop shortcut selected by default. Interactive setup offers an unchecked launch option for the desktop user; launch is skipped when setup requires restart.
+
+English is the default installer language. Hungarian dialogs/shortcut labels are embedded in the same MSI and are independent of the app language:
 
 ```powershell
 msiexec.exe /i ".\PasswordManagerLocal.msi" TRANSFORMS=:1038
 ```
 
-The publish modes share one installed product. An MSI of the same or a newer version replaces the existing program files in the installed folder. To move the program files, uninstall while keeping local data and choose the new folder on reinstall. Restart Manager tracks both executable paths for files-in-use handling. A successful upgrade updates matching sign-in entries and removes app-owned firewall rules for obsolete executable paths.
+Managed, ReadyToRun, and Native AOT modes share one installed product. Same/newer-version installation replaces product files in the installed folder. Moving the folder requires uninstall/reinstall while retaining local data. Restart Manager tracks both executable paths. Successful upgrade updates matching sign-in entries and removes app-owned firewall rules for obsolete executable paths.
 
-## Uninstall and diagnostics
+## Uninstall
 
-- **Installed apps** removes the program and shortcuts and keeps local data. After uninstall commits, cleanup removes matching startup entries from loaded user hives and known app-owned firewall rules for that installation.
-- **Start menu uninstall shortcut** offers to delete the current user's local app data. Keeping it is the default. Choosing deletion removes `%LOCALAPPDATA%\PasswordManagerLocal` before the MSI uninstall opens. Canceling that dialog cannot recover the data. Active instance locks or links in the data tree block deletion.
+| Entry point | Local-data behavior |
+| --- | --- |
+| Windows Installed apps | Removes product/shortcuts and retains local data |
+| Start menu uninstall shortcut | Offers current-user local-data deletion; keeping data is the default |
 
-The publish root's `reports` folder contains `installer-build.binlog` and signing results. Native AOT also records `publish.binlog`. Use `msiexec.exe /i PasswordManagerLocal.msi /L*V install.log` or `msiexec.exe /x PasswordManagerLocal.msi /L*V uninstall.log` to log installation, removal, and integration cleanup. On a silent first install, `INSTALLFOLDER` selects a protected custom directory and `REMOVE=DesktopShortcut` omits the desktop shortcut.
+Post-commit uninstall cleanup removes matching startup entries from loaded user hives and known app-owned firewall rules for the installation. Optional data deletion removes `%LOCALAPPDATA%\PasswordManagerLocal` before MSI uninstall opens. Canceling the later MSI dialog does not restore that data. Active instance locks or links in the data tree block deletion.
+
+## Diagnostics
+
+`reports\installer-build.binlog` records installer compilation. Native AOT also produces `publish.binlog`; signing status is recorded in `windows-signing-report.json`.
+
+```powershell
+msiexec.exe /i ".\PasswordManagerLocal.msi" /L*V install.log
+msiexec.exe /x ".\PasswordManagerLocal.msi" /L*V uninstall.log
+```
+
+For silent first install, `INSTALLFOLDER` selects a protected custom directory and `REMOVE=DesktopShortcut` excludes that shortcut.

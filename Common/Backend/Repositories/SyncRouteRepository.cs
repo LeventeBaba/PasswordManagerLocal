@@ -7,10 +7,22 @@ internal sealed class SyncRouteRepository(SqliteSession session) : ISyncRouteRep
 {
     // Route eligibility is a narrow relationship projection. Peer trust and membership
     // authorization are evaluated by the calling services.
-    private const string EligibleRoutes = """
+    private const string ActiveRoutes = """
         FROM "UserDevices" ud WHERE ud."DeviceId" = $device AND ud."IsDeleted" = 0 AND ud."IsSyncOn" = 1
           AND EXISTS (SELECT 1 FROM "LocalUserDevices" lu WHERE lu."UserId" = ud."UserId" AND lu."IsSyncOn" = 1)
         """;
+    private const string EligibleRoutes = ActiveRoutes + """
+
+          AND NOT EXISTS (SELECT 1 FROM "CriticalControlIngress" ci WHERE ci."UserId" = ud."UserId")
+        """;
+
+    public async Task<IReadOnlyList<Guid>> ListAllControlEligibleUserIdsAsync(Guid remoteDeviceId, CancellationToken ct = default) =>
+        remoteDeviceId == Guid.Empty ? [] : await session.ReadAsync(
+            $"SELECT DISTINCT ud.\"UserId\" {ActiveRoutes} ORDER BY ud.\"UserId\";", row => row.GetGuid(0), ct, ("$device", remoteDeviceId));
+
+    public Task<bool> IsControlEligibleAsync(Guid userId, Guid remoteDeviceId, CancellationToken ct = default) =>
+        userId == Guid.Empty || remoteDeviceId == Guid.Empty ? Task.FromResult(false) : session.ExistsAsync(
+            $"""SELECT 1 {ActiveRoutes} AND ud."UserId" = $user""", ct, ("$device", remoteDeviceId), ("$user", userId));
 
     public Task<bool> IsEligibleAsync(Guid userId, Guid remoteDeviceId, CancellationToken ct = default) =>
         userId == Guid.Empty || remoteDeviceId == Guid.Empty

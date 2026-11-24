@@ -121,12 +121,24 @@ public sealed partial class SelfDiagnosticsService
         }
         catch (ArgumentException) { }
         if (!localMatches) plan.Risks.Add("RecoveryRiskLocalMembership");
+        try
+        {
+            await _membershipVerifier.VerifyLocalInstallationAsync(user.UId, user.KeyEpoch, user.MembershipEpoch, ct);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidDataException or ArgumentException)
+        {
+            plan.Blockers.Add("RecoveryBlockedLocalAuthorization");
+        }
         if (archive.Operations.Any(operation => operation.Status == UserControlOperationStatus.StoredPending))
             plan.Risks.Add("RecoveryRiskPendingOperations");
         var state = archive.ControlState;
         var membershipConflict = archive.Operations.Any(operation => operation.OperationId == state?.ConflictingOperationId &&
             operation.OperationType is UserControlOperationType.DeviceAddition or UserControlOperationType.DeviceRemoval);
         var activeFaults = archive.Faults.Where(fault => fault.Status is not (UserSyncHealthStatus.Recovered or UserSyncHealthStatus.Superseded or UserSyncHealthStatus.Healthy)).ToArray();
+        if (state?.HasConflict == true || activeFaults.Any(UserSyncFaultPolicy.IsTerminal) ||
+            archive.Snapshots.Any(snapshot => snapshot.Status is UserSyncSnapshotStatus.IsolatedFork or UserSyncSnapshotStatus.RetiredForkEvidence) ||
+            archive.Operations.Any(operation => operation.Status == UserControlOperationStatus.Quarantined))
+            plan.Blockers.Add("RecoveryBlockedTerminalConflict");
         if ((state?.HasConflict == true && !membershipConflict) ||
             archive.Operations.Any(operation => operation.OperationType == UserControlOperationType.KeyEpochReplacement &&
                 operation.Status is not (UserControlOperationStatus.Applied or UserControlOperationStatus.Rejected)) ||

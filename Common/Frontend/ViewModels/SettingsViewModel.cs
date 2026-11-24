@@ -151,12 +151,15 @@ public sealed class SettingsViewModel : ViewModelBase
 
     public bool IsBackgroundSyncProgressVisible =>
         _isLoadingBackgroundSync || _isChangingBackgroundSync ||
-        _isExternalBackgroundSyncTransition;
+        _isExternalBackgroundSyncTransition ||
+        _backgroundSyncOperationalState == BackgroundSyncOperationalState.Starting;
 
     public bool CanAutomaticallyRefreshBackgroundSync =>
         _backendAvailable && !_isLoadingBackgroundSync &&
         !_isChangingBackgroundSync &&
         !_isExternalBackgroundSyncTransition;
+
+    private BackgroundSyncOperationalState _backgroundSyncOperationalState;
 
     public string BackgroundSyncStatus
     {
@@ -172,10 +175,18 @@ public sealed class SettingsViewModel : ViewModelBase
             }
             if (_isExternalBackgroundSyncTransition)
                 return GetTranslation("Settings_BackgroundSync_Updating");
+            if (_backgroundSyncOperationalState == BackgroundSyncOperationalState.RestartRequired)
+                return GetTranslation("Settings_BackgroundSync_RestartRequired");
             if (!_isBackgroundSyncAvailable)
                 return GetTranslation("Settings_BackgroundSync_Unavailable");
+            if (_backgroundSyncOperationalState == BackgroundSyncOperationalState.DegradedRetrying)
+                return GetTranslation("Settings_BackgroundSync_Retrying");
             if (_isBackgroundSyncDegraded)
                 return GetTranslation("Settings_BackgroundSync_Degraded");
+            if (_backgroundSyncOperationalState == BackgroundSyncOperationalState.EnabledIdle)
+                return GetTranslation("Settings_BackgroundSync_Idle");
+            if (_backgroundSyncOperationalState == BackgroundSyncOperationalState.Starting)
+                return GetTranslation("Settings_BackgroundSync_Updating");
             return GetTranslation(_isBackgroundSyncEnabled
                 ? "Settings_BackgroundSync_Enabled"
                 : "Settings_BackgroundSync_Disabled");
@@ -352,6 +363,7 @@ public sealed class SettingsViewModel : ViewModelBase
         {
             this.RaiseAndSetIfChanged(ref _isBackgroundSyncEnabled, state.IsEnabled,
                 nameof(IsBackgroundSyncEnabled));
+            _backgroundSyncOperationalState = state.OperationalState;
             _isBackgroundSyncAvailable = state.IsAvailable;
             _isBackgroundSyncDegraded = state.IsDegraded;
             _isExternalBackgroundSyncTransition = state.IsTransitionInProgress;

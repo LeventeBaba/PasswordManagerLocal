@@ -6,8 +6,8 @@ using System.Buffers.Binary;
 namespace PasswordManagerLocal.Windows.EndpointRpc.Serialization;
 
 /// <summary>
-/// Encodes endpoint messages inside the IPC request/response payload. The v5
-/// IPC response discriminator owns the response kind, so endpoint responses
+/// Encodes endpoint messages inside the IPC request/response payload. Since v5,
+/// the IPC response discriminator owns the response kind, so endpoint responses
 /// contain only their JSON body.
 /// </summary>
 public sealed class EndpointRpcMessageCodec

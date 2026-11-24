@@ -33,6 +33,8 @@ public sealed class NetworkDeltaLifecycleService : INetworkDeltaLifecycleService
     private readonly IUserControlOperationRepository? _controlOperations;
     private readonly IUserMembershipAuthorizationRepository? _membershipAuthorizations;
 
+    private readonly IRevocationDeliveryService? _revocationDelivery;
+
     public NetworkDeltaLifecycleService(
         IUserRepository users,
         IDeviceRepository devices,
@@ -48,8 +50,10 @@ public sealed class NetworkDeltaLifecycleService : INetworkDeltaLifecycleService
         IInteractiveSessionStateService interactiveSessions,
         IUnitOfWork uow,
         IUserControlOperationRepository? controlOperations = null,
-        IUserMembershipAuthorizationRepository? membershipAuthorizations = null)
+        IUserMembershipAuthorizationRepository? membershipAuthorizations = null,
+        IRevocationDeliveryService? revocationDelivery = null)
     {
+        _revocationDelivery = revocationDelivery;
         _users = users;
         _devices = devices;
         _userDevices = userDevices;
@@ -194,7 +198,7 @@ public sealed class NetworkDeltaLifecycleService : INetworkDeltaLifecycleService
         if (_controlOperations is null || _membershipAuthorizations is null)
             return false;
 
-        var revokedUserIds = await _controlOperations.ListAppliedRevocationUserIdsAsync(ct);
+        var revokedUserIds = _revocationDelivery is null ? Array.Empty<Guid>() : await _revocationDelivery.ListPendingUserIdsAsync(ct);
         if (revokedUserIds.Count == 0)
             return false;
 

@@ -10,7 +10,7 @@ public static class BackendDebugLog
 {
 #if DEBUG
     private static readonly object Gate = new();
-    private static string? _logPath;
+    private static BoundedDebugLogWriter? _writer;
     private static bool _globalExceptionHandlersRegistered;
     private static readonly ConcurrentDictionary<string, DateTimeOffset> RateLimitedDebugWrites = new(StringComparer.Ordinal);
 #endif
@@ -24,11 +24,11 @@ public static class BackendDebugLog
             ArgumentException.ThrowIfNullOrWhiteSpace(logsDirectory);
             var startedAt = DateTimeOffset.Now;
             var fullDirectory = Directory.CreateDirectory(Path.GetFullPath(logsDirectory)).FullName;
-            var logPath = CreateUniqueLogPath(fullDirectory, startedAt);
+            var writer = new BoundedDebugLogWriter(fullDirectory);
 
             lock (Gate)
             {
-                Volatile.Write(ref _logPath, logPath);
+                Volatile.Write(ref _writer, writer);
                 RegisterGlobalExceptionHandlersLocked();
             }
 
@@ -37,7 +37,7 @@ public static class BackendDebugLog
                 $"Debug backend logging initialized. StartTime={startedAt:O}, " +
                 $"ProcessId={Environment.ProcessId}, ProcessArchitecture={RuntimeInformation.ProcessArchitecture}, " +
                 $"OS={Environment.OSVersion}, BackendAssembly={assembly.Name}, Version={assembly.Version}, " +
-                $"LogPath={logPath}",
+                $"LogDirectory={fullDirectory}",
                 "Logging");
         }
         catch
@@ -111,8 +111,8 @@ public static class BackendDebugLog
 #if DEBUG
         try
         {
-            var path = Volatile.Read(ref _logPath);
-            if (string.IsNullOrWhiteSpace(path))
+            var writer = Volatile.Read(ref _writer);
+            if (writer is null)
                 return;
 
             var timestamp = DateTimeOffset.Now;
@@ -120,6 +120,8 @@ public static class BackendDebugLog
             builder.Append(timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff zzz", CultureInfo.InvariantCulture));
             builder.Append(" [");
             builder.Append(level);
+            builder.Append("] [Process ");
+            builder.Append(Environment.ProcessId);
             builder.Append("] [Thread ");
             builder.Append(Environment.CurrentManagedThreadId);
             builder.Append("] [");
@@ -135,8 +137,7 @@ public static class BackendDebugLog
 
             lock (Gate)
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                File.AppendAllText(path, builder.ToString(), Encoding.UTF8);
+                writer.TryAppend(builder.ToString());
             }
         }
         catch
@@ -147,23 +148,6 @@ public static class BackendDebugLog
     }
 
 #if DEBUG
-    private static string CreateUniqueLogPath(string logsDirectory, DateTimeOffset startedAt)
-    {
-        var baseName = startedAt.ToString("yyyy-MM-dd_HH-mm-ss.fff", CultureInfo.InvariantCulture);
-        var candidate = Path.Combine(logsDirectory, $"{baseName}.log");
-        if (!File.Exists(candidate))
-            return candidate;
-
-        for (var index = 1; index < int.MaxValue; index++)
-        {
-            candidate = Path.Combine(logsDirectory, $"{baseName}_{index:D2}.log");
-            if (!File.Exists(candidate))
-                return candidate;
-        }
-
-        throw new IOException("A unique backend debug log file name could not be allocated.");
-    }
-
     private static void RegisterGlobalExceptionHandlersLocked()
     {
         if (_globalExceptionHandlersRegistered)

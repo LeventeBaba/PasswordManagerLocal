@@ -30,6 +30,7 @@ public sealed class UserLoginService : IUserLoginService
     private readonly IAuthenticatedSessionIssuer _sessionIssuer;
     private readonly IUserTombstoneGarbageCollector? _garbageCollector;
     private readonly IUserCanonicalHealthService? _canonicalHealth;
+    private readonly IUserForkRecoveryService? _forkRecovery;
     private readonly IUserDataRecoveryCoordinator? _recoveryCoordinator;
     private readonly IUserMembershipAuthorizationRepository _membershipAuthorizations;
 
@@ -53,7 +54,8 @@ public sealed class UserLoginService : IUserLoginService
         IUserDataRecoveryCoordinator? recoveryCoordinator = null,
         IUserMembershipAuthorizationRepository? membershipAuthorizations = null,
         IUserLoginPreparationService? preparation = null,
-        IUserPostLoginWorkScheduler? postLogin = null)
+        IUserPostLoginWorkScheduler? postLogin = null,
+        IUserForkRecoveryService? forkRecovery = null)
     {
         _preparation = preparation;
         _postLogin = postLogin;
@@ -70,6 +72,7 @@ public sealed class UserLoginService : IUserLoginService
         _timeProvider = timeProvider;
         _garbageCollector = garbageCollector;
         _canonicalHealth = canonicalHealth;
+        _forkRecovery = forkRecovery;
         _recoveryCoordinator = recoveryCoordinator;
         _membershipAuthorizations = membershipAuthorizations
             ?? throw new ArgumentNullException(nameof(membershipAuthorizations));
@@ -86,7 +89,8 @@ public sealed class UserLoginService : IUserLoginService
         {
             return await ResolveAndLoginAsync(request, DerivePasswordKey, ct);
         }
-        catch (Exception ex) when (ex is UserNotFoundException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is UserNotFoundException or UnauthorizedAccessException or
+            PasswordManagerLocal.Common.Contracts.Errors.PendingSecurityOperationException)
         {
             ct.ThrowIfCancellationRequested();
             if (!passwordDerivationStarted)
@@ -243,6 +247,16 @@ public sealed class UserLoginService : IUserLoginService
                 if (postMergeResolution.State != UserLoginIdentityMatchState.Matched ||
                     postMergeResolution.UserId != expectedUserId)
                     throw new UsernameChangedDuringLoginException();
+
+                if (_forkRecovery is not null && await _forkRecovery.CanAccessIndependentCanonicalAsync(user, ct))
+                {
+                    // Read access enables deliberate device management. Do not rewrite the
+                    // independently proven generation or publish through an active fork.
+                    _rememberMe.SetRememberMe(user, request.RememberMe, key);
+                    await _userDataWriter.UpdateSavedKeyOnlyAsync(user, ct);
+                    if (_preparation is not null) await _preparation.EnsureAuthorizedAsync(user.UId, ct);
+                    return _sessionIssuer.IssueAuthenticatedSession(user.UId, key, bundle);
+                }
 
                 var modifiedBlobs = UserDataBlobKind.None;
                 UserDeviceLoginUtil.UpdateCurrentDeviceLastLoginDate(

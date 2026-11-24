@@ -1,5 +1,6 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Repositories;
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
+using PasswordManagerLocal.Common.Backend.Abstractions.Persistence;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
 
@@ -14,21 +15,27 @@ public sealed class UserLookupService : IUserLookupService
     private readonly IInteractiveUserDataStateAccessor _interactiveState;
     private readonly IDeletedUserBarrierRepository? _deletionBarriers;
     private readonly IUserLoginIdentityProjectionService _loginIdentities;
+    private readonly ICriticalControlIngressStore? _ingress;
+    private readonly IUserLifecycleCoordinator? _lifecycle;
 
     public UserLookupService(
         IUserRepository users,
         IInteractiveUserDataStateAccessor interactiveState,
         IUserLoginIdentityProjectionService loginIdentities,
-        IDeletedUserBarrierRepository? deletionBarriers = null)
+        IDeletedUserBarrierRepository? deletionBarriers = null,
+        ICriticalControlIngressStore? ingress = null, IUserLifecycleCoordinator? lifecycle = null)
     {
         _users = users;
         _interactiveState = interactiveState;
         _loginIdentities = loginIdentities;
         _deletionBarriers = deletionBarriers;
+        _ingress = ingress;
+        _lifecycle = lifecycle;
     }
 
     public async Task<User?> GetUserByUidAsync(Guid uid, CancellationToken ct = default)
     {
+        if (_lifecycle?.IsControlOperation(uid) != true) _ingress?.ThrowIfSuspended(uid);
         if (_deletionBarriers is not null && await _deletionBarriers.ExistsAsync(uid, ct))
             return null;
         return await _users.GetByIdAsync(uid, ct);
@@ -65,6 +72,7 @@ public sealed class UserLookupService : IUserLookupService
 
         foreach (var user in users)
         {
+            if (_ingress?.IsSuspended(user.UId) == true) continue;
             if (_deletionBarriers is not null && await _deletionBarriers.ExistsAsync(user.UId, ct))
                 continue;
             user.VerifyIntegrity();

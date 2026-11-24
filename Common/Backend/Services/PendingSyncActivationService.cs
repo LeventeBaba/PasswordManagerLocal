@@ -20,6 +20,8 @@ public sealed class PendingSyncActivationService : IPendingSyncActivationService
     private readonly IUserControlOperationRepository? _operations;
     private readonly IUserMembershipAuthorizationRepository? _membership;
 
+    private readonly IRevocationDeliveryService? _revocationDelivery;
+
     public PendingSyncActivationService(
         IDeviceRepository devices,
         ISyncDeviceIdentityService syncDeviceIdentities,
@@ -28,8 +30,10 @@ public sealed class PendingSyncActivationService : IPendingSyncActivationService
         IDeviceIdentityService identity,
         ILocalDeviceMatcherService localDevices,
         IUserControlOperationRepository? operations = null,
-        IUserMembershipAuthorizationRepository? membership = null)
+        IUserMembershipAuthorizationRepository? membership = null,
+        IRevocationDeliveryService? revocationDelivery = null)
     {
+        _revocationDelivery = revocationDelivery;
         _devices = devices;
         _syncDeviceIdentities = syncDeviceIdentities;
         _endpointRegistry = endpointRegistry;
@@ -49,7 +53,7 @@ public sealed class PendingSyncActivationService : IPendingSyncActivationService
             return;
         }
 
-        var revokedUserIds = await _operations.ListAppliedRevocationUserIdsAsync(ct);
+        var revokedUserIds = _revocationDelivery is null ? Array.Empty<Guid>() : await _revocationDelivery.ListPendingUserIdsAsync(ct);
         var historicalDeviceIds = await _membership.ListDeviceIdsForUsersAsync(revokedUserIds, ct);
         var relayDevices = await _devices.ListByIdsAsync(historicalDeviceIds, ct);
         ActivateDevices(pendingDevices.Concat(relayDevices).DistinctBy(device => device.Id).ToList());

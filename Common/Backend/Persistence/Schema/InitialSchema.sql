@@ -1,5 +1,17 @@
 -- Initial vault schema. The recovery journal is installed by the additive startup upgrade.
 
+-- Exact received revocations are staged before membership verification. This is custody and
+-- a profile access fence, never evidence that the operation was applied or delivered.
+CREATE TABLE "CriticalControlIngress" (
+    "EnvelopeHash" BLOB NOT NULL PRIMARY KEY CHECK(length("EnvelopeHash") = 32),
+    "UserId" TEXT NOT NULL,
+    "OperationId" TEXT NOT NULL,
+    "OperationHash" BLOB NOT NULL CHECK(length("OperationHash") = 32),
+    "TransportPeerDeviceId" TEXT NOT NULL,
+    "EnvelopePayload" BLOB NOT NULL CHECK(length("EnvelopePayload") BETWEEN 1 AND 4194304)
+);
+CREATE INDEX "IX_CriticalControlIngress_UserId" ON "CriticalControlIngress" ("UserId", "OperationId");
+
 CREATE TABLE "Users" (
     "UId" TEXT NOT NULL,
     "EncryptedGeneralUserDataPayload" BLOB NOT NULL,
@@ -125,6 +137,7 @@ CREATE TABLE "SyncVersionClockState" (
 
 CREATE TABLE "UserSyncSnapshots" (
     "Id" TEXT NOT NULL,
+    "ConflictingEnvelopePayload" BLOB NULL,
     "ConflictingSnapshotHash" BLOB NULL,
     "CreatedAtUtc" TEXT NOT NULL,
     "EnvelopePayload" BLOB NOT NULL,
@@ -141,8 +154,7 @@ CREATE TABLE "UserSyncSnapshots" (
     "Status" INTEGER NOT NULL,
     "UserId" TEXT NOT NULL,
     "UserKeyEpoch" INTEGER NOT NULL,
-    CONSTRAINT "PK_UserSyncSnapshots" PRIMARY KEY ("Id"),
-    CONSTRAINT "FK_UserSyncSnapshots_Users_UserId" FOREIGN KEY ("UserId") REFERENCES "Users" ("UId") ON DELETE CASCADE
+    CONSTRAINT "PK_UserSyncSnapshots" PRIMARY KEY ("Id")
 );
 
 CREATE TABLE "UserSyncStates" (
@@ -164,8 +176,7 @@ CREATE TABLE "UserRevisionKnowledge" (
     "HighestStoredRevision" INTEGER NOT NULL,
     "HighestStoredSnapshotHash" BLOB NOT NULL,
     "LastUpdatedAtUtc" TEXT NOT NULL,
-    CONSTRAINT "PK_UserRevisionKnowledge" PRIMARY KEY ("UserId", "OriginDeviceId", "OriginInstanceId", "UserKeyEpoch"),
-    CONSTRAINT "FK_UserRevisionKnowledge_Users_UserId" FOREIGN KEY ("UserId") REFERENCES "Users" ("UId") ON DELETE CASCADE
+    CONSTRAINT "PK_UserRevisionKnowledge" PRIMARY KEY ("UserId", "OriginDeviceId", "OriginInstanceId", "UserKeyEpoch")
 );
 
 CREATE TABLE "UserControlOperations" (
@@ -357,8 +368,7 @@ CREATE TABLE "UserSyncFaults" (
     "Status" INTEGER NOT NULL,
     "SupersedingRevision" INTEGER NULL,
     "UserId" TEXT NOT NULL,
-    CONSTRAINT "PK_UserSyncFaults" PRIMARY KEY ("Id"),
-    CONSTRAINT "FK_UserSyncFaults_Users_UserId" FOREIGN KEY ("UserId") REFERENCES "Users" ("UId") ON DELETE CASCADE
+    CONSTRAINT "PK_UserSyncFaults" PRIMARY KEY ("Id")
 );
 
 CREATE INDEX "IX_Devices_SignPublicKeyHash" ON "Devices" ("SignPublicKeyHash");
@@ -435,3 +445,40 @@ CREATE INDEX "IX_UserLoginIdentityStates_KeyEpoch_MembershipEpoch" ON "UserLogin
 CREATE INDEX "IX_UserSyncFaults_UserId_Status_Scope" ON "UserSyncFaults" ("UserId", "Status", "Scope");
 
 CREATE INDEX "IX_UserSyncFaults_UserId_Scope_Kind_OriginDeviceId_OriginInstanceId_KeyEpoch" ON "UserSyncFaults" ("UserId", "Scope", "Kind", "OriginDeviceId", "OriginInstanceId", "KeyEpoch");
+
+-- Public, immutable receipt evidence intentionally survives user cleanup and history reset.
+CREATE TABLE "RevocationReceiptEvidence" (
+    "OperationId" TEXT NOT NULL PRIMARY KEY,
+    "UserId" TEXT NOT NULL,
+    "OperationHash" BLOB NOT NULL CHECK(length("OperationHash") = 32),
+    "EnvelopePayload" BLOB NOT NULL,
+    "AuthorizationPayload" BLOB NOT NULL,
+    "HistoryResetBlocked" INTEGER NOT NULL,
+    "HasReceiptConflict" INTEGER NOT NULL,
+    "MembershipProofPayload" BLOB NOT NULL
+);
+CREATE INDEX "IX_RevocationReceiptEvidence_UserId" ON "RevocationReceiptEvidence" ("UserId");
+CREATE TABLE "RevocationDeliveryReceipts" (
+    "OperationId" TEXT NOT NULL,
+    "RecipientDeviceId" TEXT NOT NULL,
+    "RecipientOriginInstanceId" TEXT NOT NULL,
+    "RecipientAuthorizationId" TEXT NOT NULL,
+    "Kind" INTEGER NOT NULL CHECK("Kind" IN (1, 2, 3)),
+    "AttestedReceiptHash" BLOB NOT NULL CHECK(("Kind" = 3 AND length("AttestedReceiptHash") = 32) OR ("Kind" IN (1, 2) AND length("AttestedReceiptHash") = 0)),
+    "UserId" TEXT NOT NULL,
+    "ReceiptHash" BLOB NOT NULL CHECK(length("ReceiptHash") = 32),
+    "Payload" BLOB NOT NULL CHECK(length("Payload") BETWEEN 1 AND 2048),
+    PRIMARY KEY ("OperationId", "RecipientDeviceId", "RecipientOriginInstanceId", "RecipientAuthorizationId", "Kind", "AttestedReceiptHash")
+);
+CREATE INDEX "IX_RevocationDeliveryReceipts_UserId" ON "RevocationDeliveryReceipts" ("UserId", "OperationId");
+CREATE INDEX "IX_RevocationDeliveryReceipts_Recipient" ON "RevocationDeliveryReceipts" ("RecipientDeviceId", "RecipientOriginInstanceId", "RecipientAuthorizationId");
+
+CREATE TABLE "RevocationEvidenceDebts" (
+    "OperationId" TEXT NOT NULL,
+    "PeerDeviceId" TEXT NOT NULL,
+    "PeerOriginInstanceId" TEXT NOT NULL,
+    "PeerAuthorizationId" TEXT NOT NULL,
+    "ReceiptHash" BLOB NOT NULL CHECK(length("ReceiptHash") = 32),
+    PRIMARY KEY ("OperationId", "PeerDeviceId", "PeerOriginInstanceId", "PeerAuthorizationId", "ReceiptHash")
+);
+CREATE INDEX "IX_RevocationEvidenceDebts_Peer" ON "RevocationEvidenceDebts" ("PeerDeviceId", "PeerOriginInstanceId");

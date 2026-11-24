@@ -21,6 +21,7 @@ public static class AgentLocalizationKeys
     public const string RuntimePlatformKeyUnavailable = "Agent.Runtime.PlatformKeyUnavailable";
     public const string RuntimeDatabaseConfigurationInvalid = "Agent.Runtime.DatabaseConfigurationInvalid";
     public const string RuntimeDatabaseKeyUnavailable = "Agent.Runtime.DatabaseKeyUnavailable";
+    public const string RuntimeDatabaseResetIncomplete = "Agent.Runtime.DatabaseResetIncomplete";
     public const string RuntimeDatabaseUnreadable = "Agent.Runtime.DatabaseUnreadable";
     public const string RuntimeStorageUnavailable = "Agent.Runtime.StorageUnavailable";
     public const string RuntimeDatabaseVersionUnsupported = "Agent.Runtime.DatabaseVersionUnsupported";

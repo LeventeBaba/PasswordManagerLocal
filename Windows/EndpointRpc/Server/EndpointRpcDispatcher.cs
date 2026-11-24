@@ -202,6 +202,15 @@ public sealed class EndpointRpcDispatcher : IAsyncDisposable
                         context.Invocation.MarkInvocationCompleted();
                         return new GetUserProfileInfoEndpointResponse { Profile = result };
                     }),
+                EndpointOperationId.RemoveLocalProfile => await DispatchVoidAsync(
+                    context, requestPayload, EndpointRpcJsonContext.Default.RemoveLocalProfileEndpointRequest,
+                    async (request, token) =>
+                    {
+                        var endpoints = _endpointAdapter.GetEndpoints(context);
+                        context.Invocation.MarkInvoking();
+                        await endpoints.RemoveLocalProfileAsync(request.Request, request.AcknowledgeDataLoss, token);
+                        context.Invocation.MarkInvocationCompleted();
+                    }),
                 EndpointOperationId.DeleteUserAccount => await DispatchVoidAsync(
                     context,
                     requestPayload,
