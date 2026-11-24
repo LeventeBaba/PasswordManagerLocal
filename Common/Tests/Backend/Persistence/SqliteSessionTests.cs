@@ -10,7 +10,6 @@ using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Contracts.Notifications;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure;
-using SQLitePCL;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Persistence;
 
@@ -19,7 +18,7 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Persistence;
 [TestCategory("Integration")]
 public sealed class SqliteSessionTests
 {
-    static SqliteSessionTests() => Batteries_V2.Init();
+    static SqliteSessionTests() => SqliteProviderInitializer.EnsureInitialized();
 
     [TestMethod]
     public async Task DeliveryRefresh_IsPublishedOnlyAfterCommit_EvenWithoutAFrontendPublisher()

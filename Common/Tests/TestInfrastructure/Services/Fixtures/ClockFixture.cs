@@ -2,7 +2,6 @@ using Microsoft.Data.Sqlite;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Tests.Fakes;
-using SQLitePCL;
 
 namespace PasswordManagerLocal.Common.Tests.TestInfrastructure.Services.Fixtures;
 
@@ -25,7 +24,7 @@ internal sealed class ClockFixture : IAsyncDisposable
 
     public static async Task<ClockFixture> CreateAsync(DateTimeOffset utcNow)
     {
-        Batteries_V2.Init();
+        SqliteProviderInitializer.EnsureInitialized();
         var connections = new SqliteConnectionFactory(
             $"Data Source=Clock-{Guid.NewGuid():N};Mode=Memory;Cache=Shared;Pooling=False");
         var keepAlive = connections.CreateConnection();

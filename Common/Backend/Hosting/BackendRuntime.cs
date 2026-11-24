@@ -8,7 +8,6 @@ using PasswordManagerLocal.Common.Backend.DependencyInjection;
 using PasswordManagerLocal.Common.Backend.Exceptions;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Diagnostics;
-using SQLitePCL;
 using PasswordManagerLocal.Common.Backend.Abstractions.Hosting;
 using PasswordManagerLocal.Common.Backend.Persistence;
 
@@ -827,7 +826,7 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
     private async Task<(BackendServiceHost Host, ISyncRuntimeService SyncRuntime)> CreateAndStartHostAsync()
     {
         BackendDebugLog.OperationStarted("Backend service host creation and startup", "Runtime");
-        Batteries_V2.Init();
+        SqliteProviderInitializer.EnsureInitialized();
 
         var keyProtector = _options.KeyProtectorFactory()
             ?? throw new InvalidOperationException("The platform key-protector factory returned null.");

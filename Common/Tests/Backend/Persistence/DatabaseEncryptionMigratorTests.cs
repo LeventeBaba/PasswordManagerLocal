@@ -2,7 +2,6 @@ using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Configuration;
 using PasswordManagerLocal.Common.Backend.Persistence;
-using SQLitePCL;
 
 namespace PasswordManagerLocal.Common.Tests.Backend.Persistence;
 
@@ -13,7 +12,7 @@ public sealed partial class DatabaseEncryptionMigratorTests
 {
     private const string TestPassword = "bWlncmF0aW9uLXRlc3QtZGF0YWJhc2Uta2V5";
 
-    static DatabaseEncryptionMigratorTests() => Batteries_V2.Init();
+    static DatabaseEncryptionMigratorTests() => SqliteProviderInitializer.EnsureInitialized();
 
     [TestMethod]
     public async Task MismatchedDatabaseKey_OffersUnreadableRecoveryWithoutErasingTheDatabase()

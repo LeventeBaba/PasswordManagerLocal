@@ -78,6 +78,8 @@ dotnet test .\Windows\Tests.EndpointRpc\PasswordManagerLocal.Windows.Tests.Endpo
 
 `ProductionSyncTestHost` owns its post-login consumer, protocol workers, temporary database directory, and service provider. Restart preserves the on-disk vault/installation identity and creates a new host. Disposal joins owned work before releasing services/files.
 
+`SqliteProviderInitializerTests` keeps guarded SQLite connections open while initializing another fixture, concurrently requesting initialization, invoking the package's late initialization path and forcing full garbage collections. Both pooled and unpooled reopen must retain working admission callbacks and committed writes. A source guard requires application and fixture registration to pass through the single process initializer. This regression targets the Linux CI test-host crash caused by a collected provider callback; it belongs to the normal suite.
+
 `ControlledDelayTimeProvider` gates one-shot supervisor delays. Explicit signals/gates control startup, shutdown, retry, and recovery fault injection. Production app code has no test fault switches.
 
 Initial-read gate release makes deferred post-login reconciliation runnable; it does not join the consumer. Tests measuring unchanged canonical state during rejected admission use the existing per-user lifecycle coordinator around the baseline, requests, and readback. Nested inbox calls remain reentrant and execute real transactions. Ordinary transfer idleness alone does not establish canonical-write idleness.

@@ -213,7 +213,7 @@ public sealed class SqliteWalPressureTests
             ReducedThreshold, time);
         try
         {
-            SQLitePCL.Batteries_V2.Init();
+            SqliteProviderInitializer.EnsureInitialized();
             await using var connection = factory.CreateConnection();
             await connection.OpenAsync();
             await AppDatabaseInitializer.InitializeAsync(connection);

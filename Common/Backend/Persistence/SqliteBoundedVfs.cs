@@ -28,7 +28,7 @@ internal static unsafe class SqliteBoundedVfs
         {
             if (Registrations.TryGetValue(limits, out var name)) return name;
             if (Registrations.Count >= 16) throw new StorageCapacityExceededException();
-            SQLitePCL.Batteries_V2.Init();
+            SqliteProviderInitializer.EnsureInitialized();
             var parent = Native.Find(null);
             if (parent == null) throw new InvalidOperationException("The SQLite3MC platform VFS is unavailable.");
             // Do not wrap the encryption VFS: its internal rekey I/O must also cross our guard.

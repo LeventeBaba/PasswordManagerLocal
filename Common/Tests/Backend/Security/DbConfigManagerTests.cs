@@ -173,7 +173,7 @@ public sealed class DbConfigManagerTests
         var paths = new BackendStoragePaths(directory.Path);
         var protector = new SwitchableKeyProtector();
         var password = DbConfigManager.GetOrCreateDatabasePassword(paths, protector);
-        SQLitePCL.Batteries_V2.Init();
+        SqliteProviderInitializer.EnsureInitialized();
         var factory = new SqliteConnectionFactory(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(
             DatabaseEncryptionMigrator.CreateRuntimeConnectionString(paths.DatabasePath, password))
         {

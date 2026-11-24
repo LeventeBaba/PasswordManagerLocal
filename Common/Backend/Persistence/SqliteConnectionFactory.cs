@@ -53,6 +53,7 @@ internal sealed class SqliteConnectionFactory
 
     public SqliteConnection CreateConnection(bool enforceForeignKeys = false)
     {
+        SqliteProviderInitializer.EnsureInitialized();
         var options = new SqliteConnectionStringBuilder(ConnectionString);
         options.Vfs = SqliteBoundedVfs.GetName(_physicalLimits);
         if (enforceForeignKeys)

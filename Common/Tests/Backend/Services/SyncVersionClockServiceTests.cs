@@ -6,7 +6,6 @@ using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Repositories;
 using PasswordManagerLocal.Common.Backend.Services;
 using PasswordManagerLocal.Common.Tests.Fakes;
-using SQLitePCL;
 
 using MSTestAssert = Microsoft.VisualStudio.TestTools.UnitTesting.Assert;
 
@@ -107,7 +106,7 @@ public sealed class SyncVersionClockServiceTests
     [Timeout(10_000)]
     public async Task Observe_InsideActiveTransaction_DefersEvenWhileNextHoldsTheClockGate(bool useFileUri)
     {
-        Batteries_V2.Init();
+        SqliteProviderInitializer.EnsureInitialized();
         var root = Path.Combine(
             Path.GetTempPath(),
             "PasswordManagerLocal.ClockTests",

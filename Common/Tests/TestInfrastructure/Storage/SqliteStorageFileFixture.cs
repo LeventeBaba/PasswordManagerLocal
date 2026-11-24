@@ -1,6 +1,5 @@
 using Microsoft.Data.Sqlite;
 using PasswordManagerLocal.Common.Backend.Persistence;
-using SQLitePCL;
 
 namespace PasswordManagerLocal.Common.Tests.TestInfrastructure.Storage;
 
@@ -21,7 +20,7 @@ internal sealed class SqliteStorageFileFixture : IAsyncDisposable
         TimeProvider? timeProvider = null,
         SqlitePhysicalLimits? physicalLimits = null)
     {
-        Batteries_V2.Init();
+        SqliteProviderInitializer.EnsureInitialized();
         var directory = Path.Combine(Path.GetTempPath(), "PasswordManagerLocal.StorageTests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         var factory = new SqliteConnectionFactory(new SqliteConnectionStringBuilder
