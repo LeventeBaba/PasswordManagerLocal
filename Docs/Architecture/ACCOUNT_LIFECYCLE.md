@@ -46,6 +46,8 @@ Canonical recovery requires the current installation's exact active authorizatio
 
 The login view exposes explicit local-only erasure after an authenticated signed removal of this exact installation is already applied. Username/master-password verification and a separate warning acknowledgement are required. One transaction removes only the selected mutable local profile while preserving signed controls, membership/cutoffs, receipts and original fork/fault evidence. Session/key invalidation and runtime refresh follow commit. It does not call account deletion, revoke another device or replace remote signed removal. Local-only changes are lost only after that explicit acknowledgement.
 
+Cleanup reports a durable removal followed by failed session cleanup/runtime reconciliation as a partial commit, rather than a clean failure. In-memory remembered key material is cleared even if session invalidation fails; background eligibility is still reconciled after releasing the profile lifecycle lock. Incomplete follow-up requires restart and review, not a blind second deletion. The frontend closes the destructive form for a confirmed partial commit or an unknown transport outcome and never uses either result to start enrollment.
+
 Cleanup does not create a fresh identity. The retired installation remains ineligible for enrollment; fresh manual setup is installation-wide and can affect every local profile. [Recovery](RECOVERY.md#explicit-local-profile-cleanup) describes the constraints and separate user-initiated enrollment step.
 
 ## Account deletion

@@ -439,9 +439,12 @@ public sealed partial class RevocationReceiptServiceTests
             cleanup ?? new UserAccountDeletionCleanupService(new UserAccountDeletionStore(Db.UnitOfWork, Db.Users, Db.DeviceEnrollmentCommits), Db.Users),
             revocationReceipts: Receipts, criticalIngress: ingress);
 
-        public static async Task<Scenario> CreateAsync(int peerCount = 3, bool authenticatedHistory = false)
+        public static async Task<Scenario> CreateAsync(int peerCount = 3, bool authenticatedHistory = false,
+            bool fileBacked = false)
         {
-            var database = await SqliteRepositoryTestDatabase.CreateAsync();
+            var database = fileBacked
+                ? await SqliteRepositoryTestDatabase.CreateFileBackedAsync()
+                : await SqliteRepositoryTestDatabase.CreateAsync();
             var keys = Enumerable.Range(0, peerCount).Select(_ => Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters())).ToArray();
             var peers = keys.Select(key => new FakeDeviceIdentityService
             {

@@ -54,6 +54,23 @@ public sealed class WindowsAgentEndpointAdmissionPolicyTests
         Assert.IsFalse(runtimeFailed.Policy.CanAcceptConnection);
     }
 
+    [TestMethod]
+    [DataRow(BackendRuntimeFailureKind.StorageUnavailable)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseUnreadable)]
+    [DataRow(BackendRuntimeFailureKind.DatabaseResetIncomplete)]
+    public void RetryableStartupFailureAdmitsOnlyTheConnectionHandshake(BackendRuntimeFailureKind failure)
+    {
+        var context = CreateContext();
+        context.Owner.Snapshot = FakeWindowsAgentBackendRuntimeOwner.CreateSnapshot(
+            ownerState: WindowsAgentBackendOwnerState.Failed, runtimeState: BackendRuntimeState.Failed,
+            runtimeFailureKind: failure);
+        Assert.IsTrue(context.Policy.CanAcceptConnection);
+        Assert.IsFalse(context.Policy.TryEnterRequest(out var request));
+        Assert.IsNull(request, "A handshake retry cannot grant access to endpoints before startup succeeds.");
+        context.Owner.RequireProcessRestart(new IOException("unsafe shutdown"));
+        Assert.IsFalse(context.Policy.CanAcceptConnection);
+    }
+
     private static (
         WindowsAgentStateStore State,
         WindowsAgentAdmissionGate Gate,

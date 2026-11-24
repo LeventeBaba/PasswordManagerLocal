@@ -540,40 +540,42 @@
           <DataTemplate x:DataType="vm:MainViewModel">
             <Border Background="{DynamicResource AppBrush.Dialog.Overlay}"
                     IsVisible="{Binding IsDatabaseRecoveryDialogOpen}"
-                    Padding="24">
-              <Border Classes="card"
-                      Padding="24"
-                      MaxWidth="560"
-                      HorizontalAlignment="Center"
-                      VerticalAlignment="Center">
-                <StackPanel Spacing="16">
-                  <TextBlock Text="{Binding DatabaseRecoveryTitle}"
-                             Classes="sectionTitle"
-                             TextWrapping="Wrap" />
-                  <TextBlock Text="{Binding DatabaseRecoveryMessage}"
-                             Classes="errorText"
-                             TextWrapping="Wrap" />
-                  <ProgressBar IsVisible="{Binding IsDatabaseResetInProgress}"
-                               IsIndeterminate="True"
-                               Height="6" />
-                  <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-                    <Button Classes="secondary"
-                            IsVisible="{Binding IsDatabaseRecoverySecondaryButtonVisible}"
-                            Command="{Binding DatabaseRecoverySecondaryCommand}">
-                      <TextBlock Text="{Binding DatabaseRecoverySecondaryButtonLabel}"
-                                 TextWrapping="Wrap"
-                                 TextAlignment="Center" />
+                    KeyboardNavigation.TabNavigation="Cycle"
+                    AutomationProperties.Name="{Binding DatabaseRecoveryTitle}"
+                    Padding="8">
+              <Border Classes="card" Padding="20" MaxWidth="600" MaxHeight="720"
+                      HorizontalAlignment="Center" VerticalAlignment="Stretch" Margin="0,8">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                  <StackPanel Spacing="16">
+                    <TextBlock Text="{Binding DatabaseRecoveryTitle}" Classes="sectionTitle" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding DatabaseRecoveryMessage}" TextWrapping="Wrap" />
+                    <ProgressBar IsVisible="{Binding IsDatabaseRecoveryBusy}" IsIndeterminate="True" Height="6"
+                                 AutomationProperties.Name="{Binding DatabaseRecoveryMessage}" />
+                    <Button x:Name="DatabaseRecoveryRetryButton" Classes="secondary" Command="{Binding DatabaseRecoveryRetryCommand}"
+                            IsVisible="{Binding CanRetryDatabaseStartup}"
+                            AutomationProperties.Name="{Binding DatabaseRecoveryRetryLabel}">
+                      <TextBlock Text="{Binding DatabaseRecoveryRetryLabel}" TextWrapping="Wrap" TextAlignment="Center" />
                     </Button>
-                    <Button Grid.Column="1"
-                            Classes="danger"
-                            IsVisible="{Binding IsDatabaseRecoveryPrimaryButtonVisible}"
-                            Command="{Binding DatabaseRecoveryPrimaryCommand}">
-                      <TextBlock Text="{Binding DatabaseRecoveryPrimaryButtonLabel}"
-                                 TextWrapping="Wrap"
-                                 TextAlignment="Center" />
-                    </Button>
-                  </Grid>
-                </StackPanel>
+                    <CheckBox IsVisible="{Binding IsDatabaseResetAcknowledgementVisible}"
+                              IsChecked="{Binding IsDatabaseResetAcknowledged, Mode=TwoWay}"
+                              AutomationProperties.Name="{Binding DatabaseResetAcknowledgeLabel}">
+                      <TextBlock Text="{Binding DatabaseResetAcknowledgeLabel}" TextWrapping="Wrap" />
+                    </CheckBox>
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                      <Button x:Name="DatabaseRecoveryCancelButton" Classes="secondary" IsVisible="{Binding IsDatabaseRecoverySecondaryButtonVisible}"
+                              Command="{Binding DatabaseRecoverySecondaryCommand}"
+                              AutomationProperties.Name="{Binding DatabaseRecoverySecondaryButtonLabel}">
+                        <TextBlock Text="{Binding DatabaseRecoverySecondaryButtonLabel}" TextWrapping="Wrap" TextAlignment="Center" />
+                      </Button>
+                      <Button Grid.Column="1" Classes="danger" IsVisible="{Binding IsDatabaseRecoveryPrimaryButtonVisible}"
+                              IsEnabled="{Binding CanConfirmDatabaseReset}"
+                              Command="{Binding DatabaseRecoveryPrimaryCommand}"
+                              AutomationProperties.Name="{Binding DatabaseRecoveryPrimaryButtonLabel}">
+                        <TextBlock Text="{Binding DatabaseRecoveryPrimaryButtonLabel}" TextWrapping="Wrap" TextAlignment="Center" />
+                      </Button>
+                    </Grid>
+                  </StackPanel>
+                </ScrollViewer>
               </Border>
             </Border>
           </DataTemplate>

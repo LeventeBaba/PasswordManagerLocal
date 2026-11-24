@@ -19,6 +19,9 @@ internal static class DbConfigManager
 
         using var fileLock = StorageFileLock.Acquire($"{paths.DatabaseConfigPath}.lock");
 
+        if (Path.Exists(paths.DatabaseResetPendingPath))
+            throw new DatabaseResetIncompleteException();
+
         if (!File.Exists(paths.DatabaseConfigPath))
             CreateDbConfig(paths, protector);
 

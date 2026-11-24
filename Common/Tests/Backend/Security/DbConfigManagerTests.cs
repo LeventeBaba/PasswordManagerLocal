@@ -14,6 +14,24 @@ namespace PasswordManagerLocal.Common.Tests.Backend.Security;
 public sealed class DbConfigManagerTests
 {
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void InterruptedResetNeverGeneratesOrReplacesAKey(bool hasConfiguration)
+    {
+        using var directory = new TemporaryDirectory();
+        var paths = new BackendStoragePaths(directory.Path);
+        var protector = new SwitchableKeyProtector();
+        if (hasConfiguration) _ = DbConfigManager.GetOrCreateDatabasePassword(paths, protector);
+        var original = hasConfiguration ? File.ReadAllBytes(paths.DatabaseConfigPath) : [];
+        File.WriteAllBytes(paths.DatabaseResetPendingPath, []);
+        Assert.ThrowsExactly<DatabaseResetIncompleteException>(() =>
+            DbConfigManager.GetOrCreateDatabasePassword(paths, protector));
+        Assert.AreEqual(hasConfiguration, File.Exists(paths.DatabaseConfigPath));
+        if (hasConfiguration) CollectionAssert.AreEqual(original, File.ReadAllBytes(paths.DatabaseConfigPath));
+        Assert.IsTrue(File.Exists(paths.DatabaseResetPendingPath));
+    }
+
+    [TestMethod]
     public void LostPlatformKey_IsSeparateFromVersionFailureAndPreservesTheConfiguration()
     {
         using var directory = new TemporaryDirectory();

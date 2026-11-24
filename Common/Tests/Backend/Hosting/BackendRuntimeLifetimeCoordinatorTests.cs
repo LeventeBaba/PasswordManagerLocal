@@ -166,6 +166,23 @@ public sealed class BackendRuntimeLifetimeCoordinatorTests
     }
 
     [TestMethod]
+    public async Task CancellationAfterResetCommitDoesNotDiscardItsRuntimeLease()
+    {
+        using var host = new BackendTestHost();
+        using var cancellation = new CancellationTokenSource();
+        var runtime = new FakeBackendRuntime(host.Services.GetRequiredService<IEndpoints>())
+        {
+            AfterReset = cancellation.Cancel
+        };
+        var coordinator = new BackendRuntimeLifetimeCoordinator(runtime);
+        await using var lease = await coordinator.ResetDatabaseAndAcquireAsync(
+            BackendLifetimeReason.InteractiveUi, cancellation.Token);
+        Assert.AreEqual(BackendLifetimeReason.InteractiveUi, coordinator.ActiveReasons);
+        Assert.AreEqual(1, runtime.ResetCalls);
+        Assert.AreEqual(0, runtime.StopCalls);
+    }
+
+    [TestMethod]
     public async Task DatabaseResetIsRejectedWhileAnyRuntimeLeaseIsActive()
     {
         using var host = new BackendTestHost();

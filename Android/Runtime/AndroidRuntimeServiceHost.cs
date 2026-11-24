@@ -495,14 +495,14 @@ public sealed class AndroidRuntimeServiceHost : IAsyncDisposable
                 interactiveLease = await composition.LifetimeCoordinator.ResetDatabaseAndAcquireAsync(
                     BackendLifetimeReason.InteractiveUi,
                     cancellationToken);
-                interactiveSession = await composition.Runtime.OpenInteractiveSessionAsync(cancellationToken);
+                interactiveSession = await composition.Runtime.OpenInteractiveSessionAsync(CancellationToken.None);
                 await client.AdoptResetConnectionFromHostAsync(interactiveLease, interactiveSession);
                 interactiveLease = null;
                 interactiveSession = null;
                 replacementConnectionAdopted = true;
 
                 if (restoreBackground)
-                    await EnsureBackgroundRuntimeLockedAsync(cancellationToken);
+                    await EnsureBackgroundRuntimeLockedAsync(CancellationToken.None);
             }
             catch
             {

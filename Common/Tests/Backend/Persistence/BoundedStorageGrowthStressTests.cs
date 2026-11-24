@@ -1,7 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PasswordManagerLocal.Common.Backend.Persistence;
-using PasswordManagerLocal.Common.Tests.TestInfrastructure;
 using PasswordManagerLocal.Common.Tests.TestInfrastructure.Storage;
 using static PasswordManagerLocal.Common.Tests.TestInfrastructure.Storage.SqliteStorageTestCommands;
 
@@ -24,8 +23,10 @@ public sealed class BoundedStorageGrowthStressTests
         foreach (var table in new[] { "UserSyncSnapshots", "UserRevisionKnowledge", "UserControlOperations",
             "UserMembershipAuthorizations", "RevocationDeliveryReceipts", "RevocationEvidenceDebts", "UserSyncFaults", "UserRecoveryJournals" })
         {
-            await using var vault = await SqliteTestVault.CreateAsync();
-            await using var connection = vault.Connections.CreateConnection();
+            // Keep the initialized schema and every workload connection on one
+            // file-backed image, as in the other storage stress scenarios.
+            await using var vault = await SqliteStorageFileFixture.CreateAsync();
+            await using var connection = vault.Factory.CreateConnection();
             await connection.OpenAsync();
             await ExecuteAsync(connection, "PRAGMA foreign_keys = OFF;");
             var policy = SqliteStoragePolicy.Tables.Single(policy => policy.TableName == table);

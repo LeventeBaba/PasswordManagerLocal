@@ -64,6 +64,8 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
     private string _sessionRenewalDialogProfileName = string.Empty;
     private readonly HashSet<Guid> _autoRenewingSessionTokens = new();
     private DatabaseRecoveryStage _databaseRecoveryStage;
+    private bool _isRetryingDatabase;
+    private bool _isDatabaseResetAcknowledged;
     private DatabaseRecoveryRequiredException? _databaseRecoveryException;
     private bool _isResettingDatabase;
     private RegistrationViewModel? _registrationViewModel;
@@ -158,6 +160,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         LogoutCommand = Own(ReactiveCommand.CreateFromTask(LogoutAsync));
         ConfirmSessionRenewalCommand = Own(ReactiveCommand.CreateFromTask(ConfirmSessionRenewalAsync));
         DeclineSessionRenewalCommand = Own(ReactiveCommand.Create(DeclineSessionRenewal));
+        DatabaseRecoveryRetryCommand = Own(ReactiveCommand.CreateFromTask(RetryDatabaseStartupAsync));
         DatabaseRecoveryPrimaryCommand = Own(ReactiveCommand.CreateFromTask(HandleDatabaseRecoveryPrimaryActionAsync));
         DatabaseRecoverySecondaryCommand = Own(ReactiveCommand.Create(HandleDatabaseRecoverySecondaryAction));
         _backendClient.StateChanged += HandleBackendRuntimeStateChanged;
@@ -660,6 +663,26 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
     public ReactiveCommand<RxVoid, RxVoid> DeclineSessionRenewalCommand { get; }
 
+    public ReactiveCommand<RxVoid, RxVoid> DatabaseRecoveryRetryCommand { get; }
+    public string DatabaseRecoveryRetryLabel => GetTranslation("DatabaseRecovery_Retry");
+    public string DatabaseResetAcknowledgeLabel => GetTranslation("DatabaseRecovery_Acknowledge");
+    public bool IsDatabaseResetAcknowledgementVisible =>
+        _databaseRecoveryStage == DatabaseRecoveryStage.FinalConfirmation && !IsDatabaseRecoveryBusy;
+    public bool IsDatabaseRecoveryBusy => _isResettingDatabase || _isRetryingDatabase;
+    public bool CanRetryDatabaseStartup => IsDatabaseRecoveryDialogOpen && !IsDatabaseRecoveryBusy &&
+        !_isInitializing && _databaseRecoveryStage != DatabaseRecoveryStage.FinalConfirmation;
+    public bool CanConfirmDatabaseReset => IsDatabaseRecoveryPrimaryButtonVisible &&
+        (_databaseRecoveryStage != DatabaseRecoveryStage.FinalConfirmation || IsDatabaseResetAcknowledged);
+    public bool IsDatabaseResetAcknowledged
+    {
+        get => _isDatabaseResetAcknowledged;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _isDatabaseResetAcknowledged, value);
+            this.RaisePropertyChanged(nameof(CanConfirmDatabaseReset));
+        }
+    }
+
     public ReactiveCommand<RxVoid, RxVoid> DatabaseRecoveryPrimaryCommand { get; }
 
     public ReactiveCommand<RxVoid, RxVoid> DatabaseRecoverySecondaryCommand { get; }
@@ -671,9 +694,11 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
     public bool IsDatabaseResetInProgress => _isResettingDatabase;
 
     public bool IsDatabaseRecoverySecondaryButtonVisible =>
-        !_isResettingDatabase && _databaseRecoveryStage != DatabaseRecoveryStage.Declined;
+        !IsDatabaseRecoveryBusy && _databaseRecoveryStage != DatabaseRecoveryStage.Declined;
 
-    public bool IsDatabaseRecoveryPrimaryButtonVisible => !_isResettingDatabase;
+    public bool IsDatabaseRecoveryPrimaryButtonVisible => !IsDatabaseRecoveryBusy &&
+        _backendClient.Snapshot.State == BackendRuntimeState.Failed &&
+        _backendClient.Snapshot.FailureKind.RequiresDatabaseReset();
 
     public string DatabaseRecoveryTitle => _databaseRecoveryStage switch
     {
@@ -682,6 +707,8 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         DatabaseRecoveryStage.ResetFailed => GetTranslation("DatabaseVersion_ResetFailed_Title"),
         _ => _databaseRecoveryException switch
         {
+            null => GetTranslation("DatabaseRecovery_RetryFailed_Title"),
+            DatabaseResetIncompleteException => GetTranslation("DatabaseRecovery_Incomplete_Title"),
             DatabaseConfigurationInvalidException => GetTranslation("DatabaseConfiguration_Error_Title"),
             DatabaseKeyUnavailableException => GetTranslation("DatabaseKey_Error_Title"),
             DatabaseUnreadableException => GetTranslation("DatabaseUnreadable_Error_Title"),
@@ -693,6 +720,8 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
     {
         get
         {
+            if (_isRetryingDatabase)
+                return GetTranslation("DatabaseRecovery_Retrying");
             if (_isResettingDatabase)
                 return GetTranslation("DatabaseVersion_Resetting_Message");
 
@@ -948,7 +977,8 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         catch
         {
             if (!IsDisposed)
-                ShowLocalizedErrorMessage("Shell_BackendStartupFailed");
+                ShowLocalizedErrorMessage(_backendClient.Snapshot.FailureKind == BackendRuntimeFailureKind.StorageUnavailable
+                    ? "DatabaseRecovery_StorageUnavailable" : "Shell_BackendStartupFailed");
             return;
         }
 
@@ -1024,8 +1054,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
     {
         get
         {
-            if (IsSessionRenewalDialogOpen
-                || (IsDatabaseRecoveryDialogOpen && IsDatabaseRecoveryPrimaryButtonVisible))
+            if (IsSessionRenewalDialogOpen)
             {
                 return true;
             }
@@ -1054,11 +1083,8 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
             return;
         }
 
-        if (IsDatabaseRecoveryDialogOpen && IsDatabaseRecoveryPrimaryButtonVisible)
-        {
-            await HandleDatabaseRecoveryPrimaryActionAsync();
-            return;
-        }
+        if (IsDatabaseRecoveryDialogOpen)
+            return; // Destructive recovery is approved only through its dedicated controls.
 
         if (IsContextHelpOpen)
             return;
@@ -1090,7 +1116,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
         if (IsDatabaseRecoveryDialogOpen)
         {
-            if (!_isResettingDatabase)
+            if (!IsDatabaseRecoveryBusy)
                 HandleDatabaseRecoverySecondaryAction();
 
             return true;
@@ -1189,25 +1215,82 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
     {
         if (IsDisposed || _isResettingDatabase)
             return;
+        // Repeated runtime notifications must not discard a review or acknowledgement.
+        if (_databaseRecoveryStage != DatabaseRecoveryStage.None &&
+            _databaseRecoveryException?.GetType() == exception.GetType() &&
+            (exception is not DatabaseVersionNotSupportedException version ||
+                _databaseRecoveryException is DatabaseVersionNotSupportedException previous &&
+                previous.DetectedVersion == version.DetectedVersion &&
+                previous.OldestSupportedVersion == version.OldestSupportedVersion &&
+                previous.CurrentVersion == version.CurrentVersion))
+            return;
         _databaseRecoveryException = exception;
+        IsDatabaseResetAcknowledged = false;
         _databaseRecoveryStage = DatabaseRecoveryStage.RecoveryRequired;
         _isResettingDatabase = false;
         ClearStatusMessage();
         RaiseDatabaseRecoveryProperties();
     }
 
+    private async Task RetryDatabaseStartupAsync()
+    {
+        if (!CanRetryDatabaseStartup) return;
+        _isRetryingDatabase = true;
+        IsDatabaseResetAcknowledged = false;
+        _backendConnectionStartup = null;
+        _startupCompleted = false;
+        RaiseDatabaseRecoveryProperties();
+        try
+        {
+            await InitializeAsync();
+            if (!IsDisposed && _backendClient.Snapshot.IsReady)
+            {
+                _databaseRecoveryException = null;
+                _databaseRecoveryStage = DatabaseRecoveryStage.None;
+                // Initialization owns any remembered-session feedback.
+            }
+            else if (!_backendClient.Snapshot.FailureKind.RequiresDatabaseReset())
+            {
+                _databaseRecoveryException = null;
+                _databaseRecoveryStage = DatabaseRecoveryStage.RecoveryRequired;
+            }
+        }
+        finally
+        {
+            _isRetryingDatabase = false;
+            if (!IsDisposed)
+            {
+                RaiseDatabaseRecoveryProperties();
+                ApplyBackendAvailability(_backendClient.Snapshot.IsReady);
+            }
+        }
+    }
+
     private async Task HandleDatabaseRecoveryPrimaryActionAsync()
     {
-        if (_isResettingDatabase || !IsDatabaseRecoveryDialogOpen)
+        if (IsDatabaseRecoveryBusy || !IsDatabaseRecoveryDialogOpen || IsDisposed)
             return;
+        if (_backendClient.Snapshot.IsReady)
+        {
+            _databaseRecoveryStage = DatabaseRecoveryStage.None;
+            _databaseRecoveryException = null;
+            RaiseDatabaseRecoveryProperties();
+            return;
+        }
+
+        if (!IsDatabaseRecoveryPrimaryButtonVisible) return;
 
         if (_databaseRecoveryStage != DatabaseRecoveryStage.FinalConfirmation)
         {
+            IsDatabaseResetAcknowledged = false;
             _databaseRecoveryStage = DatabaseRecoveryStage.FinalConfirmation;
             RaiseDatabaseRecoveryProperties();
             return;
         }
 
+        if (!IsDatabaseResetAcknowledged) return;
+        LifetimeToken.ThrowIfCancellationRequested();
+        IsDatabaseResetAcknowledged = false;
         _isResettingDatabase = true;
         _backendConnectionStartup = null;
         _startupCompleted = false;
@@ -1215,8 +1298,8 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
         try
         {
-            await _backendClient.ResetDatabaseAndRestartAsync(LifetimeToken);
-            LifetimeToken.ThrowIfCancellationRequested();
+            // Keep observing after confirmation; disposal cannot report a running reset as cancelled.
+            await _backendClient.ResetDatabaseAndRestartAsync(CancellationToken.None);
             _databaseRecoveryException = null;
             _databaseRecoveryStage = DatabaseRecoveryStage.None;
             ClearStatusMessage();
@@ -1238,8 +1321,9 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
     private void HandleDatabaseRecoverySecondaryAction()
     {
-        if (_isResettingDatabase || !IsDatabaseRecoveryDialogOpen)
+        if (IsDatabaseRecoveryBusy || !IsDatabaseRecoveryDialogOpen)
             return;
+        IsDatabaseResetAcknowledged = false;
 
         _databaseRecoveryStage = _databaseRecoveryStage switch
         {
@@ -1254,10 +1338,17 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
 
     private string BuildDatabaseRecoveryErrorMessage() => _databaseRecoveryException switch
     {
+        null => _backendClient.Snapshot.FailureKind switch
+        {
+            BackendRuntimeFailureKind.PlatformKeyUnavailable => GetTranslation("Shell_PlatformKeyUnavailable"),
+            BackendRuntimeFailureKind.StorageUnavailable => GetTranslation("DatabaseRecovery_StorageUnavailable"),
+            _ => GetTranslation("Shell_BackendStartupFailed")
+        },
         DatabaseVersionNotSupportedException { DetectedVersion: int detectedVersion } version =>
             string.Format(GetTranslation("DatabaseVersion_Error_Message"), detectedVersion,
                 version.OldestSupportedVersion, version.CurrentVersion),
         DatabaseVersionNotSupportedException => GetTranslation("DatabaseVersion_Unknown_Message"),
+        DatabaseResetIncompleteException => GetTranslation("DatabaseRecovery_Incomplete_Message"),
         DatabaseConfigurationInvalidException => GetTranslation("DatabaseConfiguration_Error_Message"),
         DatabaseKeyUnavailableException => GetTranslation("DatabaseKey_Error_Message"),
         _ => GetTranslation("DatabaseUnreadable_Error_Message")
@@ -1274,6 +1365,12 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         this.RaisePropertyChanged(nameof(IsDatabaseResetInProgress));
         this.RaisePropertyChanged(nameof(IsDatabaseRecoverySecondaryButtonVisible));
         this.RaisePropertyChanged(nameof(IsDatabaseRecoveryPrimaryButtonVisible));
+        this.RaisePropertyChanged(nameof(IsDatabaseRecoveryBusy));
+        this.RaisePropertyChanged(nameof(CanRetryDatabaseStartup));
+        this.RaisePropertyChanged(nameof(CanConfirmDatabaseReset));
+        this.RaisePropertyChanged(nameof(IsDatabaseResetAcknowledgementVisible));
+        this.RaisePropertyChanged(nameof(DatabaseRecoveryRetryLabel));
+        this.RaisePropertyChanged(nameof(DatabaseResetAcknowledgeLabel));
         this.RaisePropertyChanged(nameof(DatabaseRecoveryTitle));
         this.RaisePropertyChanged(nameof(DatabaseRecoveryMessage));
         this.RaisePropertyChanged(nameof(DatabaseRecoveryPrimaryButtonLabel));
@@ -1461,6 +1558,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
             return;
         var wasReady = _backendReady;
         ApplyBackendAvailability(snapshot.IsReady);
+        if (IsDatabaseRecoveryDialogOpen) RaiseDatabaseRecoveryProperties();
         if (wasReady && !snapshot.IsReady)
             HideVisibleSensitiveData();
 
@@ -1479,7 +1577,8 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
                 ShowDatabaseRecoveryDialog(databaseException);
                 break;
             case BackendRuntimeState.Failed:
-                ShowLocalizedErrorMessage("Shell_BackendStartupFailed");
+                ShowLocalizedErrorMessage(snapshot.FailureKind == BackendRuntimeFailureKind.StorageUnavailable
+                    ? "DatabaseRecovery_StorageUnavailable" : "Shell_BackendStartupFailed");
                 break;
             case BackendRuntimeState.Ready:
                 if (!wasReady && _startupCompleted && !_isInitializing)
@@ -1505,6 +1604,7 @@ public sealed class MainViewModel : ViewModelBase, IFrontendRefreshTarget
         RaiseHeaderSubtitleProperties();
         this.RaisePropertyChanged(nameof(CanUseBackend));
         this.RaisePropertyChanged(nameof(IsStartupInProgress));
+        this.RaisePropertyChanged(nameof(CanRetryDatabaseStartup));
         this.RaisePropertyChanged(nameof(CanRetryStartup));
         this.RaisePropertyChanged(nameof(IsBackendPageEnabled));
         this.RaisePropertyChanged(nameof(CanChangeRememberMe));

@@ -210,6 +210,7 @@ public sealed class WindowsAgentStatusProvider : IWindowsIpcStatusProvider
         BackendRuntimeFailureKind.DatabaseCompatibility => BackendRuntimeFailureStatusKind.DatabaseCompatibility,
         BackendRuntimeFailureKind.DatabaseConfigurationInvalid => BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid,
         BackendRuntimeFailureKind.DatabaseKeyUnavailable => BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable,
+        BackendRuntimeFailureKind.DatabaseResetIncomplete => BackendRuntimeFailureStatusKind.DatabaseResetIncomplete,
         BackendRuntimeFailureKind.DatabaseUnreadable => BackendRuntimeFailureStatusKind.DatabaseUnreadable,
         BackendRuntimeFailureKind.PlatformKeyUnavailable => BackendRuntimeFailureStatusKind.PlatformKeyUnavailable,
         BackendRuntimeFailureKind.StorageUnavailable => BackendRuntimeFailureStatusKind.StorageUnavailable,
@@ -284,6 +285,11 @@ public sealed class WindowsAgentStatusProvider : IWindowsIpcStatusProvider
         BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable => CreateFailure(
             IpcFailureKind.PlatformKey,
             _localizer.GetString(AgentLocalizationKeys.RuntimeDatabaseKeyUnavailable),
+            retryable: false,
+            requiresRestart),
+        BackendRuntimeFailureStatusKind.DatabaseResetIncomplete => CreateFailure(
+            IpcFailureKind.Runtime,
+            _localizer.GetString(AgentLocalizationKeys.RuntimeDatabaseResetIncomplete),
             retryable: false,
             requiresRestart),
         BackendRuntimeFailureStatusKind.DatabaseUnreadable => CreateFailure(

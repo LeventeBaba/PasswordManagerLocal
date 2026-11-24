@@ -58,6 +58,7 @@ public sealed class WindowsAgentHealthValidatorTests
     [DataRow(BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid)]
     [DataRow(BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable)]
     [DataRow(BackendRuntimeFailureStatusKind.DatabaseUnreadable)]
+    [DataRow(BackendRuntimeFailureStatusKind.DatabaseResetIncomplete)]
     public void ResettableDatabaseFailureAllowsControlRegistrationButNotEndpointReadiness(BackendRuntimeFailureStatusKind kind)
     {
         var agent = CreateAgentStatus();
@@ -71,16 +72,16 @@ public sealed class WindowsAgentHealthValidatorTests
     }
 
     [TestMethod]
-    public void NonResettableBackendFailureRejectsRegistrationAndRequiresReplacement()
+    public void TemporaryStorageFailureAllowsControlRetryWithoutClaimingEndpointReadiness()
     {
         var agent = CreateAgentStatus();
         var backend = CreateBackendStatus(
             BackendRuntimeStatusState.Failed,
             BackendRuntimeFailureStatusKind.StorageUnavailable);
 
-        Assert.IsFalse(_validator.CanRegisterUi(agent, backend));
+        Assert.IsTrue(_validator.CanRegisterUi(agent, backend));
         Assert.IsFalse(_validator.IsHealthyForEndpoint(agent, backend));
-        Assert.IsTrue(_validator.RequiresProcessReplacement(agent, backend));
+        Assert.IsFalse(_validator.RequiresProcessReplacement(agent, backend));
     }
 
     private static AgentStatusDto CreateAgentStatus(

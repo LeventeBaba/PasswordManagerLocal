@@ -295,12 +295,14 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
 
     public Task ResetDatabaseAndRestartAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         TaskCompletionSource starter;
         BackendRuntimeStateChangedEventArgs? stateChange;
 
         lock (_gate)
         {
             ThrowIfDisposedLocked();
+            ThrowIfRestartBlockedLocked();
 
             if (_startupTask is not null || _stopTask is not null)
                 throw new InvalidOperationException("A backend lifecycle operation is already in progress.");
@@ -321,8 +323,10 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
         }
 
         Publish(stateChange);
-        _ = RunStartupAsync(starter, resetStorageFirst: true);
-        return starter.Task.WaitAsync(cancellationToken);
+        _ = RunStartupAsync(starter, resetStorageFirst: true, cancellationToken);
+        // Unlike a shared non-destructive startup, the destructive caller must
+        // observe its owned operation through completion after the boundary.
+        return starter.Task;
     }
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
@@ -694,7 +698,8 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
         }
     }
 
-    private async Task RunStartupAsync(TaskCompletionSource completion, bool resetStorageFirst)
+    private async Task RunStartupAsync(TaskCompletionSource completion, bool resetStorageFirst,
+        CancellationToken resetCancellationToken = default)
     {
         BackendServiceHost? newHost = null;
         ISyncRuntimeService? newSyncRuntime = null;
@@ -709,6 +714,7 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
             await _lifecycleLock.WaitAsync(CancellationToken.None);
             lifecycleLockTaken = true;
 
+            resetCancellationToken.ThrowIfCancellationRequested();
             await DisposeCurrentHostCoreAsync();
 
             BackendDebugLog.InitializeForCurrentBuild(_options.StoragePaths.LogsDirectory);
@@ -721,9 +727,12 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
             if (resetStorageFirst)
             {
                 _storageCleaner.ClearSqlitePools();
-                _storageCleaner.DeleteDatabaseFiles();
+                await _storageCleaner.DeleteDatabaseFilesAsync(resetCancellationToken);
                 BackendDebugLog.OperationCompleted("Backend storage reset", "Runtime");
             }
+
+            if (Path.Exists(_options.StoragePaths.DatabaseResetPendingPath))
+                throw new DatabaseResetIncompleteException();
 
             (newHost, newSyncRuntime) = await CreateAndStartHostAsync();
             var newChangeSource = newHost.Services.GetService<IBackendChangeSource>();
@@ -750,7 +759,9 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
         }
         catch (Exception exception)
         {
-            failure = exception;
+            failure = exception is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 11 or 26 }
+                ? new DatabaseUnreadableException(exception)
+                : exception;
             BackendDebugLog.Error("Backend startup failed.", exception, "Runtime");
 
             if (newSyncRuntime is not null)
@@ -765,21 +776,12 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
                 catch (Exception disposeException)
                 {
                     failure = new AggregateException(failure, disposeException);
+                    lock (_gate) _restartBlockedFailure ??= failure;
                 }
             }
 
-            if (resetStorageFirst)
-            {
-                try
-                {
-                    _storageCleaner.ClearSqlitePools();
-                    _storageCleaner.DeleteDatabaseFiles();
-                }
-                catch (Exception cleanupException)
-                {
-                    failure = new AggregateException(failure, cleanupException);
-                }
-            }
+            // Preserve all surviving files, including any newly created database
+            // and protected key. A failed reset never authorizes a second deletion.
 
             var (state, failureKind) = ClassifyFailure(failure);
             lock (_gate)
@@ -787,6 +789,11 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
                 _host = null;
                 _changeSource = null;
                 _syncRuntime = null;
+                if (_restartBlockedFailure is not null)
+                {
+                    state = BackendRuntimeState.Failed;
+                    failureKind = BackendRuntimeFailureKind.ShutdownFailure;
+                }
                 finalStateChange = TransitionLocked(state, failureKind, failure);
                 syncStateChange = SetSyncSnapshotLocked(
                     new SyncRuntimeSnapshot(SyncRuntimeState.Disabled, null));
@@ -872,6 +879,9 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
                     "Backend service host cleanup after startup failure also failed.",
                     disposeException,
                     "Runtime");
+                var unsafeFailure = new AggregateException(exception, disposeException);
+                lock (_gate) _restartBlockedFailure ??= unsafeFailure;
+                throw unsafeFailure;
             }
 
             throw;
@@ -1178,6 +1188,8 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
         {
             KeyProtectorUnavailableException =>
                 (BackendRuntimeState.WaitingForDeviceUnlock, BackendRuntimeFailureKind.PlatformKeyUnavailable),
+            DatabaseResetIncompleteException =>
+                (BackendRuntimeState.Failed, BackendRuntimeFailureKind.DatabaseResetIncomplete),
             DatabaseVersionNotSupportedException =>
                 (BackendRuntimeState.Failed, BackendRuntimeFailureKind.DatabaseCompatibility),
             DatabaseConfigurationInvalidException =>
@@ -1186,6 +1198,10 @@ internal sealed class BackendRuntime : IBackendRuntime, IBackendExecutionProfile
                 (BackendRuntimeState.Failed, BackendRuntimeFailureKind.DatabaseKeyUnavailable),
             DatabaseUnreadableException =>
                 (BackendRuntimeState.Failed, BackendRuntimeFailureKind.DatabaseUnreadable),
+            Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 11 or 26 } =>
+                (BackendRuntimeState.Failed, BackendRuntimeFailureKind.DatabaseUnreadable),
+            Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 5 or 6 or 8 or 10 or 13 or 14 } =>
+                (BackendRuntimeState.Failed, BackendRuntimeFailureKind.StorageUnavailable),
             UnauthorizedAccessException or IOException =>
                 (BackendRuntimeState.Failed, BackendRuntimeFailureKind.StorageUnavailable),
             _ =>

@@ -4,7 +4,7 @@ The synchronization suites use production services with isolated SQLite vaults, 
 
 ## Opt-in scenarios
 
-Expensive cases require `PASSWORDMANAGERLOCAL_SYNC_STRESS=1`. Normal suite filters exclude `SyncStress` and `SyncStressExtended`.
+Synchronization cases require `PASSWORDMANAGERLOCAL_SYNC_STRESS=1`; wire-limit cases require `PASSWORDMANAGERLOCAL_SECURITY_STRESS=1`. Without their opt-in flag, these tests report inconclusive before exercising the workload. Normal suite filters exclude `SyncStress`, `SyncStressExtended`, and `SecurityStress`.
 
 | Suite / scenario | Category | Seeds / setup | Coverage |
 | --- | --- | --- | --- |
@@ -13,13 +13,29 @@ Expensive cases require `PASSWORDMANAGERLOCAL_SYNC_STRESS=1`. Normal suite filte
 | [MultiDeviceAdversarialChurnStressTests](../../Common/Tests/Backend/Services/MultiDeviceAdversarialChurnStressTests.cs) | `SyncStressExtended` | `271828`, `314159`; five devices | Stale fifth replica, 12 write/partition waves, relay restart, queue loss, anti-entropy recovery, second partition/convergence, no resurrection |
 | [LockedRelayRestart](../../Common/Tests/Backend/Services/Relay/RegularSyncEndToEndTests.cs) | `SyncStressExtended` | Three-device scenario | Pending signed-envelope custody across locked relay restart, indirect merge, and merge after unlock |
 | [EnrollmentRemovalCycles](../../Common/Tests/Backend/Services/Storage/DatabaseGrowthBaselineTests.cs) | `SyncStressExtended`, `DatabaseGrowthBaseline` | Four enrollment/removal cycles | Bounded live membership with retained historical-authority measurements |
-| [BoundedStorageGrowthStressTests](../../Common/Tests/Backend/Persistence/BoundedStorageGrowthStressTests.cs) | `SyncStressExtended`, `BoundedGrowth` | Seed `1701`; reduced 32 KiB category budgets | Structural history exhaustion and repeated refusal across snapshot/origin, control/membership, revocation/debt and recovery/fault collections |
+| [BoundedStorageGrowthStressTests](../../Common/Tests/Backend/Persistence/BoundedStorageGrowthStressTests.cs) | `SyncStressExtended`, `BoundedGrowth` | Seed `1701`; file-backed vault per collection; reduced 32 KiB category budgets | Structural history exhaustion and repeated refusal across snapshot/origin, control/membership, revocation/debt and recovery/fault collections |
+| [RecoveredCanonicalPublication](../../Common/Tests/Backend/Services/Recovery/RegularSyncEndToEndTests.cs) | `SyncStressExtended`, `Recovery`, `TransactionHardening` | Enrolled pair; latest edit published before root damage | Old-session rejection and recovered credential after fresh login, exact pending snapshot across locked restart, and merge without redelivery |
+| [FiveDevices_DelayedDeliveryAndLockedRecipients](../../Common/Tests/Backend/Services/AuthenticatedForkRemovalTests.cs) | `SyncStressExtended`, `DeviceRemoval` | Five independent installations | Signed fork exclusion, delayed removal delivery and locked recipients |
+| [EvidenceCompaction_RepeatedDuplicateArrivals](../../Common/Tests/Backend/Services/EvidenceCompaction/RevocationReceiptServiceTests.cs) | `SyncStressExtended`, `EvidenceCompaction`, `BoundedGrowth` | Three peers; file-backed vault; 64 duplicate-proof rounds | Cross-session schema visibility, stable row counts and storage charges after authenticated evidence reclamation |
+| [TcpEnrollment_EnforcesSnapshotByteLimitBeforeImport](../../Common/Tests/Backend/Services/Adversarial/DeviceEnrollmentEndToEndTests.cs) | `SecurityStress` | At-limit and oversized payload cases | Enrollment snapshot byte admission before import |
+| [ProductionTcp_EnforcesAggregateDeltaBytes](../../Common/Tests/Backend/Services/Adversarial/RegularSyncEndToEndTests.cs) | `SecurityStress` | At-limit and oversized aggregate cases | Total bytes admitted during one TCP delta exchange |
+| [ProductionTcp_GlobalLimitAppliesAcrossDistinctLoopbackSources](../../Common/Tests/Backend/Services/Adversarial/RegularSyncEndToEndTests.cs) | `SecurityStress` | Multiple loopback source addresses | Global connection limit across distinct sources |
 
 Five-device cases enroll independent installations; databases are not cloned. Enrollment preflight propagates signed membership before partitioning. Reachable edges are explicit. Queue-loss scenarios remove queue bookkeeping while retaining the durable signed snapshots needed for anti-entropy.
 
 Convergence assertions compare logical IDs, metadata, secrets, tags/colors, deletion state, and queue drain as applicable. Independent writes must survive; competing versions can resolve to one deterministic winner. Seeds fix intended operations/topologies, not thread scheduling. Five-device convergence/runtime cases allow 12 minutes per seed; extended churn allows 20 minutes per seed.
 
 ## Commands
+
+On Windows, double-click [Tools/Run-Common-Stress-Tests.bat](../../Tools/Run-Common-Stress-Tests.bat) to restore/build Common.Tests and run all three opt-in categories in Debug, including every declared seed and data row. The runner enables both flags only in test-host processes, resolves the solution relative to its own location, shows console output and saves TRX results under `artifacts/test-results/common-stress`. It returns the test command's exit code and keeps the window open for review.
+
+```bat
+Tools\Run-Common-Stress-Tests.bat
+Tools\Run-Common-Stress-Tests.bat Release
+Tools\Run-Common-Stress-Tests.bat Debug --no-pause
+```
+
+`--no-pause` is useful from a terminal or automation. A security scenario may still report inconclusive if the operating system does not provide multiple loopback source addresses; the runner does not bypass that capability check. Review the final test summary and TRX files for skipped/inconclusive cases.
 
 Commands use PowerShell from the repository root after a Debug build. `--environment` enables stress only in test hosts.
 
@@ -65,6 +81,8 @@ dotnet test .\Windows\Tests.EndpointRpc\PasswordManagerLocal.Windows.Tests.Endpo
 `ControlledDelayTimeProvider` gates one-shot supervisor delays. Explicit signals/gates control startup, shutdown, retry, and recovery fault injection. Production app code has no test fault switches.
 
 Initial-read gate release makes deferred post-login reconciliation runnable; it does not join the consumer. Tests measuring unchanged canonical state during rejected admission use the existing per-user lifecycle coordinator around the baseline, requests, and readback. Nested inbox calls remain reentrant and execute real transactions. Ordinary transfer idleness alone does not establish canonical-write idleness.
+
+The historical-budget stress scenario uses `SqliteStorageFileFixture` for each collection, and the repeated evidence-compaction stress scenario uses that same bounded file-backed fixture through `SqliteRepositoryTestDatabase.CreateFileBackedAsync`. Setup, independent readers, budget changes, receipt application, measurements and compaction sessions address each scenario's initialized persistent database image. Ordinary repository fixtures retain their shared-memory default. A fast repository regression verifies committed user data and the deletion-barrier table through independently opened file-backed sessions.
 
 Partial test classes are grouped by behavior under `AccountLifecycle`, `Adversarial`, `FailureInjection`, `Recovery`, `Relay`, `RevocationDelivery`, `Runtime`, `Storage`, `StorageSecurity`, `EvidenceCompaction`, and `CausalGc`. Each file retains the matching primary type name. SDK default compile inclusion discovers those files without explicit project entries.
 

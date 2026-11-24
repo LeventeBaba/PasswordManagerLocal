@@ -500,7 +500,7 @@ public sealed class WindowsAgentHostTests
     }
 
     [TestMethod]
-    public async Task NonResettableBackendFailureClosesAdmissionAndTriggersFatalShutdown()
+    public async Task UnsafeBackendFailureClosesAdmissionAndTriggersFatalShutdown()
     {
         var processLock = new FakeProcessInstanceLock();
         var state = new WindowsAgentStateStore();
@@ -519,12 +519,33 @@ public sealed class WindowsAgentHostTests
         backend.PublishSnapshot(FakeWindowsAgentBackendRuntimeOwner.CreateSnapshot(
             ownerState: WindowsAgentBackendOwnerState.Failed,
             runtimeState: BackendRuntimeState.Failed,
-            runtimeFailureKind: BackendRuntimeFailureKind.StorageUnavailable,
-            failure: new IOException("storage failure")));
+            runtimeFailureKind: BackendRuntimeFailureKind.ShutdownFailure,
+            failure: new IOException("unsafe shutdown failure")));
 
         await WaitUntilAsync(() => host.RetainsProcessOwnershipUntilTermination);
 
         Assert.AreEqual(AgentAdmissionState.Closed, admissionGate.State);
+        Assert.IsFalse(processLock.IsDisposed);
+    }
+
+    [TestMethod]
+    [DataRow(BackendRuntimeFailureKind.StorageUnavailable)]
+    [DataRow(BackendRuntimeFailureKind.StartupFailure)]
+    public async Task RetryableStartupFailureKeepsTheAgentShellAndProcessOwner(BackendRuntimeFailureKind failure)
+    {
+        var processLock = new FakeProcessInstanceLock();
+        var state = new WindowsAgentStateStore();
+        var admission = new WindowsAgentAdmissionGate();
+        var backend = new FakeWindowsAgentBackendRuntimeOwner();
+        await using var host = CreateHost(processLock, new FakeWindowsIpcServerHost(),
+            new FakeWindowsAgentEndpointHost(), backend, new FakeTrayIconController(),
+            state: state, admissionGate: admission);
+        await host.StartAsync();
+        backend.PublishSnapshot(FakeWindowsAgentBackendRuntimeOwner.CreateSnapshot(
+            ownerState: WindowsAgentBackendOwnerState.Failed, runtimeState: BackendRuntimeState.Failed,
+            runtimeFailureKind: failure, failure: new IOException("retryable startup")));
+        Assert.AreEqual(AgentState.Running, state.State);
+        Assert.AreEqual(AgentAdmissionState.Open, admission.State);
         Assert.IsFalse(processLock.IsDisposed);
     }
 

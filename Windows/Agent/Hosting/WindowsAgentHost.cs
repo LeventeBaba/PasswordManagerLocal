@@ -580,10 +580,10 @@ public sealed class WindowsAgentHost : IWindowsAgentHost
     private void EnsureBackendOwnerReadyForEndpointStart()
     {
         var snapshot = _backendOwner.Snapshot;
-        var recoverableDatabaseFailure =
+        var retryableStartupFailure =
             snapshot.State == WindowsAgentBackendOwnerState.Failed &&
-            snapshot.Runtime.FailureKind.RequiresDatabaseReset();
-        if ((snapshot.State != WindowsAgentBackendOwnerState.Ready && !recoverableDatabaseFailure) ||
+            snapshot.Runtime.FailureKind.CanRetryStartup();
+        if ((snapshot.State != WindowsAgentBackendOwnerState.Ready && !retryableStartupFailure) ||
             snapshot.IsResetting ||
             snapshot.RequiresProcessRestart)
         {
@@ -628,7 +628,7 @@ public sealed class WindowsAgentHost : IWindowsAgentHost
 
         if (_stateStore.State == AgentState.Running &&
             snapshot.State == WindowsAgentBackendOwnerState.Failed &&
-            !snapshot.Runtime.FailureKind.RequiresDatabaseReset() &&
+            !snapshot.Runtime.FailureKind.CanRetryStartup() &&
             Volatile.Read(ref _shutdownStarted) == 0)
         {
             _admissionGate.ClosePermanently();

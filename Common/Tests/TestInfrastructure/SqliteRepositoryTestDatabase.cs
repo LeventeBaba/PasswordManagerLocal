@@ -3,17 +3,21 @@ using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Persistence;
 using PasswordManagerLocal.Common.Backend.Repositories;
+using PasswordManagerLocal.Common.Tests.TestInfrastructure.Storage;
 
 namespace PasswordManagerLocal.Common.Tests.TestInfrastructure;
 
 /// <summary>Production repositories sharing a single SQLite session on an isolated test vault.</summary>
 internal sealed class SqliteRepositoryTestDatabase : IAsyncDisposable
 {
-    private readonly SqliteTestVault _vault;
+    private readonly IAsyncDisposable _vault;
 
-    private SqliteRepositoryTestDatabase(SqliteTestVault vault, IBackendChangePublisher? publisher, IRevocationDeliveryActivity? activity)
+    private SqliteRepositoryTestDatabase(SqliteConnectionFactory connections, IAsyncDisposable vault,
+        string databasePath, IBackendChangePublisher? publisher, IRevocationDeliveryActivity? activity)
     {
         _vault = vault;
+        Connections = connections;
+        DatabasePath = databasePath;
         UnitOfWork = new SqliteSession(Connections, publisher, activity);
         DeviceIdentity = new DeviceIdentityRepository(UnitOfWork);
         Users = new UserRepository(UnitOfWork);
@@ -38,7 +42,8 @@ internal sealed class SqliteRepositoryTestDatabase : IAsyncDisposable
         UserSyncFaults = new UserSyncFaultRepository(UnitOfWork);
     }
 
-    public SqliteConnectionFactory Connections => _vault.Connections;
+    public SqliteConnectionFactory Connections { get; }
+    public string DatabasePath { get; }
     public SqliteSession UnitOfWork { get; }
     public DeviceIdentityRepository DeviceIdentity { get; }
     public UserRepository Users { get; }
@@ -62,8 +67,19 @@ internal sealed class SqliteRepositoryTestDatabase : IAsyncDisposable
     public UserCanonicalCheckpointRepository UserCanonicalCheckpoints { get; }
     public UserSyncFaultRepository UserSyncFaults { get; }
 
-    public static async Task<SqliteRepositoryTestDatabase> CreateAsync(IBackendChangePublisher? publisher = null, IRevocationDeliveryActivity? activity = null) =>
-        new(await SqliteTestVault.CreateAsync(), publisher, activity);
+    public static async Task<SqliteRepositoryTestDatabase> CreateAsync(
+        IBackendChangePublisher? publisher = null, IRevocationDeliveryActivity? activity = null)
+    {
+        var vault = await SqliteTestVault.CreateAsync();
+        return new(vault.Connections, vault, string.Empty, publisher, activity);
+    }
+
+    public static async Task<SqliteRepositoryTestDatabase> CreateFileBackedAsync(
+        IBackendChangePublisher? publisher = null, IRevocationDeliveryActivity? activity = null)
+    {
+        var vault = await SqliteStorageFileFixture.CreateAsync();
+        return new(vault.Factory, vault, vault.DatabasePath, publisher, activity);
+    }
 
     public SqliteSession OpenSession() => new(Connections);
 

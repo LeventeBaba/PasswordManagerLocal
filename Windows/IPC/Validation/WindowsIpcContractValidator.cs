@@ -588,6 +588,7 @@ public sealed class WindowsIpcContractValidator
             BackendRuntimeFailureStatusKind.DatabaseCompatibility => IpcFailureKind.Runtime,
             BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid => IpcFailureKind.Runtime,
             BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable => IpcFailureKind.PlatformKey,
+            BackendRuntimeFailureStatusKind.DatabaseResetIncomplete => IpcFailureKind.Runtime,
             BackendRuntimeFailureStatusKind.DatabaseUnreadable => IpcFailureKind.Runtime,
             BackendRuntimeFailureStatusKind.PlatformKeyUnavailable => IpcFailureKind.PlatformKey,
             BackendRuntimeFailureStatusKind.StorageUnavailable => IpcFailureKind.Storage,

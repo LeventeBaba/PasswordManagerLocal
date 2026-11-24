@@ -16,6 +16,7 @@ public sealed class WindowsNamedPipeFrontendBackendClientRecoveryTests
     [DataRow(BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid, BackendRuntimeFailureKind.DatabaseConfigurationInvalid)]
     [DataRow(BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable, BackendRuntimeFailureKind.DatabaseKeyUnavailable)]
     [DataRow(BackendRuntimeFailureStatusKind.DatabaseUnreadable, BackendRuntimeFailureKind.DatabaseUnreadable)]
+    [DataRow(BackendRuntimeFailureStatusKind.DatabaseResetIncomplete, BackendRuntimeFailureKind.DatabaseResetIncomplete)]
     public async Task StartupDatabaseRecoveryFailurePreservesResettableFailureKind(
         BackendRuntimeFailureStatusKind wireKind, BackendRuntimeFailureKind runtimeKind)
     {
@@ -55,6 +56,7 @@ public sealed class WindowsNamedPipeFrontendBackendClientRecoveryTests
             BackendRuntimeFailureStatusKind.DatabaseCompatibility => typeof(DatabaseVersionNotSupportedException),
             BackendRuntimeFailureStatusKind.DatabaseConfigurationInvalid => typeof(DatabaseConfigurationInvalidException),
             BackendRuntimeFailureStatusKind.DatabaseKeyUnavailable => typeof(DatabaseKeyUnavailableException),
+            BackendRuntimeFailureStatusKind.DatabaseResetIncomplete => typeof(DatabaseResetIncompleteException),
             _ => typeof(DatabaseUnreadableException)
         };
         Assert.AreEqual(expectedType, client.Snapshot.Failure!.GetType());
@@ -334,6 +336,27 @@ public sealed class WindowsNamedPipeFrontendBackendClientRecoveryTests
         Assert.AreEqual(1, agent.DisposeCount);
         Assert.IsTrue(transport.IsDisposed);
         Assert.AreEqual(WindowsEndpointClientConnectionState.Disposed, client.ConnectionState);
+    }
+
+    [TestMethod]
+    public async Task CallerCancellationAfterResetRequestDoesNotDetachOrReplayTheReset()
+    {
+        var completed = new TaskCompletionSource<DatabaseResetResultDto>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var agent = new FakeEndpointRpcAgentConnection { ResetCompletion = completed };
+        var connector = new SequenceEndpointRpcClientConnector(
+            new ControllableEndpointRpcTransport(), new ControllableEndpointRpcTransport());
+        await using var client = new WindowsNamedPipeFrontendBackendClient(agent, connector,
+            maximumRecoveryAttempts: 1, recoveryDelay: TimeSpan.Zero);
+        await client.ConnectAsync();
+        using var cancellation = new CancellationTokenSource();
+        var reset = client.ResetDatabaseAndRestartAsync(cancellation.Token);
+        await WaitUntilAsync(() => agent.ResetCount == 1);
+        cancellation.Cancel();
+        Assert.IsFalse(reset.IsCompleted);
+        completed.SetResult(new DatabaseResetResultDto(true, false, null));
+        await reset;
+        Assert.AreEqual(1, agent.ResetCount);
+        Assert.IsTrue(client.Snapshot.IsReady);
     }
 
     [TestMethod]

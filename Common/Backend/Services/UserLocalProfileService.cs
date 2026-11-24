@@ -48,6 +48,7 @@ public sealed class UserLocalProfileService(
                 throw new InvalidInputException();
             }
             var userId = matches[0];
+            Exception? cleanupFailure = null;
             await lifecycle.ExecuteAsync(userId, async inner =>
             {
                 uow.ClearTrackedChanges();
@@ -101,18 +102,29 @@ public sealed class UserLocalProfileService(
                 try
                 {
                     await sessions.LogoutUserAsync(userId, AuthSessionInvalidationReason.ProfileRemoved, CancellationToken.None);
-                    if (user.SavedKey is not null) CryptographicOperations.ZeroMemory(user.SavedKey);
-                    user.SavedKey = null;
-                    user.ClearEncryptedPayloads();
-                    // Refreshing may wait for lifecycle ownership; do it after this action returns.
                 }
                 catch (Exception ex)
                 {
-                    throw new MutationPartiallyCommittedException("The local profile was removed, but local access cleanup did not finish.", innerException: ex);
+                    cleanupFailure = ex;
                 }
+                finally
+                {
+                    if (user.SavedKey is not null) CryptographicOperations.ZeroMemory(user.SavedKey);
+                    user.SavedKey = null;
+                    user.ClearEncryptedPayloads();
+                }
+                // Refreshing may wait for lifecycle ownership; always attempt it after
+                // releasing that lock, even if post-commit session cleanup failed.
             }, ct);
             try { await runtime.RefreshSyncEnabledAsync(CancellationToken.None); }
-            catch (Exception ex) { throw new MutationPartiallyCommittedException("The local profile was removed, but synchronization runtime refresh did not finish.", innerException: ex); }
+            catch (Exception ex)
+            {
+                cleanupFailure = cleanupFailure is null ? ex : new AggregateException(cleanupFailure, ex);
+            }
+            if (cleanupFailure is not null)
+                throw new MutationPartiallyCommittedException(
+                    "The local profile was removed, but local access cleanup or synchronization refresh did not finish.",
+                    requiresProcessRestart: true, innerException: cleanupFailure);
         }
         finally { CryptographicOperations.ZeroMemory(username); }
     }

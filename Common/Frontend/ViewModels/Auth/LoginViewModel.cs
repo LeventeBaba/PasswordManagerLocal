@@ -63,6 +63,9 @@ public sealed class LoginViewModel : ViewModelBase
         }));
         CancelLocalProfileRemovalCommand = Own(ReactiveCommand.Create(() =>
         {
+            if (IsBusy) return;
+            Password = string.Empty;
+            IsPasswordVisible = false;
             IsLocalProfileRemovalVisible = false;
             IsLocalProfileRemovalAcknowledged = false;
         }));
@@ -435,6 +438,8 @@ public sealed class LoginViewModel : ViewModelBase
     public override void OnNavigatedFrom()
     {
         base.OnNavigatedFrom();
+        Password = string.Empty;
+        IsPasswordVisible = false;
         IsLocalProfileRemovalVisible = false;
         IsLocalProfileRemovalAcknowledged = false;
         AbandonActiveDeviceTransfer();
@@ -538,6 +543,7 @@ public sealed class LoginViewModel : ViewModelBase
         var passwordHash = SecretTransform.HashPassword(Password);
         var username = Username.Trim();
         Password = string.Empty;
+        IsPasswordVisible = false;
         IsLocalProfileRemovalAcknowledged = false;
         try
         {
@@ -547,6 +553,19 @@ public sealed class LoginViewModel : ViewModelBase
             Username = string.Empty;
             RememberMe = false;
             ShowLocalizedSuccessMessage("Login_LocalProfileRemoval_Completed");
+        }
+        catch (Exception ex) when (ex is IOperationOutcomeUnknown)
+        {
+            IsLocalProfileRemovalVisible = false;
+            RememberMe = false;
+            ShowLocalizedErrorMessage("Login_LocalProfileRemoval_OutcomeUnknown");
+        }
+        catch (Exception ex) when (ex is IPartiallyCommittedOperation)
+        {
+            IsLocalProfileRemovalVisible = false;
+            Username = string.Empty;
+            RememberMe = false;
+            ShowLocalizedErrorMessage("Login_LocalProfileRemoval_CommittedNeedsRestart");
         }
         catch (Exception ex) { ShowSafeErrorMessage(ex); }
         finally

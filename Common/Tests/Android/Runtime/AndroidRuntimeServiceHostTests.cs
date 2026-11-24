@@ -760,6 +760,21 @@ public sealed class AndroidRuntimeServiceHostTests
 
 
     [TestMethod]
+    public async Task CancellationAfterResetCommitStillAdoptsTheCurrentActivityConnection()
+    {
+        using var fixture = CreateFixture(backgroundEnabled: false);
+        await using var host = fixture.Host;
+        await using var client = await host.AttachInteractiveClientAsync();
+        using var cancellation = new CancellationTokenSource();
+        fixture.Runtime.AfterReset = cancellation.Cancel;
+        await client.ResetDatabaseAndRestartAsync(cancellation.Token);
+        Assert.AreEqual(1, fixture.Runtime.ResetCalls);
+        Assert.AreEqual(AndroidInteractiveAttachmentState.Active, client.AttachmentState);
+        Assert.AreEqual(BackendLifetimeReason.InteractiveUi, fixture.Coordinator.ActiveReasons);
+        Assert.IsInstanceOfType<AndroidAttachmentAuthorizedEndpoints>(await client.GetEndpointsAsync());
+    }
+
+    [TestMethod]
     public async Task EndpointAuthorityIsSuspendedWhileDatabaseResetOwnsTheTransition()
     {
         using var fixture = CreateFixture(backgroundEnabled: true);

@@ -241,6 +241,12 @@ These limits describe file lengths and application-created file counts, separate
 
 Database format 18 retains WAL-pressure admission, logical budgets and critical-ingress custody, and adds bounded competing fork envelopes with evidence that survives local profile erasure. Earlier development database versions require explicit recreation through the existing reset flow. Synchronization protocol 17 and enrollment payload 8 bind signed fork-exclusion evidence; see [recovery](RECOVERY.md#evidence-format-and-storage). [Storage tests](../Testing/MULTI_DEVICE_SYNC_STRESS.md#storage-capacity-tests) cover logical admission, physical exhaustion, bounded compaction and evidence-preserving failure paths. The VFS and INCREMENTAL auto-vacuum change no application tables, signed envelope formats or synchronization semantics.
 
+## Exceptional recovery presentation
+
+Shared Windows/Android views keep structural database recovery separate from ordinary connectivity retries, authenticated terminal synchronization blockers, confirmed profile-history repair and removal of a disconnected local profile. Verified automatic canonical recovery remains unobtrusive. Terminal conflicts preserve the existing fail-closed policy; there is no UI choice between histories. Device attribution and available actions still come from existing authenticated backend results.
+
+Database reset has a scrollable warning, an initially unchecked acknowledgement, dedicated confirmation controls, a non-destructive retry, keyboard focus on a safe action and accessible control names. Confirmed history repair retains its plan fingerprint, master-password verification and fresh acknowledgement. Changed credentials invalidate the acknowledgement. Partial commits clear the old repair offer and explain that follow-up verification must be reviewed; unknown transport outcomes are not presented as clean rollback. English/Hungarian guidance distinguishes local deletion, remote signed disconnection and explicit fresh enrollment. See [recovery](RECOVERY.md#structural-database-recovery).
+
 ## Frontend state
 
 The backend publishes scoped, sequenced change notifications. Windows carries them over IPC; Android delivers them through the authorized activity attachment. [FrontendRefreshCoordinator](../../Common/Frontend/Services/FrontendRefreshCoordinator.cs) coalesces refreshes, handles missed notifications/runtime replacement, and preserves in-progress edits. Device views consume cached presence; backend discovery/probing owns network work.

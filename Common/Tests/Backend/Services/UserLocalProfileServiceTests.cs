@@ -137,6 +137,147 @@ public sealed class UserLocalProfileServiceTests
         finally { await restart.DisposeAsync(); }
     }
 
+    [TestMethod]
+    [TestCategory("LocalProfileCleanup")]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    [DataRow(true, true)]
+    [Timeout(120_000)]
+    public async Task CommittedCleanupStillRefreshesBackgroundEligibilityAndReportsFollowupFailure(
+        bool failLogout, bool failRefresh)
+    {
+        await using var source = await ProductionSyncTestHost.CreateAsync();
+        await using var target = await ProductionSyncTestHost.CreateAsync();
+        var token = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest("cleanup_profile"));
+        var userId = (await source.Endpoints.GetUserProfileInfoAsync(token)).UId;
+        source.ConnectTo(target); target.ConnectTo(source);
+        await source.EnableSyncAsync(token);
+        var code = await target.Endpoints.StartDeviceEnrollmentAsync();
+        await source.Endpoints.AddDeviceByCodeAsync(token, code.Code);
+        var removal = await source.Endpoints.DisconnectUserDeviceAsync(token, target.Identity.LocalDeviceId, Password());
+        using (var from = source.Services.CreateScope())
+        using (var to = target.Services.CreateScope())
+        {
+            var operation = (await from.ServiceProvider.GetRequiredService<IUserControlOperationRepository>()
+                .GetByIdAsync(removal.OperationId!.Value))!;
+            await to.ServiceProvider.GetRequiredService<IUserControlOperationInboxService>().StoreAndApplyAsync(
+                UserControlOperationEnvelopeUtil.Deserialize(operation.EnvelopePayload), source.Identity.LocalDeviceId);
+        }
+        var sessions = new PasswordManagerLocal.Common.Tests.Fakes.FakeInteractiveSessionStateService
+        {
+            LogoutFailure = failLogout ? new IOException("session invalidation failed") : null
+        };
+        var runtime = new PasswordManagerLocal.Common.Tests.Fakes.FakeSyncRuntimeService
+        {
+            RefreshFailure = failRefresh ? new IOException("runtime refresh failed") : null
+        };
+        using var scope = target.Services.CreateScope();
+        var services = scope.ServiceProvider;
+        var cleanup = new PasswordManagerLocal.Common.Backend.Services.UserLocalProfileService(
+            services.GetRequiredService<IUserRepository>(), services.GetRequiredService<IUserMembershipAuthorizationRepository>(),
+            services.GetRequiredService<IUserControlOperationRepository>(), services.GetRequiredService<IUserMembershipAuthorizationService>(),
+            services.GetRequiredService<PasswordManagerLocal.Common.Backend.Abstractions.Persistence.IUserAccountDeletionStore>(),
+            services.GetRequiredService<IUserLifecycleCoordinator>(),
+            services.GetRequiredService<PasswordManagerLocal.Common.Backend.Abstractions.Persistence.IUnitOfWork>(),
+            sessions, runtime, target.Identity);
+        var failure = await Assert.ThrowsExactlyAsync<MutationPartiallyCommittedException>(() => cleanup.RemoveAsync(Request(), true));
+        Assert.IsTrue(failure.RequiresProcessRestart);
+        Assert.AreEqual(1, runtime.RefreshSyncEnabledCalls, "Post-commit session failure cannot skip background reconciliation.");
+        Assert.IsNull(await services.GetRequiredService<IUserRepository>().GetByIdAsync(userId));
+        Assert.IsFalse(await services.GetRequiredService<IDeletedUserBarrierRepository>().ExistsAsync(userId));
+        Assert.IsFalse((await services.GetRequiredService<IUserMembershipAuthorizationRepository>().ListForUserAsync(userId))
+            .Single(row => row.DeviceId == target.Identity.LocalDeviceId).IsActive);
+    }
+
+    [TestMethod]
+    [TestCategory("LocalProfileCleanup")]
+    [TestCategory("EnrollmentSecurity")]
+    [TestCategory("DeviceRemoval")]
+    [Timeout(180_000)]
+    public async Task ThreeDeviceReplacementRequiresSeparateFreshInteractiveEnrollment()
+    {
+        await using var source = await ProductionSyncTestHost.CreateAsync();
+        await using var removed = await ProductionSyncTestHost.CreateAsync();
+        await using var healthy = await ProductionSyncTestHost.CreateAsync();
+        var token = await source.Endpoints.RegisterAsync(source.CreateRegistrationRequest("cleanup_profile"));
+        var userId = (await source.Endpoints.GetUserProfileInfoAsync(token)).UId;
+        await source.Endpoints.AddNewPasswordAsync(token, new NewPasswordRequest
+        {
+            Name = "Preserved", Password = Encoding.UTF8.GetBytes("ExistingSecret123!")
+        });
+        foreach (var target in new[] { removed, healthy })
+        {
+            source.ConnectTo(target); target.ConnectTo(source);
+            await source.EnableSyncAsync(token);
+            var enrollment = await target.Endpoints.StartDeviceEnrollmentAsync();
+            await source.Endpoints.AddDeviceByCodeAsync(token, enrollment.Code);
+        }
+        var healthyToken = await healthy.Endpoints.LoginAsync(healthy.CreateLoginRequest("cleanup_profile"));
+        var oldOrigin = removed.Identity.OriginInstanceId;
+        var oldDevice = removed.Identity.LocalDeviceId;
+        await source.Endpoints.DisconnectUserDeviceAsync(token, oldDevice, Password());
+        await DeliverControlsAsync(source, removed, userId);
+        await DeliverControlsAsync(source, healthy, userId);
+        await removed.Endpoints.RemoveLocalProfileAsync(Request(), true);
+        Assert.AreEqual(oldOrigin, removed.Identity.OriginInstanceId);
+        using (var scope = removed.Services.CreateScope())
+        {
+            Assert.IsNull(await scope.ServiceProvider.GetRequiredService<IUserRepository>().GetByIdAsync(userId));
+            Assert.IsNull(await scope.ServiceProvider.GetRequiredService<IUserMembershipAuthorizationRepository>()
+                .GetActiveAsync(userId, oldDevice, oldOrigin));
+        }
+
+        // A fresh installation is a separate user action. Structural reset of the
+        // original storage is covered by DatabaseResetAuthorizationTests.
+        await using var fresh = await ProductionSyncTestHost.CreateAsync();
+        source.ConnectTo(fresh); fresh.ConnectTo(source);
+        using (var scope = fresh.Services.CreateScope())
+        {
+            Assert.AreEqual(0, (await scope.ServiceProvider.GetRequiredService<IUserRepository>().ListUserIdsAsync()).Count);
+            Assert.AreEqual(0, (await scope.ServiceProvider.GetRequiredService<IUserMembershipAuthorizationRepository>()
+                .ListForUserAsync(userId)).Count);
+        }
+        Assert.AreNotEqual(oldOrigin, fresh.Identity.OriginInstanceId);
+        Assert.AreEqual(DeviceEnrollmentState.None, (await fresh.Endpoints.GetDeviceEnrollmentStatusAsync()).State);
+        // A previous interactive code cannot serve as recovery authorization.
+        var expiredApproval = await fresh.Endpoints.StartDeviceEnrollmentAsync();
+        await fresh.Endpoints.CancelDeviceEnrollmentAsync();
+        await Assert.ThrowsAsync<DeviceEnrollmentException>(() => source.Endpoints.AddDeviceByCodeAsync(token, expiredApproval.Code));
+        using (var scope = source.Services.CreateScope())
+            Assert.IsNull(await scope.ServiceProvider.GetRequiredService<IUserMembershipAuthorizationRepository>()
+                .GetActiveAsync(userId, fresh.Identity.LocalDeviceId, fresh.Identity.OriginInstanceId));
+
+        // Only this separate normal Add Device action approves fresh membership.
+        var approved = await fresh.Endpoints.StartDeviceEnrollmentAsync();
+        await source.Endpoints.AddDeviceByCodeAsync(token, approved.Code);
+        await DeliverControlsAsync(source, healthy, userId);
+        using (var scope = source.Services.CreateScope())
+        {
+            var membership = scope.ServiceProvider.GetRequiredService<IUserMembershipAuthorizationRepository>();
+            Assert.IsNull(await membership.GetActiveAsync(userId, oldDevice, oldOrigin));
+            Assert.IsNotNull(await membership.GetActiveAsync(userId, fresh.Identity.LocalDeviceId, fresh.Identity.OriginInstanceId));
+            Assert.IsNotNull(await membership.GetActiveAsync(userId, healthy.Identity.LocalDeviceId, healthy.Identity.OriginInstanceId));
+            Assert.IsFalse((await scope.ServiceProvider.GetRequiredService<IUserControlOperationRepository>().ListForUserAsync(userId))
+                .Any(row => row.OperationType == UserControlOperationType.AccountDeletion));
+        }
+        Assert.AreEqual("Preserved", (await source.Endpoints.GetSavedPasswordsAsync(token)).Passwords.Single().Name);
+        Assert.AreEqual("Preserved", (await healthy.Endpoints.GetSavedPasswordsAsync(healthyToken)).Passwords.Single().Name);
+    }
+
+    private static async Task DeliverControlsAsync(ProductionSyncTestHost source, ProductionSyncTestHost target, Guid userId)
+    {
+        using var from = source.Services.CreateScope();
+        var operations = await from.ServiceProvider.GetRequiredService<IUserControlOperationRepository>().ListForUserAsync(userId);
+        foreach (var operation in operations.Where(row => row.Status == UserControlOperationStatus.Applied)
+                     .OrderBy(row => row.PreviousMembershipEpoch).ThenBy(row => row.OriginSequence))
+        {
+            using var to = target.Services.CreateScope();
+            var receipt = await to.ServiceProvider.GetRequiredService<IUserControlOperationInboxService>().StoreAndApplyAsync(
+                UserControlOperationEnvelopeUtil.Deserialize(operation.EnvelopePayload), source.Identity.LocalDeviceId);
+            Assert.AreEqual(UserControlOperationReceiptState.Applied, receipt.State);
+        }
+    }
+
     private static LoginRequest Request() => new() { Username = "cleanup_profile", Password = Password() };
     private static byte[] Password() => Encoding.UTF8.GetBytes("P@ssw0rd12345678");
 }

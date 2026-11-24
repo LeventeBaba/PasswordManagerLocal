@@ -48,8 +48,10 @@ public sealed class WindowsAgentOperationAuthorizer : IWindowsIpcOperationAuthor
                 WindowsAgentBackendOwnerState.Stopping or
                 WindowsAgentBackendOwnerState.Stopped ||
             (backend.State == WindowsAgentBackendOwnerState.Failed &&
-                (!backend.Runtime.FailureKind.RequiresDatabaseReset() ||
-                    !IsFailedBackendRecoveryOperation(context.Request.OperationId))))
+                (!backend.Runtime.FailureKind.CanRetryStartup() ||
+                    !IsFailedBackendRecoveryOperation(context.Request.OperationId) ||
+                    (context.Request.OperationId == IpcOperationId.ResetDatabase &&
+                        !backend.Runtime.FailureKind.RequiresDatabaseReset()))))
         {
             return IpcAuthorizationDecision.Denied(
                 _stateSource.State is AgentState.Stopping or AgentState.Stopped

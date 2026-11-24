@@ -251,9 +251,17 @@ public sealed partial class RevocationReceiptServiceTests
     {
         if (Environment.GetEnvironmentVariable("PASSWORDMANAGERLOCAL_SYNC_STRESS") != "1")
             Assert.Inconclusive("Set PASSWORDMANAGERLOCAL_SYNC_STRESS=1 to run evidence churn.");
-        await using var scenario = await Scenario.CreateAsync(peerCount: 3, authenticatedHistory: true);
+        // This storage stress case needs one persistent image across every session.
+        // Use the existing bounded file fixture rather than named shared-memory cache identity.
+        await using var scenario = await Scenario.CreateAsync(peerCount: 3, authenticatedHistory: true, fileBacked: true);
+        Assert.IsTrue(File.Exists(scenario.Db.DatabasePath));
+        using (var independent = scenario.Db.OpenSession())
+        {
+            Assert.IsNotNull(await new UserRepository(independent).GetByIdAsNoTrackingAsync(scenario.User.UId));
+            Assert.IsFalse(await new DeletedUserBarrierRepository(independent).ExistsAsync(scenario.User.UId));
+        }
         await scenario.Inbox.StoreAndApplyAsync(scenario.Operation, scenario.Peers[0].LocalDeviceId);
-        var baseline = await SqliteStorageMeasurement.CaptureAsync(scenario.Db.Connections, "");
+        var baseline = await SqliteStorageMeasurement.CaptureAsync(scenario.Db.Connections, scenario.Db.DatabasePath);
         for (var round = 0; round < 64; round++)
         {
             await RestoreDuplicateProofsAsync(scenario.Db, scenario.Operation);
@@ -261,7 +269,7 @@ public sealed partial class RevocationReceiptServiceTests
             var compactor = new SqliteSynchronizationEvidenceCompactor(session, scenario.Lifecycle);
             Assert.IsTrue(await compactor.CompactAsync() > 0, $"round={round}");
             Assert.AreEqual(0L, await compactor.CompactAsync());
-            var current = await SqliteStorageMeasurement.CaptureAsync(scenario.Db.Connections, "");
+            var current = await SqliteStorageMeasurement.CaptureAsync(scenario.Db.Connections, scenario.Db.DatabasePath);
             foreach (var category in baseline.ChargedBytes.Keys)
                 Assert.AreEqual(baseline.ChargedBytes[category], current.ChargedBytes[category], $"category={category}, round={round}");
             foreach (var table in baseline.Rows.Keys)

@@ -506,7 +506,7 @@
           "kind": "Explanation",
           "platform": "All",
           "title": "Removal reaches other devices through communication",
-          "body": "The app records the removal and sends it to peers. The removed device’s profile is removed when that device receives and applies the removal. An offline or lost device cannot be wiped immediately by this action; do not continue editing the profile there."
+          "body": "Removal reaches other installations when they can communicate. An offline installation may not yet know it was removed. After it has applied the signed removal, its local copy can be erased through the login screen using its username, master password and explicit acknowledgement. This keeps other local profiles and does not renew the installation identity. A removed identity cannot rejoin. Fresh setup may require reinstalling or clearing all app storage, affecting every local profile; preserve their data first. Then explicitly use + (Add Device) on a healthy authorized device and approve the fresh installation."
         }
       ],
       "relatedTopicIds": [
@@ -1597,7 +1597,7 @@
           "kind": "Explanation",
           "platform": "All",
           "title": "After confirmed recovery",
-          "body": "After successful verification the temporary local profile copy is removed. Only unresolved received evidence remains, inside the protected database, until proven resolved or the profile is deleted. Interrupted verification is retried automatically when the profile key is available. Synchronization stays paused after confirmed recovery; enable it deliberately and pair other devices again. Other profiles remain unchanged."
+          "body": "After successful verification, redundant temporary local recovery data is removed; unresolved received evidence stays protected. Synchronization remains paused after confirmed repair. Other installations may need separate manual attention. Only the normal Add Device approval can authorize a fresh installation. If a partial or uncertain result is shown, do not repeat the old confirmation: restart and run diagnostics to review current state."
         }
       ],
       "relatedTopicIds": [
@@ -1734,7 +1734,7 @@
           "kind": "Explanation",
           "platform": "All",
           "title": "What you see",
-          "body": "The app distinguishes an unsupported database version, missing or damaged database configuration, an unavailable protected database key, and a database that cannot be read with its configured key. Each database recovery screen offers a reset with a separate permanent-erasure confirmation. A temporarily locked device or unavailable secure storage is a retry condition, not a reset condition."
+          "body": "The app distinguishes incompatible versions, missing or damaged configuration, an inaccessible protected key, an unreadable database, and an interrupted reset. Retry reopens existing storage without requesting deletion or replacement keys. A locked device or temporarily unavailable storage is a retry condition, not proof that data is lost."
         },
         {
           "id": "reason",
@@ -1748,14 +1748,14 @@
           "kind": "Step",
           "platform": "All",
           "title": "Preserve the data and check trusted version information",
-          "body": "If you need the local data, decline the reset and close the app. Check whether you started an older app version and whether a trusted compatible update is available. Preserve any other working device. Report the version and safe error details if the problem remains."
+          "body": "Keep every healthy authorized device and check its available passwords first. Unlock this device, restore storage access, close conflicting processes, or check for a compatible app version as appropriate, then use Retry without deleting data. If a reset was interrupted, surviving files remain blocked and are not deleted automatically. You can close the app to preserve them."
         },
         {
           "id": "erase",
           "kind": "Warning",
           "platform": "All",
           "title": "Reset deletes every local profile",
-          "body": "Reset permanently removes the local database, its protected key, profiles, passwords, and local synchronization data. Reinstallation or clearing app data can also destroy access. Do not use these as a routine troubleshooting step; rebuilding from another device is not guaranteed."
+          "body": "Reset affects ALL local profiles, their passwords, protected key, installation identity and synchronization state. Review the warning, actively acknowledge it, and use the dedicated final confirmation. Changes saved only here can be permanently lost. Reset neither restores previous data nor disconnects the old device elsewhere. First disconnect it on a healthy authorized device where possible. After a fresh empty startup, log in on an existing authorized device and press + (Add Device) to approve a new enrollment. Nothing is enrolled automatically. If reset fails, some files may already be gone; retry does not repeat deletion."
         }
       ],
       "relatedTopicIds": [

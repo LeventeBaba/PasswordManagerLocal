@@ -71,5 +71,6 @@
   "Agent.Ipc.RegisteredUiRequired": "Ehhez a művelethez a jelenleg regisztrált Password Manager Local felület szükséges.",
   "Agent.Runtime.DatabaseConfigurationInvalid": "A helyi adatbázis konfigurációja hiányzik vagy sérült.",
   "Agent.Runtime.DatabaseKeyUnavailable": "A védett helyi adatbáziskulcs ebben a telepítésben vagy operációsrendszer-fiókban nem állítható helyre.",
-  "Agent.Runtime.DatabaseUnreadable": "A helyi adatbázis nem olvasható a hozzá beállított titkosítási kulccsal."
+  "Agent.Runtime.DatabaseUnreadable": "A helyi adatbázis nem olvasható a hozzá beállított titkosítási kulccsal.",
+  "Agent.Runtime.DatabaseResetIncomplete": "A helyi adatbázis jóváhagyott alaphelyzetbe állítása nem fejeződött be. A megmaradt fájlok megmaradtak, az indítás blokkolt."
 }

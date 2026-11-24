@@ -31,6 +31,25 @@ public sealed class RecoveryEnrollmentSecurityArchitectureTests
         }
     }
 
+    [TestMethod]
+    [TestCategory("EnrollmentSecurity")]
+    public void DatabaseResetAndRecoveryGuidanceCannotGrantMembershipOrDeleteAccountsGlobally()
+    {
+        var root = RepositoryRoot();
+        foreach (var relative in new[]
+        {
+            "Common/Backend/Persistence/BackendStorageCleaner.cs",
+            "Common/Backend/Hosting/BackendRuntime.cs",
+            "Common/Frontend/ViewModels/MainViewModel.cs",
+            "Windows/Agent/DatabaseReset/WindowsAgentDatabaseResetCoordinator.cs"
+        })
+        {
+            var source = File.ReadAllText(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
+            Assert.IsFalse(Regex.IsMatch(source,
+                @"\b(?:StartEnrollmentAsync|StartDeviceEnrollmentAsync|AddDeviceByCodeAsync|AuthorizeAdditionAsync|CreateGenesisAsync|TransferSnapshotAsync|ImportSnapshotAsync|DeleteUserAccountAsync)\s*\("), relative);
+        }
+    }
+
     private static string RepositoryRoot([CallerFilePath] string source = "")
     {
         for (var directory = new DirectoryInfo(Path.GetDirectoryName(source)!); directory is not null; directory = directory.Parent)

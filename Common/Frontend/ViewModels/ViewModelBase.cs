@@ -131,6 +131,8 @@ public abstract class ViewModelBase : DisposableReactiveObject
 
         var key = exception switch
         {
+            IOperationOutcomeUnknown => "Error_OperationOutcomeUnknown",
+            IPartiallyCommittedOperation => "Error_OperationPartiallyCommitted",
             InvalidTokenException => "Error_InvalidSession",
             UserNotFoundException => "Error_InvalidCredentials",
             UnauthorizedAccessException => "Error_InvalidCredentials",
