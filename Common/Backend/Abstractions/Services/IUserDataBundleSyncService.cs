@@ -20,22 +20,12 @@ public interface IUserDataBundleSyncService
         UserSyncKeyConfidence keyConfidence,
         CancellationToken ct = default) =>
         TryVerifyAndMergeManyAsync(existing, snapshots, key, ct);
-    Task<UserDataRecoveryReconstructionResult> TryReconstructCanonicalAsync(
-        User existing,
-        IReadOnlyList<UserSnapshotEnvelope> snapshots,
-        EncryptionKey key,
-        UserSyncKeyConfidence keyConfidence,
+    Task<PreparedCanonicalRecovery> PrepareCanonicalRecoveryAsync(
+        User source, UserCanonicalCheckpoint? checkpoint,
+        IReadOnlyList<UserSnapshotEnvelope> snapshots, EncryptionKey key,
+        UserSyncKeyConfidence keyConfidence, long expectedKeyEpoch, long expectedMembershipEpoch,
         CancellationToken ct = default) =>
-        throw new NotSupportedException("Canonical recovery reconstruction is not supported by this implementation.");
+        throw new NotSupportedException("Canonical recovery preparation is unavailable.");
 
-    Task<UserDataRecoveryReconstructionResult> TryReconstructCanonicalAsync(
-        User existing,
-        IReadOnlyList<UserSnapshotEnvelope> snapshots,
-        EncryptionKey key,
-        UserSyncKeyConfidence keyConfidence,
-        long expectedKeyEpoch,
-        long expectedMembershipEpoch,
-        CancellationToken ct = default) =>
-        TryReconstructCanonicalAsync(existing, snapshots, key, keyConfidence, ct);
-
+    void ObserveCommittedRecovery(PreparedCanonicalRecovery prepared) { }
 }

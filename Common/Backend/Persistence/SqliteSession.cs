@@ -32,6 +32,7 @@ internal sealed class SqliteSession : IUnitOfWork, IDisposable
     }
 
     public bool HasActiveTransaction => _active is not null;
+    internal bool HasActiveReadSnapshot => _readSnapshot is not null;
     internal bool HasPendingChanges => _pending.Count != 0;
 
     // Repository reads and audited immediate operations use the scope's transaction.

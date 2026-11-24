@@ -74,6 +74,7 @@ public static class BackendServiceCollectionExtensions
         services.AddSingleton<SynchronizationEvidenceMaintenanceState>();
         services.AddScoped<SqliteStorageRetentionAnalyzer>();
         services.AddScoped<SqliteSynchronizationEvidenceCompactor>();
+        services.AddScoped<IUserCanonicalRecoveryStore, UserCanonicalRecoveryStore>();
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<SqliteSession>());
         services.AddScoped<IUserAccountDeletionStore, UserAccountDeletionStore>();
         services.AddScoped<IUserRecoveryJournalStore, UserRecoveryJournalStore>();

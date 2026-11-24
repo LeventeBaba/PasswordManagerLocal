@@ -25,39 +25,14 @@ public sealed class FakeUserDataBundleSyncService : IUserDataBundleSyncService
                 snapshot.OriginRevision,
                 Verified: true)).ToArray()));
 
-    public Task<UserDataRecoveryReconstructionResult> TryReconstructCanonicalAsync(
-        User existing,
-        IReadOnlyList<UserSnapshotEnvelope> snapshots,
-        EncryptionKey key,
-        UserSyncKeyConfidence keyConfidence,
-        CancellationToken ct = default) =>
-        TryReconstructCanonicalAsync(
-            existing,
-            snapshots,
-            key,
-            keyConfidence,
-            existing.KeyEpoch,
-            existing.MembershipEpoch,
-            ct);
-
-    public Task<UserDataRecoveryReconstructionResult> TryReconstructCanonicalAsync(
-        User existing,
-        IReadOnlyList<UserSnapshotEnvelope> snapshots,
-        EncryptionKey key,
-        UserSyncKeyConfidence keyConfidence,
-        long expectedKeyEpoch,
-        long expectedMembershipEpoch,
-        CancellationToken ct = default) =>
-        RecoveryHandler?.Invoke(
-            existing,
-            snapshots,
-            key,
-            keyConfidence,
-            expectedKeyEpoch,
-            expectedMembershipEpoch,
-            ct)
-        ?? Task.FromResult(new UserDataRecoveryReconstructionResult(
-            Reconstructed: false,
-            Candidates: [],
-            DiagnosticCode: "fake-recovery-not-configured"));
+    public async Task<PreparedCanonicalRecovery> PrepareCanonicalRecoveryAsync(
+        User source, UserCanonicalCheckpoint? checkpoint, IReadOnlyList<UserSnapshotEnvelope> snapshots,
+        EncryptionKey key, UserSyncKeyConfidence keyConfidence, long expectedKeyEpoch, long expectedMembershipEpoch,
+        CancellationToken ct = default)
+    {
+        var working = PreparedCanonicalRecovery.Copy(source);
+        var result = RecoveryHandler is null ? new UserDataRecoveryReconstructionResult(false, [], "fake-recovery-not-configured")
+            : await RecoveryHandler(working, snapshots, key, keyConfidence, expectedKeyEpoch, expectedMembershipEpoch, ct);
+        return new PreparedCanonicalRecovery(working, result, source);
+    }
 }

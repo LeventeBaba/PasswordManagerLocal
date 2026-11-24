@@ -22,6 +22,7 @@ namespace PasswordManagerLocal.Common.Backend.Services;
 public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
 {
     private readonly IUserRepository _users;
+    private readonly IUserCanonicalRecoveryStore _recoveryStore;
     private readonly IUserSyncSnapshotRepository _snapshots;
     private readonly IUserRevisionKnowledgeRepository _knowledge;
     private readonly IUserSyncFaultRepository _faultRepository;
@@ -64,11 +65,13 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
         IUserLifecycleCoordinator lifecycle,
         IDeletedUserBarrierRepository deletionBarriers,
         IInteractiveSessionStateService interactiveSessions,
+        IUserCanonicalRecoveryStore recoveryStore,
         IDatabaseHealthService? databaseHealth = null,
         IUserTombstoneGarbageCollector? garbageCollector = null,
         TimeProvider? timeProvider = null)
     {
         _users = users;
+        _recoveryStore = recoveryStore;
         _snapshots = snapshots;
         _knowledge = knowledge;
         _faultRepository = faultRepository;
@@ -202,64 +205,111 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
                 return new UserDataRecoveryResult(UserDataRecoveryState.DatabaseUnhealthy, DiagnosticCode: databaseHealth.DiagnosticCode);
         }
 
-        await using var transaction = await _uow.BeginTransactionAsync(ct);
+        IUnitOfWorkTransaction? transaction = null;
+        PreparedCanonicalRecovery? prepared = null;
         try
         {
-            if (await _deletionBarriers.ExistsAsync(userId, ct))
-            {
-                await transaction.RollbackAsync(ct);
+            using var input = await _recoveryStore.CaptureAsync(userId, ct);
+            if (input.Deleted)
                 return new UserDataRecoveryResult(UserDataRecoveryState.AccountDeleted, DiagnosticCode: "account-deleted");
-            }
-
-            var user = await _users.GetByIdWithRelationsAsync(userId, ct);
+            if (input.PendingControl)
+                return new UserDataRecoveryResult(UserDataRecoveryState.TransactionConflict, DiagnosticCode: "pending-security-operation");
+            var user = input.User;
             if (user is null)
-            {
-                await transaction.RollbackAsync(ct);
                 return new UserDataRecoveryResult(UserDataRecoveryState.NothingToRecover, DiagnosticCode: "user-not-found");
-            }
-
-            var activeFaults = await _faultRepository.ListActiveForUserAsync(userId, ct);
-            if (activeFaults.Any(IsTerminalFork) ||
-                await _snapshots.HasIsolatedForkAsync(userId, ct))
-            {
-                await transaction.RollbackAsync(ct);
+            var activeFaults = input.Faults;
+            if (activeFaults.Any(IsTerminalFork) || input.IsolatedFork)
                 return new UserDataRecoveryResult(UserDataRecoveryState.TerminalFork, DiagnosticCode: "terminal-origin-fork");
-            }
             if (activeFaults.Any(IsControlPlaneConflict))
-            {
-                await transaction.RollbackAsync(ct);
                 return new UserDataRecoveryResult(UserDataRecoveryState.ControlPlaneConflict, DiagnosticCode: "terminal-control-plane-conflict");
-            }
 
-            var epochResolution = await ResolveAuthoritativeEpochsAsync(user, ct);
+            var localIdentity = CaptureLocalIdentity();
+            var epochResolution = await ResolveAuthoritativeEpochsAsync(user, ct, input);
             if (!epochResolution.Success)
-            {
-                await transaction.RollbackAsync(ct);
                 return new UserDataRecoveryResult(epochResolution.State, DiagnosticCode: epochResolution.DiagnosticCode);
-            }
-
-            var localFaults = activeFaults
-                .Where(fault => fault.Scope == UserSyncFaultScope.LocalCanonical)
-                .ToList();
+            var localFaults = activeFaults.Where(fault => fault.Scope == UserSyncFaultScope.LocalCanonical).ToList();
             var now = _timeProvider.GetUtcNow();
-            var bypassBackoff = trigger is UserDataRecoveryTrigger.Login or
-                UserDataRecoveryTrigger.RememberMeStartup or
-                UserDataRecoveryTrigger.HealthyCandidateReceived or
-                UserDataRecoveryTrigger.ManualRetry;
+            var bypassBackoff = trigger is UserDataRecoveryTrigger.Login or UserDataRecoveryTrigger.RememberMeStartup or
+                UserDataRecoveryTrigger.HealthyCandidateReceived or UserDataRecoveryTrigger.ManualRetry;
             if (localFaults.Count != 0 && !bypassBackoff && IsBackoffActive(localFaults, now))
-            {
-                await transaction.RollbackAsync(ct);
                 return new UserDataRecoveryResult(UserDataRecoveryState.BackoffActive, DiagnosticCode: "recovery-backoff-active");
+
+            // Capture has already released SQLite's read snapshot. All costly work below reads
+            // detached input only, without staging mutations or observing the shared item clock.
+            var canonicalHealth = await _canonicalHealth.VerifyCapturedAsync(
+                user, input.Checkpoint, key, keyConfidence, ct);
+            var authenticated = new List<(UserSyncSnapshot Row, UserSnapshotEnvelope Envelope)>();
+            var isolations = new List<RecoveryCandidateIsolation>();
+            if (!canonicalHealth.FullyVerified)
+            {
+                foreach (var row in input.Candidates.Where(row => row.UserKeyEpoch == epochResolution.KeyEpoch))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (!IsEligibleEvidenceStatus(row.Status) || activeFaults.Any(fault =>
+                        UserSyncFaultPolicy.IsTerminal(fault) && fault.OriginDeviceId == row.OriginDeviceId &&
+                        fault.OriginInstanceId == row.OriginInstanceId && fault.KeyEpoch == row.UserKeyEpoch))
+                        continue;
+                    try
+                    {
+                        var envelope = DeserializeAndValidateRow(row);
+                        if (envelope.UserKeyEpoch != epochResolution.KeyEpoch || envelope.MembershipEpoch > epochResolution.MembershipEpoch)
+                        {
+                            isolations.Add(new(row, UserSyncFaultKind.InvalidEpoch, "recovery-candidate-epoch-invalid", UserDataBlobKind.All));
+                            continue;
+                        }
+                        await _membershipAuthorization.VerifyCapturedSnapshotAuthorAsync(envelope, input.Authority, ct);
+                        authenticated.Add((row, envelope));
+                    }
+                    catch (UnauthorizedAccessException ex)
+                    {
+                        var code = ex.Message.Contains("cutoff", StringComparison.OrdinalIgnoreCase)
+                            ? "recovery-candidate-post-removal-cutoff" : "recovery-candidate-unauthorized";
+                        isolations.Add(new(row, UserSyncFaultKind.UnauthorizedOrigin, code, UserDataBlobKind.None));
+                    }
+                    catch (Exception ex) when (IsCandidateFailure(ex))
+                    {
+                        isolations.Add(new(row, UserSyncFaultKind.IncomingMetadataMismatch,
+                            "recovery-candidate-envelope-invalid", UserDataBlobKind.None));
+                    }
+                }
             }
 
-            // Always re-prove that canonical data is still unhealthy after the lifecycle lock and
-            // transaction are acquired. An unconfirmed password never records a corruption fault.
-            var canonicalHealth = await _canonicalHealth.VerifyAsync(
-                user,
-                key,
-                keyConfidence,
-                recordFault: false,
-                ct: ct);
+            Exception? preparationConflict = null;
+            if (authenticated.Count != 0)
+            {
+                try
+                {
+                    prepared = await _bundleSync.PrepareCanonicalRecoveryAsync(user, input.Checkpoint,
+                        authenticated.Select(candidate => candidate.Envelope).ToArray(), key, keyConfidence,
+                        epochResolution.KeyEpoch, epochResolution.MembershipEpoch, ct);
+                }
+                catch (Exception ex) when (ex is RecoveryEvidenceConflictException or DeterministicSyncConflictException)
+                {
+                    // A speculative conflict is not a durable diagnosis until the exact inputs
+                    // have been revalidated under the same writer lock as its fault transition.
+                    preparationConflict = ex;
+                }
+            }
+            ct.ThrowIfCancellationRequested();
+            transaction = await _uow.BeginTransactionAsync(ct);
+            if (await _deletionBarriers.ExistsAsync(userId, ct))
+                throw new AccountDeletedDuringRecoveryException();
+            if (!Hashing.Verify(localIdentity, CaptureLocalIdentity()) ||
+                !await _recoveryStore.IsCurrentAsync(input, ct))
+                throw new StorageWriteException(StorageWriteException.FailureKind.StaleRow, typeof(User));
+            await _membershipAuthorization.VerifyLocalInstallationAsync(userId,
+                epochResolution.KeyEpoch, epochResolution.MembershipEpoch, ct);
+
+            if (preparationConflict is not null)
+            {
+                var code = preparationConflict is RecoveryEvidenceConflictException evidenceConflict
+                    ? evidenceConflict.DiagnosticCode : "deterministic-recovery-conflict";
+                await RecordPreparationConflictAsync(userId, code, preparationConflict is DeterministicSyncConflictException, ct);
+                await _uow.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+                return new UserDataRecoveryResult(UserDataRecoveryState.ControlPlaneConflict, DiagnosticCode: code);
+            }
+
             if (canonicalHealth.FullyVerified)
             {
                 if (localFaults.Count != 0)
@@ -268,70 +318,11 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
                     await _uow.SaveChangesAsync(ct);
                     await transaction.CommitAsync(ct);
                 }
-                else
-                {
-                    await transaction.RollbackAsync(ct);
-                }
-
+                else await transaction.RollbackAsync(ct);
                 return new UserDataRecoveryResult(UserDataRecoveryState.NothingToRecover, DiagnosticCode: "canonical-already-healthy");
             }
-
-            // Re-read because independently trusted canonical verification may have created a new
-            // scoped fault in this same unit of work.
-            localFaults = (await _faultRepository.ListActiveForUserAsync(userId, ct))
-                .Where(fault => fault.Scope == UserSyncFaultScope.LocalCanonical)
-                .ToList();
-
-            var evidenceRows = await _snapshots.ListRecoveryEvidenceAsync(userId, epochResolution.KeyEpoch, ct);
-            var authenticated = new List<(UserSyncSnapshot Row, UserSnapshotEnvelope Envelope)>();
-            foreach (var row in evidenceRows)
-            {
-                ct.ThrowIfCancellationRequested();
-                if (!IsEligibleEvidenceStatus(row.Status))
-                    continue;
-                if (await _faults.HasTerminalOriginFaultAsync(
-                        row.UserId,
-                        row.OriginDeviceId,
-                        row.OriginInstanceId,
-                        row.UserKeyEpoch,
-                        ct))
-                    continue;
-
-                try
-                {
-                    var envelope = DeserializeAndValidateRow(row);
-                    if (envelope.UserKeyEpoch != epochResolution.KeyEpoch ||
-                        envelope.MembershipEpoch > epochResolution.MembershipEpoch)
-                    {
-                        await IsolateCandidateAsync(
-                            row,
-                            UserSyncFaultKind.InvalidEpoch,
-                            "recovery-candidate-epoch-invalid",
-                            UserDataBlobKind.All,
-                            ct);
-                        continue;
-                    }
-
-                    await _membershipAuthorization.VerifySnapshotAuthorAsync(envelope, ct);
-                    authenticated.Add((row, envelope));
-                }
-                catch (UnauthorizedAccessException ex)
-                {
-                    var code = ex.Message.Contains("cutoff", StringComparison.OrdinalIgnoreCase)
-                        ? "recovery-candidate-post-removal-cutoff"
-                        : "recovery-candidate-unauthorized";
-                    await IsolateCandidateAsync(row, UserSyncFaultKind.UnauthorizedOrigin, code, UserDataBlobKind.None, ct);
-                }
-                catch (Exception ex) when (IsCandidateFailure(ex))
-                {
-                    await IsolateCandidateAsync(
-                        row,
-                        UserSyncFaultKind.IncomingMetadataMismatch,
-                        "recovery-candidate-envelope-invalid",
-                        UserDataBlobKind.None,
-                        ct);
-                }
-            }
+            foreach (var isolation in isolations)
+                await IsolateCandidateAsync(isolation.Row, isolation.Kind, isolation.DiagnosticCode, isolation.FailedBlobs, ct);
 
             if (authenticated.Count == 0)
             {
@@ -357,15 +348,7 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
                 return new UserDataRecoveryResult(UserDataRecoveryState.AwaitingPeerEvidence, DiagnosticCode: "no-authenticated-recovery-evidence");
             }
 
-            var reconstruction = await _bundleSync.TryReconstructCanonicalAsync(
-                user,
-                authenticated.Select(candidate => candidate.Envelope).ToArray(),
-                key,
-                keyConfidence,
-                epochResolution.KeyEpoch,
-                epochResolution.MembershipEpoch,
-                ct);
-
+            var reconstruction = prepared!.Result;
             var keyConfirmed = IsIndependentlyTrusted(keyConfidence) || reconstruction.HealthyCandidateCount > 0;
             var resultByIdentity = reconstruction.Candidates
                 .GroupBy(result => CandidateIdentity(
@@ -437,9 +420,10 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
                     DiagnosticCode: reconstruction.DiagnosticCode);
             }
 
-            var confirmedConfidence = keyConfidence == UserSyncKeyConfidence.UnconfirmedPassword
-                ? UserSyncKeyConfidence.VerifiedRemoteSnapshot
-                : keyConfidence;
+            user = await _users.GetByIdWithRelationsAsync(userId, ct)
+                ?? throw new StorageWriteException(StorageWriteException.FailureKind.StaleRow, typeof(User));
+            prepared.ApplyTo(user);
+            _users.Update(user);
             foreach (var candidate in authenticated.Where(candidate =>
                          resultByIdentity.TryGetValue(
                              CandidateIdentity(
@@ -457,7 +441,7 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
             await _canonicalHealth.UpdateCheckpointAsync(user, ct);
             // Publication reads coverage from storage inside this transaction.
             await _uow.SaveChangesAsync(ct);
-            var localSnapshot = await _publisher.GetOrCreateAfterRecoveryAsync(user, key, confirmedConfidence, ct);
+            var localSnapshot = await _publisher.GetOrCreatePreparedRecoveryAsync(user, prepared, ct);
             await _queueWriter.EnqueueAsync(
                 new SyncItem
                 {
@@ -486,10 +470,13 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
                                            candidate.Envelope.OriginInstanceId == _identity.OriginInstanceId;
                 if (!isCurrentLocalOrigin)
                 {
-                    candidate.Row.Status = UserSyncSnapshotStatus.MergedReceipt;
-                    candidate.Row.QuarantineReason = null;
-                    candidate.Row.ConflictingSnapshotHash = null;
-                    _snapshots.Update(candidate.Row);
+                    var current = await _snapshots.GetExactAsync(userId, candidate.Row.OriginDeviceId,
+                        candidate.Row.OriginInstanceId, candidate.Row.UserKeyEpoch, candidate.Row.OriginRevision, ct)
+                        ?? throw new StorageWriteException(StorageWriteException.FailureKind.StaleRow, typeof(UserSyncSnapshot));
+                    current.Status = UserSyncSnapshotStatus.MergedReceipt;
+                    current.QuarantineReason = null;
+                    current.ConflictingSnapshotHash = null;
+                    _snapshots.Update(current);
                 }
 
                 await _faults.MarkOriginRecoveredAsync(
@@ -534,6 +521,12 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
             await _uow.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
 
+            try { _bundleSync.ObserveCommittedRecovery(prepared); }
+            catch
+            {
+                // Committed canonical reads observe this floor again before issuing item versions.
+                // Clock persistence cannot turn a completed recovery into a failed attempt.
+            }
             await RunPostCommitWorkAsync(user, key);
             return new UserDataRecoveryResult(
                 UserDataRecoveryState.Recovered,
@@ -545,55 +538,45 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
         }
         catch (AccountDeletedDuringRecoveryException)
         {
-            await transaction.RollbackAsync(CancellationToken.None);
+            if (transaction is not null) await transaction.RollbackAsync(CancellationToken.None);
             _uow.ClearTrackedChanges();
             return new UserDataRecoveryResult(UserDataRecoveryState.AccountDeleted, DiagnosticCode: "account-deleted-during-recovery");
         }
-        catch (RecoveryEvidenceConflictException ex)
-        {
-            await transaction.RollbackAsync(CancellationToken.None);
-            _uow.ClearTrackedChanges();
-            await PersistRecoveryEvidenceConflictAsync(userId, ex.DiagnosticCode, ct);
-            return new UserDataRecoveryResult(UserDataRecoveryState.ControlPlaneConflict, DiagnosticCode: ex.DiagnosticCode);
-        }
-        catch (DeterministicSyncConflictException)
-        {
-            await transaction.RollbackAsync(CancellationToken.None);
-            _uow.ClearTrackedChanges();
-            await PersistTerminalFailureAsync(userId, "deterministic-recovery-conflict", ct);
-            return new UserDataRecoveryResult(UserDataRecoveryState.ControlPlaneConflict, DiagnosticCode: "deterministic-recovery-conflict");
-        }
         catch (StorageWriteException ex) when (ex.Kind == StorageWriteException.FailureKind.StaleRow)
         {
-            await transaction.RollbackAsync(CancellationToken.None);
+            if (transaction is not null) await transaction.RollbackAsync(CancellationToken.None);
             _uow.ClearTrackedChanges();
-            await PersistRetryableFailureAsync(userId, ct);
             return new UserDataRecoveryResult(UserDataRecoveryState.TransactionConflict, DiagnosticCode: "recovery-transaction-conflict");
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            await transaction.RollbackAsync(CancellationToken.None);
+            if (transaction is not null) await transaction.RollbackAsync(CancellationToken.None);
             _uow.ClearTrackedChanges();
             throw;
         }
         catch
         {
-            await transaction.RollbackAsync(CancellationToken.None);
+            if (transaction is not null) await transaction.RollbackAsync(CancellationToken.None);
             _uow.ClearTrackedChanges();
             if (await _deletionBarriers.ExistsAsync(userId, ct))
                 return new UserDataRecoveryResult(UserDataRecoveryState.AccountDeleted, DiagnosticCode: "account-deleted-during-recovery");
             await PersistRetryableFailureAsync(userId, ct);
             return new UserDataRecoveryResult(UserDataRecoveryState.Failed, DiagnosticCode: "canonical-recovery-failed");
         }
+        finally
+        {
+            try { if (transaction is not null) await transaction.DisposeAsync(); }
+            finally { prepared?.Dispose(); }
+        }
     }
 
-    private async Task<EpochResolution> ResolveAuthoritativeEpochsAsync(User user, CancellationToken ct)
+    private async Task<EpochResolution> ResolveAuthoritativeEpochsAsync(User user, CancellationToken ct, UserRecoveryInput? input = null)
     {
-        var control = await _controlStates.GetAsync(user.UId, ct);
+        var control = input is null ? await _controlStates.GetAsync(user.UId, ct) : input.Control;
         if (control?.HasConflict == true)
             return EpochResolution.Failed(UserDataRecoveryState.ControlPlaneConflict, "control-state-conflict");
 
-        UserCanonicalCheckpoint? checkpoint = await _checkpoints.GetAsync(user.UId, ct);
+        UserCanonicalCheckpoint? checkpoint = input is null ? await _checkpoints.GetAsync(user.UId, ct) : input.Checkpoint;
         var checkpointAuthentic = false;
         if (checkpoint is not null)
         {
@@ -650,7 +633,10 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
 
         try
         {
-            await _membershipAuthorization.VerifyLocalInstallationAsync(user.UId, keyEpoch, membershipEpoch, ct);
+            if (input is null)
+                await _membershipAuthorization.VerifyLocalInstallationAsync(user.UId, keyEpoch, membershipEpoch, ct);
+            else
+                await _membershipAuthorization.VerifyCapturedLocalInstallationAsync(user.UId, keyEpoch, membershipEpoch, input.Authority, ct);
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidDataException or ArgumentException)
         {
@@ -750,6 +736,9 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
         UserDataBlobKind failedBlobs,
         CancellationToken ct)
     {
+        row = await _snapshots.GetExactAsync(row.UserId, row.OriginDeviceId, row.OriginInstanceId,
+            row.UserKeyEpoch, row.OriginRevision, ct)
+            ?? throw new StorageWriteException(StorageWriteException.FailureKind.StaleRow, typeof(UserSyncSnapshot));
         row.Status = kind == UserSyncFaultKind.SameRevisionFork
             ? UserSyncSnapshotStatus.IsolatedFork
             : UserSyncSnapshotStatus.IsolatedCorrupt;
@@ -845,6 +834,9 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
     {
         try
         {
+            await using var retry = await _uow.BeginTransactionAsync(ct);
+            if (await _deletionBarriers.ExistsAsync(userId, ct) || !await _users.ExistsAsync(userId, ct))
+                return;
             var faults = await _faultRepository.ListActiveForUserAsync(userId, ct);
             var now = _timeProvider.GetUtcNow();
             foreach (var fault in faults.Where(UserSyncFaultPolicy.IsRecoverableCanonical))
@@ -856,69 +848,45 @@ public sealed class UserDataRecoveryCoordinator : IUserDataRecoveryCoordinator
                 _faultRepository.Update(fault);
             }
             await _uow.SaveChangesAsync(ct);
+            await retry.CommitAsync(ct);
         }
-        catch
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             _uow.ClearTrackedChanges();
+            throw;
         }
+        catch { _uow.ClearTrackedChanges(); }
     }
 
-    private async Task PersistRecoveryEvidenceConflictAsync(
-        Guid userId,
-        string diagnosticCode,
-        CancellationToken ct)
+    private byte[] CaptureLocalIdentity() => Hashing.SHA256Hash(hash =>
     {
-        try
-        {
-            await _faults.RecordAsync(new UserSyncFaultDescriptor
-            {
-                UserId = userId,
-                Scope = UserSyncFaultScope.ControlPlane,
-                Kind = UserSyncFaultKind.KeyEpochConflict,
-                Status = UserSyncHealthStatus.TerminalConflict,
-                AffectedComponent = "recovery-key-material",
-                DiagnosticCode = diagnosticCode,
-                BlocksPublishing = true,
-                BlocksMerge = true,
-                BlocksLogin = true,
-                BlocksGarbageCollection = true,
-                BlocksLifecycle = true
-            }, ct);
+        hash.Write(_identity.IsInitialized);
+        hash.Write(_identity.LocalDeviceId);
+        hash.Write(_identity.OriginInstanceId);
+        hash.WriteBytes(_identity.SignPublicKey);
+        hash.WriteBytes(_identity.AgreementPublicKey);
+        hash.WriteString(_identity.FingerprintHex);
+        hash.Write((byte)_identity.DeviceType);
+    });
 
-            var faults = await _faultRepository.ListActiveForUserAsync(userId, ct);
-            foreach (var fault in faults.Where(UserSyncFaultPolicy.IsRecoverableCanonical))
-            {
-                fault.Status = UserSyncHealthStatus.TerminalConflict;
-                fault.DiagnosticCode = diagnosticCode;
-                fault.NextRecoveryAttemptAtUtc = null;
-                _faultRepository.Update(fault);
-            }
-
-            await _uow.SaveChangesAsync(ct);
-        }
-        catch
-        {
-            _uow.ClearTrackedChanges();
-        }
-    }
-
-    private async Task PersistTerminalFailureAsync(Guid userId, string diagnosticCode, CancellationToken ct)
+    private async Task RecordPreparationConflictAsync(Guid userId, string diagnosticCode, bool deterministic, CancellationToken ct)
     {
-        try
+        await _faults.RecordAsync(new UserSyncFaultDescriptor
         {
-            var faults = await _faultRepository.ListActiveForUserAsync(userId, ct);
-            foreach (var fault in faults.Where(UserSyncFaultPolicy.IsRecoverableCanonical))
-            {
-                fault.Status = UserSyncHealthStatus.TerminalConflict;
-                fault.DiagnosticCode = diagnosticCode;
-                fault.NextRecoveryAttemptAtUtc = null;
-                _faultRepository.Update(fault);
-            }
-            await _uow.SaveChangesAsync(ct);
-        }
-        catch
+            UserId = userId, Scope = deterministic ? UserSyncFaultScope.DeterministicItem : UserSyncFaultScope.ControlPlane,
+            Kind = deterministic ? UserSyncFaultKind.DeterministicItemConflict : UserSyncFaultKind.KeyEpochConflict,
+            Status = UserSyncHealthStatus.TerminalConflict,
+            AffectedComponent = deterministic ? "recovery-item-version" : "recovery-key-material", DiagnosticCode = diagnosticCode,
+            BlocksPublishing = true, BlocksMerge = true, BlocksLogin = true,
+            BlocksGarbageCollection = true, BlocksLifecycle = true
+        }, ct);
+        foreach (var fault in (await _faultRepository.ListActiveForUserAsync(userId, ct))
+                     .Where(UserSyncFaultPolicy.IsRecoverableCanonical))
         {
-            _uow.ClearTrackedChanges();
+            fault.Status = UserSyncHealthStatus.TerminalConflict;
+            fault.DiagnosticCode = diagnosticCode;
+            fault.NextRecoveryAttemptAtUtc = null;
+            _faultRepository.Update(fault);
         }
     }
 

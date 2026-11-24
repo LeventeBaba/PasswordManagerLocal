@@ -1,4 +1,5 @@
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Internal.Recovery;
 using PasswordManagerLocal.Common.Backend.Sync;
 
 namespace PasswordManagerLocal.Common.Backend.Abstractions.Services;
@@ -11,4 +12,9 @@ public interface IUserMembershipAuthorizationService
     Task EndAuthorizationAsync(UserMembershipAuthorization authorization, DeviceRemovalPayload payload, Guid operationId, byte[] operationHash, DateTimeOffset createdAtUtc, CancellationToken ct = default);
     Task<UserMembershipAuthorization> VerifySnapshotAuthorAsync(UserSnapshotEnvelope envelope, CancellationToken ct = default);
     Task<UserMembershipAuthorization> VerifyControlAuthorAsync(UserControlOperationEnvelope envelope, CancellationToken ct = default);
+    Task<UserMembershipAuthorization> VerifyCapturedLocalInstallationAsync(Guid userId, long keyEpoch,
+        long membershipEpoch, UserRecoveryAuthority authority, CancellationToken ct = default);
+    Task<UserMembershipAuthorization> VerifyCapturedSnapshotAuthorAsync(UserSnapshotEnvelope envelope,
+        UserRecoveryAuthority authority, CancellationToken ct = default);
 }
+

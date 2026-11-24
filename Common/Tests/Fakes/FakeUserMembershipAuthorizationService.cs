@@ -1,5 +1,6 @@
 using PasswordManagerLocal.Common.Backend.Abstractions.Services;
 using PasswordManagerLocal.Common.Backend.Models;
+using PasswordManagerLocal.Common.Backend.Internal.Recovery;
 using PasswordManagerLocal.Common.Backend.Sync;
 
 namespace PasswordManagerLocal.Common.Tests.Fakes;
@@ -13,6 +14,13 @@ public sealed class FakeUserMembershipAuthorizationService : IUserMembershipAuth
             throw new UnauthorizedAccessException("The local installation is not authorized.");
         return Task.FromResult(Create(userId, Guid.NewGuid(), Guid.NewGuid(), keyEpoch, membershipEpoch, []));
     }
+
+    public Task<UserMembershipAuthorization> VerifyCapturedLocalInstallationAsync(Guid userId, long keyEpoch,
+        long membershipEpoch, UserRecoveryAuthority authority, CancellationToken ct = default) =>
+        VerifyLocalInstallationAsync(userId, keyEpoch, membershipEpoch, ct);
+
+    public Task<UserMembershipAuthorization> VerifyCapturedSnapshotAuthorAsync(UserSnapshotEnvelope envelope,
+        UserRecoveryAuthority authority, CancellationToken ct = default) => VerifySnapshotAuthorAsync(envelope, ct);
 
     public int ControlAuthorVerificationCalls { get; private set; }
     public Task<UserMembershipAuthorization> CreateGenesisAsync(User user, CancellationToken ct = default) =>

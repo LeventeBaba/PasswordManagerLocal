@@ -6,6 +6,8 @@ using PasswordManagerLocal.Common.Backend.Models;
 using PasswordManagerLocal.Common.Backend.Models.Encrypted;
 using PasswordManagerLocal.Common.Backend.Security;
 using PasswordManagerLocal.Common.Backend.Services;
+using PasswordManagerLocal.Common.Backend.Repositories;
+using PasswordManagerLocal.Common.Tests.TestInfrastructure.Services.TestDoubles;
 using PasswordManagerLocal.Common.Backend.Sync;
 using PasswordManagerLocal.Common.Backend.Utils;
 using PasswordManagerLocal.Common.Tests.Fakes;
@@ -32,7 +34,11 @@ internal sealed class CoordinatorHarness : IDisposable
         FakeSyncQueueWriterService queue,
         ControllableQueueWriterService queueControl,
         FakeSyncQueueService activation,
-        ControllablePendingActivationService activationControl)
+        ControllablePendingActivationService activationControl,
+        ControllableRecoveryPreparationService preparation,
+        ControllableRecoveryStore recoveryStore,
+        ControllableRecoveryUnitOfWork recoveryWork,
+        RecordingVersionClock versionClock)
     {
         UserId = userId;
         Key = key;
@@ -45,6 +51,10 @@ internal sealed class CoordinatorHarness : IDisposable
         QueueControl = queueControl;
         Activation = activation;
         ActivationControl = activationControl;
+        Preparation = preparation;
+        RecoveryStore = recoveryStore;
+        RecoveryWork = recoveryWork;
+        VersionClock = versionClock;
     }
 
     public Guid UserId { get; }
@@ -57,13 +67,20 @@ internal sealed class CoordinatorHarness : IDisposable
     public FakeSyncQueueService Activation { get; }
     public ControllablePendingActivationService ActivationControl { get; }
 
+    public ControllableRecoveryPreparationService Preparation { get; }
+    public ControllableRecoveryStore RecoveryStore { get; }
+    public ControllableRecoveryUnitOfWork RecoveryWork { get; }
+    public RecordingVersionClock VersionClock { get; }
+
     public static async Task<CoordinatorHarness> CreateAsync(
         SqliteRepositoryTestDatabase database,
         bool includeHealthyCandidate,
         IDatabaseHealthService? databaseHealth = null,
         bool failNextQueueWrite = false,
         bool failNextActivation = false,
-        bool localInstallationAuthorized = true)
+        bool localInstallationAuthorized = true,
+        bool useRealMembership = false,
+        bool useDurableQueue = false)
     {
         var material = new RecoveryTestMaterial();
         var key = EncryptionKey.Create();
@@ -119,16 +136,38 @@ internal sealed class CoordinatorHarness : IDisposable
             await database.UnitOfWork.SaveChangesAsync();
         }
 
+        IUserMembershipAuthorizationService membership = new FakeUserMembershipAuthorizationService
+            { RejectLocalInstallation = !localInstallationAuthorized };
+        if (useRealMembership)
+        {
+            localIdentity.AgreementPublicKey = Enumerable.Repeat((byte)0x31, 32).ToArray();
+            localIdentity.FingerprintHex = new string('A', 64);
+            remoteIdentity.AgreementPublicKey = Enumerable.Repeat((byte)0x32, 32).ToArray();
+            remoteIdentity.FingerprintHex = new string('B', 64);
+            var real = new UserMembershipAuthorizationService(database.UserMembershipAuthorizations,
+                database.UserOriginRemovalCutoffs, localIdentity, database.UserControlOperations);
+            var user = (await database.Users.GetByIdAsync(material.UserId))!;
+            await real.CreateGenesisAsync(user);
+            await new UserMembershipAuthorizationService(database.UserMembershipAuthorizations,
+                database.UserOriginRemovalCutoffs, remoteIdentity, database.UserControlOperations).CreateGenesisAsync(user);
+            await database.UnitOfWork.SaveChangesAsync();
+            membership = real;
+        }
+        var preparation = new ControllableRecoveryPreparationService(new UserSnapshotBatchVerificationService(verification));
+        var versionClock = new RecordingVersionClock();
         var bundleSync = new UserDataBundleSyncService(
             database.Users,
             integrity,
             new UserPasswordsDataMergeService(),
             new UserDevicesDataMergeService(),
-            new RecoveryTestVersionClock(),
+            versionClock,
             canonicalHealth,
             verification,
-            database.UserCanonicalCheckpoints,
-            localIdentity);
+            localIdentity,
+            preparation);
+        preparation.Inner = bundleSync;
+        var recoveryStore = new ControllableRecoveryStore(new UserCanonicalRecoveryStore(database.UnitOfWork));
+        var recoveryWork = new ControllableRecoveryUnitOfWork(database.UnitOfWork);
         var publisher = new UserSnapshotPublisherService(
             database.UserSyncSnapshots,
             database.UserSyncStates,
@@ -141,19 +180,38 @@ internal sealed class CoordinatorHarness : IDisposable
             keyResolver: null,
             syncFaults: faults);
         var queue = new FakeSyncQueueWriterService();
-        var queueControl = new ControllableQueueWriterService(queue)
-        {
-            FailNextEnqueue = failNextQueueWrite
-        };
         var activation = new FakeSyncQueueService();
         var activationControl = new ControllablePendingActivationService(activation)
         {
             FailNextActivation = failNextActivation
         };
+        ISyncQueueWriterService queueWriter = queue;
+        if (useDurableQueue)
+        {
+            var target = new Device
+            {
+                Id = remoteDevice, SignPublicKey = remoteIdentity.SignPublicKey.ToArray(),
+                PublicKey = Enumerable.Repeat((byte)0x42, 32).ToArray(), TlsCertFingerprint = new string('B', 64),
+                IsTrusted = true
+            };
+            target.GenerateIntegrityHash();
+            await database.Devices.AddAsync(target);
+            await database.UnitOfWork.SaveChangesAsync();
+            var lifecycleItems = new SyncItemLifecycleService(database.SyncItems, database.SyncQueue,
+                database.Users, database.Devices, database.UserDevices, database.Tombstones,
+                new LocalDeviceMatcherService(localIdentity), canonicalHealth);
+            queueWriter = new SyncQueueWriterService(database.SyncQueue, lifecycleItems,
+                new FixedRecoveryTargetResolver(target), activationControl, database.Devices, localIdentity,
+                new FakeSyncAuthorizationService(), database.UnitOfWork);
+        }
+        var queueControl = new ControllableQueueWriterService(queueWriter)
+        {
+            FailNextEnqueue = failNextQueueWrite
+        };
         var loginIdentities = new UserLoginIdentityProjectionService(
             database.Users,
             database.UserSyncSnapshots,
-            new FakeUserMembershipAuthorizationService(),
+            membership,
             lifecycle,
             database.UnitOfWork,
             database.DeletedUserBarriers,
@@ -164,8 +222,8 @@ internal sealed class CoordinatorHarness : IDisposable
             database.UserRevisionKnowledge,
             database.UserSyncFaults,
             faults,
-            new FakeUserMembershipAuthorizationService { RejectLocalInstallation = !localInstallationAuthorized },
-            bundleSync,
+            membership,
+            preparation,
             canonicalHealth,
             database.UserCanonicalCheckpoints,
             database.UserControlStates,
@@ -174,10 +232,11 @@ internal sealed class CoordinatorHarness : IDisposable
             activationControl,
             loginIdentities,
             localIdentity,
-            database.UnitOfWork,
+            recoveryWork,
             lifecycle,
             database.DeletedUserBarriers,
             new FakeInteractiveSessionStateService(),
+            recoveryStore,
             databaseHealth ?? new DatabaseHealthService(database.Connections));
 
         return new CoordinatorHarness(
@@ -191,7 +250,20 @@ internal sealed class CoordinatorHarness : IDisposable
             queue,
             queueControl,
             activation,
-            activationControl);
+            activationControl,
+            preparation,
+            recoveryStore,
+            recoveryWork,
+            versionClock);
+    }
+
+    public async Task<PasswordManagerLocal.Common.Backend.Sync.Recovery.PreparedCanonicalRecovery> CreateNewerCanonicalAsync()
+    {
+        using var bundle = _material.CreateBundle("newer-local-user",
+            RecoveryTestMaterial.Version(8_000, LocalIdentity.LocalDeviceId, LocalIdentity.OriginInstanceId),
+            [RecoveryTestMaterial.CreatePassword(Guid.Parse("C0000000-0000-0000-0000-000000000099"),
+                "newer-local-password", RecoveryTestMaterial.Version(8_100, LocalIdentity.LocalDeviceId, LocalIdentity.OriginInstanceId), 0x71)]);
+        return new(await _material.EncryptUserAsync(bundle, Key), new(true, []));
     }
 
     public void Dispose()
